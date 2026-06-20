@@ -198,12 +198,8 @@ def _to_request(args: argparse.Namespace) -> Request:
 def _run_bare(parser: argparse.ArgumentParser) -> int:
     """Bare invocation (DESIGN.md §13): launch the TUI on a TTY, else print help."""
     if sys.stdin.isatty() and sys.stdout.isatty():
-        try:
-            from . import tui  # WP-20; optional until that module is built.
-        except ImportError:
-            tui = None
-        if tui is not None:
-            return int(tui.run())
+        from . import tui  # WP-20: always present in the package.
+        return int(tui.run())
     parser.print_help()
     return OK
 

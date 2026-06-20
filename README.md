@@ -4,15 +4,6 @@ Install a team's AI artifacts — **skills, guidelines, MCP configs, and hooks**
 source-of-truth repo into multiple agentic harnesses (OpenCode, Claude Code, Tabnine, …).
 Zero runtime dependencies, functional core, offline-installable. Used by humans and agents.
 
-> **Status (this branch).** The pure core, all command modules, profiles, the source
-> resolver, and the offline build/install path are implemented and tested. The final
-> `argparse` ↔ command wiring (WP-19) has **not** landed here yet, so `agent-artifacts
-> --help` / `--version` work, but each subcommand currently prints a scaffold notice instead
-> of running. The command/flag surface documented below is the intended, frozen interface
-> (it matches the implemented `commands/*.run` and the `Request` model); the examples become
-> live once WP-19 wires the parser. The offline install in [Install](#install-offline-no-external-index)
-> is fully working today.
-
 ---
 
 ## The model

@@ -11,19 +11,11 @@ Run: ``python -m unittest discover -s tests -p "cli_test.py" -v``
 import contextlib
 import io
 import sys
-import types
 import unittest
 from unittest.mock import patch
 
 from agent_artifacts import cli
 from agent_artifacts.model import Request
-
-
-class _TTYBuffer(io.StringIO):
-    """A capture buffer that reports itself as a TTY (to drive the bare->TUI branch)."""
-
-    def isatty(self) -> bool:  # noqa: D401
-        return True
 
 
 def _recorder(code: int = 0):
@@ -239,23 +231,13 @@ class TestBareInvocation(unittest.TestCase):
         self.assertIn("install", out)
 
     def test_tty_launches_tui(self):
-        fake_tui = types.ModuleType("agent_artifacts.tui")
-        fake_tui.run = lambda: 7  # type: ignore[attr-defined]
-        with patch.dict(sys.modules, {"agent_artifacts.tui": fake_tui}), \
+        # On a TTY, bare invocation delegates to tui.run() and returns its code.
+        import agent_artifacts.tui as tui_mod
+        with patch.object(tui_mod, "run", return_value=7), \
              patch.object(sys.stdin, "isatty", return_value=True), \
              patch.object(sys.stdout, "isatty", return_value=True):
             rc = cli.main([])
         self.assertEqual(rc, 7)
-
-    def test_tty_without_tui_falls_back_to_help(self):
-        # TTY in/out but no agent_artifacts.tui -> ImportError -> help, rc 0.
-        buf = _TTYBuffer()  # reports isatty() True so the TUI branch is entered
-        with patch.dict(sys.modules, {"agent_artifacts.tui": None}), \
-             patch.object(sys.stdin, "isatty", return_value=True), \
-             contextlib.redirect_stdout(buf):
-            rc = cli.main([])
-        self.assertEqual(rc, 0)
-        self.assertIn("usage", buf.getvalue().lower())
 
 
 if __name__ == "__main__":
