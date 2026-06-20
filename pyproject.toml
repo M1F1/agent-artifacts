@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-artifacts"
+version = "0.1.0"
+description = "Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) into multiple agentic harnesses."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Michal" }]
+keywords = ["ai", "skills", "mcp", "hooks", "agents", "opencode", "claude", "tabnine"]
+# Zero runtime dependencies — standard library only (DESIGN.md §4/§15).
+dependencies = []
+
+[project.scripts]
+agent-artifacts = "agent_artifacts.cli:main"
+aa = "agent_artifacts.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/org/agent-artifacts"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_artifacts*"]
+
+[tool.setuptools.package-data]
+agent_artifacts = ["profiles/*.json"]

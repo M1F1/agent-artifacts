@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+# Keep dist/ — the offline wheel is shipped (DESIGN.md §15 / PLAN.md WP-21)
+# (remove the next line's leading '#' if you decide dist/ is release-only)
+#dist/
+
+# Local env
+.venv/
+venv/
+.python-version
+
+# OS
+.DS_Store
