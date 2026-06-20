@@ -215,7 +215,7 @@ class HookPlannerTests(unittest.TestCase):
         self.hooks = claude_profile().hooks
 
     def test_plan_has_copy_and_mergejson(self):
-        result = planners.plan_hook(self.art, self.descriptor, self.hooks, (), {})
+        result = planners.plan_hook(self.art, self.descriptor, self.hooks, {})
         self.assertIsInstance(result, Ok)
         plan = result.value
         copies = [a for a in plan if isinstance(a, CopyTree)]
@@ -224,7 +224,7 @@ class HookPlannerTests(unittest.TestCase):
         self.assertEqual(len(merges), 1, "hook plan MUST contain exactly one MergeJson")
 
     def test_golden_whole_tree_copy(self):
-        result = planners.plan_hook(self.art, self.descriptor, self.hooks, (), {})
+        result = planners.plan_hook(self.art, self.descriptor, self.hooks, {})
         self.assertEqual(
             result,
             Ok(
@@ -248,22 +248,6 @@ class HookPlannerTests(unittest.TestCase):
                 )
             ),
         )
-
-    def test_explicit_script_files_yield_per_file_copies(self):
-        result = planners.plan_hook(
-            self.art, self.descriptor, self.hooks, ("scripts/guard.py",), {}
-        )
-        assert isinstance(result, Ok)
-        plan = result.value
-        self.assertEqual(
-            plan[0],
-            CopyTree(
-                src="hooks/block-secrets/scripts/guard.py",
-                dst=".claude/hooks/block-secrets/scripts/guard.py",
-            ),
-        )
-        self.assertTrue(any(isinstance(a, MergeJson) for a in plan))
-
 
 # --------------------------------------------------------------------------- #
 # plan_install aggregator                                                      #

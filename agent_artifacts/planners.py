@@ -216,7 +216,6 @@ def plan_hook(
     artifact: Artifact,
     descriptor: Mapping,
     hooks: HookTarget,
-    script_files: Sequence[str] = (),
     existing_config: Mapping = {},
     *,
     force: bool = False,
@@ -225,7 +224,7 @@ def plan_hook(
 
     A hook is a hybrid (DESIGN.md §5.4): its script files land on disk like a skill, and
     its *registration* is merged into the harness's shared config like an MCP entry. This
-    planner therefore always emits BOTH at least one copy action AND one `MergeJson`.
+    planner therefore always emits BOTH a copy action AND one `MergeJson`.
 
     Args:
         artifact: the resolved hook `Artifact` (``artifact.root`` is the source folder).
@@ -233,28 +232,16 @@ def plan_hook(
             ``events``, ``files`` …). Rendered through ``hooks.merge.entry_template`` to
             produce the harness-shaped registration entry.
         hooks: the profile's `HookTarget` (``scripts_dir`` template + merge `MergeSpec`).
-        script_files: optional explicit per-file relative paths under ``artifact.root``.
-            When empty, the whole tree is copied (``CopyTree``). When given, each file is
-            an individual ``CopyTree`` from ``artifact.root/<file>`` into the resolved
-            scripts dir (preserving the relative sub-path).
         existing_config: the already-loaded target config dict (``{}`` if absent). For the
             built-in list-mode hooks this is informational; key-mode would collision-check.
         force: overwrite a colliding registration entry instead of failing.
 
     Returns:
-        ``Ok(plan)`` where ``plan`` contains one-or-more `CopyTree` actions followed by one
-        `MergeJson`, or the `Err` propagated from `merge.plan_merge`.
+        ``Ok(plan)`` where ``plan`` is one `CopyTree` of the whole script tree followed by
+        one `MergeJson`, or the `Err` propagated from `merge.plan_merge`.
     """
     scripts_dir = _substitute_name(hooks.scripts_dir, artifact.name).rstrip("/")
-
-    copy_actions: Tuple[Action, ...]
-    if script_files:
-        copy_actions = tuple(
-            CopyTree(src=_join(artifact.root, rel), dst=_join(scripts_dir, rel))
-            for rel in script_files
-        )
-    else:
-        copy_actions = (CopyTree(src=artifact.root, dst=scripts_dir),)
+    copy_actions: Tuple[Action, ...] = (CopyTree(src=artifact.root, dst=scripts_dir),)
 
     rendered = merge.render(hooks.merge.entry_template, descriptor)
     merge_result = merge.plan_merge(
@@ -371,8 +358,7 @@ def plan_install(
         * for each **guideline** ``a``: ``f"guideline:{a.name}"`` -> ``str`` body text, and
           optionally ``f"existing:{profile}:{a.name}"`` -> current destination file text.
         * for each **mcp**/**hook** ``a``: ``f"descriptor:{a.name}"`` -> ``dict`` (parsed
-          ``mcp/<name>.json`` or ``hook.json``); for hooks optionally
-          ``f"scripts:{a.name}"`` -> ``Sequence[str]`` of relative script paths.
+          ``mcp/<name>.json`` or ``hook.json``). Hooks copy their whole script tree.
       Optional metadata keys (used only to fill manifest proofs, all default sensibly):
         * ``f"source:{a.name}"`` -> ``str`` resolved source label (default ``"main:?"``).
         * ``f"bundle:{a.name}"`` -> ``str`` bundle name (default ``None``).
@@ -462,10 +448,6 @@ def _plan_one(
         descriptor = files.get(f"descriptor:{artifact.name}")
         if not isinstance(descriptor, Mapping):
             return Err(f"missing hook descriptor for {artifact.name!r}")
-        scripts = files.get(f"scripts:{artifact.name}", ())
-        script_files = tuple(scripts) if isinstance(scripts, Sequence) and not isinstance(scripts, str) else ()
-        return plan_hook(
-            artifact, descriptor, profile.hooks, script_files, config, force=force
-        )
+        return plan_hook(artifact, descriptor, profile.hooks, config, force=force)
 
     return Err(f"unhandled artifact type: {artifact.type!r}")  # pragma: no cover
