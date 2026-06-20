@@ -228,10 +228,11 @@ def _gather_inputs(
         descriptor = _read_descriptor(artifact, src)
         if descriptor is not None:
             files[f"descriptor:{artifact.name}"] = descriptor
-        if artifact.type == "hook" and isinstance(descriptor, Mapping):
-            script_files = descriptor.get("files")
-            if isinstance(script_files, (list, tuple)):
-                files[f"scripts:{artifact.name}"] = tuple(script_files)
+        # NB: deliberately do NOT pass ``scripts:{name}`` — install doesn't either, so the
+        # hook planner copies the whole script tree (one CopyTree of artifact.root). Passing
+        # an explicit per-file list makes the planner emit a CopyTree per *file*, which the
+        # executor's dir-based copy can't perform. Mirroring install keeps update's plan and
+        # manifest proof identical to the original install (idempotent re-copy under §9).
         # Load the existing harness config for collision detection (mirrors install).
         if profile is not None:
             spec = profile.mcp if artifact.type == "mcp" else profile.hooks.merge
