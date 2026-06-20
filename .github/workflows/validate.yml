@@ -1,0 +1,92 @@
+name: validate
+
+# Three gates, each fails the job on error (DESIGN.md §8, PLAN.md WP-22):
+#   1. unit tests (stdlib unittest)
+#   2. zero non-stdlib imports across agent_artifacts/
+#   3. catalog validation (validate_catalog over the repo's own source)
+# The project is stdlib-only, so CI never `pip install`s a third-party dep.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -p "*_test.py"
+
+      - name: Zero non-stdlib imports gate
+        run: |
+          python - <<'PY'
+          import ast
+          import pathlib
+          import sys
+
+          PKG = "agent_artifacts"
+          pkg_root = pathlib.Path(PKG)
+          stdlib = sys.stdlib_module_names
+          violations = []
+
+          for path in sorted(pkg_root.rglob("*.py")):
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      for alias in node.names:
+                          top = alias.name.split(".")[0]
+                          if top != PKG and top not in stdlib:
+                              violations.append(f"{path}: import {alias.name}")
+                  elif isinstance(node, ast.ImportFrom):
+                      # Relative imports (level > 0) are the package's own — always allowed.
+                      if node.level and node.level > 0:
+                          continue
+                      if node.module is None:
+                          continue
+                      top = node.module.split(".")[0]
+                      if top != PKG and top not in stdlib:
+                          violations.append(f"{path}: from {node.module} import ...")
+
+          if violations:
+              print(f"Non-stdlib imports found in {PKG}/:")
+              for v in violations:
+                  print("  " + v)
+              sys.exit(1)
+          print(f"OK: no non-stdlib imports in {PKG}/")
+          PY
+
+      - name: Catalog validation
+        run: |
+          python - <<'PY'
+          import sys
+
+          from agent_artifacts.catalog import validate_catalog
+          from agent_artifacts.model import Err, Request
+          from agent_artifacts.source import open_source
+
+          src = open_source(Request(command="list", source_dir="."))
+          if isinstance(src, Err):
+              print(f"source error: {src.reason}")
+              sys.exit(1)
+
+          cat = src.value.catalog()
+          if isinstance(cat, Err):
+              print(f"catalog error: {cat.reason}")
+              sys.exit(1)
+
+          errors = validate_catalog(cat.value)
+          if errors:
+              print("catalog validation failed:")
+              for e in errors:
+                  print("  " + e.reason)
+              sys.exit(1)
+          print(f"OK: catalog valid ({len(cat.value.bundles)} bundles)")
+          PY
