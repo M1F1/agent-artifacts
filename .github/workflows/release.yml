@@ -1,0 +1,49 @@
+name: release
+
+# Builds the offline, zero-dependency wheel and ships it (PLAN.md WP-21/WP-22).
+# Triggers:
+#   * a tag push matching v*            -> build + upload as a workflow artifact
+#   * a published GitHub release        -> additionally attach the wheel to the release
+# Stdlib-only: inject_commit.py + build_wheel.py need no third-party packages.
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+permissions:
+  contents: write  # required to attach assets to the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Inject commit
+        run: python scripts/inject_commit.py
+
+      - name: Build wheel
+        run: python scripts/build_wheel.py
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+          if-no-files-found: error
+
+      - name: Attach wheel to release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/*.whl --clobber
