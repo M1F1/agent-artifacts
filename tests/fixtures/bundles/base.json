@@ -1,0 +1,9 @@
+{
+  "name": "base",
+  "description": "Fixture base bundle.",
+  "includes": {
+    "skills": ["code-review"],
+    "guidelines": ["python-style"],
+    "hooks": ["block-secrets"]
+  }
+}

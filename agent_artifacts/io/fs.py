@@ -2,39 +2,80 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import tempfile
 from typing import Tuple
-
-_TODO = "WP-6: not implemented"
 
 
 def read_bytes(path: str) -> bytes:
-    raise NotImplementedError(_TODO)
+    with open(path, "rb") as f:
+        return f.read()
 
 
 def read_text(path: str) -> str:
-    raise NotImplementedError(_TODO)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 def read_json(path: str):
-    raise NotImplementedError(_TODO)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def write_atomic(path: str, content: bytes) -> None:
     """Write via a staging file + atomic rename, creating parent dirs."""
-    raise NotImplementedError(_TODO)
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent)
+    try:
+        os.write(fd, content)
+        os.close(fd)
+        os.replace(tmp, path)
+    except BaseException:
+        os.close(fd) if not _is_closed(fd) else None
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _is_closed(fd: int) -> bool:
+    """Check whether a file descriptor has already been closed."""
+    try:
+        os.fstat(fd)
+        return False
+    except OSError:
+        return True
 
 
 def copy_tree(src: str, dst: str) -> None:
-    raise NotImplementedError(_TODO)
+    """Recursively copy a directory tree; idempotent (dirs_exist_ok)."""
+    dst_parent = os.path.dirname(os.path.abspath(dst))
+    os.makedirs(dst_parent, exist_ok=True)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
 def remove_path(path: str) -> None:
-    raise NotImplementedError(_TODO)
+    """Remove a file or directory tree; missing path is a no-op (idempotent)."""
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 def exists(path: str) -> bool:
-    raise NotImplementedError(_TODO)
+    return os.path.exists(path)
 
 
 def listdir(path: str) -> Tuple[str, ...]:
-    raise NotImplementedError(_TODO)
+    """Sorted tuple of entry names; missing dir -> empty tuple."""
+    try:
+        return tuple(sorted(os.listdir(path)))
+    except FileNotFoundError:
+        return ()
