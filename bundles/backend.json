@@ -1,0 +1,11 @@
+{
+  "name": "backend",
+  "description": "Backend team set: extends base with database tooling.",
+  "extends": ["base"],
+  "includes": {
+    "mcp": ["postgres"]
+  },
+  "pins": {
+    "code-review": "a1b2c3d"
+  }
+}

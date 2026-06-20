@@ -1,0 +1,9 @@
+{
+  "name": "base",
+  "description": "Base bundle with essential skills, guidelines, and hooks.",
+  "includes": {
+    "skills": ["code-review"],
+    "guidelines": ["python-style"],
+    "hooks": ["block-secrets"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "block-secrets",
+  "description": "Fixture hook for testing.",
+  "events": ["PreToolUse"],
+  "matcher": "Edit|Write|MultiEdit",
+  "command": "python3 ${SCRIPT_DIR}/guard.py",
+  "files": ["scripts/guard.py"]
+}

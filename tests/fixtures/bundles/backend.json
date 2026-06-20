@@ -1,0 +1,11 @@
+{
+  "name": "backend",
+  "description": "Fixture backend bundle.",
+  "extends": ["base"],
+  "includes": {
+    "mcp": ["postgres"]
+  },
+  "pins": {
+    "code-review": "a1b2c3d"
+  }
+}
