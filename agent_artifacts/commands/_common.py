@@ -16,17 +16,23 @@ from typing import List, Tuple
 from .. import fp
 from ..catalog import resolve_bundle
 from ..io import fs
-from ..manifest import empty_manifest, parse_manifest
+from ..manifest import dump_manifest, empty_manifest, parse_manifest
 from ..model import (
     Artifact,
     ArtifactType,
     Catalog,
+    CopyTree,
     Err,
     Manifest,
+    MergeJson,
     Ok,
+    Plan,
     Profile,
+    RemovePath,
     Request,
     Result,
+    WriteFile,
+    WriteManifest,
 )
 from ..profiles.loader import load_profiles
 
@@ -154,3 +160,57 @@ def resolve_profiles(request: Request) -> Result:
             return Err(f"unknown profile {pname!r} (known: {', '.join(sorted(available))})", code=USAGE)
         out.append((pname, prof))
     return Ok(tuple(out))
+
+
+# --- plan rebasing & manifest persistence (shell glue, DESIGN.md §14) ------- #
+# The pure planners (WP-5) emit project-relative destinations and source-relative
+# ``CopyTree.src``. The shell rebases the *executable* plan onto the real source root
+# (for reads) and project root (for writes) just before handing it to the executor.
+
+def _under(root: str, path: str) -> str:
+    return path if os.path.isabs(path) else os.path.normpath(os.path.join(root, path))
+
+
+def rebase_plan(plan: Plan, *, source_root: str, project_root: str) -> Plan:
+    """Return `plan` with every path made absolute.
+
+    ``CopyTree.src`` is resolved under `source_root` (it names content in the source);
+    every destination/target/removal path is resolved under `project_root`. ``WriteManifest``
+    and ``Warn`` are passed through unchanged (the command persists the manifest itself —
+    see `save_manifest` — because the executor's WriteManifest performer writes relative
+    to the process CWD).
+    """
+    out: List = []
+    for a in plan:
+        if isinstance(a, CopyTree):
+            out.append(CopyTree(src=_under(source_root, a.src), dst=_under(project_root, a.dst)))
+        elif isinstance(a, WriteFile):
+            out.append(WriteFile(path=_under(project_root, a.path), content=a.content))
+        elif isinstance(a, MergeJson):
+            out.append(MergeJson(file=_under(project_root, a.file), json_path=a.json_path,
+                                 mode=a.mode, value=a.value, identity=a.identity,
+                                 create_if_absent=a.create_if_absent))
+        elif isinstance(a, RemovePath):
+            out.append(RemovePath(path=_under(project_root, a.path)))
+        else:  # WriteManifest, Warn — untouched
+            out.append(a)
+    return tuple(out)
+
+
+def split_manifest(plan: Plan) -> Tuple[Plan, Tuple]:
+    """Split a plan into ``(file_actions, manifest_entries)``.
+
+    Pulls the entries out of any trailing `WriteManifest` (so the command can merge them
+    into the on-disk manifest with real hashes) and returns the remaining actions to execute.
+    """
+    file_actions = tuple(a for a in plan if not isinstance(a, WriteManifest))
+    entries: Tuple = ()
+    for a in plan:
+        if isinstance(a, WriteManifest):
+            entries += tuple(a.entries)
+    return file_actions, entries
+
+
+def save_manifest(project: str, manifest: Manifest) -> None:
+    """Write the consumer manifest to ``<project>/.agent-artifacts/manifest.json`` atomically."""
+    fs.write_atomic(manifest_path(project), dump_manifest(manifest).encode("utf-8"))
