@@ -14,9 +14,9 @@ from __future__ import annotations
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
 from . import fp, merge
+from .hashing import sha256_bytes
 from .model import (
     Action,
-    MemoryTarget,
     Artifact,
     ArtifactType,
     CopyTree,
@@ -24,6 +24,7 @@ from .model import (
     GuidelineTarget,
     HookTarget,
     ManifestEntry,
+    MemoryTarget,
     MergeJson,
     MergeProof,
     MergeSpec,
@@ -35,7 +36,6 @@ from .model import (
     WriteFile,
     WriteManifest,
 )
-from .hashing import sha256_bytes
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -490,7 +490,7 @@ def plan_install(
 
     plan: Tuple[Action, ...] = ()
     entries: Tuple[ManifestEntry, ...] = ()
-    for (artifact, profile_name), sub_plan in zip(targets, accumulated.value):
+    for (artifact, profile_name), sub_plan in zip(targets, accumulated.value, strict=True):
         plan += sub_plan
         entries += (
             _manifest_entry(
@@ -527,24 +527,32 @@ def _plan_one(
     config = configs.get(profile_name, {})
 
     if artifact.type == "skill":
+        if profile.skills is None:
+            return Err(f"profile {profile_name!r} does not support skills")
         return plan_skill(artifact, profile.skills.dir, force=force)
 
     if artifact.type == "guideline":
         text = files.get(f"guideline:{artifact.name}")
         if not isinstance(text, str):
             return Err(f"missing guideline text for {artifact.name!r}")
+        if profile.guidelines is None:
+            return Err(f"profile {profile_name!r} does not support guidelines")
         return plan_guideline(artifact, profile.guidelines, text, force=force)
 
     if artifact.type == "mcp":
         descriptor = files.get(f"descriptor:{artifact.name}")
         if not isinstance(descriptor, Mapping):
             return Err(f"missing mcp descriptor for {artifact.name!r}")
+        if profile.mcp is None:
+            return Err(f"profile {profile_name!r} does not support mcp")
         return plan_mcp(artifact, descriptor, profile.mcp, config, force=force)
 
     if artifact.type == "hook":
         descriptor = files.get(f"descriptor:{artifact.name}")
         if not isinstance(descriptor, Mapping):
             return Err(f"missing hook descriptor for {artifact.name!r}")
+        if profile.hooks is None:
+            return Err(f"profile {profile_name!r} does not support hooks")
         return plan_hook(artifact, descriptor, profile.hooks, config, force=force)
 
     if artifact.type == "memory":

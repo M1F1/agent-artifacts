@@ -8,7 +8,7 @@ PYPROJECT_FILE = ROOT / "pyproject.toml"
 
 def bump_version():
     init_content = INIT_FILE.read_text(encoding="utf-8")
-    
+
     # Match __version__ = "X.Y.Z"
     match = re.search(r'__version__\s*=\s*"(\d+)\.(\d+)\.(\d+)"', init_content)
     if not match:

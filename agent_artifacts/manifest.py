@@ -7,7 +7,7 @@ Reading/writing the manifest file is the shell's job; this module operates on te
 from __future__ import annotations
 
 import json
-from typing import Tuple
+from typing import Any, Tuple
 
 from .fp import Err, Ok
 from .model import (
@@ -82,7 +82,7 @@ class _Corrupt(Exception):
     """Internal signal for a structurally invalid manifest."""
 
 
-def _require(obj: object, key: str) -> object:
+def _require(obj: object, key: str) -> Any:
     if not isinstance(obj, dict) or key not in obj:
         raise _Corrupt(f"missing required field: {key!r}")
     return obj[key]

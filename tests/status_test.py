@@ -118,8 +118,8 @@ class TestStatusDrift(unittest.TestCase):
             self.assertEqual(rc, 0)  # drift is informational, not an error
 
             # Re-run capturing JSON to verify drift state.
-            import io
             import contextlib
+            import io
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 run(req)
@@ -158,8 +158,8 @@ class TestStatusMissing(unittest.TestCase):
             # Write the manifest but do NOT create the file on disk.
             _setup_project(tmp, entries)
 
-            import io
             import contextlib
+            import io
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -215,8 +215,8 @@ class TestStatusDriftAndMissing(unittest.TestCase):
             with open(os.path.join(tmp, "b.md"), "wb") as f:
                 f.write(b"drifted content")
 
-            import io
             import contextlib
+            import io
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -252,7 +252,8 @@ class TestStatusCopyTreeDirectory(unittest.TestCase):
             # Create the directory on disk.
             os.makedirs(os.path.join(tmp, ".claude/hooks/my-hook"), exist_ok=True)
 
-            import io, contextlib
+            import contextlib
+            import io
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -277,7 +278,8 @@ class TestStatusCopyTreeDirectory(unittest.TestCase):
             _setup_project(tmp, entries)
             # Do NOT create the directory.
 
-            import io, contextlib
+            import contextlib
+            import io
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -310,7 +312,8 @@ class TestStatusJsonShape(unittest.TestCase):
                 ".claude/skills/code-review/SKILL.md": content,
             })
 
-            import io, contextlib
+            import contextlib
+            import io
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -345,7 +348,8 @@ class TestStatusCorruptManifest(unittest.TestCase):
                 f.write("NOT VALID JSON {{{")
 
             req = _make_request(tmp)
-            import io, contextlib
+            import contextlib
+            import io
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = run(req)
@@ -361,7 +365,8 @@ class TestStatusEmptyManifest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             req = _make_request(tmp, use_json=True)
 
-            import io, contextlib
+            import contextlib
+            import io
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = run(req)
@@ -392,6 +397,7 @@ class TestStatusNoNetwork(unittest.TestCase):
     def test_source_no_net_import(self):
         """Belt-and-suspenders: scan import lines for any reference to the net module."""
         import ast
+
         import agent_artifacts.commands.status as mod
 
         source_path = mod.__file__

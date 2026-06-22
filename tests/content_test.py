@@ -55,12 +55,12 @@ class TestHookJsonFiles(unittest.TestCase):
         for path in hook_files:
             with self.subTest(file=str(path.relative_to(REPO_ROOT))):
                 data = _load_json(path)
-                self.assertIn("name", data, f"missing 'name'")
-                self.assertIn("events", data, f"missing 'events'")
+                self.assertIn("name", data, "missing 'name'")
+                self.assertIn("events", data, "missing 'events'")
                 self.assertIsInstance(data["events"], list)
                 self.assertGreater(len(data["events"]), 0,
                                    "events must be non-empty")
-                self.assertIn("command", data, f"missing 'command'")
+                self.assertIn("command", data, "missing 'command'")
 
     def test_hook_script_files_exist(self) -> None:
         """If a hook declares 'files', each must exist on disk."""

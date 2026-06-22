@@ -12,7 +12,6 @@ import tempfile
 import unittest
 from io import StringIO
 from typing import List
-from unittest.mock import MagicMock
 
 from agent_artifacts.commands.upgrade import _upgrade
 from agent_artifacts.model import Ok, Request

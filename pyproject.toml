@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-artifacts"
-version = "0.1.4"
+version = "0.1.5"
 description = "Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) into multiple agentic harnesses."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,14 @@ authors = [{ name = "Michal" }]
 keywords = ["ai", "skills", "mcp", "hooks", "agents", "opencode", "claude", "tabnine"]
 # Zero runtime dependencies — standard library only (DESIGN.md §4/§15).
 dependencies = []
+
+[project.optional-dependencies]
+# Optional developer tooling. NOT required to run the CLI — the runtime stays
+# zero-dependency. Install with:  pip install -e ".[dev]"
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
 
 [project.scripts]
 agent-artifacts = "agent_artifacts.cli:main"
@@ -27,3 +35,33 @@ include = ["agent_artifacts*"]
 
 [tool.setuptools.package-data]
 agent_artifacts = ["profiles/*.json"]
+
+# --------------------------------------------------------------------------- #
+# Developer tooling (optional — see the `dev` extra). None of this touches the
+# zero-dependency runtime; it only runs when a developer installs `.[dev]` and
+# invokes `make lint` / `make format` / `make typecheck`.
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build", "dist", ".claude", "*.egg-info", "tests/fixtures"]
+
+[tool.ruff.lint]
+# A deliberately non-disruptive baseline: real-bug detection + import hygiene.
+# `UP` (pyupgrade) is intentionally NOT selected — the codebase deliberately
+# uses typing.List/Dict/Optional. Add "UP" here later to modernize annotations
+# to PEP 585/604 builtin syntax in one sweep.
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",  # line width is owned by the formatter (`ruff format`), not the linter
+    "E701",  # multiple statements on one line (colon) — used deliberately for terse guards
+]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["agent_artifacts"]
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = true

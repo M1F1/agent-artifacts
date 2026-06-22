@@ -28,7 +28,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 from .. import catalog as catalog_mod
 from .. import executor, manifest, planners
@@ -79,6 +79,7 @@ def _memory_dest(profile: Profile, project: str, name: str) -> str:
     the planner merges against.
     """
     target = profile.memory
+    assert target is not None  # callers gate on memory support before calling
     if target.kind == "dir":
         return os.path.normpath(os.path.join(project, target.dest, f"{name}.md"))
     return os.path.normpath(os.path.join(project, target.dest))

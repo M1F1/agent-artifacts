@@ -35,7 +35,7 @@ def _scripted_reader(answers):
         try:
             return next(it)
         except StopIteration:
-            raise EOFError
+            raise EOFError from None
     return _read
 
 

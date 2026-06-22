@@ -400,7 +400,7 @@ def run(request) -> int:
             if fs.exists(path + _BAK_SUFFIX):
                 lines.append(f"restore     {path} (from {os.path.basename(path)}{_BAK_SUFFIX})")
         lines.extend(merge_descs)
-        text = "\n".join(l for l in lines if l)
+        text = "\n".join(line for line in lines if line)
         if request.json:
             _common.print_json({
                 "ok": True,

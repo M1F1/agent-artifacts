@@ -15,13 +15,12 @@ Pure-data fixtures for the parser/bundle tests (nothing touches disk); a single
 ``tempfile.TemporaryDirectory`` for the source-scan test.
 """
 
-import os
 import pathlib
 import tempfile
 import unittest
 
 from agent_artifacts import catalog, source
-from agent_artifacts.model import Artifact, Bundle, Catalog, Err, Ok, Request, ResolvedBundle
+from agent_artifacts.model import Artifact, Bundle, Catalog, Err, Ok, Request
 
 
 def _catalog(artifacts=(), bundles=()):

@@ -21,7 +21,8 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-from agent_artifacts.commands import install, list as list_cmd, status, uninstall
+from agent_artifacts.commands import install, status, uninstall
+from agent_artifacts.commands import list as list_cmd
 from agent_artifacts.model import Request
 
 REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
