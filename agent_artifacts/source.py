@@ -52,6 +52,7 @@ _SKILL_DIR = "skills"
 _GUIDELINE_DIR = "guidelines"
 _MCP_DIR = "mcp"
 _HOOK_DIR = "hooks"
+_MEMORY_DIR = "memory"
 _BUNDLE_DIR = "bundles"
 
 
@@ -96,6 +97,7 @@ class Source:
         * guideline — ``guidelines/<name>.md``
         * mcp       — ``mcp/<name>.json``
         * hook      — ``hooks/<name>/hook.json``
+        * memory    — ``memory/<name>.md``
         * bundle    — ``bundles/<name>.json``
         """
         results: List[Result] = []
@@ -103,6 +105,7 @@ class Source:
         results.extend(self._scan_guidelines())
         results.extend(self._scan_mcp())
         results.extend(self._scan_hooks())
+        results.extend(self._scan_memory())
         artifact_results = results  # all yield Ok[Artifact]
         bundle_results = self._scan_bundles()
 
@@ -139,6 +142,16 @@ class Source:
             name = entry[: -len(".md")]
             text = self._read_text(os.path.join(_GUIDELINE_DIR, entry))
             out.append(catalog_mod.parse_guideline(text, name))
+        return out
+
+    def _scan_memory(self) -> List[Result]:
+        out: List[Result] = []
+        for entry in self._names_in(_MEMORY_DIR):
+            if not entry.endswith(".md"):
+                continue
+            name = entry[: -len(".md")]
+            text = self._read_text(os.path.join(_MEMORY_DIR, entry))
+            out.append(catalog_mod.parse_memory(text, name))
         return out
 
     def _scan_mcp(self) -> List[Result]:
@@ -204,7 +217,11 @@ def open_source(
         return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     if not request.repo:
-        return Err("open_source: no source_dir and no repo specified")
+        # Default to the package's installation root (where skills/, bundles/ live)
+        import agent_artifacts
+        pkg_dir = os.path.dirname(os.path.abspath(agent_artifacts.__file__))
+        root = os.path.dirname(pkg_dir)
+        return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     repo = request.repo
     auth = token if token is not None else os.environ.get("GITHUB_TOKEN")

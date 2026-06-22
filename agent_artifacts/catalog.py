@@ -17,7 +17,10 @@ from .model import Artifact, Bundle, Catalog, ResolvedBundle, Result
 _TODO = "WP-1: not implemented"
 
 # Ordered artifact-type sections inside a bundle's `includes`.
-_INCLUDE_TYPES: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook")
+_INCLUDE_TYPES: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook", "memory")
+
+# Install modes a declared `memory` frontmatter `mode:` may name (DESIGN-memory.md §3.2/§3.4).
+_MEMORY_MODES: Tuple[str, ...] = ("replace", "prepend", "append", "skip")
 
 
 # --------------------------------------------------------------------------- #
@@ -108,6 +111,29 @@ def parse_guideline(text: str, name: str) -> Result:
                 f"guideline {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
             )
     return Ok(Artifact(type="guideline", name=name, root=f"guidelines/{name}.md"))
+
+
+def parse_memory(text: str, name: str) -> Result:
+    """Parse an ``memory/<name>.md`` instruction-file artifact (DESIGN-memory.md §3.1).
+
+    Frontmatter is optional (like a guideline); if present it must close. A declared
+    ``name`` must match, and a declared ``mode`` must be one of
+    ``replace|prepend|append|skip`` (DESIGN-memory.md §3.2). The body is the verbatim
+    instruction content (not inspected here)."""
+    found, fields, _ = _split_frontmatter(text)
+    if found:
+        if not _frontmatter_well_formed(text):
+            return Err(f"memory {name!r}: unterminated YAML frontmatter")
+        if "name" in fields and fields["name"] != name:
+            return Err(
+                f"memory {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
+            )
+        if "mode" in fields and fields["mode"] not in _MEMORY_MODES:
+            return Err(
+                f"memory {name!r}: invalid mode {fields['mode']!r} "
+                f"(expected one of {', '.join(_MEMORY_MODES)})"
+            )
+    return Ok(Artifact(type="memory", name=name, root=f"memory/{name}.md"))
 
 
 def parse_mcp(text: str, name: str) -> Result:
@@ -205,6 +231,8 @@ def _section_to_type(section: str):
         "mcps": "mcp",
         "hooks": "hook",
         "hook": "hook",
+        "memory": "memory",
+        "memories": "memory",
     }
     return mapping.get(section)
 

@@ -11,7 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Generic, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
-ArtifactType = Literal["skill", "guideline", "mcp", "hook"]
+ArtifactType = Literal["skill", "guideline", "mcp", "hook", "memory"]
+
+# Install modes for the `memory` instruction-file type (DESIGN-memory.md §3.2). Default when
+# unspecified is "prepend"; resolution precedence is CLI flag → frontmatter `mode:` → default.
+MemoryMode = Literal["replace", "prepend", "append", "skip"]
 
 # --------------------------------------------------------------------------- #
 # Result — errors as values (see fp.py for combinators).                       #
@@ -77,8 +81,10 @@ class CopyTarget:
 
 @dataclass(frozen=True, slots=True)
 class GuidelineTarget:
-    mode: Literal["copy", "append-sentinel"]
-    dest: str  # directory (copy) or file (append-sentinel)
+    # A guideline is a standalone reference doc copied into ``dest`` (a directory) as
+    # ``<name>.md``. It is never merged into a shared file — that sentinel-block behaviour
+    # belongs to the ``memory`` artifact (see ``MemoryTarget`` / ``MemoryMode``).
+    dest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,12 +104,30 @@ class HookTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoryTarget:
+    """Where a harness's top-level instruction file lives (DESIGN-memory.md §4).
+
+    ``kind="file"`` — a single shared instruction file (``CLAUDE.md`` / ``AGENTS.md``); all
+    four `MemoryMode` modes apply. ``kind="dir"`` — the harness has no single instruction
+    file (e.g. Tabnine), so the artifact is copied into ``dest`` as ``<name>.md`` and the
+    content-merge modes do not apply (``skip`` still avoids overwriting an existing file).
+    """
+
+    kind: Literal["file", "dir"]
+    dest: str  # the file (kind="file") or the directory (kind="dir")
+
+
+@dataclass(frozen=True, slots=True)
 class Profile:
     name: str
-    skills: CopyTarget
-    guidelines: GuidelineTarget
-    mcp: MergeSpec
-    hooks: HookTarget
+    # Every artifact-type target is optional: ``None`` means this harness does not support
+    # that type (DESIGN-memory.md §5). Installing an unsupported type errors (by-name) or is
+    # skipped with a warning (bundle/--all expansion).
+    skills: Optional[CopyTarget] = None
+    guidelines: Optional[GuidelineTarget] = None
+    mcp: Optional[MergeSpec] = None
+    hooks: Optional[HookTarget] = None
+    memory: Optional[MemoryTarget] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -219,3 +243,4 @@ class Request:
     dry_run: bool = False
     json: bool = False
     prune: bool = False
+    memory_mode: Optional[str] = None  # DESIGN-memory.md §3.4; None → planner applies "prepend"

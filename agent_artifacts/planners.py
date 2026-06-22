@@ -16,6 +16,7 @@ from typing import Callable, Mapping, Optional, Sequence, Tuple
 from . import fp, merge
 from .model import (
     Action,
+    MemoryTarget,
     Artifact,
     ArtifactType,
     CopyTree,
@@ -30,6 +31,7 @@ from .model import (
     Plan,
     Profile,
     Result,
+    Warn,
     WriteFile,
     WriteManifest,
 )
@@ -62,30 +64,44 @@ def _join(*parts: str) -> str:
     return "/".join(cleaned)
 
 
-def sentinel_markers(name: str) -> Tuple[str, str]:
-    """Return the ``(begin, end)`` sentinel lines that wrap our guideline block.
+def memory_sentinel_markers(name: str) -> Tuple[str, str]:
+    """Return the ``(begin, end)`` HTML-comment markers wrapping our ``memory`` block.
 
-    Stable, name-scoped markers let `plan_guideline` replace exactly our prior block on
-    re-install (idempotent) while leaving foreign content untouched.
+    The memory file *is* the instruction context the model reads, so the markers are **HTML
+    comments** (invisible in rendered markdown) and **name-scoped** (``memory:<name>``):
+    stable markers let `plan_memory` replace exactly our prior block on re-install
+    (idempotent) while leaving foreign content untouched (DESIGN-memory.md §3.3). Guidelines
+    do NOT use sentinels — they are standalone copied files, never merged into a shared file.
     """
     return (
-        f"# >>> agent-artifacts: {name} >>>",
-        f"# <<< agent-artifacts: {name} <<<",
+        f"<!-- >>> agent-artifacts memory:{name} >>> -->",
+        f"<!-- <<< agent-artifacts memory:{name} <<< -->",
     )
 
 
-def _replace_sentinel_block(existing_text: Optional[str], name: str, body: str) -> str:
-    """Insert/replace the ``name`` sentinel block inside `existing_text`.
+def _replace_marked_block(
+    existing_text: Optional[str],
+    markers: Tuple[str, str],
+    body: str,
+    *,
+    position: str = "bottom",
+) -> str:
+    """Insert/replace the ``markers`` block inside `existing_text`.
 
-    Idempotent: if a block with the same markers already exists it is replaced in place;
-    otherwise the block is appended. Content outside the markers is preserved verbatim.
+    Generalization of the sentinel placement used by both guidelines and memory. The block
+    is ``begin\\n<body>\\nend``. Idempotent in either position: if a block with the same
+    markers already exists it is replaced **in place** (preserving its location), otherwise
+    a fresh block is inserted at ``position`` — ``"bottom"`` after foreign content (the
+    historical guideline behaviour, byte-for-byte) or ``"top"`` before it. Content outside
+    the markers is preserved verbatim.
     """
-    begin, end = sentinel_markers(name)
+    begin, end = markers
     block = f"{begin}\n{body.rstrip(chr(10))}\n{end}"
 
     base = existing_text or ""
     start = base.find(begin)
     if start != -1:
+        # Replace our existing block in place, wherever it currently sits.
         stop = base.find(end, start)
         if stop != -1:
             stop_end = stop + len(end)
@@ -97,6 +113,15 @@ def _replace_sentinel_block(existing_text: Optional[str], name: str, body: str) 
         # Begin marker without a matching end: treat the rest of the file as the block.
         return base[:start] + block + "\n"
 
+    if position == "top":
+        # Our block goes first; foreign content (if any) follows after one blank line.
+        if base == "":
+            return block + "\n"
+        if not base.endswith("\n"):
+            base += "\n"
+        return block + "\n\n" + base
+
+    # position == "bottom": append after foreign content (historical guideline behaviour).
     if base and not base.endswith("\n"):
         base += "\n"
     if base:
@@ -141,40 +166,110 @@ def plan_guideline(
     artifact: Artifact,
     target: GuidelineTarget,
     text: str,
-    existing_text: Optional[str] = None,
     *,
     force: bool = False,
 ) -> Result:
-    """Plan installation of a guideline file.
+    """Plan installation of a guideline — a standalone reference doc (copy-only).
 
-    Two modes, selected by ``target.mode``:
-
-    - ``"copy"``: write our content as a standalone file at
-      ``<target.dest>/<artifact.name>.md`` (``target.dest`` is a directory).
-    - ``"append-sentinel"``: ``target.dest`` is a single shared file (e.g. ``CLAUDE.md``).
-      We emit ONE `WriteFile` of the whole file with our content wrapped in name-scoped
-      sentinel markers, replacing any existing same-named block in `existing_text`
-      (idempotent — re-installing yields a byte-identical block).
+    We write the guideline body verbatim as ``<target.dest>/<artifact.name>.md``
+    (``target.dest`` is a directory). Guidelines never merge into a shared file, so there is
+    no mode, no ``existing_text``, and no sentinel wrapping — that behaviour belongs to the
+    ``memory`` artifact (`plan_memory`).
 
     Args:
         artifact: the resolved guideline `Artifact`.
-        target: the profile's `GuidelineTarget` (mode + dest).
+        target: the profile's `GuidelineTarget` (just a destination directory).
         text: the guideline body read from the source.
-        existing_text: current contents of the destination file (``None`` if absent).
-            Only consulted in ``append-sentinel`` mode.
-        force: accepted for signature symmetry; not used (sentinel replacement is always
-            in-place and conflict-free for our own block).
+        force: accepted for signature symmetry; copy semantics don't branch on it (the
+            executor applies the per-file update policy at run time).
 
     Returns:
-        ``Ok((WriteFile(path, content),))`` or ``Err`` for an unknown mode.
+        ``Ok((WriteFile(path, content),))``.
     """
-    if target.mode == "copy":
+    dest_path = _join(target.dest, f"{artifact.name}.md")
+    return Ok((WriteFile(path=dest_path, content=text.encode("utf-8")),))
+
+
+# --------------------------------------------------------------------------- #
+# Memory planner (DESIGN-memory.md §3.2 / §8.1)                                #
+# --------------------------------------------------------------------------- #
+_BAK_SUFFIX = ".agent-artifacts-bak"
+
+
+def plan_memory(
+    artifact: Artifact,
+    target: MemoryTarget,
+    text: str,
+    existing_text: Optional[str],
+    exists: bool,
+    *,
+    mode: str,
+    force: bool = False,
+) -> Result:
+    """Plan installation of an ``memory`` instruction file (DESIGN-memory.md §3.2/§8.1).
+
+    The destination is either a single shared instruction file (``target.kind == "file"``,
+    e.g. ``CLAUDE.md``/``AGENTS.md`` — all four modes apply) or a directory the harness has
+    no single instruction file for (``target.kind == "dir"`` — copy as ``<name>.md``; only
+    ``skip`` is meaningful, the content-merge modes don't apply). Every mode reduces to the
+    existing `WriteFile`/`Warn` actions — no new `Action` type.
+
+    Args:
+        artifact: the resolved ``memory`` `Artifact`.
+        target: the profile's `MemoryTarget` (``kind`` + ``dest``).
+        text: our instruction-file body read from the source artifact.
+        existing_text: current contents of the destination file (``None`` if absent). Only
+            consulted for ``kind == "file"`` content-merge / replace-backup decisions.
+        exists: whether the destination already exists on disk. Drives ``skip`` (both kinds)
+            without forcing a body read for the dir case.
+        mode: the resolved install mode (``replace``/``prepend``/``append``/``skip``).
+        force: gate for the destructive ``replace`` over non-empty existing content.
+
+    Returns:
+        ``Ok(plan)`` for the resolved mode, or ``Err`` (``code=4`` for a ``replace``
+        conflict without ``--force``; ``code=1`` for an unknown mode).
+    """
+    if target.kind == "dir":
         dest_path = _join(target.dest, f"{artifact.name}.md")
+        if mode == "skip" and exists:
+            return Ok(())  # seed-if-missing: leave the existing file untouched
         return Ok((WriteFile(path=dest_path, content=text.encode("utf-8")),))
-    if target.mode == "append-sentinel":
-        merged = _replace_sentinel_block(existing_text, artifact.name, text)
-        return Ok((WriteFile(path=target.dest, content=merged.encode("utf-8")),))
-    return Err(f"unknown guideline mode: {target.mode!r}")
+
+    # target.kind == "file" — the four content modes.
+    dest = target.dest
+
+    if mode == "skip":
+        if exists:
+            return Ok(
+                (Warn(message=f"memory {artifact.name!r}: {dest} exists; skipped"),)
+            )
+        return Ok((WriteFile(path=dest, content=text.encode("utf-8")),))
+
+    if mode == "replace":
+        nonempty = bool((existing_text or "").strip())
+        if nonempty and not force:
+            return Err(
+                f"memory {artifact.name!r}: {dest} exists; use --force to replace",
+                code=4,
+            )
+        actions: Tuple[Action, ...] = ()
+        if nonempty:
+            actions += (
+                WriteFile(
+                    path=dest + _BAK_SUFFIX,
+                    content=(existing_text or "").encode("utf-8"),
+                ),
+            )
+        actions += (WriteFile(path=dest, content=text.encode("utf-8")),)
+        return Ok(actions)
+
+    if mode in ("prepend", "append"):
+        position = "top" if mode == "prepend" else "bottom"
+        markers = memory_sentinel_markers(artifact.name)
+        merged = _replace_marked_block(existing_text, markers, text, position=position)
+        return Ok((WriteFile(path=dest, content=merged.encode("utf-8")),))
+
+    return Err(f"unknown memory mode: {mode!r}")
 
 
 # --------------------------------------------------------------------------- #
@@ -262,6 +357,7 @@ PLANNERS: Mapping[ArtifactType, Callable[..., Result]] = {
     "guideline": plan_guideline,
     "mcp": plan_mcp,
     "hook": plan_hook,
+    "memory": plan_memory,
 }
 
 
@@ -278,6 +374,11 @@ def _files_proof(plan: Plan) -> Mapping[str, str]:
     proof = {}
     for action in plan:
         if isinstance(action, WriteFile):
+            if action.path.endswith(_BAK_SUFFIX):
+                # The replace-mode backup sidecar is not an installed file: uninstall restores
+                # it rather than tracking/removing it (DESIGN-memory.md §8.3). Recording it
+                # would make uninstall delete the backup before it could be restored.
+                continue
             proof[action.path] = sha256_bytes(action.content)
         elif isinstance(action, CopyTree):
             proof[action.dst] = ""
@@ -355,8 +456,8 @@ def plan_install(
         * ``"__targets__"`` -> ``Sequence[Tuple[Artifact, str]]`` — the resolved
           ``(artifact, profile_name)`` pairs to install.
         * for each **skill**: nothing extra (copy uses ``artifact.root``).
-        * for each **guideline** ``a``: ``f"guideline:{a.name}"`` -> ``str`` body text, and
-          optionally ``f"existing:{profile}:{a.name}"`` -> current destination file text.
+        * for each **guideline** ``a``: ``f"guideline:{a.name}"`` -> ``str`` body text
+          (copied verbatim into the profile's guidelines dir as ``<name>.md``).
         * for each **mcp**/**hook** ``a``: ``f"descriptor:{a.name}"`` -> ``dict`` (parsed
           ``mcp/<name>.json`` or ``hook.json``). Hooks copy their whole script tree.
       Optional metadata keys (used only to fill manifest proofs, all default sensibly):
@@ -432,11 +533,7 @@ def _plan_one(
         text = files.get(f"guideline:{artifact.name}")
         if not isinstance(text, str):
             return Err(f"missing guideline text for {artifact.name!r}")
-        existing = files.get(f"existing:{profile_name}:{artifact.name}")
-        existing_text = existing if isinstance(existing, str) else None
-        return plan_guideline(
-            artifact, profile.guidelines, text, existing_text, force=force
-        )
+        return plan_guideline(artifact, profile.guidelines, text, force=force)
 
     if artifact.type == "mcp":
         descriptor = files.get(f"descriptor:{artifact.name}")
@@ -449,5 +546,25 @@ def _plan_one(
         if not isinstance(descriptor, Mapping):
             return Err(f"missing hook descriptor for {artifact.name!r}")
         return plan_hook(artifact, descriptor, profile.hooks, config, force=force)
+
+    if artifact.type == "memory":
+        if profile.memory is None:
+            return Err(f"profile {profile_name!r} does not support memory")
+        body = files.get(f"memory:{artifact.name}")
+        if not isinstance(body, str):
+            return Err(f"missing memory text for {artifact.name!r}")
+        existing = files.get(f"existing-memory:{profile_name}:{artifact.name}")
+        existing_text = existing if isinstance(existing, str) else None
+        exists = bool(files.get(f"memory-exists:{profile_name}:{artifact.name}", False))
+        mode = str(files.get(f"memory-mode:{artifact.name}", "prepend"))
+        return plan_memory(
+            artifact,
+            profile.memory,
+            body,
+            existing_text,
+            exists,
+            mode=mode,
+            force=force,
+        )
 
     return Err(f"unhandled artifact type: {artifact.type!r}")  # pragma: no cover

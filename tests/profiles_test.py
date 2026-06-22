@@ -19,11 +19,13 @@ from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 
 
 class TestBuiltinProfiles(unittest.TestCase):
-    """The three built-in profiles exist and have expected key fields."""
+    """The four built-in profiles exist and have expected key fields."""
 
-    def test_all_three_profiles_exist(self) -> None:
+    def test_all_builtin_profiles_exist(self) -> None:
         profiles = builtin()
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_all_values_are_profile_instances(self) -> None:
         for name, profile in builtin().items():
@@ -40,10 +42,11 @@ class TestBuiltinProfiles(unittest.TestCase):
         self.assertEqual(p.skills.dir, ".claude/skills/<name>/")
 
     def test_claude_guidelines(self) -> None:
+        # Guidelines are standalone reference docs copied into a per-harness dir; they no
+        # longer share the memory file (CLAUDE.md), so the two can never collide.
         p = builtin()["claude"]
         self.assertIsInstance(p.guidelines, GuidelineTarget)
-        self.assertEqual(p.guidelines.mode, "append-sentinel")
-        self.assertEqual(p.guidelines.dest, "CLAUDE.md")
+        self.assertEqual(p.guidelines.dest, ".claude/guidelines/")
 
     def test_claude_mcp(self) -> None:
         p = builtin()["claude"]
@@ -73,8 +76,7 @@ class TestBuiltinProfiles(unittest.TestCase):
 
     def test_opencode_guidelines(self) -> None:
         p = builtin()["opencode"]
-        self.assertEqual(p.guidelines.mode, "append-sentinel")
-        self.assertEqual(p.guidelines.dest, "AGENTS.md")
+        self.assertEqual(p.guidelines.dest, ".opencode/guidelines/")
 
     def test_opencode_mcp(self) -> None:
         p = builtin()["opencode"]
@@ -96,16 +98,27 @@ class TestBuiltinProfiles(unittest.TestCase):
 
     def test_tabnine_guidelines(self) -> None:
         p = builtin()["tabnine"]
-        self.assertEqual(p.guidelines.mode, "copy")
         self.assertEqual(p.guidelines.dest, ".tabnine/guidelines/")
 
     def test_tabnine_mcp(self) -> None:
+        # Corrected paths (DESIGN-memory.md §6): settings.json, not config.json.
         p = builtin()["tabnine"]
         self.assertIsInstance(p.mcp, MergeSpec)
+        self.assertEqual(p.mcp.file, ".tabnine/agent/settings.json")
+        self.assertEqual(p.mcp.json_path, "mcpServers")
+        self.assertEqual(p.mcp.mode, "key")
 
     def test_tabnine_hooks(self) -> None:
+        # Corrected paths/events (DESIGN-memory.md §6/§6.2).
         p = builtin()["tabnine"]
         self.assertIsInstance(p.hooks, HookTarget)
+        self.assertEqual(p.hooks.scripts_dir, ".tabnine/agent/hooks/<name>/")
+        self.assertEqual(p.hooks.events["PreToolUse"], "hooks.BeforeTool")
+        self.assertEqual(p.hooks.events["PostToolUse"], "hooks.AfterTool")
+        self.assertEqual(p.hooks.events["Stop"], "hooks.SessionEnd")
+        self.assertEqual(p.hooks.merge.file, ".tabnine/agent/settings.json")
+        self.assertEqual(p.hooks.merge.json_path, "hooks.BeforeTool")
+        self.assertEqual(p.hooks.merge.mode, "list")
 
     # ------------------------------------------------------------------ #
     # Immutability                                                        #
@@ -121,16 +134,22 @@ class TestLoadProfilesNoOverride(unittest.TestCase):
 
     def test_no_project(self) -> None:
         profiles = load_profiles()
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_nonexistent_project(self) -> None:
         profiles = load_profiles(project="/nonexistent/path/that/does/not/exist")
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_project_without_override_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profiles = load_profiles(project=tmp)
-            self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+            self.assertEqual(
+                set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+            )
 
 
 class TestLoadProfilesOverride(unittest.TestCase):
@@ -148,7 +167,7 @@ class TestLoadProfilesOverride(unittest.TestCase):
             "claude": {
                 "name": "claude",
                 "skills": {"dir": ".custom-claude/skills/<name>/"},
-                "guidelines": {"mode": "append-sentinel", "dest": "CLAUDE.md"},
+                "guidelines": {"dest": ".custom-claude/guidelines/"},
                 "mcp": {"file": ".mcp.json", "json_path": "mcpServers", "mode": "key"},
                 "hooks": {
                     "scripts_dir": ".claude/hooks/<name>/",
@@ -178,7 +197,7 @@ class TestLoadProfilesOverride(unittest.TestCase):
             "antigravity": {
                 "name": "antigravity",
                 "skills": {"dir": ".antigravity/skills/<name>/"},
-                "guidelines": {"mode": "append-sentinel", "dest": "AGENTS.md"},
+                "guidelines": {"dest": ".antigravity/guidelines/"},
                 "mcp": {
                     "file": ".antigravity/config.json",
                     "json_path": "mcp.servers",
@@ -199,14 +218,13 @@ class TestLoadProfilesOverride(unittest.TestCase):
             self._write_override(tmp, override)
             profiles = load_profiles(project=tmp)
 
-            self.assertEqual(len(profiles), 4)
+            self.assertEqual(len(profiles), 5)  # 4 built-ins + antigravity
             self.assertIn("antigravity", profiles)
             ag = profiles["antigravity"]
             self.assertIsInstance(ag, Profile)
             self.assertEqual(ag.name, "antigravity")
             self.assertEqual(ag.skills.dir, ".antigravity/skills/<name>/")
-            self.assertEqual(ag.guidelines.mode, "append-sentinel")
-            self.assertEqual(ag.guidelines.dest, "AGENTS.md")
+            self.assertEqual(ag.guidelines.dest, ".antigravity/guidelines/")
             self.assertEqual(ag.mcp.file, ".antigravity/config.json")
             self.assertEqual(ag.mcp.json_path, "mcp.servers")
             self.assertEqual(ag.hooks.scripts_dir, ".antigravity/hooks/<name>/")
@@ -225,7 +243,7 @@ class TestProfileFromDict(unittest.TestCase):
         record = {
             "name": "test",
             "skills": {"dir": "test/skills/<name>/"},
-            "guidelines": {"mode": "copy", "dest": "test/guidelines/"},
+            "guidelines": {"dest": "test/guidelines/"},
             "mcp": {"file": "test.json", "json_path": "mcp", "mode": "key"},
             "hooks": {
                 "scripts_dir": "test/hooks/<name>/",
@@ -240,7 +258,7 @@ class TestProfileFromDict(unittest.TestCase):
         p = _profile_from_dict(record)
         self.assertEqual(p.name, "test")
         self.assertEqual(p.skills.dir, "test/skills/<name>/")
-        self.assertEqual(p.guidelines.mode, "copy")
+        self.assertEqual(p.guidelines.dest, "test/guidelines/")
         self.assertEqual(p.mcp.mode, "key")
         self.assertEqual(p.hooks.merge.mode, "list")
         # Default identity and entry_template
@@ -251,7 +269,7 @@ class TestProfileFromDict(unittest.TestCase):
         record = {
             "name": "tmpl",
             "skills": {"dir": "s/"},
-            "guidelines": {"mode": "copy", "dest": "g/"},
+            "guidelines": {"dest": "g/"},
             "mcp": {"file": "m.json", "json_path": "mcp", "mode": "key"},
             "hooks": {
                 "scripts_dir": "h/",

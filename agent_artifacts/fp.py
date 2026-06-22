@@ -68,7 +68,11 @@ def collect(results: Iterable[Result]) -> Result:
     """Like `sequence`, but **accumulates** every error (used for validation, PLAN.md §5/WP-5)."""
     oks, errs = partition(results)
     if errs:
-        return Err("; ".join(e.reason for e in errs))
+        # Preserve the error code when all accumulated errors agree, so a lone CONFLICT (4)
+        # surfaces as 4 rather than the generic 1; fall back to 1 only when codes are mixed.
+        codes = {e.code for e in errs}
+        code = codes.pop() if len(codes) == 1 else 1
+        return Err("; ".join(e.reason for e in errs), code=code)
     return Ok(oks)
 
 

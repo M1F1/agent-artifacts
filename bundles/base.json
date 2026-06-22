@@ -1,9 +1,10 @@
 {
   "name": "base",
-  "description": "Base bundle with essential skills, guidelines, and hooks.",
+  "description": "Base bundle: essential skills, guidelines, hooks, and the house memory file.",
   "includes": {
     "skills": ["code-review"],
     "guidelines": ["python-style"],
-    "hooks": ["block-secrets"]
+    "hooks": ["block-secrets"],
+    "memory": ["house"]
   }
 }

@@ -36,7 +36,7 @@ from .source import open_source
 ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall")
 
 # Canonical artifact-type display order (matches commands.list / DESIGN.md §4).
-_TYPE_ORDER: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook")
+_TYPE_ORDER: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]

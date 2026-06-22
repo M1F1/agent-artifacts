@@ -3,9 +3,9 @@
 This is the inverse of `install` (WP-12). For each selected `ManifestEntry` it:
 
 - removes the entry's on-disk **files** (skills/guideline copies/hook scripts) — except for
-  append-sentinel guidelines, whose "file" is a shared file (e.g. ``CLAUDE.md``): there we
-  strip only our name-scoped sentinel block and rewrite the file (deleting it only when it
-  becomes empty AND we created it);
+  sentinel-wrapped **memory** files (``prepend``/``append`` into a shared file like
+  ``CLAUDE.md``): there we strip only our name-scoped block and rewrite the file (deleting it
+  only when it becomes empty);
 - reverses the entry's **merge** (`ManifestEntry.merge`, a `MergeProof`): for ``mode=="key"``
   we delete our key under ``merge.json_path``; for ``mode=="list"`` we drop the single list
   element matching the recorded ``merge.identity`` — foreign entries are never touched. If the
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ..executor import render_plan
 from ..io import fs
@@ -38,11 +38,15 @@ from ..model import (
     MergeProof,
     RemovePath,
 )
-from ..planners import sentinel_markers
+from ..planners import memory_sentinel_markers
 from . import _common
 
 OK = _common.OK
 USAGE = _common.USAGE
+
+# Suffix of the backup file `plan_memory` writes before a destructive ``replace`` (mirrors
+# ``planners._BAK_SUFFIX``); uninstall restores it when removing a replaced ``memory`` file.
+_BAK_SUFFIX = ".agent-artifacts-bak"
 
 
 # --------------------------------------------------------------------------- #
@@ -97,24 +101,36 @@ def _select(
 
 
 # --------------------------------------------------------------------------- #
-# Sentinel-block detection (pure): is a file path an append-sentinel guideline? #
+# Sentinel-block detection (pure): does a shared file carry OUR marker block?    #
 # --------------------------------------------------------------------------- #
+def _markers_for(entry: ManifestEntry) -> Tuple[str, str]:
+    """The ``(begin, end)`` HTML-comment markers wrapping our ``memory`` block.
+
+    Only ``memory`` entries carry a marker block (DESIGN-memory.md §3.3); they are stripped
+    by `_strip_block` on uninstall.
+    """
+    return memory_sentinel_markers(entry.artifact)
+
+
 def _is_sentinel_file(entry: ManifestEntry, text: str) -> bool:
-    """A guideline file is append-sentinel iff it carries our begin/end markers."""
-    if entry.type != "guideline":
+    """A shared ``memory`` file is sentinel-managed iff it carries our begin marker.
+
+    Only ``memory`` (``prepend``/``append``) entries write a marker block; a copied or
+    replaced file (including every guideline) carries no begin marker and is removed normally.
+    """
+    if entry.type != "memory":
         return False
-    begin, _ = sentinel_markers(entry.artifact)
+    begin, _ = _markers_for(entry)
     return begin in text
 
 
-def _strip_sentinel_block(text: str, name: str) -> str:
-    """Remove our ``name`` sentinel block from `text`, preserving foreign content.
+def _strip_block(text: str, begin: str, end: str) -> str:
+    """Remove the ``begin…end`` block from `text`, preserving foreign content.
 
-    Inverse of ``planners._replace_sentinel_block``: deletes everything from the begin marker
-    through the end marker (and one trailing newline), then tidies the surrounding blank line
-    we inserted between foreign content and our block on install.
+    Inverse of ``planners._replace_marked_block``: deletes everything from the begin marker
+    through the end marker (and one trailing newline), then tidies the blank line we inserted
+    between foreign content and our block on install (used by the ``memory`` reversal).
     """
-    begin, end = sentinel_markers(name)
     start = text.find(begin)
     if start == -1:
         return text
@@ -128,9 +144,12 @@ def _strip_sentinel_block(text: str, name: str) -> str:
         if tail.startswith("\n"):
             tail = tail[1:]
         cut = text[:start] + tail
-    # On install we inserted one blank line before our block; drop the now-dangling one.
+    # On install we inserted one blank line beside our block; drop the now-dangling one.
     if cut.endswith("\n\n"):
         cut = cut[:-1]
+    # A "prepend" block sits at the top, so the dangling blank line is leading, not trailing.
+    if cut.startswith("\n"):
+        cut = cut[1:]
     return cut
 
 
@@ -227,40 +246,69 @@ def _project_path(project: str, rel: str) -> str:
     return rel if os.path.isabs(rel) else os.path.normpath(os.path.join(project, rel))
 
 
-def _file_actions(project: str, entry: ManifestEntry) -> Tuple[Tuple[RemovePath, ...], List[str]]:
+def _file_actions(
+    project: str, entry: ManifestEntry
+) -> Tuple[Tuple[RemovePath, ...], List[str], List[str]]:
     """Plan the file-side removals for `entry`.
 
-    Returns ``(remove_actions, sentinel_paths)``: ordinary files become `RemovePath`
-    actions; append-sentinel guideline files are handled separately (they're stripped, not
-    deleted) and their resolved paths are returned for the shell to rewrite.
+    Returns ``(remove_actions, sentinel_paths, restore_paths)``:
+
+    - ordinary files (skill/guideline copies, hook scripts) become `RemovePath` actions;
+    - a memory (``prepend``/``append``) file carrying our marker block is stripped, not
+      deleted — its resolved path lands in ``sentinel_paths`` for the shell to rewrite;
+    - a removed **memory** file (``replace`` or ``dir`` copy) is recorded in ``restore_paths``
+      so the shell can restore a sibling ``<dest>.agent-artifacts-bak`` afterwards, undoing a
+      destructive ``replace`` (DESIGN-memory.md §8.3).
     """
     removes: List[RemovePath] = []
     sentinels: List[str] = []
+    restores: List[str] = []
     for rel in entry.files:
         abs_path = _project_path(project, rel)
-        if entry.type == "guideline" and fs.exists(abs_path):
+        if entry.type == "memory" and fs.exists(abs_path):
             text = fs.read_text(abs_path)
             if _is_sentinel_file(entry, text):
                 sentinels.append(abs_path)
                 continue
         removes.append(RemovePath(path=abs_path))
-    return tuple(removes), sentinels
+        if entry.type == "memory":
+            # A non-sentinel memory file is a replace/dir copy: try the .bak restore on removal.
+            restores.append(abs_path)
+    return tuple(removes), sentinels, restores
 
 
 def _apply_sentinel(project: str, entry: ManifestEntry, abs_path: str) -> str:
-    """Strip our sentinel block from a shared guideline file; rewrite or delete it.
+    """Strip our marker block from a shared ``memory`` file; rewrite or delete it.
 
     Removes the whole file only when stripping our block leaves it empty (a shared file like
     ``CLAUDE.md`` that now holds nothing but our former block). Foreign content keeps the
-    file alive. Returns a one-line description for the report.
+    file alive. Returns a description.
     """
+    if not os.path.exists(abs_path):
+        return f"sentinel    {abs_path} (already removed)"
     text = fs.read_text(abs_path)
-    stripped = _strip_sentinel_block(text, entry.artifact)
+    begin, end = _markers_for(entry)
+    stripped = _strip_block(text, begin, end)
     if stripped.strip() == "":
         fs.remove_path(abs_path)
         return f"sentinel    {abs_path} (block stripped, file emptied & removed)"
     fs.write_atomic(abs_path, stripped.encode("utf-8"))
     return f"sentinel    {abs_path} (block stripped)"
+
+
+def _restore_bak(abs_path: str) -> Optional[str]:
+    """Restore ``<abs_path>.agent-artifacts-bak`` over `abs_path` if the backup exists.
+
+    Undoes a destructive ``replace`` install: on install `plan_memory` backed the prior
+    (foreign) content up to the ``.bak`` sidecar; on uninstall we removed our file, so move the
+    backup back into place. Returns a report line, or ``None`` when there is no backup.
+    """
+    bak = abs_path + _BAK_SUFFIX
+    if not fs.exists(bak):
+        return None
+    fs.write_atomic(abs_path, fs.read_bytes(bak))
+    fs.remove_path(bak)
+    return f"restore     {abs_path} (from {os.path.basename(bak)})"
 
 
 def _apply_merge(project: str, proof: MergeProof) -> str:
@@ -326,17 +374,19 @@ def run(request) -> int:
             print(msg)
         return OK
 
-    # Build the reversal plan (files + sentinel rewrites + merge undos) per entry.
+    # Build the reversal plan (files + sentinel rewrites + .bak restores + merge undos).
     plan_removes: List[RemovePath] = []
     sentinel_jobs: List[Tuple[ManifestEntry, str]] = []
+    restore_paths: List[str] = []
     merge_descs: List[str] = []
     file_render: List[RemovePath] = []
     for entry in selected:
-        removes, sentinels = _file_actions(project, entry)
+        removes, sentinels, restores = _file_actions(project, entry)
         plan_removes.extend(removes)
         file_render.extend(removes)
         for path in sentinels:
             sentinel_jobs.append((entry, path))
+        restore_paths.extend(restores)
         if entry.merge is not None:
             merge_descs.append(_describe_merge_reversal(entry.merge))
 
@@ -346,6 +396,9 @@ def run(request) -> int:
             lines.append(render_plan(tuple(file_render)))
         for _, path in sentinel_jobs:
             lines.append(f"sentinel    {path} (strip our block)")
+        for path in restore_paths:
+            if fs.exists(path + _BAK_SUFFIX):
+                lines.append(f"restore     {path} (from {os.path.basename(path)}{_BAK_SUFFIX})")
         lines.extend(merge_descs)
         text = "\n".join(l for l in lines if l)
         if request.json:
@@ -367,6 +420,11 @@ def run(request) -> int:
     for action in plan_removes:
         fs.remove_path(action.path)
         performed.append(f"remove-path {action.path}")
+    # After removing a replaced memory file, restore its backup so the replace is undone.
+    for path in restore_paths:
+        line = _restore_bak(path)
+        if line is not None:
+            performed.append(line)
     for entry, path in sentinel_jobs:
         performed.append(_apply_sentinel(project, entry, path))
     for entry in selected:

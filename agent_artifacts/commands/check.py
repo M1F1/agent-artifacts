@@ -22,7 +22,7 @@ from . import _common
 # Top-level directories that hold installable artifacts in the source repo. A changed file
 # under one of these maps to an artifact root (its first two path segments, e.g.
 # "skills/code-review"); a changed file under "agent_artifacts/" means the CLI code moved.
-_ARTIFACT_DIRS = ("skills", "guidelines", "mcp", "hooks")
+_ARTIFACT_DIRS = ("skills", "guidelines", "mcp", "hooks", "memory")
 _CLI_DIR = "agent_artifacts"
 
 
@@ -79,7 +79,7 @@ def _check(request: Request, opener=None) -> int:
             }
         )
     else:
-        _print_summary(repo, head_sha, artifacts_changed, cli_changed, suggestion)
+        _print_summary(repo, head_sha, artifacts_changed, cli_changed, suggestion, has_remote_artifacts=bool(base))
 
     return _common.OK
 
@@ -89,7 +89,7 @@ def _check(request: Request, opener=None) -> int:
 # --------------------------------------------------------------------------- #
 def _parse_sha(source: str) -> Optional[str]:
     """Pull the SHA out of a manifest ``source`` like ``"main:<sha>"`` / ``"pin:<sha>"``."""
-    if not source:
+    if not source or source.startswith("local:"):
         return None
     _, _, sha = source.partition(":")
     sha = sha or source
@@ -188,10 +188,13 @@ def _print_summary(
     artifacts_changed: List[str],
     cli_changed: bool,
     suggestion: Optional[str],
+    has_remote_artifacts: bool = True,
 ) -> None:
     print(f"check: {repo} main is at {head}")
     if artifacts_changed:
         print(f"  artifacts behind main: {', '.join(artifacts_changed)}")
+    elif not has_remote_artifacts:
+        print("  artifacts: skipped (installed locally)")
     else:
         print("  artifacts: up to date")
     print(f"  cli: {'behind main' if cli_changed else 'up to date'}")

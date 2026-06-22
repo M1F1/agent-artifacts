@@ -45,9 +45,9 @@ CONFLICT = 4         # conflict needs --force
 CORRUPT_MANIFEST = 5
 
 # Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, DESIGN.md §17).
-DEFAULT_REPO = "org/agent-artifacts"
+DEFAULT_REPO = "M1F1/agent-artifacts"
 
-_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook")
+_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 
 # --- project / repo / manifest paths --------------------------------------- #

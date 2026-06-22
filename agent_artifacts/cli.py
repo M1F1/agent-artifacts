@@ -37,7 +37,8 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "upgrade": upgrade.run,
 }
 
-_ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook")
+_ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
+_MEMORY_MODES = ("replace", "prepend", "append", "skip")
 
 
 # --------------------------------------------------------------------------- #
@@ -100,6 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selection(p)
     _add_profile(p)
     _add_version(p)
+    p.add_argument("--memory-mode", dest="memory_mode", choices=_MEMORY_MODES,
+                   help="how an `memory` instruction file combines with an existing one "
+                        "(default: prepend); see DESIGN-memory.md §3.2")
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
     p.add_argument("--force", action="store_true",
@@ -189,17 +193,23 @@ def _to_request(args: argparse.Namespace) -> Request:
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
+        memory_mode=getattr(args, "memory_mode", None),
     )
 
 
 # --------------------------------------------------------------------------- #
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
-def _run_bare(parser: argparse.ArgumentParser) -> int:
+def _run_bare(parser: argparse.ArgumentParser, args: Optional[argparse.Namespace] = None) -> int:
     """Bare invocation (DESIGN.md §13): launch the TUI on a TTY, else print help."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         from . import tui  # WP-20: always present in the package.
-        return int(tui.run())
+        kwargs = {}
+        if args:
+            if getattr(args, "source_dir", None): kwargs["source_dir"] = args.source_dir
+            if getattr(args, "repo", None): kwargs["repo"] = args.repo
+            if getattr(args, "project", None): kwargs["project"] = args.project
+        return int(tui.run(**kwargs))
     parser.print_help()
     return OK
 
@@ -209,7 +219,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:
-        return _run_bare(parser)
+        return _run_bare(parser, args)
     return DISPATCH[args.command](_to_request(args))
 
 

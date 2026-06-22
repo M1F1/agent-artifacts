@@ -8,8 +8,7 @@ matching exactly what the WP-12 install command would produce), then drives
   ``.claude/settings.json``, file removed when it was the only entry and we created it,
   manifest entry gone;
 - an **mcp** (key-mode merge): our key dropped from ``.mcp.json``, foreign keys preserved;
-- a **guideline** (append-sentinel): our sentinel block stripped from ``CLAUDE.md`` while
-  surrounding foreign content remains.
+- a **guideline** (copy): our standalone reference doc removed from ``.claude/guidelines/``.
 
 Run: ``python -m unittest discover -s tests -p "uninstall_test.py" -v``
 """
@@ -31,7 +30,6 @@ from agent_artifacts.model import (
     MergeProof,
     Request,
 )
-from agent_artifacts.planners import sentinel_markers
 
 
 # --------------------------------------------------------------------------- #
@@ -80,12 +78,14 @@ def _mcp_entry() -> ManifestEntry:
 
 
 def _guideline_entry() -> ManifestEntry:
+    # Guidelines are standalone copy files in a per-harness dir — not merged into the memory
+    # file — so uninstall removes the whole file like any other copied artifact.
     return ManifestEntry(
         artifact="python-style",
         type="guideline",
         profile="claude",
         source="main:abc",
-        files={"CLAUDE.md": "sha256:eee"},
+        files={".claude/guidelines/python-style.md": "sha256:eee"},
         installed_at="2026-06-20T00:00:00Z",
     )
 
@@ -227,47 +227,31 @@ class McpUninstallTest(_Tmp):
 
 
 # --------------------------------------------------------------------------- #
-# Guideline: append-sentinel block stripped, foreign content preserved.         #
+# Guideline (copy): the standalone reference doc is removed wholesale.           #
 # --------------------------------------------------------------------------- #
 class GuidelineUninstallTest(_Tmp):
-    def test_sentinel_block_stripped_foreign_kept(self):
-        begin, end = sentinel_markers("python-style")
-        content = (
-            "# My project rules\n"
-            "Always be nice.\n"
-            "\n"
-            f"{begin}\n"
-            "Fixture guideline body.\n"
-            f"{end}\n"
-        )
-        claude = _write(self.project, "CLAUDE.md", content)
+    def test_copy_file_removed(self):
+        doc = _write(self.project, ".claude/guidelines/python-style.md", "Fixture body.\n")
         _write_manifest(self.project, Manifest(repo="org/x", installed=(_guideline_entry(),)))
 
         rc = self.run_uninstall(self.req(names=("python-style",)))
         self.assertEqual(rc, uninstall.OK)
 
-        # File still exists (foreign content), our block gone.
-        self.assertTrue(os.path.exists(claude))
-        text = _read(claude)
-        self.assertIn("# My project rules", text)
-        self.assertIn("Always be nice.", text)
-        self.assertNotIn(begin, text)
-        self.assertNotIn(end, text)
-        self.assertNotIn("Fixture guideline body.", text)
+        # The whole guideline file is gone (no sentinel-stripping — it never shared a file).
+        self.assertFalse(os.path.exists(doc))
         self.assertEqual(_load_manifest(self.project)["installed"], [])
 
-    def test_sole_block_empties_and_removes_file_when_created(self):
-        begin, end = sentinel_markers("python-style")
-        # CLAUDE.md held nothing but our block.
-        content = f"{begin}\nbody\n{end}\n"
-        claude = _write(self.project, "CLAUDE.md", content)
+    def test_foreign_files_in_guidelines_dir_untouched(self):
+        doc = _write(self.project, ".claude/guidelines/python-style.md", "Fixture body.\n")
+        other = _write(self.project, ".claude/guidelines/hand-written.md", "mine\n")
         _write_manifest(self.project, Manifest(repo="org/x", installed=(_guideline_entry(),)))
 
         rc = self.run_uninstall(self.req(names=("python-style",)))
         self.assertEqual(rc, uninstall.OK)
 
-        # Stripped to empty -> file removed.
-        self.assertFalse(os.path.exists(claude))
+        # Only our tracked file is removed; a sibling the user authored stays.
+        self.assertFalse(os.path.exists(doc))
+        self.assertTrue(os.path.exists(other))
 
 
 # --------------------------------------------------------------------------- #
@@ -306,8 +290,7 @@ class SelectionTest(_Tmp):
         _write(self.project, ".mcp.json", json.dumps(
             {"mcpServers": {"postgres": {"command": "npx"}, "foreign": {"command": "x"}}},
             indent=2))
-        begin, end = sentinel_markers("python-style")
-        _write(self.project, "CLAUDE.md", f"keep\n\n{begin}\nbody\n{end}\n")
+        guideline = _write(self.project, ".claude/guidelines/python-style.md", "body\n")
         m = Manifest(repo="org/x",
                      installed=(_hook_entry(), _mcp_entry(), _guideline_entry()))
         _write_manifest(self.project, m)
@@ -315,6 +298,8 @@ class SelectionTest(_Tmp):
         rc = self.run_uninstall(self.req(all=True))
         self.assertEqual(rc, uninstall.OK)
         self.assertEqual(_load_manifest(self.project)["installed"], [])
+        # guideline copy removed.
+        self.assertFalse(os.path.exists(guideline))
         # mcp foreign preserved.
         mcp = json.loads(_read(os.path.join(self.project, ".mcp.json")))
         self.assertIn("foreign", mcp["mcpServers"])

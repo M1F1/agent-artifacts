@@ -11,7 +11,7 @@ Flow (matches the WP-12 contract):
 2. ``Source.catalog()`` -> ``Catalog``.
 3. ``_common.resolve_artifacts`` + ``_common.resolve_profiles``.
 4. Assemble the ``files`` mapping (targets, guideline bodies, descriptors, source labels,
-   per-profile existing-guideline text for idempotent append-sentinel).
+   per-profile memory-file pre-reads for the sentinel/replace merge).
 5. Build ``profiles_map`` and ``configs`` (per-profile harness config for collision detection).
 6. ``planners.plan_install`` -> ``Plan``.
 7. ``_common.split_manifest`` + ``_common.rebase_plan`` (project-relative -> absolute).
@@ -30,11 +30,22 @@ import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Mapping, Optional, Tuple
 
+from .. import catalog as catalog_mod
 from .. import executor, manifest, planners
 from ..io import fs
 from ..model import Artifact, Profile, Request
 from ..source import Source, open_source
 from . import _common
+
+# Type -> the `Profile` attribute that targets it. A `None` value on that attribute means the
+# harness does not support that type (DESIGN-memory.md §5).
+_TYPE_ATTR = {
+    "skill": "skills",
+    "guideline": "guidelines",
+    "mcp": "mcp",
+    "hook": "hooks",
+    "memory": "memory",
+}
 
 
 def _err(message: str) -> None:
@@ -42,28 +53,35 @@ def _err(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-def _read_guideline_existing(
-    project: str, profiles: Tuple[Tuple[str, Profile], ...]
-) -> Dict[str, str]:
-    """Read each profile's append-sentinel destination file (if present) keyed for `files`.
+def _supports(profile: Profile, art_type: str) -> bool:
+    """True when `profile` declares a target for `art_type` (DESIGN-memory.md §5)."""
+    return getattr(profile, _TYPE_ATTR[art_type], None) is not None
 
-    Returns ``{f"existing:{profile}:": <dest-relative-path>}`` markers' content — but keyed
-    per artifact below. Here we only return the per-profile destination *file text* so the
-    caller can attach it under ``existing:{profile}:{artifact}`` for every guideline that
-    targets that profile. Missing files map to no entry (planner treats absent as empty).
+
+def _resolve_memory_mode(request: Request, body: str) -> str:
+    """Resolve the effective install mode for one ``memory`` artifact (DESIGN-memory §3.4).
+
+    Precedence, highest wins: the CLI flag ``request.memory_mode`` → the artifact's
+    frontmatter ``mode:`` → the built-in default ``"prepend"``.
     """
-    out: Dict[str, str] = {}
-    for pname, prof in profiles:
-        target = prof.guidelines
-        if target.mode != "append-sentinel":
-            continue
-        dest = os.path.normpath(os.path.join(project, target.dest))
-        if fs.exists(dest):
-            try:
-                out[pname] = fs.read_text(dest)
-            except OSError:  # pragma: no cover - defensive
-                continue
-    return out
+    if request.memory_mode:
+        return request.memory_mode
+    _found, fields, _body = catalog_mod._split_frontmatter(body)
+    mode = fields.get("mode")
+    return mode if mode else "prepend"
+
+
+def _memory_dest(profile: Profile, project: str, name: str) -> str:
+    """Absolute destination path the planner will write for an ``memory`` artifact.
+
+    ``kind="file"`` → the shared instruction file itself; ``kind="dir"`` → ``<dir>/<name>.md``.
+    Mirrors `planners.plan_memory` so install's pre-read of the existing dest text matches what
+    the planner merges against.
+    """
+    target = profile.memory
+    if target.kind == "dir":
+        return os.path.normpath(os.path.join(project, target.dest, f"{name}.md"))
+    return os.path.normpath(os.path.join(project, target.dest))
 
 
 def run(request: Request) -> int:
@@ -102,30 +120,72 @@ def run(request: Request) -> int:
     profs: Tuple[Tuple[str, Profile], ...] = profs_res.value
     project = _common.project_root(request)
 
-    # 4. Assemble the `files` mapping that plan_install consumes.
+    # 4. Partition every artifact×profile target by whether the harness supports the type
+    #    (DESIGN-memory.md §5). An explicit by-name request for an unsupported type is a hard
+    #    error (USAGE); an unsupported type that only arrived via --bundle/--all is skipped
+    #    with a warning. Only the supported (kept) targets are planned.
+    by_name = set(request.names)
+    kept_targets: List[Tuple[Artifact, str]] = []
+    support_errors: List[str] = []
+    support_warnings: List[str] = []
+    for a in arts:
+        for pname, prof in profs:
+            if _supports(prof, a.type):
+                kept_targets.append((a, pname))
+            elif a.name in by_name:
+                support_errors.append(
+                    f"profile {pname!r} does not support {a.type} {a.name!r}"
+                )
+            else:
+                support_warnings.append(
+                    f"skipped {a.type} {a.name!r}: profile {pname!r} does not support it"
+                )
+
+    if support_errors:
+        for msg in support_errors:
+            _err(msg)
+        return _common.USAGE
+
+    # 5. Assemble the `files` mapping that plan_install consumes (kept targets only).
     installed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     files: Dict[str, object] = {
-        "__targets__": tuple((a, pname) for a in arts for (pname, _prof) in profs),
+        "__targets__": tuple(kept_targets),
         "__installed_at__": installed_at,
     }
-    existing_text = _read_guideline_existing(project, profs)
+    kept_artifacts = {a.name: a for (a, _pname) in kept_targets}
 
     for a in arts:
+        if a.name not in kept_artifacts:
+            continue  # every target for this artifact was dropped (unsupported, by-bundle)
         files[f"source:{a.name}"] = src.label()
         if a.type == "guideline":
-            files[f"guideline:{a.name}"] = src.read(a.root).decode("utf-8")
-            # Attach the destination file's current text per profile so that the
-            # append-sentinel block stays idempotent across re-installs.
-            for pname, _prof in profs:
-                if pname in existing_text:
-                    files[f"existing:{pname}:{a.name}"] = existing_text[pname]
+            # A guideline is copied verbatim as a standalone reference doc — no shared-file
+            # merge, so nothing to pre-read from the destination.
+            body = src.read(a.root).decode("utf-8")
+            _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
+            files[f"guideline:{a.name}"] = stripped_body
         elif a.type in ("mcp", "hook"):
             # mcp descriptor lives at a.root (e.g. "mcp/postgres.json"); a hook's lives at
             # a.root + "/hook.json" (e.g. "hooks/block-secrets/hook.json").
             rel = a.root if a.type == "mcp" else f"{a.root}/hook.json"
             files[f"descriptor:{a.name}"] = json.loads(src.read(rel).decode("utf-8"))
+        elif a.type == "memory":
+            body = src.read(a.root).decode("utf-8")
+            _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
+            files[f"memory:{a.name}"] = stripped_body
+            files[f"memory-mode:{a.name}"] = _resolve_memory_mode(request, body)
+            # Per supported file-profile, pre-read the destination's existence + text so the
+            # planner can merge/replace against it (the EXACT keys plan_memory reads).
+            for pname, prof in profs:
+                if prof.memory is None:
+                    continue
+                dest = _memory_dest(prof, project, a.name)
+                exists = fs.exists(dest)
+                files[f"memory-exists:{pname}:{a.name}"] = exists
+                if exists:
+                    files[f"existing-memory:{pname}:{a.name}"] = fs.read_text(dest)
 
-    # 5. Build profile map + per-profile harness configs (for merge collision detection).
+    # 6. Build profile map + per-profile harness configs (for merge collision detection).
     #
     # LIMITATION: collision detection in plan_mcp/plan_hook is per-profile against a SINGLE
     # already-loaded config dict. We load each profile's mcp merge file from the project if
@@ -139,6 +199,9 @@ def run(request: Request) -> int:
     configs: Dict[str, Mapping] = {}
     for pname, prof in profs:
         cfg: Mapping = {}
+        if prof.mcp is None:
+            configs[pname] = cfg  # harness has no MCP target (e.g. vibe) — nothing to load
+            continue
         merge_file = os.path.normpath(os.path.join(project, prof.mcp.file))
         if fs.exists(merge_file):
             try:
@@ -193,7 +256,8 @@ def run(request: Request) -> int:
         m = manifest.upsert(m, entry)
     _common.save_manifest(project, m)
 
-    # 11. Report.
+    # 11. Report (include the unsupported-type skip warnings from the §5 partition).
+    all_warnings = list(support_warnings) + list(report.warnings)
     if request.json:
         _common.print_json(
             {
@@ -202,20 +266,20 @@ def run(request: Request) -> int:
                     for e in entries
                 ],
                 "performed": list(report.performed),
-                "warnings": list(report.warnings),
+                "warnings": all_warnings,
                 "manifest": _common.manifest_path(project),
             }
         )
     else:
-        _print_summary(entries, report)
+        _print_summary(entries, all_warnings)
     return _common.OK
 
 
-def _print_summary(entries, report) -> None:
+def _print_summary(entries, warnings) -> None:
     """Print a concise human-readable install summary."""
     n = len(entries)
     print(f"Installed {n} artifact{'s' if n != 1 else ''}:")
     for e in entries:
         print(f"  - {e.type:<9} {e.artifact} -> {e.profile}")
-    for w in report.warnings:
+    for w in warnings:
         print(f"warning: {w}")
