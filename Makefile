@@ -8,9 +8,10 @@ PYTHON ?= python
 
 .PHONY: test wheel validate clean
 
-# Run the full unittest suite.
+# Run the full unittest suite and the E2E script.
 test:
 	$(PYTHON) -m unittest discover -s tests -p "*_test.py"
+	bash tests/e2e_test.sh
 
 # Stamp the git commit, then build the stdlib wheel into dist/.
 wheel:

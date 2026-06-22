@@ -296,6 +296,8 @@ def _apply_sentinel(project: str, entry: ManifestEntry, abs_path: str) -> str:
     ``CLAUDE.md`` that now holds nothing but our former block). Foreign content keeps the
     file alive. Uses the type-scoped markers (guideline vs agents). Returns a description.
     """
+    if not os.path.exists(abs_path):
+        return f"sentinel    {abs_path} (already removed)"
     text = fs.read_text(abs_path)
     begin, end = _markers_for(entry)
     stripped = _strip_block(text, begin, end)
