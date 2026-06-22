@@ -1,7 +1,7 @@
 # agent-artifacts — Design (for review)
 
 One source of truth for a team's AI artifacts (skills, guidelines, MCP configs, **hooks**)
-plus a tool, `agent-artifacts` (short alias `aa`), that installs selected sets (bundles)
+plus a tool, `agent-artifacts` (short alias `aart`), that installs selected sets (bundles)
 into multiple agentic harnesses (OpenCode, Claude Code, Tabnine, … and future ones such as
 Hermes or Antigravity). Used both by humans and by agents.
 
@@ -17,7 +17,7 @@ This revision folds in eight directives. Map for the reviewer:
 | # | Directive | Where it lands |
 | --- | --- | --- |
 | 1 | **Hooks** as a fourth artifact type | §2, §4, §5.4, §6, §10, §12 |
-| 2 | Rename the app to **agent-artifacts** (`aa` alias) | everywhere; paths in §4, §11, §13 |
+| 2 | Rename the app to **agent-artifacts** (`aart` alias) | everywhere; paths in §4, §11, §13 |
 | 3 | Freshness check is **opt-in, a separate command** — never on every invocation | §8 (rewritten), §13 |
 | 4 | **Zero external Python dependencies** (stdlib only) | §3, §14, §15 |
 | 5 | **pip-installable with no external index** (fully offline) | §15 (new) |
@@ -70,7 +70,7 @@ the default axis is the **tip of `main`**, with an optional pin where reproducib
 ```
    source-of-truth repo (GitHub)            consumer project (local)
    ┌──────────────────────────────┐         ┌────────────────────────────────┐
-   │ skills/ guidelines/ mcp/ hooks/│  aa     │ .opencode/skills/…              │
+   │ skills/ guidelines/ mcp/ hooks/│  aart   │ .opencode/skills/…              │
    │ bundles/                      │ ──────▶ │ .claude/skills/… .claude/hooks/…│
    │ agent_artifacts/ (CLI code)   │ (copy/  │ opencode.json (merged MCP)      │
    │ main = axis, optional pin     │  merge) │ .claude/settings.json (hooks)   │
@@ -426,7 +426,7 @@ entry carries **both** `files` and `merge` — uninstall reverses both.
 
 One core, two skins (TTY with no targets → TUI; otherwise flag mode). TUI in `curses`
 (stdlib) with an `input()` fallback. Agent mode: `--yes`, `--json`, unambiguous exit codes.
-Both `agent-artifacts` and `aa` are entry points to the same core.
+Both `agent-artifacts` and `aart` are entry points to the same core.
 
 ```
 agent-artifacts list      [--bundle B] [--type skill|guideline|mcp|hook] [--version REF] [--source DIR] [--json]
@@ -438,7 +438,7 @@ agent-artifacts update    [--bundle B] [--profile P] [--prune] [--dry-run] [--fo
 agent-artifacts uninstall [NAME…] [--bundle B] [--all] [--dry-run] [--yes] [--json]
 agent-artifacts upgrade   [--version REF]            # reinstall the tool itself from main (offline-capable)
 agent-artifacts                                      # TTY → TUI; else help
-aa …                                                 # short alias, identical behavior
+aart …                                               # short alias, identical behavior
 ```
 
 Global: `--repo`, `--project`, `--source DIR`. `--source DIR` installs from a local checkout
@@ -525,7 +525,7 @@ safety property a tool that edits other people's config files needs.
 
 `pipx install --no-index …` works the same for an isolated user install. Distribution name
 `agent-artifacts`; import package `agent_artifacts`; two console-script entry points
-(`agent-artifacts`, `aa`) → `agent_artifacts.cli:main`. Target Python ≥ 3.10 (for
+(`agent-artifacts`, `aart`) → `agent_artifacts.cli:main`. Target Python ≥ 3.10 (for
 `dataclass(slots=True)`).
 
 **Build commit injection (`__commit__`).** Release/build writes the source SHA into a

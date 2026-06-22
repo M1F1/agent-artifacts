@@ -25,6 +25,13 @@ from .commands import list as list_cmd
 from .commands._common import OK
 from .model import Request
 
+
+def _run_upstream(request: Request) -> int:
+    from .commands import upstream
+
+    return upstream.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -34,6 +41,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "update": update.run,
     "uninstall": uninstall.run,
     "upgrade": upgrade.run,
+    "upstream": _run_upstream,
 }
 
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
@@ -151,6 +159,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="print the pip invocation; install nothing")
 
+    # upstream ---------------------------------------------------------------- #
+    p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
+    up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
+
+    p_check = up.add_parser("check", parents=[glob], help="check tracked upstream artifacts")
+    _add_selection(p_check)
+    p_check.add_argument("--type", dest="type_filter", choices=_ARTIFACT_TYPES,
+                         help="restrict to an artifact type")
+    _add_json(p_check)
+
+    p_update = up.add_parser("update", parents=[glob], help="update tracked upstream artifacts")
+    _add_selection(p_update)
+    p_update.add_argument("--type", dest="type_filter", choices=_ARTIFACT_TYPES,
+                          help="restrict to an artifact type")
+    p_update.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
+    p_update.add_argument("--force", action="store_true", help="overwrite local catalog drift")
+    _add_json(p_update)
+
     return parser
 
 
@@ -193,6 +219,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
         memory_mode=getattr(args, "memory_mode", None),
+        upstream_action=getattr(args, "upstream_action", None),
     )
 
 

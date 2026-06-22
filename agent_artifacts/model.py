@@ -244,3 +244,4 @@ class Request:
     json: bool = False
     prune: bool = False
     memory_mode: Optional[str] = None  # DESIGN-memory.md §3.4; None → planner applies "prepend"
+    upstream_action: Optional[str] = None  # "check" | "update" for maintainer-side upstreams

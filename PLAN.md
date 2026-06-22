@@ -126,7 +126,7 @@ Interface / Done when.
 
 **WP-0 · Contract freeze & scaffold** *(0 · blocking · M)*
 - **Owns:** `agent_artifacts/{__init__,__main__,model,fp,hashing,_commit}.py`, `pyproject.toml`
-  (deps `[]`, entry points `agent-artifacts` & `aa` → `agent_artifacts.cli:main`, py≥3.10),
+  (deps `[]`, entry points `agent-artifacts` & `aart` → `agent_artifacts.cli:main`, py≥3.10),
   empty source dirs (`skills/ guidelines/ mcp/ hooks/ bundles/` with `.gitkeep`), `tests/`
   skeleton, and **typed `NotImplementedError` stubs** for every public function in
   `catalog/policy/merge/manifest/planners/executor/source/cli/commands/*` + `io/*` + `profiles/*`.
@@ -147,7 +147,7 @@ Interface / Done when.
   Plan = tuple[Action, ...]
   ```
 - **Done when:** `import agent_artifacts.model` works; `pip install --no-index
-  --no-build-isolation .` succeeds; `agent-artifacts --help` and `aa --help` resolve (stub
+  --no-build-isolation .` succeeds; `agent-artifacts --help` and `aart --help` resolve (stub
   prints "not implemented"); `python -m unittest` runs (0 tests ok).
 
 ### Wave 1 — pure core + IO (fan out)
@@ -279,7 +279,7 @@ fallback path testable headless; no logic duplicated from commands.
 inject_commit.py`, `dist/`, finalizes `pyproject.toml`. `inject_commit.py` writes
 `_commit.py` from `git rev-parse HEAD`; `make wheel` = `pip wheel --no-index
 --no-build-isolation -w dist/ .`. Done: produced wheel installs via `pip install --no-index
-dist/*.whl` in a clean venv; `aa`/`agent-artifacts` both work; `_commit.py` populated.
+dist/*.whl` in a clean venv; `aart`/`agent-artifacts` both work; `_commit.py` populated.
 
 **WP-22 · CI** *(3 · yes · S)* — Owns `.github/workflows/{validate,release}.yml`. validate =
 `validate_catalog` + `python -m unittest`; release = inject commit, build wheel, attach. Done:

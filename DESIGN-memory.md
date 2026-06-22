@@ -196,7 +196,7 @@ class Profile:
 ```
 
 **Installer behaviour when a selected artifact's type is `None` for a target profile:**
-- **Explicit by-name** request (`aa install postgres --profile vibe`) → **error** (USAGE):
+- **Explicit by-name** request (`aart install postgres --profile vibe`) → **error** (USAGE):
   the user asked for something the harness can't do; tell them.
 - **Bundle / `--all` expansion** → **skip with a warning** (`Warn`): a broad set legitimately
   contains types a given harness doesn't support; don't fail the whole install.
@@ -321,8 +321,8 @@ modes); `status` reports `memory` entries and on-disk drift via the same `classi
 ### 8.4 CLI surface (delta to parent §13)
 
 ```
-aa install … [--memory-mode replace|prepend|append|skip]   # default: prepend
-aa list      [--type memory]                                # memory included in views
+aart install … [--memory-mode replace|prepend|append|skip]   # default: prepend
+aart list      [--type memory]                                # memory included in views
 ```
 
 `Request` gains `memory_mode: Optional[str] = None`. Agent mode (`--yes/--json`) and exit

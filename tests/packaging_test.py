@@ -112,7 +112,8 @@ class BuildWheelTest(unittest.TestCase):
             eps = z.read(f"{info}/entry_points.txt").decode("utf-8")
         self.assertIn("[console_scripts]", eps)
         self.assertIn("agent-artifacts = agent_artifacts.cli:main", eps)
-        self.assertIn("aa = agent_artifacts.cli:main", eps)
+        self.assertIn("aart = agent_artifacts.cli:main", eps)
+        self.assertNotIn("aa = agent_artifacts.cli:main", eps)
 
     def test_metadata_has_name_version_and_zero_deps(self):
         wheel = self._build()

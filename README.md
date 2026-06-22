@@ -1,4 +1,4 @@
-# agent-artifacts (`aa`)
+# agent-artifacts (`aart`)
 
 **One catalog of AI artifacts. Every agentic harness on your team, in sync.**
 
@@ -16,17 +16,17 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 ## Quick start
 
 ```sh
-pip install -e .          # editable install: run `aa` from any project folder
-aa                        # bare invocation → interactive TUI (browse / install / remove)
+pip install -e .          # editable install: run `aart` from any project folder
+aart                      # bare invocation -> interactive TUI (browse / install / remove)
 ```
 
 Prefer the command line?
 
 ```sh
-aa list                                   # see the catalog
-aa install code-review --profile claude   # install one artifact for Claude Code
-aa install --bundle backend --profile claude,tabnine   # install a whole team set
-aa status                                 # what's installed here + has it drifted?
+aart list                                   # see the catalog
+aart install code-review --profile claude   # install one artifact for Claude Code
+aart install --bundle backend --profile claude,tabnine   # install a whole team set
+aart status                                 # what's installed here + has it drifted?
 ```
 
 ---
@@ -55,7 +55,7 @@ cycle detection) and can **`pin`** specific artifacts to a commit, so "the backe
 setup" is one install command and stays reproducible.
 
 ```sh
-aa install --bundle backend --profile claude
+aart install --bundle backend --profile claude
 ```
 
 ### 🌐 Local *or* remote source — same result either way
@@ -63,21 +63,21 @@ Pull from a GitHub repo, or from a local checkout for offline / air-gapped work.
 an identical catalog; nothing downstream cares which you used.
 
 ```sh
-aa install code-review --repo your-org/ai-catalog          # remote (GitHub)
-aa install code-review --version v2.1 --repo your-org/...   # pin a branch/tag/SHA
-aa install code-review --source ./catalog-checkout         # local, no network
+aart install code-review --repo your-org/ai-catalog          # remote (GitHub)
+aart install code-review --version v2.1 --repo your-org/...   # pin a branch/tag/SHA
+aart install code-review --source ./catalog-checkout         # local, no network
 ```
 
 ### 🔄 Drift detection & re-sync — know when you're behind, fix it on demand
 Every install is recorded in a manifest (files, hashes, source commit). That unlocks a clean
 sync workflow — and freshness checks are **always opt-in, never ambient**:
 
-- **`aa status`** — *local, no network.* Lists what's installed and flags each file as
+- **`aart status`** — *local, no network.* Lists what's installed and flags each file as
   `ok` / `drift` / `missing`, so you see local edits at a glance.
-- **`aa check`** — *remote, opt-in.* Compares your installed commit against the source's
+- **`aart check`** — *remote, opt-in.* Compares your installed commit against the source's
   `main` and tells you exactly which artifacts (and whether the CLI itself) fell behind,
   then suggests the next command.
-- **`aa update`** — re-pulls and re-applies. Local edits are respected: a true conflict is
+- **`aart update`** — re-pulls and re-applies. Local edits are respected: a true conflict is
   written to a `.agent-artifacts-new` sidecar instead of clobbering your work (override with
   `--force`). `--prune` drops entries no longer in the set.
 
@@ -92,7 +92,7 @@ agents and CI. Every command returns a **structured exit code** (`0` ok · `2` u
 network · `4` conflict · `5` corrupt manifest) so automation can branch on the result.
 
 ### ⬆️ Self-update, offline
-`aa upgrade` reinstalls the CLI itself from the source via `pip install --no-index` — from a
+`aart upgrade` reinstalls the CLI itself from the source via `pip install --no-index` — from a
 prebuilt local wheel when one is present, no package index required.
 
 ---
@@ -101,13 +101,13 @@ prebuilt local wheel when one is present, no package index required.
 
 | Command | Network | Does |
 |---------|:------:|------|
-| `aa list` | — | List catalog artifacts (`--type`, `--bundle`, `--json`) |
-| `aa install` | on remote | Install artifacts/bundles into one or more profiles |
-| `aa status` | no | Show installed artifacts + local drift |
-| `aa check` | yes | Compare installed/CLI commit against the source |
-| `aa update` | on remote | Re-pull and re-apply; `--prune`, `--force` |
-| `aa uninstall` | no | Reverse installed files and merge entries |
-| `aa upgrade` | offline-capable | Reinstall the CLI itself |
+| `aart list` | — | List catalog artifacts (`--type`, `--bundle`, `--json`) |
+| `aart install` | on remote | Install artifacts/bundles into one or more profiles |
+| `aart status` | no | Show installed artifacts + local drift |
+| `aart check` | yes | Compare installed/CLI commit against the source |
+| `aart update` | on remote | Re-pull and re-apply; `--prune`, `--force` |
+| `aart uninstall` | no | Reverse installed files and merge entries |
+| `aart upgrade` | offline-capable | Reinstall the CLI itself |
 
 Global flags work on any subcommand: `--repo OWNER/NAME`, `--source DIR`, `--project DIR`.
 

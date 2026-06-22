@@ -24,7 +24,7 @@ dev = [
 
 [project.scripts]
 agent-artifacts = "agent_artifacts.cli:main"
-aa = "agent_artifacts.cli:main"
+aart = "agent_artifacts.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/org/agent-artifacts"

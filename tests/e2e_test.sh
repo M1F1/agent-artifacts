@@ -19,15 +19,15 @@ echo "- Maintainer notes: don't touch" > CLAUDE.md
 
 # 2. List available artifacts
 echo -e "\n${GREEN}[2/11] Simulating User: Browsing the catalog...${NC}"
-aa list
+aart list
 
 # 3. Dry run a bundle installation
 echo -e "\n${GREEN}[3/11] Simulating User: Dry-running a bundle installation...${NC}"
-aa install --bundle base --profile claude --dry-run
+aart install --bundle base --profile claude --dry-run
 
 # 4. Install specific artifacts
 echo -e "\n${GREEN}[4/11] Simulating User: Installing house rules into Claude...${NC}"
-aa install house --profile claude --yes
+aart install house --profile claude --yes
 
 # 5. Verify the sentinel appended successfully
 echo -e "\n${GREEN}[5/11] Simulating User: Verifying human notes were kept intact...${NC}"
@@ -36,12 +36,12 @@ grep "agent-artifacts memory:house" CLAUDE.md > /dev/null && echo "✅ AI rules 
 
 # 6. Simulate drift (User edits a tracked file manually)
 echo -e "\n${GREEN}[6/11] Simulating User: Modifying a tracked guideline file (simulating drift)...${NC}"
-aa install python-style --profile tabnine --yes
+aart install python-style --profile tabnine --yes
 echo "Drift test!" >> .tabnine/guidelines/python-style.md
 
 # 7. Check and Update (Drift Protection)
 echo -e "\n${GREEN}[7/11] Simulating User: Running an update, expecting drift protection...${NC}"
-aa update --yes
+aart update --yes
 # The CLI should have kept the user's edits (since upstream didn't change, it's just drift, not a conflict)
 if grep -q "Drift test!" .tabnine/guidelines/python-style.md; then
     echo "✅ Drift protection worked! The manual change was preserved."
@@ -52,7 +52,7 @@ fi
 
 # 8. Force replace mode (Advanced)
 echo -e "\n${GREEN}[8/11] Simulating User: Overwriting cleanly using force mode...${NC}"
-aa install python-style --profile tabnine --force --yes
+aart install python-style --profile tabnine --force --yes
 if grep -q "Drift test!" .tabnine/guidelines/python-style.md; then
     echo "❌ Force install failed to wipe file!"
     exit 1
@@ -62,15 +62,15 @@ fi
 
 # 9. Install a bundle
 echo -e "\n${GREEN}[9/11] Simulating User: Installing the full backend bundle...${NC}"
-aa install --bundle backend --profile claude --yes
+aart install --bundle backend --profile claude --yes
 
 # 10. Test JSON Integration mode
 echo -e "\n${GREEN}[10/11] Simulating User: Running status in JSON mode (for CI/CD)...${NC}"
-aa status --json | grep '"artifact":' > /dev/null && echo "✅ JSON output successfully generated!"
+aart status --json | grep '"artifact":' > /dev/null && echo "✅ JSON output successfully generated!"
 
 # 11. Clean up
 echo -e "\n${GREEN}[11/11] Simulating User: Uninstalling all artifacts...${NC}"
-aa uninstall --all --yes
+aart uninstall --all --yes
 
 # Clean up the mock project folder
 cd ..

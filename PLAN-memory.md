@@ -187,7 +187,7 @@ Build / Done when.
 - **Build:** `cli.py` — `--memory-mode {replace,prepend,append,skip}` (default unset → planner
   applies `prepend`), accept `--type memory`, route into `Request.memory_mode`, help text. `tui.py`
   — include `memory` in the type selector; no logic duplicated from the command core.
-- **Done when:** `aa install --memory-mode replace …` parses & dispatches; `aa list --type
+- **Done when:** `aart install --memory-mode replace …` parses & dispatches; `aart list --type
   memory` filters; `--help` documents the flag; headless TUI fallback lists `memory`.
 
 ### WP-31 · Seed content & fixtures *(C · yes · S)*

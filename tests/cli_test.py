@@ -42,13 +42,20 @@ def _dispatch(argv, *, command, code=0):
 class TestStaticWiring(unittest.TestCase):
     """The dispatch table and parser agree on exactly the §13 command surface."""
 
-    EXPECTED = {"list", "install", "status", "check", "update", "uninstall", "upgrade"}
+    EXPECTED = {"list", "install", "status", "check", "update", "uninstall", "upgrade", "upstream"}
 
     def test_dispatch_keys(self):
         self.assertEqual(set(cli.DISPATCH), self.EXPECTED)
 
     def test_dispatch_points_at_real_run_functions(self):
-        from agent_artifacts.commands import check, install, status, uninstall, update, upgrade
+        from agent_artifacts.commands import (
+            check,
+            install,
+            status,
+            uninstall,
+            update,
+            upgrade,
+        )
         from agent_artifacts.commands import list as list_cmd
         self.assertIs(cli.DISPATCH["list"], list_cmd.run)
         self.assertIs(cli.DISPATCH["install"], install.run)
@@ -57,6 +64,7 @@ class TestStaticWiring(unittest.TestCase):
         self.assertIs(cli.DISPATCH["update"], update.run)
         self.assertIs(cli.DISPATCH["uninstall"], uninstall.run)
         self.assertIs(cli.DISPATCH["upgrade"], upgrade.run)
+        self.assertIs(cli.DISPATCH["upstream"], cli._run_upstream)
 
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()
