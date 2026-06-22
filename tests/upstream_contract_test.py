@@ -26,6 +26,7 @@ class UpstreamContractTests(unittest.TestCase):
             "parse_upstreams",
             "dump_upstreams",
             "select_upstreams",
+            "validate_upstreams",
         ):
             self.assertTrue(hasattr(upstreams, name), name)
 

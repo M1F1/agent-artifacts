@@ -81,6 +81,19 @@ sync workflow — and freshness checks are **always opt-in, never ambient**:
   written to a `.agent-artifacts-new` sidecar instead of clobbering your work (override with
   `--force`). `--prune` drops entries no longer in the set.
 
+### 🧭 Maintainer upstream tracking — review external changes before shipping
+Catalog maintainers can track where vendored artifacts came from in `upstreams.json`, then
+check or import upstream changes into this repo as ordinary working-tree diffs:
+
+```sh
+aart upstream check --all --json
+aart upstream update skill/code-review --dry-run
+aart upstream update --bundle backend
+```
+
+Consumer `aart update` still updates from this reviewed catalog, not directly from third-party
+upstream repos.
+
 ### 🧠 Memory files without the clobber
 Installing a memory artifact wraps it in invisible HTML-comment sentinels (`prepend` by
 default) so it can be updated or removed later **without touching your hand-written notes** in
@@ -106,6 +119,8 @@ prebuilt local wheel when one is present, no package index required.
 | `aart status` | no | Show installed artifacts + local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | on remote | Re-pull and re-apply; `--prune`, `--force` |
+| `aart upstream check` | yes | Maintainer check for tracked vendored artifact origins |
+| `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 | `aart uninstall` | no | Reverse installed files and merge entries |
 | `aart upgrade` | offline-capable | Reinstall the CLI itself |
 

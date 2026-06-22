@@ -58,6 +58,60 @@ class UpstreamCommandUsageTests(unittest.TestCase):
         self.assertEqual(os.listdir(self.project), [])
 
 
+class UpstreamCommandValidationTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.catalog_root = self._tmp.name
+        os.makedirs(os.path.join(self.catalog_root, "skills", "demo"))
+        with open(
+            os.path.join(self.catalog_root, "skills", "demo", "SKILL.md"),
+            "w",
+            encoding="utf-8",
+        ) as fh:
+            fh.write("---\nname: demo\n---\nbody\n")
+        with open(os.path.join(self.catalog_root, "upstreams.json"), "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "artifacts": {
+                        "skill/ghost": {
+                            "source": {
+                                "kind": "github",
+                                "repo": "acme/ghost",
+                                "ref": "main",
+                                "path": "skills/ghost",
+                            },
+                            "last_synced": {
+                                "sha": "base-sha",
+                                "content_hash": "sha256:base",
+                                "synced_at": "2026-06-22T10:00:00Z",
+                            },
+                        }
+                    },
+                },
+                fh,
+            )
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_check_rejects_dangling_tracking_entries_before_resolution(self):
+        out = io.StringIO()
+        with patch.object(upstream, "resolve_upstream_source", side_effect=AssertionError):
+            with redirect_stdout(out):
+                code = upstream.run(
+                    Request(
+                        command="upstream",
+                        upstream_action="check",
+                        all=True,
+                        source_dir=self.catalog_root,
+                    )
+                )
+
+        self.assertEqual(code, _common.USAGE)
+        self.assertIn("unknown artifact skill/ghost", out.getvalue())
+
+
 class UpstreamCommandWorkflowTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

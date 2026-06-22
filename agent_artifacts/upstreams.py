@@ -210,6 +210,54 @@ def select_upstreams(request: Request, catalog: Catalog, upstreams: UpstreamCata
     return Ok(UpstreamSelection(entries=_dedup_entries(selected), warnings=tuple(warnings)))
 
 
+def validate_upstreams(upstreams: UpstreamCatalog, catalog: Catalog) -> Tuple[Err, ...]:
+    errors: List[Err] = []
+    for key in sorted(upstreams.entries, key=format_upstream_key):
+        entry = upstreams.entries[key]
+        label = format_upstream_key(key)
+        artifact = catalog.artifacts.get((key.type, key.name))
+        if artifact is None:
+            errors.append(Err(f"unknown artifact {label}", code=_USAGE))
+        elif artifact.root != _expected_root(key):
+            errors.append(
+                Err(
+                    f"{label}: expected catalog root {_expected_root(key)}, found {artifact.root}",
+                    code=_USAGE,
+                )
+            )
+
+        if entry.source.kind != "github":
+            errors.append(Err(f"{label}: source.kind must be 'github'", code=_USAGE))
+        if not _github_repo(entry.source.repo):
+            errors.append(Err(f"{label}: source.repo must be 'owner/name'", code=_USAGE))
+        if not _non_empty_str(entry.source.ref):
+            errors.append(Err(f"{label}: source.ref must be a non-empty string", code=_USAGE))
+        if not _non_empty_str(entry.source.path):
+            errors.append(Err(f"{label}: source.path must be a non-empty string", code=_USAGE))
+
+        sync = entry.last_synced
+        if sync is None:
+            errors.append(Err(f"{label}: last_synced is required", code=_USAGE))
+        else:
+            if not _non_empty_str(sync.sha):
+                errors.append(
+                    Err(f"{label}: last_synced.sha must be a non-empty string", code=_USAGE)
+                )
+            if not _non_empty_str(sync.content_hash):
+                errors.append(
+                    Err(
+                        f"{label}: last_synced.content_hash must be a non-empty string",
+                        code=_USAGE,
+                    )
+                )
+            if not isinstance(sync.synced_at, str):
+                errors.append(
+                    Err(f"{label}: last_synced.synced_at must be a string", code=_USAGE)
+                )
+
+    return tuple(errors)
+
+
 def parse_upstream_key(text: str) -> Result:
     parts = text.split("/")
     if len(parts) != 2 or not parts[0] or not parts[1]:
@@ -288,6 +336,27 @@ def _parse_last_synced(raw_key: str, raw_sync, errors: List[str]):
 
 def _non_empty_str(value) -> bool:
     return isinstance(value, str) and value != ""
+
+
+def _github_repo(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    owner, sep, name = value.partition("/")
+    return bool(owner and sep and name and "/" not in name)
+
+
+def _expected_root(key: UpstreamKey) -> str:
+    if key.type == "skill":
+        return f"skills/{key.name}"
+    if key.type == "guideline":
+        return f"guidelines/{key.name}.md"
+    if key.type == "mcp":
+        return f"mcp/{key.name}.json"
+    if key.type == "hook":
+        return f"hooks/{key.name}"
+    if key.type == "memory":
+        return f"memory/{key.name}.md"
+    return f"{key.type}/{key.name}"
 
 
 def _has_no_selector(request: Request) -> bool:

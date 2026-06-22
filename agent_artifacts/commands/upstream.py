@@ -28,6 +28,7 @@ from ..upstreams import (
     format_upstream_key,
     parse_upstreams,
     select_upstreams,
+    validate_upstreams,
 )
 from . import _common
 
@@ -63,6 +64,10 @@ def run(request: Request) -> int:
         print(loaded.reason)
         return _common.exit_code(loaded)
     catalog, upstreams = loaded.value
+    metadata_errors = validate_upstreams(upstreams, catalog)
+    if metadata_errors:
+        print("; ".join(err.reason for err in metadata_errors))
+        return _common.USAGE
 
     selection = select_upstreams(request, catalog, upstreams)
     if isinstance(selection, Err):
@@ -75,14 +80,14 @@ def run(request: Request) -> int:
         return _common.exit_code(resolved)
 
     local_hashes = _local_hashes(selection.value.entries, catalog_root)
-    validation_errors = _validation_errors(resolved.value)
+    staged_validation_errors = _validation_errors(resolved.value)
 
     if request.upstream_action == "check":
         planned = plan_upstream_check(
             selection.value.entries,
             resolved.value,
             local_hashes=local_hashes,
-            validation_errors=validation_errors,
+            validation_errors=staged_validation_errors,
         )
         if isinstance(planned, Err):
             print(planned.reason)
@@ -101,7 +106,7 @@ def run(request: Request) -> int:
         resolved.value,
         force=request.force,
         local_hashes=local_hashes,
-        validation_errors=validation_errors,
+        validation_errors=staged_validation_errors,
         catalog_root=catalog_root,
     )
     if isinstance(planned_update, Err):
