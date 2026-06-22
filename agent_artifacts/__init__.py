@@ -5,4 +5,4 @@ Zero runtime dependencies, functional core / imperative shell. See DESIGN.md / P
 
 from __future__ import annotations
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
