@@ -52,6 +52,7 @@ _SKILL_DIR = "skills"
 _GUIDELINE_DIR = "guidelines"
 _MCP_DIR = "mcp"
 _HOOK_DIR = "hooks"
+_AGENTS_DIR = "agents"
 _BUNDLE_DIR = "bundles"
 
 
@@ -96,6 +97,7 @@ class Source:
         * guideline — ``guidelines/<name>.md``
         * mcp       — ``mcp/<name>.json``
         * hook      — ``hooks/<name>/hook.json``
+        * agents    — ``agents/<name>.md``
         * bundle    — ``bundles/<name>.json``
         """
         results: List[Result] = []
@@ -103,6 +105,7 @@ class Source:
         results.extend(self._scan_guidelines())
         results.extend(self._scan_mcp())
         results.extend(self._scan_hooks())
+        results.extend(self._scan_agents())
         artifact_results = results  # all yield Ok[Artifact]
         bundle_results = self._scan_bundles()
 
@@ -139,6 +142,16 @@ class Source:
             name = entry[: -len(".md")]
             text = self._read_text(os.path.join(_GUIDELINE_DIR, entry))
             out.append(catalog_mod.parse_guideline(text, name))
+        return out
+
+    def _scan_agents(self) -> List[Result]:
+        out: List[Result] = []
+        for entry in self._names_in(_AGENTS_DIR):
+            if not entry.endswith(".md"):
+                continue
+            name = entry[: -len(".md")]
+            text = self._read_text(os.path.join(_AGENTS_DIR, entry))
+            out.append(catalog_mod.parse_agents(text, name))
         return out
 
     def _scan_mcp(self) -> List[Result]:
