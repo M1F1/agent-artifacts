@@ -262,7 +262,8 @@ def _emit_check(
                 "catalog": catalog_root,
                 "selected": [format_upstream_key(entry.key) for entry in selected],
                 "warnings": list(warnings),
-                "statuses": [_status_to_dict(status) for status in statuses],
+                "checked": _automation_statuses(statuses, selected),
+                "statuses": _status_dicts(statuses, selected),
             }
         )
         return
@@ -285,7 +286,8 @@ def _emit_update_dry_run(
                 "dry_run": True,
                 "warnings": list(warnings),
                 "conflict": update_plan.conflict,
-                "statuses": [_status_to_dict(status) for status in update_plan.statuses],
+                "updates": _automation_statuses(update_plan.statuses, update_plan.entries),
+                "statuses": _status_dicts(update_plan.statuses, update_plan.entries),
                 "plan": json.loads(executor.plan_to_json(update_plan.plan)),
             }
         )
@@ -308,7 +310,8 @@ def _emit_update_conflict(
                 "action": "update",
                 "warnings": list(warnings),
                 "conflict": True,
-                "statuses": [_status_to_dict(status) for status in update_plan.statuses],
+                "updates": _automation_statuses(update_plan.statuses, update_plan.entries),
+                "statuses": _status_dicts(update_plan.statuses, update_plan.entries),
                 "plan": json.loads(executor.plan_to_json(update_plan.plan)),
             }
         )
@@ -339,9 +342,11 @@ def _emit_update_result(
                 "selected": [format_upstream_key(entry.key) for entry in selected],
                 "warnings": list(warnings),
                 "conflict": update_plan.conflict,
-                "statuses": [_status_to_dict(status) for status in update_plan.statuses],
+                "updates": _automation_statuses(update_plan.statuses, update_plan.entries),
+                "statuses": _status_dicts(update_plan.statuses, update_plan.entries),
                 "performed": list(performed),
                 "updated": updated_count,
+                "updated_count": updated_count,
             }
         )
         return
@@ -351,12 +356,40 @@ def _emit_update_result(
         print(f"warning: {warning}")
 
 
-def _status_to_dict(status: UpstreamStatus) -> dict:
+def _status_dicts(
+    statuses: Tuple[UpstreamStatus, ...],
+    entries: Tuple[UpstreamEntry, ...],
+) -> List[dict]:
+    by_key = {entry.key: entry for entry in entries}
+    return [_status_to_dict(status, by_key.get(status.key)) for status in statuses]
+
+
+def _automation_statuses(
+    statuses: Tuple[UpstreamStatus, ...],
+    entries: Tuple[UpstreamEntry, ...],
+) -> List[dict]:
+    by_key = {entry.key: entry for entry in entries}
+    return [_automation_status_to_dict(status, by_key.get(status.key)) for status in statuses]
+
+
+def _status_to_dict(status: UpstreamStatus, entry: Optional[UpstreamEntry]) -> dict:
+    data = _automation_status_to_dict(status, entry)
     return {
         "key": format_upstream_key(status.key),
+        **data,
+    }
+
+
+def _automation_status_to_dict(status: UpstreamStatus, entry: Optional[UpstreamEntry]) -> dict:
+    source = entry.source if entry is not None else None
+    return {
+        "artifact": format_upstream_key(status.key),
         "type": status.key.type,
         "name": status.key.name,
         "state": status.state,
+        "repo": source.repo if source is not None else None,
+        "ref": source.ref if source is not None else None,
+        "path": source.path if source is not None else None,
         "base_sha": status.base_sha,
         "head_sha": status.head_sha,
         "base_hash": status.base_hash,
