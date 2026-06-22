@@ -22,7 +22,7 @@ from . import _common
 # Top-level directories that hold installable artifacts in the source repo. A changed file
 # under one of these maps to an artifact root (its first two path segments, e.g.
 # "skills/code-review"); a changed file under "agent_artifacts/" means the CLI code moved.
-_ARTIFACT_DIRS = ("skills", "guidelines", "mcp", "hooks")
+_ARTIFACT_DIRS = ("skills", "guidelines", "mcp", "hooks", "agents")
 _CLI_DIR = "agent_artifacts"
 
 

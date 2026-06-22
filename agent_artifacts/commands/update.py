@@ -218,7 +218,11 @@ def _gather_inputs(
         text = src.read(artifact.root).decode("utf-8")
         files[f"guideline:{artifact.name}"] = text
         # append-sentinel mode needs the current destination contents to splice our block.
-        if profile is not None and profile.guidelines.mode == "append-sentinel":
+        if (
+            profile is not None
+            and profile.guidelines is not None
+            and profile.guidelines.mode == "append-sentinel"
+        ):
             dest = os.path.join(project, profile.guidelines.dest)
             if fs.exists(dest):
                 files[f"existing:{profile_name}:{artifact.name}"] = fs.read_text(dest)
@@ -235,11 +239,43 @@ def _gather_inputs(
         # manifest proof identical to the original install (idempotent re-copy under §9).
         # Load the existing harness config for collision detection (mirrors install).
         if profile is not None:
-            spec = profile.mcp if artifact.type == "mcp" else profile.hooks.merge
-            configs[profile_name] = _read_config(project, spec.file)
+            spec = profile.mcp if artifact.type == "mcp" else (
+                profile.hooks.merge if profile.hooks is not None else None
+            )
+            if spec is not None:
+                configs[profile_name] = _read_config(project, spec.file)
+        return
+
+    if artifact.type == "agents":
+        body = src.read(artifact.root).decode("utf-8")
+        files[f"agents:{artifact.name}"] = body
+        # update has no --agents-mode flag in MVP: frontmatter `mode:` else "prepend".
+        files[f"agents-mode:{artifact.name}"] = _agents_mode_from_body(body)
+        # For the entry's own (file) profile, pre-read the destination so the planner can
+        # merge/replace against it (the EXACT keys plan_agents reads — mirrors install).
+        if profile is not None and profile.agents is not None:
+            target = profile.agents
+            if target.kind == "dir":
+                dest = os.path.join(project, target.dest, f"{artifact.name}.md")
+            else:
+                dest = os.path.join(project, target.dest)
+            exists = fs.exists(dest)
+            files[f"agents-exists:{profile_name}:{artifact.name}"] = exists
+            if exists:
+                files[f"existing-agents:{profile_name}:{artifact.name}"] = fs.read_text(dest)
         return
 
     # skill: nothing extra — the planner copies artifact.root.
+
+
+def _agents_mode_from_body(body: str) -> str:
+    """Resolve an ``agents`` artifact's install mode for update: frontmatter ``mode:`` else
+    ``"prepend"`` (update has no ``--agents-mode`` flag in MVP — DESIGN-agents.md §3.4)."""
+    from ..catalog import _split_frontmatter
+
+    _found, fields, _body = _split_frontmatter(body)
+    mode = fields.get("mode")
+    return mode if mode else "prepend"
 
 
 def _read_descriptor(artifact: Artifact, src) -> Optional[Mapping]:

@@ -30,16 +30,32 @@ import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Mapping, Optional, Tuple
 
+from .. import catalog as catalog_mod
 from .. import executor, manifest, planners
 from ..io import fs
 from ..model import Artifact, Profile, Request
 from ..source import Source, open_source
 from . import _common
 
+# Type -> the `Profile` attribute that targets it. A `None` value on that attribute means the
+# harness does not support that type (DESIGN-agents.md §5).
+_TYPE_ATTR = {
+    "skill": "skills",
+    "guideline": "guidelines",
+    "mcp": "mcp",
+    "hook": "hooks",
+    "agents": "agents",
+}
+
 
 def _err(message: str) -> None:
     """Emit a single diagnostic line to stderr (commands are quiet on the happy path)."""
     print(message, file=sys.stderr)
+
+
+def _supports(profile: Profile, art_type: str) -> bool:
+    """True when `profile` declares a target for `art_type` (DESIGN-agents.md §5)."""
+    return getattr(profile, _TYPE_ATTR[art_type], None) is not None
 
 
 def _read_guideline_existing(
@@ -55,7 +71,7 @@ def _read_guideline_existing(
     out: Dict[str, str] = {}
     for pname, prof in profiles:
         target = prof.guidelines
-        if target.mode != "append-sentinel":
+        if target is None or target.mode != "append-sentinel":
             continue
         dest = os.path.normpath(os.path.join(project, target.dest))
         if fs.exists(dest):
@@ -64,6 +80,32 @@ def _read_guideline_existing(
             except OSError:  # pragma: no cover - defensive
                 continue
     return out
+
+
+def _resolve_agents_mode(request: Request, body: str) -> str:
+    """Resolve the effective install mode for one ``agents`` artifact (DESIGN-agents §3.4).
+
+    Precedence, highest wins: the CLI flag ``request.agents_mode`` → the artifact's
+    frontmatter ``mode:`` → the built-in default ``"prepend"``.
+    """
+    if request.agents_mode:
+        return request.agents_mode
+    _found, fields, _body = catalog_mod._split_frontmatter(body)
+    mode = fields.get("mode")
+    return mode if mode else "prepend"
+
+
+def _agents_dest(profile: Profile, project: str, name: str) -> str:
+    """Absolute destination path the planner will write for an ``agents`` artifact.
+
+    ``kind="file"`` → the shared instruction file itself; ``kind="dir"`` → ``<dir>/<name>.md``.
+    Mirrors `planners.plan_agents` so install's pre-read of the existing dest text matches what
+    the planner merges against.
+    """
+    target = profile.agents
+    if target.kind == "dir":
+        return os.path.normpath(os.path.join(project, target.dest, f"{name}.md"))
+    return os.path.normpath(os.path.join(project, target.dest))
 
 
 def run(request: Request) -> int:
@@ -102,15 +144,44 @@ def run(request: Request) -> int:
     profs: Tuple[Tuple[str, Profile], ...] = profs_res.value
     project = _common.project_root(request)
 
-    # 4. Assemble the `files` mapping that plan_install consumes.
+    # 4. Partition every artifact×profile target by whether the harness supports the type
+    #    (DESIGN-agents.md §5). An explicit by-name request for an unsupported type is a hard
+    #    error (USAGE); an unsupported type that only arrived via --bundle/--all is skipped
+    #    with a warning. Only the supported (kept) targets are planned.
+    by_name = set(request.names)
+    kept_targets: List[Tuple[Artifact, str]] = []
+    support_errors: List[str] = []
+    support_warnings: List[str] = []
+    for a in arts:
+        for pname, prof in profs:
+            if _supports(prof, a.type):
+                kept_targets.append((a, pname))
+            elif a.name in by_name:
+                support_errors.append(
+                    f"profile {pname!r} does not support {a.type} {a.name!r}"
+                )
+            else:
+                support_warnings.append(
+                    f"skipped {a.type} {a.name!r}: profile {pname!r} does not support it"
+                )
+
+    if support_errors:
+        for msg in support_errors:
+            _err(msg)
+        return _common.USAGE
+
+    # 5. Assemble the `files` mapping that plan_install consumes (kept targets only).
     installed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     files: Dict[str, object] = {
-        "__targets__": tuple((a, pname) for a in arts for (pname, _prof) in profs),
+        "__targets__": tuple(kept_targets),
         "__installed_at__": installed_at,
     }
     existing_text = _read_guideline_existing(project, profs)
+    kept_artifacts = {a.name: a for (a, _pname) in kept_targets}
 
     for a in arts:
+        if a.name not in kept_artifacts:
+            continue  # every target for this artifact was dropped (unsupported, by-bundle)
         files[f"source:{a.name}"] = src.label()
         if a.type == "guideline":
             files[f"guideline:{a.name}"] = src.read(a.root).decode("utf-8")
@@ -124,8 +195,22 @@ def run(request: Request) -> int:
             # a.root + "/hook.json" (e.g. "hooks/block-secrets/hook.json").
             rel = a.root if a.type == "mcp" else f"{a.root}/hook.json"
             files[f"descriptor:{a.name}"] = json.loads(src.read(rel).decode("utf-8"))
+        elif a.type == "agents":
+            body = src.read(a.root).decode("utf-8")
+            files[f"agents:{a.name}"] = body
+            files[f"agents-mode:{a.name}"] = _resolve_agents_mode(request, body)
+            # Per supported file-profile, pre-read the destination's existence + text so the
+            # planner can merge/replace against it (the EXACT keys plan_agents reads).
+            for pname, prof in profs:
+                if prof.agents is None:
+                    continue
+                dest = _agents_dest(prof, project, a.name)
+                exists = fs.exists(dest)
+                files[f"agents-exists:{pname}:{a.name}"] = exists
+                if exists:
+                    files[f"existing-agents:{pname}:{a.name}"] = fs.read_text(dest)
 
-    # 5. Build profile map + per-profile harness configs (for merge collision detection).
+    # 6. Build profile map + per-profile harness configs (for merge collision detection).
     #
     # LIMITATION: collision detection in plan_mcp/plan_hook is per-profile against a SINGLE
     # already-loaded config dict. We load each profile's mcp merge file from the project if
@@ -139,6 +224,9 @@ def run(request: Request) -> int:
     configs: Dict[str, Mapping] = {}
     for pname, prof in profs:
         cfg: Mapping = {}
+        if prof.mcp is None:
+            configs[pname] = cfg  # harness has no MCP target (e.g. vibe) — nothing to load
+            continue
         merge_file = os.path.normpath(os.path.join(project, prof.mcp.file))
         if fs.exists(merge_file):
             try:
@@ -193,7 +281,8 @@ def run(request: Request) -> int:
         m = manifest.upsert(m, entry)
     _common.save_manifest(project, m)
 
-    # 11. Report.
+    # 11. Report (include the unsupported-type skip warnings from the §5 partition).
+    all_warnings = list(support_warnings) + list(report.warnings)
     if request.json:
         _common.print_json(
             {
@@ -202,20 +291,20 @@ def run(request: Request) -> int:
                     for e in entries
                 ],
                 "performed": list(report.performed),
-                "warnings": list(report.warnings),
+                "warnings": all_warnings,
                 "manifest": _common.manifest_path(project),
             }
         )
     else:
-        _print_summary(entries, report)
+        _print_summary(entries, all_warnings)
     return _common.OK
 
 
-def _print_summary(entries, report) -> None:
+def _print_summary(entries, warnings) -> None:
     """Print a concise human-readable install summary."""
     n = len(entries)
     print(f"Installed {n} artifact{'s' if n != 1 else ''}:")
     for e in entries:
         print(f"  - {e.type:<9} {e.artifact} -> {e.profile}")
-    for w in report.warnings:
+    for w in warnings:
         print(f"warning: {w}")

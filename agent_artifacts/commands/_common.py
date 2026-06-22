@@ -47,7 +47,7 @@ CORRUPT_MANIFEST = 5
 # Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, DESIGN.md §17).
 DEFAULT_REPO = "org/agent-artifacts"
 
-_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook")
+_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "agents")
 
 
 # --- project / repo / manifest paths --------------------------------------- #

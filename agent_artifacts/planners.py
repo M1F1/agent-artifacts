@@ -407,6 +407,11 @@ def _files_proof(plan: Plan) -> Mapping[str, str]:
     proof = {}
     for action in plan:
         if isinstance(action, WriteFile):
+            if action.path.endswith(_BAK_SUFFIX):
+                # The replace-mode backup sidecar is not an installed file: uninstall restores
+                # it rather than tracking/removing it (DESIGN-agents.md §8.3). Recording it
+                # would make uninstall delete the backup before it could be restored.
+                continue
             proof[action.path] = sha256_bytes(action.content)
         elif isinstance(action, CopyTree):
             proof[action.dst] = ""
