@@ -184,7 +184,9 @@ def run(request: Request) -> int:
             continue  # every target for this artifact was dropped (unsupported, by-bundle)
         files[f"source:{a.name}"] = src.label()
         if a.type == "guideline":
-            files[f"guideline:{a.name}"] = src.read(a.root).decode("utf-8")
+            body = src.read(a.root).decode("utf-8")
+            _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
+            files[f"guideline:{a.name}"] = stripped_body
             # Attach the destination file's current text per profile so that the
             # append-sentinel block stays idempotent across re-installs.
             for pname, _prof in profs:
@@ -197,7 +199,8 @@ def run(request: Request) -> int:
             files[f"descriptor:{a.name}"] = json.loads(src.read(rel).decode("utf-8"))
         elif a.type == "agents":
             body = src.read(a.root).decode("utf-8")
-            files[f"agents:{a.name}"] = body
+            _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
+            files[f"agents:{a.name}"] = stripped_body
             files[f"agents-mode:{a.name}"] = _resolve_agents_mode(request, body)
             # Per supported file-profile, pre-read the destination's existence + text so the
             # planner can merge/replace against it (the EXACT keys plan_agents reads).

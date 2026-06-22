@@ -14,13 +14,14 @@ so headers (Accept / Authorization) attach before the opener sees them.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from typing import Optional
 
 from ..model import Err, Ok, Result
 
-_API = "https://api.github.com"
+_API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 _ACCEPT = "application/vnd.github+json"
 
 
@@ -50,6 +51,11 @@ def resolve_ref(repo: str, ref: str, token: Optional[str] = None, opener=None) -
         body = _open(_build_request(url, token), opener)
         data = json.loads(body)
         sha = data["sha"]
+    except urllib.error.HTTPError as exc:
+        msg = f"failed to resolve {repo}@{ref}: {exc}"
+        if exc.code == 404:
+            msg += " (Is the repository private? Make sure GITHUB_TOKEN is set)"
+        return Err(msg, code=3)
     except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
         return Err(f"failed to resolve {repo}@{ref}: {exc}", code=3)
     return Ok(sha)
@@ -72,6 +78,11 @@ def compare(repo: str, base: str, head: str, token: Optional[str] = None, opener
     try:
         body = _open(_build_request(url, token), opener)
         data = json.loads(body)
+    except urllib.error.HTTPError as exc:
+        msg = f"failed to compare {repo} {base}...{head}: {exc}"
+        if exc.code == 404:
+            msg += " (Is the repository private? Make sure GITHUB_TOKEN is set)"
+        return Err(msg, code=3)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return Err(f"failed to compare {repo} {base}...{head}: {exc}", code=3)
     return Ok(data)

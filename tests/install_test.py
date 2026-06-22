@@ -46,7 +46,7 @@ class InstallEndToEndTests(unittest.TestCase):
         return os.path.join(self.project, *parts)
 
     # ---- all four types install (single profile) ------------------------- #
-    def test_installs_all_four_types_claude(self):
+    def test_installs_all_five_types_claude(self):
         with redirect_stdout(io.StringIO()):
             code = install.run(_request(self.project))
         self.assertEqual(code, 0)
@@ -54,10 +54,10 @@ class InstallEndToEndTests(unittest.TestCase):
         # skill: tree copied under .claude/skills/code-review/
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
 
-        # guideline: CLAUDE.md has the sentinel block
+        # agents/guideline: CLAUDE.md has the sentinel block
         claude_md = pathlib.Path(self._path("CLAUDE.md")).read_text()
-        self.assertIn("# >>> agent-artifacts: python-style >>>", claude_md)
-        self.assertIn("# <<< agent-artifacts: python-style <<<", claude_md)
+        self.assertIn("<!-- >>> agent-artifacts agents:house >>> -->", claude_md)
+        self.assertIn("<!-- <<< agent-artifacts agents:house <<< -->", claude_md)
 
         # mcp: .mcp.json has mcpServers.postgres
         mcp = json.loads(pathlib.Path(self._path(".mcp.json")).read_text())
@@ -74,15 +74,15 @@ class InstallEndToEndTests(unittest.TestCase):
             os.path.isfile(self._path(".claude", "hooks", "block-secrets", "scripts", "guard.py"))
         )
 
-    def test_manifest_has_four_entries(self):
+    def test_manifest_has_five_entries(self):
         with redirect_stdout(io.StringIO()):
             install.run(_request(self.project))
         manifest_file = self._path(".agent-artifacts", "manifest.json")
         self.assertTrue(os.path.isfile(manifest_file))
         data = json.loads(pathlib.Path(manifest_file).read_text())
-        self.assertEqual(len(data["installed"]), 4)
+        self.assertEqual(len(data["installed"]), 5)
         types = sorted(e["type"] for e in data["installed"])
-        self.assertEqual(types, ["guideline", "hook", "mcp", "skill"])
+        self.assertEqual(types, ["agents", "guideline", "hook", "mcp", "skill"])
         # local source label recorded verbatim
         self.assertTrue(all(e["source"].startswith("local:") for e in data["installed"]))
 
@@ -96,7 +96,7 @@ class InstallEndToEndTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(self._path("CLAUDE.md")))
         self.assertTrue(os.path.isfile(self._path("AGENTS.md")))
         agents_md = pathlib.Path(self._path("AGENTS.md")).read_text()
-        self.assertIn("# >>> agent-artifacts: python-style >>>", agents_md)
+        self.assertIn("<!-- >>> agent-artifacts agents:house >>> -->", agents_md)
 
         # claude skills vs opencode skills
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
@@ -106,9 +106,9 @@ class InstallEndToEndTests(unittest.TestCase):
         opencode = json.loads(pathlib.Path(self._path("opencode.json")).read_text())
         self.assertIn("postgres", opencode["mcp"])
 
-        # manifest has 4 artifacts x 2 profiles = 8 entries
+        # manifest has 5 artifacts x 2 profiles = 10 entries
         data = json.loads(pathlib.Path(self._path(".agent-artifacts", "manifest.json")).read_text())
-        self.assertEqual(len(data["installed"]), 8)
+        self.assertEqual(len(data["installed"]), 10)
         profiles = {e["profile"] for e in data["installed"]}
         self.assertEqual(profiles, {"claude", "opencode"})
 
@@ -139,7 +139,7 @@ class InstallEndToEndTests(unittest.TestCase):
             code = install.run(_request(self.project, json=True))
         self.assertEqual(code, 0)
         parsed = json.loads(buf.getvalue())
-        self.assertEqual(len(parsed["installed"]), 4)
+        self.assertEqual(len(parsed["installed"]), 5)
         self.assertIn("performed", parsed)
 
     # ---- idempotent re-install ------------------------------------------- #
@@ -148,11 +148,10 @@ class InstallEndToEndTests(unittest.TestCase):
             install.run(_request(self.project))
             install.run(_request(self.project))
         claude_md = pathlib.Path(self._path("CLAUDE.md")).read_text()
-        # The sentinel block must appear exactly once after two installs.
-        self.assertEqual(claude_md.count("# >>> agent-artifacts: python-style >>>"), 1)
-        # And the manifest still has exactly 4 entries (upsert, not append).
+        self.assertEqual(claude_md.count("<!-- >>> agent-artifacts agents:house >>> -->"), 1)
+        # And the manifest still has exactly 5 entries (upsert, not append).
         data = json.loads(pathlib.Path(self._path(".agent-artifacts", "manifest.json")).read_text())
-        self.assertEqual(len(data["installed"]), 4)
+        self.assertEqual(len(data["installed"]), 5)
 
     # ---- usage error on unknown profile ---------------------------------- #
     def test_unknown_profile_is_usage_error(self):

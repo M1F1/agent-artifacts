@@ -34,12 +34,11 @@ class TestAgentsTargets(unittest.TestCase):
         self.assertEqual(a.kind, "file")
         self.assertEqual(a.dest, "AGENTS.md")
 
-    def test_tabnine_agents_is_dir_copy(self) -> None:
-        # Tabnine has no single instruction file -> dir copy into .tabnine/guidelines/.
+    def test_tabnine_agents_is_file_tabnine_md(self) -> None:
         a = builtin()["tabnine"].agents
         self.assertIsInstance(a, AgentsTarget)
-        self.assertEqual(a.kind, "dir")
-        self.assertEqual(a.dest, ".tabnine/guidelines/")
+        self.assertEqual(a.kind, "file")
+        self.assertEqual(a.dest, "TABNINE.md")
 
 
 class TestVibePartialProfile(unittest.TestCase):

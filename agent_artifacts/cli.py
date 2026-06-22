@@ -200,11 +200,16 @@ def _to_request(args: argparse.Namespace) -> Request:
 # --------------------------------------------------------------------------- #
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
-def _run_bare(parser: argparse.ArgumentParser) -> int:
+def _run_bare(parser: argparse.ArgumentParser, args: Optional[argparse.Namespace] = None) -> int:
     """Bare invocation (DESIGN.md §13): launch the TUI on a TTY, else print help."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         from . import tui  # WP-20: always present in the package.
-        return int(tui.run())
+        kwargs = {}
+        if args:
+            if getattr(args, "source_dir", None): kwargs["source_dir"] = args.source_dir
+            if getattr(args, "repo", None): kwargs["repo"] = args.repo
+            if getattr(args, "project", None): kwargs["project"] = args.project
+        return int(tui.run(**kwargs))
     parser.print_help()
     return OK
 
@@ -214,7 +219,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:
-        return _run_bare(parser)
+        return _run_bare(parser, args)
     return DISPATCH[args.command](_to_request(args))
 
 

@@ -82,7 +82,8 @@ class InstallFileModes(_Base):
         # Pre-seed CLAUDE.md with foreign content; prepend must land ABOVE it, foreign kept.
         os.makedirs(self.project, exist_ok=True)
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
-        code = self.run_quiet(
+        import agent_artifacts.commands.install as install
+        code = install.run(
             _install(self.project, names=("house",), profiles=("claude",), agents_mode="prepend")
         )
         self.assertEqual(code, 0)
@@ -155,15 +156,25 @@ class InstallFileModes(_Base):
 # install — dir kind (tabnine)                                                  #
 # --------------------------------------------------------------------------- #
 class InstallDirKind(_Base):
-    def test_tabnine_writes_named_file_in_guidelines_dir(self):
-        code = self.run_quiet(_install(self.project, names=("house",), profiles=("tabnine",)))
+    def setUp(self):
+        super().setUp()
+        os.makedirs(self.path(".agent-artifacts"), exist_ok=True)
+        pathlib.Path(self.path(".agent-artifacts", "profiles.json")).write_text(json.dumps({
+            "dirprof": {
+                "name": "dirprof",
+                "agents": {"kind": "dir", "dest": "somedir/"}
+            }
+        }))
+
+    def test_dir_kind_writes_named_file_in_dest_dir(self):
+        code = self.run_quiet(_install(self.project, names=("house",), profiles=("dirprof",)))
         self.assertEqual(code, 0)
-        dest = self.path(".tabnine", "guidelines", "house.md")
+        dest = self.path("somedir", "house.md")
         self.assertTrue(os.path.isfile(dest))
         self.assertIn(BODY_MARK, pathlib.Path(dest).read_text())
         # manifest proof points at the dir-copy destination
         entry = [e for e in self.manifest()["installed"] if e["type"] == "agents"][0]
-        self.assertIn(".tabnine/guidelines/house.md", entry["files"])
+        self.assertIn("somedir/house.md", entry["files"])
 
 
 # --------------------------------------------------------------------------- #

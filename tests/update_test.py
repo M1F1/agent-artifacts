@@ -58,10 +58,12 @@ def _install(source_dir: str, project: str, name: str = "python-style") -> Manif
 
     artifact = catalog.artifacts[("guideline", name)]
     text = src.read(artifact.root).decode("utf-8")
+    from agent_artifacts.catalog import _split_frontmatter
+    _found, _fields, stripped_text = _split_frontmatter(text)
     files = {
         "__targets__": [(artifact, PROFILE)],
         "__installed_at__": "2026-06-20T00:00:00Z",
-        f"guideline:{name}": text,
+        f"guideline:{name}": stripped_text,
         f"source:{name}": src.label(),
     }
     plan = planners.plan_install(req, catalog, files, profiles, manifest=None, configs={}).value
@@ -113,7 +115,7 @@ class UpdateCleanTests(unittest.TestCase):
             code = update.run(_update_request(mutated, project))
             self.assertEqual(code, _common.OK)
             with open(dest, encoding="utf-8") as fh:
-                self.assertEqual(fh.read(), new_body)
+                self.assertEqual(fh.read(), "\n# Updated upstream")
 
             # Manifest base hash refreshed to the new content (so a re-update is a no-op).
             man = _common.load_manifest(_update_request(mutated, project)).value
@@ -195,7 +197,7 @@ class UpdateConflictTests(unittest.TestCase):
             sidecar = dest + NEW_SUFFIX
             self.assertTrue(os.path.exists(sidecar))
             with open(sidecar, encoding="utf-8") as fh:
-                self.assertEqual(fh.read(), upstream)
+                self.assertEqual(fh.read(), "\n# Upstream conflicting change")
 
     def test_conflict_force_overwrites(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -213,7 +215,7 @@ class UpdateConflictTests(unittest.TestCase):
             code = update.run(_update_request(mutated, project, force=True))
             self.assertEqual(code, _common.OK)
             with open(dest, encoding="utf-8") as fh:
-                self.assertEqual(fh.read(), upstream)  # forced overwrite
+                self.assertEqual(fh.read(), "\n# Upstream wins")  # forced overwrite
             self.assertFalse(os.path.exists(dest + NEW_SUFFIX))
 
 

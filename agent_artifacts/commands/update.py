@@ -215,8 +215,10 @@ def _gather_inputs(
     profile = profiles.get(profile_name)
 
     if artifact.type == "guideline":
-        text = src.read(artifact.root).decode("utf-8")
-        files[f"guideline:{artifact.name}"] = text
+        body = src.read(artifact.root).decode("utf-8")
+        from ..catalog import _split_frontmatter
+        _found, _fields, stripped_body = _split_frontmatter(body)
+        files[f"guideline:{artifact.name}"] = stripped_body
         # append-sentinel mode needs the current destination contents to splice our block.
         if (
             profile is not None
@@ -248,7 +250,9 @@ def _gather_inputs(
 
     if artifact.type == "agents":
         body = src.read(artifact.root).decode("utf-8")
-        files[f"agents:{artifact.name}"] = body
+        from ..catalog import _split_frontmatter
+        _found, _fields, stripped_body = _split_frontmatter(body)
+        files[f"agents:{artifact.name}"] = stripped_body
         # update has no --agents-mode flag in MVP: frontmatter `mode:` else "prepend".
         files[f"agents-mode:{artifact.name}"] = _agents_mode_from_body(body)
         # For the entry's own (file) profile, pre-read the destination so the planner can

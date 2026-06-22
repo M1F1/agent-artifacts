@@ -217,7 +217,11 @@ def open_source(
         return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     if not request.repo:
-        return Err("open_source: no source_dir and no repo specified")
+        # Default to the package's installation root (where skills/, bundles/ live)
+        import agent_artifacts
+        pkg_dir = os.path.dirname(os.path.abspath(agent_artifacts.__file__))
+        root = os.path.dirname(pkg_dir)
+        return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     repo = request.repo
     auth = token if token is not None else os.environ.get("GITHUB_TOKEN")

@@ -117,7 +117,7 @@ _TABNINE = Profile(
             }),
         ),
     ),
-    agents=AgentsTarget(kind="dir", dest=".tabnine/guidelines/"),
+    agents=AgentsTarget(kind="file", dest="TABNINE.md"),
 )
 
 # --------------------------------------------------------------------------- #

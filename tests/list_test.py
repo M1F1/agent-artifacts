@@ -16,7 +16,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURES = str(REPO_ROOT / "tests" / "fixtures")
 
 # The four fixture artifacts.
-ALL_NAMES = {"code-review", "python-style", "postgres", "block-secrets"}
+ALL_NAMES = {"code-review", "python-style", "postgres", "block-secrets", "house"}
 
 
 def _capture(request: Request) -> tuple:
