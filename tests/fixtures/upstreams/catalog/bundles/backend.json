@@ -1,0 +1,7 @@
+{
+  "description": "Fixture backend bundle for upstream tests.",
+  "includes": {
+    "skills": ["demo"],
+    "memory": ["house"]
+  }
+}

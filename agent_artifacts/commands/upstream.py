@@ -119,6 +119,7 @@ def run(request: Request) -> int:
         return _common.CONFLICT if update_plan.conflict and not request.force else _common.OK
 
     if update_plan.conflict and not request.force:
+        executor.execute(update_plan.plan)
         _emit_update_conflict(request, update_plan, selection.value.warnings)
         return _common.CONFLICT
 

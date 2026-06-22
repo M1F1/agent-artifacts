@@ -91,6 +91,29 @@ aart upstream update skill/code-review --dry-run
 aart upstream update --bundle backend
 ```
 
+Minimal `upstreams.json` entry:
+
+```json
+{
+  "version": 1,
+  "artifacts": {
+    "skill/code-review": {
+      "source": {
+        "kind": "github",
+        "repo": "example/review-skills",
+        "ref": "main",
+        "path": "skills/code-review"
+      },
+      "last_synced": {
+        "sha": "abc123",
+        "content_hash": "sha256:...",
+        "synced_at": "2026-06-22T10:00:00Z"
+      }
+    }
+  }
+}
+```
+
 Consumer `aart update` still updates from this reviewed catalog, not directly from third-party
 upstream repos.
 

@@ -1,5 +1,7 @@
 """CLI wiring tests for the nested ``upstream`` maintainer command."""
 
+import contextlib
+import io
 import unittest
 from unittest.mock import patch
 
@@ -63,6 +65,16 @@ class UpstreamCliTests(unittest.TestCase):
         self.assertTrue(req.dry_run)
         self.assertTrue(req.force)
         self.assertTrue(req.json)
+
+    def test_upstream_help_exits_zero(self):
+        for argv in (["upstream", "--help"], ["upstream", "check", "--help"]):
+            with self.subTest(argv=argv):
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    with self.assertRaises(SystemExit) as ctx:
+                        cli.main(argv)
+
+                self.assertEqual(ctx.exception.code, 0)
+                self.assertIn("upstream", out.getvalue())
 
 
 if __name__ == "__main__":

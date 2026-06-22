@@ -128,10 +128,51 @@ class UpstreamUpdatePlannerTests(unittest.TestCase):
 
         self.assertTrue(result.conflict)
         self.assertEqual(result.statuses[0].state, "conflict")
-        self.assertFalse(
-            any(isinstance(a, (CopyTree, RemovePath, WriteFile)) for a in result.plan)
+        self.assertEqual(
+            result.plan,
+            (
+                Warn(
+                    message=(
+                        "skill/superpowers: local catalog and upstream both differ "
+                        "from last synced upstream; use --force to overwrite local changes"
+                    )
+                ),
+                RemovePath(path="skills/superpowers.agent-artifacts-upstream-new"),
+                CopyTree(
+                    src="staged/skills/superpowers",
+                    dst="skills/superpowers.agent-artifacts-upstream-new",
+                ),
+            ),
         )
-        self.assertTrue(any(isinstance(a, Warn) for a in result.plan))
+
+    def test_file_conflict_writes_candidate_sidecar_without_touching_destination(self):
+        entry = make_entry("guideline", "python-style")
+        result = unwrap_ok(
+            plan_upstream_update(
+                (entry,),
+                (make_resolved(entry, head_hash="sha256:new"),),
+                local_hashes={entry.key: "sha256:local-edit"},
+                file_contents={entry.key: b"incoming\n"},
+            )
+        )
+
+        self.assertTrue(result.conflict)
+        self.assertEqual(result.statuses[0].state, "conflict")
+        self.assertEqual(
+            result.plan,
+            (
+                Warn(
+                    message=(
+                        "guideline/python-style: local catalog and upstream both differ "
+                        "from last synced upstream; use --force to overwrite local changes"
+                    )
+                ),
+                WriteFile(
+                    path="guidelines/python-style.md.agent-artifacts-upstream-new",
+                    content=b"incoming\n",
+                ),
+            ),
+        )
 
     def test_force_update_overwrites_conflicted_tree_artifact(self):
         entry = make_entry("skill", "superpowers")

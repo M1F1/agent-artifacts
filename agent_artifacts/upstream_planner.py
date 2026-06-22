@@ -118,6 +118,18 @@ def plan_upstream_update(
                         )
                     )
                 )
+                sidecar = _sidecar_actions(entry, resolved_entry, file_contents, catalog_root)
+                if isinstance(sidecar, Err):
+                    actions.append(
+                        Warn(
+                            message=(
+                                f"{_key_label(key)}: could not stage upstream candidate: "
+                                f"{sidecar.reason}"
+                            )
+                        )
+                    )
+                else:
+                    actions.extend(sidecar.value)
                 statuses.append(status)
                 continue
             status = UpstreamStatus(
@@ -240,6 +252,29 @@ def _update_actions(
     catalog_root: str,
 ) -> Result:
     dst = _catalog_destination(entry.key, catalog_root)
+    src = _staged_path(resolved)
+
+    if entry.key.type in ("skill", "hook"):
+        return Ok((RemovePath(path=dst), CopyTree(src=src, dst=dst)))
+
+    content = _lookup(file_contents, entry.key)
+    if content is None:
+        try:
+            with open(src, "rb") as f:
+                content = f.read()
+        except OSError as exc:
+            return Err(f"could not read staged file {src}: {exc}")
+
+    return Ok((WriteFile(path=dst, content=content),))
+
+
+def _sidecar_actions(
+    entry: UpstreamEntry,
+    resolved: ResolvedUpstream,
+    file_contents: Optional[Mapping[object, bytes]],
+    catalog_root: str,
+) -> Result:
+    dst = _catalog_destination(entry.key, catalog_root) + ".agent-artifacts-upstream-new"
     src = _staged_path(resolved)
 
     if entry.key.type in ("skill", "hook"):

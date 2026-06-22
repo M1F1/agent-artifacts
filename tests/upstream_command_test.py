@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from agent_artifacts.commands import _common, upstream
-from agent_artifacts.model import Ok, Request
+from agent_artifacts.model import Err, Ok, Request
 from agent_artifacts.upstream_source import ResolvedUpstream, hash_upstream_path
 
 
@@ -281,6 +281,10 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         self.assertIn("local catalog and upstream both differ", output)
         self.assertEqual(self._read_file(local_skill), skill_before)
         self.assertEqual(self._read_tracking(), tracking_before)
+        sidecar = os.path.join(
+            self.catalog_root, "skills", "demo.agent-artifacts-upstream-new", "SKILL.md"
+        )
+        self.assertIn("new", self._read_file(sidecar))
 
     def test_force_update_overwrites_local_drift_and_persists_new_last_sync(self):
         local_skill = self._seed_skill(self.catalog_root, "demo", "local edit")
@@ -307,6 +311,60 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         synced = saved["artifacts"]["skill/demo"]["last_synced"]
         self.assertEqual(synced["sha"], "new-sha")
         self.assertEqual(synced["content_hash"], head_hash)
+
+    def test_invalid_staged_skill_does_not_replace_local_catalog_artifact(self):
+        local_skill = self._seed_skill(self.catalog_root, "demo", "base")
+        staged_skill = self._write(
+            self.staged_root,
+            "skills/demo/SKILL.md",
+            "---\nname: wrong-name\n---\ninvalid\n",
+        )
+        base_hash = hash_upstream_path(os.path.dirname(local_skill))
+        self._write_upstreams(base_sha="base-sha", base_hash=base_hash)
+        tracking_before = self._read_tracking()
+        skill_before = self._read_file(local_skill)
+
+        code, output = self._run(
+            Request(
+                command="upstream",
+                upstream_action="update",
+                names=("skill/demo",),
+                source_dir=self.catalog_root,
+            ),
+            staged_skill=staged_skill,
+        )
+
+        self.assertEqual(code, _common.CONFLICT)
+        self.assertIn("invalid staged artifact", output)
+        self.assertEqual(self._read_file(local_skill), skill_before)
+        self.assertEqual(self._read_tracking(), tracking_before)
+
+    def test_missing_upstream_path_leaves_local_catalog_artifact_in_place(self):
+        local_skill = self._seed_skill(self.catalog_root, "demo", "base")
+        base_hash = hash_upstream_path(os.path.dirname(local_skill))
+        self._write_upstreams(base_sha="base-sha", base_hash=base_hash)
+        tracking_before = self._read_tracking()
+        skill_before = self._read_file(local_skill)
+
+        def missing(_entry):
+            return Err("missing_upstream: upstream path is gone", code=_common.NETWORK)
+
+        out = io.StringIO()
+        with patch.object(upstream, "resolve_upstream_source", side_effect=missing):
+            with redirect_stdout(out):
+                code = upstream.run(
+                    Request(
+                        command="upstream",
+                        upstream_action="update",
+                        names=("skill/demo",),
+                        source_dir=self.catalog_root,
+                    )
+                )
+
+        self.assertEqual(code, _common.OK)
+        self.assertIn("upstream path missing", out.getvalue())
+        self.assertEqual(self._read_file(local_skill), skill_before)
+        self.assertEqual(self._read_tracking(), tracking_before)
 
     def _read_tracking(self) -> str:
         return self._read_file(os.path.join(self.catalog_root, "upstreams.json"))

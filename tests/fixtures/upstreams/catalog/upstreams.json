@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "artifacts": {
+    "memory/house": {
+      "source": {
+        "kind": "github",
+        "repo": "acme/demo-skills",
+        "ref": "main",
+        "path": "memory/house.md"
+      },
+      "last_synced": {
+        "sha": "base-sha",
+        "content_hash": "sha256:817d666703baa4527f66b0e8094d47a7abe6983b195946faba702a9847d28129",
+        "synced_at": "2026-06-22T10:00:00Z"
+      }
+    },
+    "skill/demo": {
+      "source": {
+        "kind": "github",
+        "repo": "acme/demo-skills",
+        "ref": "main",
+        "path": "skills/demo"
+      },
+      "last_synced": {
+        "sha": "base-sha",
+        "content_hash": "sha256:c369c861e4f2f9687f29cfe211fc338eae57e9b884c9d127d0782854c1a267bc",
+        "synced_at": "2026-06-22T10:00:00Z"
+      }
+    }
+  }
+}
