@@ -125,7 +125,7 @@ class LocalSourceTest(unittest.TestCase):
         self.assertIn(("guideline", "python-style"), cat.artifacts)
         self.assertIn(("mcp", "postgres"), cat.artifacts)
         self.assertIn(("hook", "block-secrets"), cat.artifacts)
-        self.assertIn(("agents", "house"), cat.artifacts)
+        self.assertIn(("memory", "house"), cat.artifacts)
         self.assertEqual(len(cat.artifacts), 5)
         # Both bundles present.
         self.assertEqual(set(cat.bundles), {"base", "backend"})
@@ -134,7 +134,7 @@ class LocalSourceTest(unittest.TestCase):
         self.assertEqual(cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md")
         self.assertEqual(cat.artifacts[("mcp", "postgres")].root, "mcp/postgres.json")
         self.assertEqual(cat.artifacts[("hook", "block-secrets")].root, "hooks/block-secrets")
-        self.assertEqual(cat.artifacts[("agents", "house")].root, "agents/house.md")
+        self.assertEqual(cat.artifacts[("memory", "house")].root, "memory/house.md")
 
 
 class RemoteSourceTest(unittest.TestCase):

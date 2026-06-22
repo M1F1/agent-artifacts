@@ -18,7 +18,7 @@ SKILLS_DIR = REPO_ROOT / "skills"
 GUIDELINES_DIR = REPO_ROOT / "guidelines"
 MCP_DIR = REPO_ROOT / "mcp"
 HOOKS_DIR = REPO_ROOT / "hooks"
-AGENTS_DIR = REPO_ROOT / "agents"
+AGENTS_DIR = REPO_ROOT / "memory"
 BUNDLES_DIR = REPO_ROOT / "bundles"
 
 
@@ -130,7 +130,7 @@ class TestBackendBundleReferences(unittest.TestCase):
             "guidelines": GUIDELINES_DIR,
             "mcp": MCP_DIR,
             "hooks": HOOKS_DIR,
-            "agents": AGENTS_DIR,
+            "memory": AGENTS_DIR,
         }
         includes = self.backend.get("includes", {})
         for art_type, names in includes.items():
@@ -147,7 +147,7 @@ class TestBackendBundleReferences(unittest.TestCase):
                         target = base_dir / f"{name}.json"
                     elif art_type == "hooks":
                         target = base_dir / name / "hook.json"
-                    elif art_type == "agents":
+                    elif art_type == "memory":
                         target = base_dir / f"{name}.md"
                     else:
                         self.fail(f"Unhandled type {art_type}")
@@ -163,7 +163,7 @@ class TestBackendBundleReferences(unittest.TestCase):
                 "guidelines": GUIDELINES_DIR,
                 "mcp": MCP_DIR,
                 "hooks": HOOKS_DIR,
-                "agents": AGENTS_DIR,
+                "memory": AGENTS_DIR,
             }
             for art_type, names in base_data.get("includes", {}).items():
                 base_dir = type_dirs.get(art_type)
@@ -178,7 +178,7 @@ class TestBackendBundleReferences(unittest.TestCase):
                             target = base_dir / f"{name}.json"
                         elif art_type == "hooks":
                             target = base_dir / name / "hook.json"
-                        elif art_type == "agents":
+                        elif art_type == "memory":
                             target = base_dir / f"{name}.md"
                         else:
                             self.fail(f"Unhandled type {art_type}")

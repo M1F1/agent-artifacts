@@ -9,7 +9,7 @@ from ..source import open_source
 from . import _common
 
 # Canonical type display order.
-_TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "agents")
+_TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 
 def run(request: Request) -> int:

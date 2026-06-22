@@ -37,8 +37,8 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "upgrade": upgrade.run,
 }
 
-_ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "agents")
-_AGENTS_MODES = ("replace", "prepend", "append", "skip")
+_ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
+_MEMORY_MODES = ("replace", "prepend", "append", "skip")
 
 
 # --------------------------------------------------------------------------- #
@@ -101,9 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selection(p)
     _add_profile(p)
     _add_version(p)
-    p.add_argument("--agents-mode", dest="agents_mode", choices=_AGENTS_MODES,
-                   help="how an `agents` instruction file combines with an existing one "
-                        "(default: prepend); see DESIGN-agents.md §3.2")
+    p.add_argument("--memory-mode", dest="memory_mode", choices=_MEMORY_MODES,
+                   help="how an `memory` instruction file combines with an existing one "
+                        "(default: prepend); see DESIGN-memory.md §3.2")
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
     p.add_argument("--force", action="store_true",
@@ -193,7 +193,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
-        agents_mode=getattr(args, "agents_mode", None),
+        memory_mode=getattr(args, "memory_mode", None),
     )
 
 

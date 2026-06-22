@@ -54,10 +54,17 @@ class InstallEndToEndTests(unittest.TestCase):
         # skill: tree copied under .claude/skills/code-review/
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
 
-        # agents/guideline: CLAUDE.md has the sentinel block
+        # memory: CLAUDE.md carries the sentinel-wrapped house block
         claude_md = pathlib.Path(self._path("CLAUDE.md")).read_text()
-        self.assertIn("<!-- >>> agent-artifacts agents:house >>> -->", claude_md)
-        self.assertIn("<!-- <<< agent-artifacts agents:house <<< -->", claude_md)
+        self.assertIn("<!-- >>> agent-artifacts memory:house >>> -->", claude_md)
+        self.assertIn("<!-- <<< agent-artifacts memory:house <<< -->", claude_md)
+
+        # guideline: a standalone reference doc under .claude/guidelines/ — it is NOT merged
+        # into the memory file, so the two no longer share (and clobber) CLAUDE.md.
+        guideline = self._path(".claude", "guidelines", "python-style.md")
+        self.assertTrue(os.path.isfile(guideline))
+        self.assertIn("Python Style", pathlib.Path(guideline).read_text())
+        self.assertNotIn("python-style", claude_md)
 
         # mcp: .mcp.json has mcpServers.postgres
         mcp = json.loads(pathlib.Path(self._path(".mcp.json")).read_text())
@@ -82,7 +89,7 @@ class InstallEndToEndTests(unittest.TestCase):
         data = json.loads(pathlib.Path(manifest_file).read_text())
         self.assertEqual(len(data["installed"]), 5)
         types = sorted(e["type"] for e in data["installed"])
-        self.assertEqual(types, ["agents", "guideline", "hook", "mcp", "skill"])
+        self.assertEqual(types, ["guideline", "hook", "mcp", "memory", "skill"])
         # local source label recorded verbatim
         self.assertTrue(all(e["source"].startswith("local:") for e in data["installed"]))
 
@@ -92,11 +99,15 @@ class InstallEndToEndTests(unittest.TestCase):
             code = install.run(_request(self.project, profiles=("claude", "opencode")))
         self.assertEqual(code, 0)
 
-        # claude guideline dest: CLAUDE.md ; opencode guideline dest: AGENTS.md
+        # memory dest: claude → CLAUDE.md, opencode → AGENTS.md (each its own file)
         self.assertTrue(os.path.isfile(self._path("CLAUDE.md")))
         self.assertTrue(os.path.isfile(self._path("AGENTS.md")))
-        agents_md = pathlib.Path(self._path("AGENTS.md")).read_text()
-        self.assertIn("<!-- >>> agent-artifacts agents:house >>> -->", agents_md)
+        memory_md = pathlib.Path(self._path("AGENTS.md")).read_text()
+        self.assertIn("<!-- >>> agent-artifacts memory:house >>> -->", memory_md)
+
+        # guideline dest: claude → .claude/guidelines/, opencode → .opencode/guidelines/
+        self.assertTrue(os.path.isfile(self._path(".claude", "guidelines", "python-style.md")))
+        self.assertTrue(os.path.isfile(self._path(".opencode", "guidelines", "python-style.md")))
 
         # claude skills vs opencode skills
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
@@ -143,12 +154,15 @@ class InstallEndToEndTests(unittest.TestCase):
         self.assertIn("performed", parsed)
 
     # ---- idempotent re-install ------------------------------------------- #
-    def test_reinstall_is_idempotent_for_guideline(self):
+    def test_reinstall_is_idempotent(self):
         with redirect_stdout(io.StringIO()):
             install.run(_request(self.project))
             install.run(_request(self.project))
+        # memory block appears exactly once (sentinel replace-in-place, not duplicated).
         claude_md = pathlib.Path(self._path("CLAUDE.md")).read_text()
-        self.assertEqual(claude_md.count("<!-- >>> agent-artifacts agents:house >>> -->"), 1)
+        self.assertEqual(claude_md.count("<!-- >>> agent-artifacts memory:house >>> -->"), 1)
+        # guideline copy is still a single clean file.
+        self.assertTrue(os.path.isfile(self._path(".claude", "guidelines", "python-style.md")))
         # And the manifest still has exactly 5 entries (upsert, not append).
         data = json.loads(pathlib.Path(self._path(".agent-artifacts", "manifest.json")).read_text())
         self.assertEqual(len(data["installed"]), 5)

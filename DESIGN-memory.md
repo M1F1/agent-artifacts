@@ -1,14 +1,14 @@
-# agent-artifacts — Design: the `agents` artifact type (for review)
+# agent-artifacts — Design: the `memory` artifact type (for review)
 
-Companion to [DESIGN.md](DESIGN.md). This adds a **fifth artifact type** — `agents`, the
+Companion to [DESIGN.md](DESIGN.md). This adds a **fifth artifact type** — `memory`, the
 per-harness top-level instruction file (`CLAUDE.md` / `AGENTS.md` / …) — plus two riders the
 same change touches: **correcting the `tabnine` profile paths** against the official Tabnine
 CLI docs, and **adding a `vibe` profile** for Mistral Vibe.
 
 As with the parent design, this document is **what** and **why**; the **how** is in
-[PLAN-agents.md](PLAN-agents.md) and should be read after this is approved.
+[PLAN-memory.md](PLAN-memory.md) and should be read after this is approved.
 
-> **Decisions already taken** (in review, before this draft): type name = **`agents`**;
+> **Decisions already taken** (in review, before this draft): type name = **`memory`**;
 > default install mode = **`prepend`**; per-profile type support is made **optional** so a
 > harness can decline a type it can't express; tabnine MCP target = **`.tabnine/agent/settings.json` · `mcpServers`** (per directive — see §6.1 for the doc caveat).
 
@@ -20,11 +20,11 @@ Every harness reads a single top-level instruction document the model sees on ev
 Claude Code reads `CLAUDE.md`, OpenCode / Codex / Mistral Vibe read `AGENTS.md`, and so on.
 Today agent-artifacts can *append* topical **guidelines** into that file (sentinel blocks),
 but it cannot manage the file as **the team's house instructions** — own it, seed it, or
-inject a canonical preamble/postamble. That is what the `agents` type is for.
+inject a canonical preamble/postamble. That is what the `memory` type is for.
 
 **In scope**
-- A new artifact type `agents`, grouped by type in its own `agents/` source directory, a
-  first-class member of bundles (`includes.agents`).
+- A new artifact type `memory`, grouped by type in its own `memory/` source directory, a
+  first-class member of bundles (`includes.memory`).
 - Four install modes against the consumer's instruction file: **replace**, **prepend**,
   **append**, **skip** (default **prepend**).
 - Clean, idempotent re-install and clean uninstall for every mode.
@@ -35,27 +35,27 @@ inject a canonical preamble/postamble. That is what the `agents` type is for.
 - External artifact sources, per-artifact semver, signing.
 - A TOML writer (so Mistral Vibe MCP/hooks are deferred — §7.2).
 
-## 2. Naming — why `agents`
+## 2. Naming — why `memory`
 
-The generic term for "the top-level instruction file" was chosen as **`agents`** (directory
-`agents/`, type `"agents"`, bundle section `includes.agents`). It mirrors the emerging
+The generic term for "the top-level instruction file" was chosen as **`memory`** (directory
+`memory/`, type `"memory"`, bundle section `includes.memory`). It mirrors the emerging
 cross-tool **`AGENTS.md`** convention, so the source name matches what most harnesses already
 call the file.
 
-- **Type vs. filename.** `agents` is *our* harness-agnostic type. The concrete destination
+- **Type vs. filename.** `memory` is *our* harness-agnostic type. The concrete destination
   **filename is per-profile** (`CLAUDE.md` for Claude, `AGENTS.md` for OpenCode/Vibe). One
   source artifact, many destination filenames — exactly the artifact/profile split of parent §4.
 - **Deliberate departure from the singular-type convention.** Existing types are singular
-  (`skill`/`guideline`/`mcp`/`hook`). `agents` is intentionally the collective noun: it names
+  (`skill`/`guideline`/`mcp`/`hook`). `memory` is intentionally the collective noun: it names
   *the AGENTS.md document*, not "one agent". `agent` (singular) was rejected because it reads
   as "a sub-agent."
 - **Known future-collision caveat.** Both Tabnine and Mistral Vibe also have a *separate*
-  "custom agents / sub-agents" concept (`~/.vibe/agents/*.toml`, Tabnine `agents` settings).
-  If we ever add a type for **those**, it must be named distinctly (`subagents` or
+  "custom memory / sub-memory" concept (`~/.vibe/memory/*.toml`, Tabnine `memory` settings).
+  If we ever add a type for **those**, it must be named distinctly (`submemory` or
   `agentdefs`) to avoid clashing with this instruction-file type. Recorded here so the name is
   used eyes-open.
 
-## 3. The `agents` artifact
+## 3. The `memory` artifact
 
 ### 3.1 Source layout
 
@@ -63,13 +63,13 @@ A flat markdown file per artifact, like guidelines:
 
 ```
 agent-artifacts/
-└── agents/
+└── memory/
     ├── house.md            # the team's canonical AGENTS.md / CLAUDE.md content
     └── security-preamble.md
 ```
 
-- **`name = key`** (parent §4): `agents/house.md` is referenced as `house` under a bundle's
-  `includes.agents`.
+- **`name = key`** (parent §4): `memory/house.md` is referenced as `house` under a bundle's
+  `includes.memory`.
 - **Optional frontmatter.** `description` (for `list`), and an optional **`mode:`** declaring
   this artifact's *preferred* install mode (overridable per §3.4). Body below the frontmatter
   is the instruction content, written verbatim into the destination file.
@@ -106,18 +106,18 @@ overwrite"). `skip` is "seed if missing" — the safe choice for files a consume
 Our injected block is wrapped in **HTML-comment** sentinels, name- and type-scoped:
 
 ```
-<!-- >>> agent-artifacts agents:house >>> -->
+<!-- >>> agent-artifacts memory:house >>> -->
 …our content…
-<!-- <<< agent-artifacts agents:house <<< -->
+<!-- <<< agent-artifacts memory:house <<< -->
 ```
 
 Two deliberate choices:
 - **HTML comments, not `#` headings.** The existing *guideline* sentinels use `# >>> … >>>`,
-  which render as spurious H1 headings. Because the `agents` file **is** the instruction
+  which render as spurious H1 headings. Because the `memory` file **is** the instruction
   context the model reads every turn, we use HTML comments so the markers are invisible in
-  rendered markdown and ignored by agents. (Switching guidelines to the same is a possible
+  rendered markdown and ignored by memory. (Switching guidelines to the same is a possible
   later polish; out of scope here.)
-- **Type-scoped marker** (`agents:<name>`) so an `agents` block and a same-named *guideline*
+- **Type-scoped marker** (`memory:<name>`) so an `memory` block and a same-named *guideline*
   block can coexist in one file (e.g. both target `AGENTS.md`) without either clobbering the
   other on install/uninstall.
 
@@ -129,12 +129,12 @@ guideline path keeps its current behaviour.
 
 The effective mode for an artifact×install is resolved, highest wins:
 
-1. **CLI flag** `--agents-mode {replace,prepend,append,skip}` (applies to the whole invocation).
+1. **CLI flag** `--memory-mode {replace,prepend,append,skip}` (applies to the whole invocation).
 2. **Artifact frontmatter** `mode:` (per-artifact preference).
 3. **Built-in default** `prepend`.
 
 (A per-bundle mode override is **deliberately excluded** — decided in review (2026-06-22): a
-bundle selects *which* agents docs to ship, never *how* they merge. Mode comes only from the
+bundle selects *which* memory docs to ship, never *how* they merge. Mode comes only from the
 flag → frontmatter → default. See §9.)
 
 ### 3.5 How this differs from `guideline`
@@ -142,23 +142,23 @@ flag → frontmatter → default. See §9.)
 They share the sentinel mechanism but model different intents, and stay **separate types**
 (the request was explicit: its own type, own directory, own bundle section):
 
-| | `guideline` | `agents` |
+| | `guideline` | `memory` |
 | --- | --- | --- |
 | Unit | one of many topical rule docs | *the* house instruction document |
 | Scope of edit | a **named block** inside a shared file (co-exists with other guidelines) | the **whole file** (replace) or a single canonical block at top/bottom |
 | Modes | `copy` \| `append-sentinel` | `replace` \| `prepend` \| `append` \| `skip` |
 | Destination filename | per-profile rules location | per-profile **instruction file** (`CLAUDE.md`/`AGENTS.md`) |
 
-## 4. Profile mapping (the new `agents` target)
+## 4. Profile mapping (the new `memory` target)
 
-A profile gains an optional `agents` target describing **where** the instruction file lives
+A profile gains an optional `memory` target describing **where** the instruction file lives
 for that harness and **what kind** of destination it is:
 
 ```python
-AgentsMode = Literal["replace", "prepend", "append", "skip"]
+MemoryMode = Literal["replace", "prepend", "append", "skip"]
 
 @dataclass(frozen=True, slots=True)
-class AgentsTarget:
+class MemoryTarget:
     kind: Literal["file", "dir"]   # "file": single shared instruction file (modes apply)
     dest: str                       # the file (kind="file") OR a directory (kind="dir", copy)
 ```
@@ -170,7 +170,7 @@ class AgentsTarget:
 
 Per built-in profile (verified paths cited in §6):
 
-| Profile | `agents` → | kind |
+| Profile | `memory` → | kind |
 | --- | --- | --- |
 | `claude` | `CLAUDE.md` | file |
 | `opencode` | `AGENTS.md` | file |
@@ -192,7 +192,7 @@ class Profile:
     guidelines: Optional[GuidelineTarget] = None
     mcp:        Optional[MergeSpec]       = None
     hooks:      Optional[HookTarget]      = None
-    agents:     Optional[AgentsTarget]    = None
+    memory:     Optional[MemoryTarget]    = None
 ```
 
 **Installer behaviour when a selected artifact's type is `None` for a target profile:**
@@ -214,7 +214,7 @@ wrong ones change.
 | --- | --- | --- |
 | skills | `.tabnine/agent/skills/<name>/` | ✅ already correct — keep |
 | guidelines | `.tabnine/guidelines/<name>.md` (copy) | ✅ already correct — keep |
-| agents | `.tabnine/guidelines/` (dir copy, `<name>.md`) | ➕ new |
+| memory | `.tabnine/guidelines/` (dir copy, `<name>.md`) | ➕ new |
 | **mcp** | **`.tabnine/agent/settings.json` · `mcpServers` · key** | ⚠️ changed (was `.tabnine/config.json`) — see §6.1 |
 | **hooks** | scripts `.tabnine/agent/hooks/<name>/`; merge **`.tabnine/agent/settings.json` · `hooks.<event>` · list**; events **`BeforeTool`/`AfterTool`/`SessionEnd`** | 🔧 changed (was `.tabnine/hooks/` + `.tabnine/config.json` + Claude event names) |
 
@@ -253,18 +253,18 @@ The abstract event names map per-harness (the `events` map already in `HookTarge
 ## 7. New `vibe` profile (Mistral Vibe)
 
 Named **`vibe`** (the CLI is `vibe`; config lives under `.vibe/`). Verified layout
-([repo](https://github.com/mistralai/mistral-vibe), [docs: agents](https://docs.mistral.ai/vibe/code/cli/agents),
+([repo](https://github.com/mistralai/mistral-vibe), [docs: memory](https://docs.mistral.ai/vibe/code/cli/memory),
 [docs: config](https://docs.mistral.ai/mistral-vibe/terminal/configuration)):
 
 ### 7.1 Supported now
 
 | Type | Target |
 | --- | --- |
-| agents | `AGENTS.md` (file) |
+| memory | `AGENTS.md` (file) |
 | skills | `.vibe/skills/<name>/` (copy; SKILL.md format) |
 | guidelines | `AGENTS.md` (append-sentinel) |
 
-(`agents` and `guideline` both touch `AGENTS.md` but use distinct sentinel markers — §3.3 —
+(`memory` and `guideline` both touch `AGENTS.md` but use distinct sentinel markers — §3.3 —
 so they coexist cleanly.)
 
 ### 7.2 Deferred: MCP and hooks (TOML)
@@ -292,40 +292,40 @@ small and the executor is untouched:
 | `skip` | `WriteFile(dest, ours)` if absent, else `Warn` (no-op) |
 | dir copy (tabnine) | `WriteFile(<dir>/<name>.md, ours)` (or no-op on `skip`+exists) |
 
-`plan_agents(artifact, target, text, existing_text, exists, *, mode, force) -> Result[Plan]`
+`plan_memory(artifact, target, text, existing_text, exists, *, mode, force) -> Result[Plan]`
 is a new pure planner, added to the `PLANNERS` dispatch dict and a new branch in
-`planners._plan_one`. It is the agents analogue of `plan_guideline`.
+`planners._plan_one`. It is the memory analogue of `plan_guideline`.
 
 ### 8.2 Catalog / source / bundles
 
-- `catalog.parse_agents(text, name)` → `Artifact(type="agents", name, root="agents/<name>.md")`;
+- `catalog.parse_memory(text, name)` → `Artifact(type="memory", name, root="memory/<name>.md")`;
   frontmatter optional (a declared `name`/`mode` is validated).
-- `_INCLUDE_TYPES` gains `"agents"`; `_section_to_type` maps `agents`/`agent` → `agents`.
-- `source.Source` scans `agents/*.md` (a new `_scan_agents`, mirroring `_scan_guidelines`).
-- `validate_catalog` covers `agents` automatically (it resolves every bundle).
+- `_INCLUDE_TYPES` gains `"memory"`; `_section_to_type` maps `memory`/`agent` → `memory`.
+- `source.Source` scans `memory/*.md` (a new `_scan_memory`, mirroring `_scan_guidelines`).
+- `validate_catalog` covers `memory` automatically (it resolves every bundle).
 
 ### 8.3 Manifest & uninstall
 
-`ManifestEntry.type` now includes `"agents"`; **no new field** is required. Proof of install
+`ManifestEntry.type` now includes `"memory"`; **no new field** is required. Proof of install
 is the `files` map (parent §12). Uninstall reuses the existing inverse machinery:
 - `prepend`/`append` → the destination carries our HTML-comment markers → **strip our block**
-  (the agents analogue of the guideline sentinel strip), preserving foreign content; delete
+  (the memory analogue of the guideline sentinel strip), preserving foreign content; delete
   the file only if stripping empties a file we created.
 - `replace` / dir-copy → our file → **remove** it; if a sibling `<dest>.agent-artifacts-bak`
   exists (replace over foreign content), **restore** it.
 
 `update` re-pulls the artifact and re-applies the resolved mode (idempotent for sentinel
-modes); `status` reports `agents` entries and on-disk drift via the same `classify` path;
-`list` includes `agents` and honors `--type agents`.
+modes); `status` reports `memory` entries and on-disk drift via the same `classify` path;
+`list` includes `memory` and honors `--type memory`.
 
 ### 8.4 CLI surface (delta to parent §13)
 
 ```
-aa install … [--agents-mode replace|prepend|append|skip]   # default: prepend
-aa list      [--type agents]                                # agents included in views
+aa install … [--memory-mode replace|prepend|append|skip]   # default: prepend
+aa list      [--type memory]                                # memory included in views
 ```
 
-`Request` gains `agents_mode: Optional[str] = None`. Agent mode (`--yes/--json`) and exit
+`Request` gains `memory_mode: Optional[str] = None`. Agent mode (`--yes/--json`) and exit
 codes are unchanged; a `replace` needing `--force` returns the existing CONFLICT code (4).
 
 ## 9. Open questions / verify items (parent §19 style)
@@ -339,6 +339,6 @@ codes are unchanged; a `replace` needing `--force` returns the existing CONFLICT
 4. **Replace-mode recovery** — `<dest>.agent-artifacts-bak` is the MVP safety net; revisit if a
    richer undo/history is wanted.
 
-**Decided non-goal (2026-06-22):** a *per-bundle* `agents` mode override is **not** added — the
-install mode comes only from `--agents-mode` → artifact frontmatter `mode:` → default `prepend`.
-A bundle selects *which* agents docs to ship, never *how* they merge.
+**Decided non-goal (2026-06-22):** a *per-bundle* `memory` mode override is **not** added — the
+install mode comes only from `--memory-mode` → artifact frontmatter `mode:` → default `prepend`.
+A bundle selects *which* memory docs to ship, never *how* they merge.

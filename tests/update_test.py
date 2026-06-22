@@ -36,8 +36,8 @@ from agent_artifacts.source import open_source
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
-# The tabnine profile installs guidelines in *copy* mode: one standalone file we can edit
-# and diff per the §9 WriteFile policy. (claude/opencode use append-sentinel.)
+# Guidelines are always copied as one standalone file we can edit and diff per the §9
+# WriteFile policy — they are never merged into a shared memory file.
 PROFILE = "tabnine"
 GUIDELINE_DEST = os.path.join(".tabnine", "guidelines", "python-style.md")
 

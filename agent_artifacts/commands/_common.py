@@ -47,7 +47,7 @@ CORRUPT_MANIFEST = 5
 # Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, DESIGN.md §17).
 DEFAULT_REPO = "M1F1/agent-artifacts"
 
-_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "agents")
+_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 
 # --- project / repo / manifest paths --------------------------------------- #

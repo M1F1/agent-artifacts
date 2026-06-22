@@ -32,7 +32,7 @@ aa install house --profile claude --yes
 # 5. Verify the sentinel appended successfully
 echo -e "\n${GREEN}[5/11] Simulating User: Verifying human notes were kept intact...${NC}"
 grep "Maintainer notes" CLAUDE.md > /dev/null && echo "✅ Human content preserved!"
-grep "agent-artifacts agents:house" CLAUDE.md > /dev/null && echo "✅ AI rules successfully injected!"
+grep "agent-artifacts memory:house" CLAUDE.md > /dev/null && echo "✅ AI rules successfully injected!"
 
 # 6. Simulate drift (User edits a tracked file manually)
 echo -e "\n${GREEN}[6/11] Simulating User: Modifying a tracked guideline file (simulating drift)...${NC}"

@@ -1,6 +1,6 @@
 # agent-artifacts (aa)
 
-Install your team's AI artifacts (skills, guidelines, MCP configs, hooks) from one central catalog directly into your local IDE harnesses (Claude Code, Tabnine, OpenCode, etc.). 
+Install your team's AI artifacts (skills, guidelines, MCP configs, hooks, and memory files) from one central catalog directly into your local IDE harnesses (Claude Code, Tabnine, OpenCode, etc.). 
 
 Used by humans and agents alike to sync team-wide AI behaviors instantly!
 
@@ -48,11 +48,11 @@ aa uninstall code-review --profile claude
 ```
 
 ### Advanced Modes
-By default, installing an agent rule wraps it in invisible HTML sentinels (`<!-- >>>`) so it can be safely updated/uninstalled later without deleting your manual notes. 
+By default, installing a **memory** artifact (the harness's top-level instruction file — `CLAUDE.md`, `AGENTS.md`, `TABNINE.md`) wraps it in invisible HTML sentinels (`<!-- >>>`) so it can be safely updated/uninstalled later without deleting your manual notes. 
 
 If you just want a perfectly clean file and don't care about the tracking, use `replace` mode to completely overwrite the target file with pure markdown:
 ```sh
-aa install house --profile tabnine --agents-mode replace --force
+aa install house --profile tabnine --memory-mode replace --force
 ```
 
 ---

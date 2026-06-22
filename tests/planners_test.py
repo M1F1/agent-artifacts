@@ -33,7 +33,7 @@ def claude_profile() -> Profile:
     return Profile(
         name="claude",
         skills=CopyTarget(dir=".claude/skills/<name>/"),
-        guidelines=GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md"),
+        guidelines=GuidelineTarget(dest=".claude/guidelines/"),
         mcp=MergeSpec(file=".mcp.json", json_path="mcpServers", mode="key"),
         hooks=HookTarget(
             scripts_dir=".claude/hooks/<name>/",
@@ -77,72 +77,27 @@ class SkillPlannerTests(unittest.TestCase):
 # plan_guideline                                                               #
 # --------------------------------------------------------------------------- #
 class GuidelinePlannerTests(unittest.TestCase):
-    def test_copy_mode_golden(self):
+    """Guidelines are copy-only: a standalone reference doc written into the target dir as
+    ``<name>.md``. They never merge into a shared file (that is the memory artifact's job),
+    so there is no mode, no ``existing_text``, and no sentinel wrapping."""
+
+    def test_copy_golden(self):
         art = Artifact(type="guideline", name="python-style", root="guidelines/python-style.md")
-        target = GuidelineTarget(mode="copy", dest=".tabnine/guidelines")
+        target = GuidelineTarget(dest=".tabnine/guidelines")
         result = planners.plan_guideline(art, target, "Use black.\n")
         self.assertEqual(
             result,
             Ok((WriteFile(path=".tabnine/guidelines/python-style.md", content=b"Use black.\n"),)),
         )
 
-    def test_append_sentinel_into_empty_file(self):
+    def test_copy_into_dir_with_trailing_slash(self):
         art = Artifact(type="guideline", name="python-style", root="guidelines/python-style.md")
-        target = GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md")
-        result = planners.plan_guideline(art, target, "Use black.", existing_text=None)
-        expected_body = (
-            "# >>> agent-artifacts: python-style >>>\n"
-            "Use black.\n"
-            "# <<< agent-artifacts: python-style <<<\n"
-        )
-        self.assertEqual(result, Ok((WriteFile(path="CLAUDE.md", content=expected_body.encode()),)))
-
-    def test_append_sentinel_preserves_foreign_content(self):
-        art = Artifact(type="guideline", name="python-style", root="guidelines/python-style.md")
-        target = GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md")
-        existing = "# My project rules\nBe nice.\n"
-        result = planners.plan_guideline(art, target, "Use black.", existing_text=existing)
-        assert isinstance(result, Ok)
-        text = result.value[0].content.decode()
-        self.assertIn("# My project rules", text)
-        self.assertIn("Be nice.", text)
-        self.assertIn("# >>> agent-artifacts: python-style >>>", text)
-        self.assertIn("Use black.", text)
-
-    def test_append_sentinel_is_idempotent(self):
-        art = Artifact(type="guideline", name="python-style", root="guidelines/python-style.md")
-        target = GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md")
-        once = planners.plan_guideline(art, target, "Use black.", existing_text="Header\n")
-        assert isinstance(once, Ok)
-        first_text = once.value[0].content.decode()
-        twice = planners.plan_guideline(art, target, "Use black.", existing_text=first_text)
-        assert isinstance(twice, Ok)
-        # Re-installing the same content must not grow the file.
-        self.assertEqual(twice.value[0].content, once.value[0].content)
-        # Exactly one occurrence of our block markers.
-        self.assertEqual(first_text.count("# >>> agent-artifacts: python-style >>>"), 1)
-
-    def test_append_sentinel_replaces_changed_block(self):
-        art = Artifact(type="guideline", name="python-style", root="guidelines/python-style.md")
-        target = GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md")
-        first = planners.plan_guideline(art, target, "Old rule.", existing_text="Header\n")
-        assert isinstance(first, Ok)
-        updated = planners.plan_guideline(
-            art, target, "New rule.", existing_text=first.value[0].content.decode()
-        )
-        assert isinstance(updated, Ok)
-        text = updated.value[0].content.decode()
-        self.assertIn("New rule.", text)
-        self.assertNotIn("Old rule.", text)
-        self.assertEqual(text.count("# >>> agent-artifacts: python-style >>>"), 1)
-
-    def test_unknown_mode_is_err(self):
-        art = Artifact(type="guideline", name="x", root="guidelines/x.md")
-        target = GuidelineTarget.__new__(GuidelineTarget)
-        object.__setattr__(target, "mode", "bogus")
-        object.__setattr__(target, "dest", "X.md")
+        target = GuidelineTarget(dest=".claude/guidelines/")
         result = planners.plan_guideline(art, target, "body")
-        self.assertIsInstance(result, Err)
+        self.assertEqual(
+            result,
+            Ok((WriteFile(path=".claude/guidelines/python-style.md", content=b"body"),)),
+        )
 
 
 # --------------------------------------------------------------------------- #

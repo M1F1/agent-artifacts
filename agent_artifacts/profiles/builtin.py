@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from ..model import (
-    AgentsTarget,
+    MemoryTarget,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
@@ -20,7 +20,9 @@ from ..model import (
 _CLAUDE = Profile(
     name="claude",
     skills=CopyTarget(dir=".claude/skills/<name>/"),
-    guidelines=GuidelineTarget(mode="append-sentinel", dest="CLAUDE.md"),
+    # Guidelines are standalone reference docs in the worktree, NOT merged into the memory
+    # file (CLAUDE.md) — so a guideline and the memory artifact never share/clobber a file.
+    guidelines=GuidelineTarget(dest=".claude/guidelines/"),
     mcp=MergeSpec(file=".mcp.json", json_path="mcpServers", mode="key"),
     hooks=HookTarget(
         scripts_dir=".claude/hooks/<name>/",
@@ -40,7 +42,7 @@ _CLAUDE = Profile(
             }),
         ),
     ),
-    agents=AgentsTarget(kind="file", dest="CLAUDE.md"),
+    memory=MemoryTarget(kind="file", dest="CLAUDE.md"),
 )
 
 # --------------------------------------------------------------------------- #
@@ -52,7 +54,7 @@ _CLAUDE = Profile(
 _OPENCODE = Profile(
     name="opencode",
     skills=CopyTarget(dir=".opencode/skills/<name>/"),
-    guidelines=GuidelineTarget(mode="append-sentinel", dest="AGENTS.md"),
+    guidelines=GuidelineTarget(dest=".opencode/guidelines/"),
     mcp=MergeSpec(file="opencode.json", json_path="mcp", mode="key"),
     hooks=HookTarget(
         scripts_dir=".opencode/hooks/<name>/",
@@ -73,21 +75,21 @@ _OPENCODE = Profile(
             }),
         ),
     ),
-    agents=AgentsTarget(kind="file", dest="AGENTS.md"),
+    memory=MemoryTarget(kind="file", dest="AGENTS.md"),
 )
 
 # --------------------------------------------------------------------------- #
 # Tabnine                                                                      #
 # --------------------------------------------------------------------------- #
-# Paths corrected against the official Tabnine CLI docs (DESIGN-agents.md §6).
+# Paths corrected against the official Tabnine CLI docs (DESIGN-memory.md §6).
 # Skills (.tabnine/agent/skills/) and guidelines (copy → .tabnine/guidelines/)
 # were already correct and are kept; MCP and hooks are corrected below.
 _TABNINE = Profile(
     name="tabnine",
     skills=CopyTarget(dir=".tabnine/agent/skills/<name>/"),
-    guidelines=GuidelineTarget(mode="copy", dest=".tabnine/guidelines/"),
+    guidelines=GuidelineTarget(dest=".tabnine/guidelines/"),
     # MCP target set to .tabnine/agent/settings.json · mcpServers per directive
-    # (DESIGN-agents.md §6.1). DOC CAVEAT: the published docs put server
+    # (DESIGN-memory.md §6.1). DOC CAVEAT: the published docs put server
     # *definitions* in the standalone .tabnine/mcp_servers.json (key
     # "mcpServers"); settings.json documents a different "mcp" key (governance
     # only). Verify in-environment — switching the file later is a one-line
@@ -98,7 +100,7 @@ _TABNINE = Profile(
         mode="key",
     ),
     # Hooks live in settings.json under hooks.<event>; abstract events map to
-    # Tabnine's BeforeTool/AfterTool/SessionEnd (DESIGN-agents.md §6.2).
+    # Tabnine's BeforeTool/AfterTool/SessionEnd (DESIGN-memory.md §6.2).
     hooks=HookTarget(
         scripts_dir=".tabnine/agent/hooks/<name>/",
         events=MappingProxyType({
@@ -117,13 +119,13 @@ _TABNINE = Profile(
             }),
         ),
     ),
-    agents=AgentsTarget(kind="file", dest="TABNINE.md"),
+    memory=MemoryTarget(kind="file", dest="TABNINE.md"),
 )
 
 # --------------------------------------------------------------------------- #
 # Mistral Vibe                                                                 #
 # --------------------------------------------------------------------------- #
-# Partial profile (DESIGN-agents.md §7): agents/skills/guidelines are supported;
+# Partial profile (DESIGN-memory.md §7): memory/skills/guidelines are supported;
 # mcp and hooks are intentionally None. Vibe stores MCP under [[mcp_servers]] in
 # config.toml and hooks in .vibe/hooks.toml — both TOML. The merge engine emits
 # JSON only and the stdlib has no TOML writer, so honoring the zero-dep rule
@@ -131,10 +133,10 @@ _TABNINE = Profile(
 _VIBE = Profile(
     name="vibe",
     skills=CopyTarget(dir=".vibe/skills/<name>/"),
-    guidelines=GuidelineTarget(mode="append-sentinel", dest="AGENTS.md"),
+    guidelines=GuidelineTarget(dest=".vibe/guidelines/"),
     mcp=None,
     hooks=None,
-    agents=AgentsTarget(kind="file", dest="AGENTS.md"),
+    memory=MemoryTarget(kind="file", dest="AGENTS.md"),
 )
 
 # --------------------------------------------------------------------------- #

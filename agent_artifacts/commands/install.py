@@ -11,7 +11,7 @@ Flow (matches the WP-12 contract):
 2. ``Source.catalog()`` -> ``Catalog``.
 3. ``_common.resolve_artifacts`` + ``_common.resolve_profiles``.
 4. Assemble the ``files`` mapping (targets, guideline bodies, descriptors, source labels,
-   per-profile existing-guideline text for idempotent append-sentinel).
+   per-profile memory-file pre-reads for the sentinel/replace merge).
 5. Build ``profiles_map`` and ``configs`` (per-profile harness config for collision detection).
 6. ``planners.plan_install`` -> ``Plan``.
 7. ``_common.split_manifest`` + ``_common.rebase_plan`` (project-relative -> absolute).
@@ -38,13 +38,13 @@ from ..source import Source, open_source
 from . import _common
 
 # Type -> the `Profile` attribute that targets it. A `None` value on that attribute means the
-# harness does not support that type (DESIGN-agents.md §5).
+# harness does not support that type (DESIGN-memory.md §5).
 _TYPE_ATTR = {
     "skill": "skills",
     "guideline": "guidelines",
     "mcp": "mcp",
     "hook": "hooks",
-    "agents": "agents",
+    "memory": "memory",
 }
 
 
@@ -54,55 +54,31 @@ def _err(message: str) -> None:
 
 
 def _supports(profile: Profile, art_type: str) -> bool:
-    """True when `profile` declares a target for `art_type` (DESIGN-agents.md §5)."""
+    """True when `profile` declares a target for `art_type` (DESIGN-memory.md §5)."""
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
 
 
-def _read_guideline_existing(
-    project: str, profiles: Tuple[Tuple[str, Profile], ...]
-) -> Dict[str, str]:
-    """Read each profile's append-sentinel destination file (if present) keyed for `files`.
+def _resolve_memory_mode(request: Request, body: str) -> str:
+    """Resolve the effective install mode for one ``memory`` artifact (DESIGN-memory §3.4).
 
-    Returns ``{f"existing:{profile}:": <dest-relative-path>}`` markers' content — but keyed
-    per artifact below. Here we only return the per-profile destination *file text* so the
-    caller can attach it under ``existing:{profile}:{artifact}`` for every guideline that
-    targets that profile. Missing files map to no entry (planner treats absent as empty).
-    """
-    out: Dict[str, str] = {}
-    for pname, prof in profiles:
-        target = prof.guidelines
-        if target is None or target.mode != "append-sentinel":
-            continue
-        dest = os.path.normpath(os.path.join(project, target.dest))
-        if fs.exists(dest):
-            try:
-                out[pname] = fs.read_text(dest)
-            except OSError:  # pragma: no cover - defensive
-                continue
-    return out
-
-
-def _resolve_agents_mode(request: Request, body: str) -> str:
-    """Resolve the effective install mode for one ``agents`` artifact (DESIGN-agents §3.4).
-
-    Precedence, highest wins: the CLI flag ``request.agents_mode`` → the artifact's
+    Precedence, highest wins: the CLI flag ``request.memory_mode`` → the artifact's
     frontmatter ``mode:`` → the built-in default ``"prepend"``.
     """
-    if request.agents_mode:
-        return request.agents_mode
+    if request.memory_mode:
+        return request.memory_mode
     _found, fields, _body = catalog_mod._split_frontmatter(body)
     mode = fields.get("mode")
     return mode if mode else "prepend"
 
 
-def _agents_dest(profile: Profile, project: str, name: str) -> str:
-    """Absolute destination path the planner will write for an ``agents`` artifact.
+def _memory_dest(profile: Profile, project: str, name: str) -> str:
+    """Absolute destination path the planner will write for an ``memory`` artifact.
 
     ``kind="file"`` → the shared instruction file itself; ``kind="dir"`` → ``<dir>/<name>.md``.
-    Mirrors `planners.plan_agents` so install's pre-read of the existing dest text matches what
+    Mirrors `planners.plan_memory` so install's pre-read of the existing dest text matches what
     the planner merges against.
     """
-    target = profile.agents
+    target = profile.memory
     if target.kind == "dir":
         return os.path.normpath(os.path.join(project, target.dest, f"{name}.md"))
     return os.path.normpath(os.path.join(project, target.dest))
@@ -145,7 +121,7 @@ def run(request: Request) -> int:
     project = _common.project_root(request)
 
     # 4. Partition every artifact×profile target by whether the harness supports the type
-    #    (DESIGN-agents.md §5). An explicit by-name request for an unsupported type is a hard
+    #    (DESIGN-memory.md §5). An explicit by-name request for an unsupported type is a hard
     #    error (USAGE); an unsupported type that only arrived via --bundle/--all is skipped
     #    with a warning. Only the supported (kept) targets are planned.
     by_name = set(request.names)
@@ -176,7 +152,6 @@ def run(request: Request) -> int:
         "__targets__": tuple(kept_targets),
         "__installed_at__": installed_at,
     }
-    existing_text = _read_guideline_existing(project, profs)
     kept_artifacts = {a.name: a for (a, _pname) in kept_targets}
 
     for a in arts:
@@ -184,34 +159,31 @@ def run(request: Request) -> int:
             continue  # every target for this artifact was dropped (unsupported, by-bundle)
         files[f"source:{a.name}"] = src.label()
         if a.type == "guideline":
+            # A guideline is copied verbatim as a standalone reference doc — no shared-file
+            # merge, so nothing to pre-read from the destination.
             body = src.read(a.root).decode("utf-8")
             _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
             files[f"guideline:{a.name}"] = stripped_body
-            # Attach the destination file's current text per profile so that the
-            # append-sentinel block stays idempotent across re-installs.
-            for pname, _prof in profs:
-                if pname in existing_text:
-                    files[f"existing:{pname}:{a.name}"] = existing_text[pname]
         elif a.type in ("mcp", "hook"):
             # mcp descriptor lives at a.root (e.g. "mcp/postgres.json"); a hook's lives at
             # a.root + "/hook.json" (e.g. "hooks/block-secrets/hook.json").
             rel = a.root if a.type == "mcp" else f"{a.root}/hook.json"
             files[f"descriptor:{a.name}"] = json.loads(src.read(rel).decode("utf-8"))
-        elif a.type == "agents":
+        elif a.type == "memory":
             body = src.read(a.root).decode("utf-8")
             _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
-            files[f"agents:{a.name}"] = stripped_body
-            files[f"agents-mode:{a.name}"] = _resolve_agents_mode(request, body)
+            files[f"memory:{a.name}"] = stripped_body
+            files[f"memory-mode:{a.name}"] = _resolve_memory_mode(request, body)
             # Per supported file-profile, pre-read the destination's existence + text so the
-            # planner can merge/replace against it (the EXACT keys plan_agents reads).
+            # planner can merge/replace against it (the EXACT keys plan_memory reads).
             for pname, prof in profs:
-                if prof.agents is None:
+                if prof.memory is None:
                     continue
-                dest = _agents_dest(prof, project, a.name)
+                dest = _memory_dest(prof, project, a.name)
                 exists = fs.exists(dest)
-                files[f"agents-exists:{pname}:{a.name}"] = exists
+                files[f"memory-exists:{pname}:{a.name}"] = exists
                 if exists:
-                    files[f"existing-agents:{pname}:{a.name}"] = fs.read_text(dest)
+                    files[f"existing-memory:{pname}:{a.name}"] = fs.read_text(dest)
 
     # 6. Build profile map + per-profile harness configs (for merge collision detection).
     #

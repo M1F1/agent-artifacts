@@ -1,5 +1,5 @@
-"""Tests for WP-28: agents targets, the corrected tabnine record, the vibe
-partial profile, and the loader's tolerance of partial / agents overrides."""
+"""Tests for WP-28: memory targets, the corrected tabnine record, the vibe
+partial profile, and the loader's tolerance of partial / memory overrides."""
 
 from __future__ import annotations
 
@@ -8,41 +8,41 @@ import os
 import tempfile
 import unittest
 
-from agent_artifacts.model import AgentsTarget, Profile
+from agent_artifacts.model import MemoryTarget, Profile
 from agent_artifacts.profiles.builtin import builtin
 from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 
 
-class TestAgentsTargets(unittest.TestCase):
-    """Each built-in profile carries the expected `agents` target (DESIGN-agents §4)."""
+class TestMemoryTargets(unittest.TestCase):
+    """Each built-in profile carries the expected `memory` target (DESIGN-memory §4)."""
 
-    def test_claude_agents_is_file_claude_md(self) -> None:
-        a = builtin()["claude"].agents
-        self.assertIsInstance(a, AgentsTarget)
+    def test_claude_memory_is_file_claude_md(self) -> None:
+        a = builtin()["claude"].memory
+        self.assertIsInstance(a, MemoryTarget)
         self.assertEqual(a.kind, "file")
         self.assertEqual(a.dest, "CLAUDE.md")
 
-    def test_opencode_agents_is_file_agents_md(self) -> None:
-        a = builtin()["opencode"].agents
-        self.assertIsInstance(a, AgentsTarget)
+    def test_opencode_memory_is_file_memory_md(self) -> None:
+        a = builtin()["opencode"].memory
+        self.assertIsInstance(a, MemoryTarget)
         self.assertEqual(a.kind, "file")
         self.assertEqual(a.dest, "AGENTS.md")
 
-    def test_vibe_agents_is_file_agents_md(self) -> None:
-        a = builtin()["vibe"].agents
-        self.assertIsInstance(a, AgentsTarget)
+    def test_vibe_memory_is_file_memory_md(self) -> None:
+        a = builtin()["vibe"].memory
+        self.assertIsInstance(a, MemoryTarget)
         self.assertEqual(a.kind, "file")
         self.assertEqual(a.dest, "AGENTS.md")
 
-    def test_tabnine_agents_is_file_tabnine_md(self) -> None:
-        a = builtin()["tabnine"].agents
-        self.assertIsInstance(a, AgentsTarget)
+    def test_tabnine_memory_is_file_tabnine_md(self) -> None:
+        a = builtin()["tabnine"].memory
+        self.assertIsInstance(a, MemoryTarget)
         self.assertEqual(a.kind, "file")
         self.assertEqual(a.dest, "TABNINE.md")
 
 
 class TestVibePartialProfile(unittest.TestCase):
-    """The new vibe profile is a legitimate partial profile (DESIGN-agents §7.2)."""
+    """The new vibe profile is a legitimate partial profile (DESIGN-memory §7.2)."""
 
     def test_vibe_is_a_profile(self) -> None:
         v = builtin()["vibe"]
@@ -52,8 +52,7 @@ class TestVibePartialProfile(unittest.TestCase):
     def test_vibe_skills_and_guidelines(self) -> None:
         v = builtin()["vibe"]
         self.assertEqual(v.skills.dir, ".vibe/skills/<name>/")
-        self.assertEqual(v.guidelines.mode, "append-sentinel")
-        self.assertEqual(v.guidelines.dest, "AGENTS.md")
+        self.assertEqual(v.guidelines.dest, ".vibe/guidelines/")
 
     def test_vibe_mcp_and_hooks_are_none(self) -> None:
         v = builtin()["vibe"]
@@ -62,7 +61,7 @@ class TestVibePartialProfile(unittest.TestCase):
 
 
 class TestTabnineCorrectedTargets(unittest.TestCase):
-    """The corrected tabnine MCP/hooks targets (DESIGN-agents §6/§6.1/§6.2)."""
+    """The corrected tabnine MCP/hooks targets (DESIGN-memory §6/§6.1/§6.2)."""
 
     def test_tabnine_mcp_in_settings_json(self) -> None:
         m = builtin()["tabnine"].mcp
@@ -84,35 +83,35 @@ class TestTabnineCorrectedTargets(unittest.TestCase):
         self.assertEqual(events["Stop"], "hooks.SessionEnd")
 
 
-class TestLoaderAgentsTarget(unittest.TestCase):
-    """_profile_from_dict parses an `agents` section into an AgentsTarget."""
+class TestLoaderMemoryTarget(unittest.TestCase):
+    """_profile_from_dict parses an `memory` section into an MemoryTarget."""
 
-    def test_agents_override_parsed(self) -> None:
+    def test_memory_override_parsed(self) -> None:
         record = {
-            "name": "withagents",
+            "name": "withmemory",
             "skills": {"dir": "s/<name>/"},
-            "guidelines": {"mode": "append-sentinel", "dest": "AGENTS.md"},
+            "guidelines": {"dest": ".x/guidelines/"},
             "mcp": {"file": "m.json", "json_path": "mcp", "mode": "key"},
             "hooks": {
                 "scripts_dir": "h/<name>/",
                 "events": {"PreToolUse": "hooks.pre"},
                 "merge": {"file": "h.json", "json_path": "hooks", "mode": "list"},
             },
-            "agents": {"kind": "file", "dest": "AGENTS.md"},
+            "memory": {"kind": "file", "dest": "AGENTS.md"},
         }
         p = _profile_from_dict(record)
-        self.assertIsInstance(p.agents, AgentsTarget)
-        self.assertEqual(p.agents.kind, "file")
-        self.assertEqual(p.agents.dest, "AGENTS.md")
+        self.assertIsInstance(p.memory, MemoryTarget)
+        self.assertEqual(p.memory.kind, "file")
+        self.assertEqual(p.memory.dest, "AGENTS.md")
 
-    def test_agents_dir_override_parsed(self) -> None:
+    def test_memory_dir_override_parsed(self) -> None:
         record = {
             "name": "tn-like",
-            "agents": {"kind": "dir", "dest": ".x/guidelines/"},
+            "memory": {"kind": "dir", "dest": ".x/guidelines/"},
         }
         p = _profile_from_dict(record)
-        self.assertEqual(p.agents.kind, "dir")
-        self.assertEqual(p.agents.dest, ".x/guidelines/")
+        self.assertEqual(p.memory.kind, "dir")
+        self.assertEqual(p.memory.dest, ".x/guidelines/")
 
 
 class TestLoaderPartialProfile(unittest.TestCase):
@@ -122,16 +121,16 @@ class TestLoaderPartialProfile(unittest.TestCase):
         record = {
             "name": "partial",
             "skills": {"dir": ".partial/skills/<name>/"},
-            "guidelines": {"mode": "append-sentinel", "dest": "AGENTS.md"},
+            "guidelines": {"dest": ".x/guidelines/"},
             # no "mcp", no "hooks"
-            "agents": {"kind": "file", "dest": "AGENTS.md"},
+            "memory": {"kind": "file", "dest": "AGENTS.md"},
         }
         p = _profile_from_dict(record)  # must not raise
         self.assertEqual(p.name, "partial")
         self.assertIsNone(p.mcp)
         self.assertIsNone(p.hooks)
         self.assertEqual(p.skills.dir, ".partial/skills/<name>/")
-        self.assertEqual(p.agents.dest, "AGENTS.md")
+        self.assertEqual(p.memory.dest, "AGENTS.md")
 
     def test_name_only_record_is_all_none(self) -> None:
         p = _profile_from_dict({"name": "bare"})
@@ -140,15 +139,15 @@ class TestLoaderPartialProfile(unittest.TestCase):
         self.assertIsNone(p.guidelines)
         self.assertIsNone(p.mcp)
         self.assertIsNone(p.hooks)
-        self.assertIsNone(p.agents)
+        self.assertIsNone(p.memory)
 
     def test_partial_override_loaded_via_load_profiles(self) -> None:
         override = {
             "vibe-custom": {
                 "name": "vibe-custom",
                 "skills": {"dir": ".vibe/skills/<name>/"},
-                "guidelines": {"mode": "append-sentinel", "dest": "AGENTS.md"},
-                "agents": {"kind": "file", "dest": "AGENTS.md"},
+                "guidelines": {"dest": ".x/guidelines/"},
+                "memory": {"kind": "file", "dest": "AGENTS.md"},
             }
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,7 +163,7 @@ class TestLoaderPartialProfile(unittest.TestCase):
             vc = profiles["vibe-custom"]
             self.assertIsNone(vc.mcp)
             self.assertIsNone(vc.hooks)
-            self.assertEqual(vc.agents.kind, "file")
+            self.assertEqual(vc.memory.kind, "file")
 
 
 if __name__ == "__main__":

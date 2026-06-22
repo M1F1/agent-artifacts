@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
 from ..model import (
-    AgentsTarget,
+    MemoryTarget,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
@@ -46,16 +46,16 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
     """Build a ``Profile`` from a JSON-parsed dict (the §11 record shape).
 
     Every artifact-type section is **optional**: a missing key yields ``None``
-    (this harness does not support that type — DESIGN-agents.md §5), so partial
+    (this harness does not support that type — DESIGN-memory.md §5), so partial
     profiles load without a ``KeyError``.
 
-    Expected JSON shape (a partial ``vibe``-style profile + an ``agents`` target)::
+    Expected JSON shape (a partial ``vibe``-style profile + an ``memory`` target)::
 
         {
           "name": "vibe",
           "skills":     { "dir": ".vibe/skills/<name>/" },
-          "guidelines": { "mode": "append-sentinel", "dest": "AGENTS.md" },
-          "agents":     { "kind": "file", "dest": "AGENTS.md" }
+          "guidelines": { "dest": ".vibe/guidelines/" },
+          "memory":     { "kind": "file", "dest": "AGENTS.md" }
           # no "mcp" / "hooks" keys -> mcp=None, hooks=None
         }
     """
@@ -63,21 +63,21 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
     guide_d = record.get("guidelines")
     mcp_d = record.get("mcp")
     hooks_d = record.get("hooks")
-    agents_d = record.get("agents")
+    memory_d = record.get("memory")
 
     return Profile(
         name=record["name"],
         skills=CopyTarget(dir=skills_d["dir"]) if skills_d is not None else None,
         guidelines=(
-            GuidelineTarget(mode=guide_d["mode"], dest=guide_d["dest"])
+            GuidelineTarget(dest=guide_d["dest"])
             if guide_d is not None
             else None
         ),
         mcp=_merge_spec_from_dict(mcp_d) if mcp_d is not None else None,
         hooks=_hook_target_from_dict(hooks_d) if hooks_d is not None else None,
-        agents=(
-            AgentsTarget(kind=agents_d["kind"], dest=agents_d["dest"])
-            if agents_d is not None
+        memory=(
+            MemoryTarget(kind=memory_d["kind"], dest=memory_d["dest"])
+            if memory_d is not None
             else None
         ),
     )

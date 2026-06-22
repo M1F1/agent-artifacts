@@ -215,19 +215,11 @@ def _gather_inputs(
     profile = profiles.get(profile_name)
 
     if artifact.type == "guideline":
+        # Guidelines are copied verbatim as standalone docs — no shared-file merge.
         body = src.read(artifact.root).decode("utf-8")
         from ..catalog import _split_frontmatter
         _found, _fields, stripped_body = _split_frontmatter(body)
         files[f"guideline:{artifact.name}"] = stripped_body
-        # append-sentinel mode needs the current destination contents to splice our block.
-        if (
-            profile is not None
-            and profile.guidelines is not None
-            and profile.guidelines.mode == "append-sentinel"
-        ):
-            dest = os.path.join(project, profile.guidelines.dest)
-            if fs.exists(dest):
-                files[f"existing:{profile_name}:{artifact.name}"] = fs.read_text(dest)
         return
 
     if artifact.type in ("mcp", "hook"):
@@ -248,33 +240,33 @@ def _gather_inputs(
                 configs[profile_name] = _read_config(project, spec.file)
         return
 
-    if artifact.type == "agents":
+    if artifact.type == "memory":
         body = src.read(artifact.root).decode("utf-8")
         from ..catalog import _split_frontmatter
         _found, _fields, stripped_body = _split_frontmatter(body)
-        files[f"agents:{artifact.name}"] = stripped_body
-        # update has no --agents-mode flag in MVP: frontmatter `mode:` else "prepend".
-        files[f"agents-mode:{artifact.name}"] = _agents_mode_from_body(body)
+        files[f"memory:{artifact.name}"] = stripped_body
+        # update has no --memory-mode flag in MVP: frontmatter `mode:` else "prepend".
+        files[f"memory-mode:{artifact.name}"] = _memory_mode_from_body(body)
         # For the entry's own (file) profile, pre-read the destination so the planner can
-        # merge/replace against it (the EXACT keys plan_agents reads — mirrors install).
-        if profile is not None and profile.agents is not None:
-            target = profile.agents
+        # merge/replace against it (the EXACT keys plan_memory reads — mirrors install).
+        if profile is not None and profile.memory is not None:
+            target = profile.memory
             if target.kind == "dir":
                 dest = os.path.join(project, target.dest, f"{artifact.name}.md")
             else:
                 dest = os.path.join(project, target.dest)
             exists = fs.exists(dest)
-            files[f"agents-exists:{profile_name}:{artifact.name}"] = exists
+            files[f"memory-exists:{profile_name}:{artifact.name}"] = exists
             if exists:
-                files[f"existing-agents:{profile_name}:{artifact.name}"] = fs.read_text(dest)
+                files[f"existing-memory:{profile_name}:{artifact.name}"] = fs.read_text(dest)
         return
 
     # skill: nothing extra — the planner copies artifact.root.
 
 
-def _agents_mode_from_body(body: str) -> str:
-    """Resolve an ``agents`` artifact's install mode for update: frontmatter ``mode:`` else
-    ``"prepend"`` (update has no ``--agents-mode`` flag in MVP — DESIGN-agents.md §3.4)."""
+def _memory_mode_from_body(body: str) -> str:
+    """Resolve an ``memory`` artifact's install mode for update: frontmatter ``mode:`` else
+    ``"prepend"`` (update has no ``--memory-mode`` flag in MVP — DESIGN-memory.md §3.4)."""
     from ..catalog import _split_frontmatter
 
     _found, fields, _body = _split_frontmatter(body)

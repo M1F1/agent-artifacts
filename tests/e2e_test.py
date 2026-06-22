@@ -23,7 +23,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURES = str(REPO_ROOT / "tests" / "fixtures")
 
 # The fixture catalog: one artifact of each type, installable into two harnesses.
-TYPES = {"skill", "guideline", "mcp", "hook", "agents"}
+TYPES = {"skill", "guideline", "mcp", "hook", "memory"}
 PROFILES = ("claude", "opencode")
 
 
@@ -86,12 +86,12 @@ class TestRoundTrip(_ProjectCase):
         ):
             self.assertTrue(os.path.exists(self.p(path)), f"missing {path}")
 
-        # The agents instruction block landed in the same file as the guideline block,
-        # each under its own sentinel markers (DESIGN-agents.md §3.5).
+        # The memory instruction block landed in the same file as the guideline block,
+        # each under its own sentinel markers (DESIGN-memory.md §3.5).
         for inst_file in ("CLAUDE.md", "AGENTS.md"):
             text = pathlib.Path(self.p(inst_file)).read_text()
-            self.assertIn("agent-artifacts agents:house", text,
-                          f"{inst_file} should carry the agents block")
+            self.assertIn("agent-artifacts memory:house", text,
+                          f"{inst_file} should carry the memory block")
 
         # update with no changes upstream -> clean, no error.
         rc, _out, err = _cli("update", "--source", FIXTURES, "--project", self.project, "--yes")
@@ -119,21 +119,21 @@ class TestRoundTrip(_ProjectCase):
         )
 
 
-class TestAgentsCli(_ProjectCase):
-    """Agents-specific CLI behaviour: install modes and the unsupported-type policy."""
+class TestMemoryCli(_ProjectCase):
+    """Memory-specific CLI behaviour: install modes and the unsupported-type policy."""
 
     def test_replace_over_foreign_needs_force_then_backs_up(self):
         # A hand-authored instruction file: `replace` without --force is a CONFLICT (4)...
         claude_md = self.p("CLAUDE.md")
         pathlib.Path(claude_md).write_text("# my own notes\n- keep me\n")
         rc, _out, _err = self.install("house", "--profile", "claude",
-                                      "--agents-mode", "replace", "--yes")
+                                      "--memory-mode", "replace", "--yes")
         self.assertEqual(rc, 4, "replace over foreign content without --force is CONFLICT")
         self.assertIn("my own notes", pathlib.Path(claude_md).read_text())  # untouched
 
         # ...with --force the body replaces the file and the prior content is backed up.
         rc, _out, err = self.install("house", "--profile", "claude",
-                                     "--agents-mode", "replace", "--force", "--yes")
+                                     "--memory-mode", "replace", "--force", "--yes")
         self.assertEqual(rc, 0, f"forced replace failed: {err}")
         self.assertNotIn("my own notes", pathlib.Path(claude_md).read_text())
         self.assertTrue(os.path.exists(claude_md + ".agent-artifacts-bak"),
