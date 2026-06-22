@@ -5,7 +5,14 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Mapping
 
-from ..model import CopyTarget, GuidelineTarget, HookTarget, MergeSpec, Profile
+from ..model import (
+    AgentsTarget,
+    CopyTarget,
+    GuidelineTarget,
+    HookTarget,
+    MergeSpec,
+    Profile,
+)
 
 # --------------------------------------------------------------------------- #
 # Claude Code                                                                  #
@@ -33,6 +40,7 @@ _CLAUDE = Profile(
             }),
         ),
     ),
+    agents=AgentsTarget(kind="file", dest="CLAUDE.md"),
 )
 
 # --------------------------------------------------------------------------- #
@@ -65,34 +73,42 @@ _OPENCODE = Profile(
             }),
         ),
     ),
+    agents=AgentsTarget(kind="file", dest="AGENTS.md"),
 )
 
 # --------------------------------------------------------------------------- #
 # Tabnine                                                                      #
 # --------------------------------------------------------------------------- #
-# NOTE: Tabnine MCP and hooks paths are best-effort defaults that need
-# verification against a live Tabnine environment (DESIGN.md §19). The skills
-# path (.tabnine/agent/skills/) and guidelines mode (copy) are from the §11
-# table; MCP and hooks config locations are unverified.
+# Paths corrected against the official Tabnine CLI docs (DESIGN-agents.md §6).
+# Skills (.tabnine/agent/skills/) and guidelines (copy → .tabnine/guidelines/)
+# were already correct and are kept; MCP and hooks are corrected below.
 _TABNINE = Profile(
     name="tabnine",
     skills=CopyTarget(dir=".tabnine/agent/skills/<name>/"),
     guidelines=GuidelineTarget(mode="copy", dest=".tabnine/guidelines/"),
-    # MCP config location for Tabnine is unverified — best-effort default.
+    # MCP target set to .tabnine/agent/settings.json · mcpServers per directive
+    # (DESIGN-agents.md §6.1). DOC CAVEAT: the published docs put server
+    # *definitions* in the standalone .tabnine/mcp_servers.json (key
+    # "mcpServers"); settings.json documents a different "mcp" key (governance
+    # only). Verify in-environment — switching the file later is a one-line
+    # record change since this is a single MergeSpec.
     mcp=MergeSpec(
-        file=".tabnine/config.json",
+        file=".tabnine/agent/settings.json",
         json_path="mcpServers",
         mode="key",
     ),
-    # Hooks for Tabnine are unverified — best-effort default.
+    # Hooks live in settings.json under hooks.<event>; abstract events map to
+    # Tabnine's BeforeTool/AfterTool/SessionEnd (DESIGN-agents.md §6.2).
     hooks=HookTarget(
-        scripts_dir=".tabnine/hooks/<name>/",
+        scripts_dir=".tabnine/agent/hooks/<name>/",
         events=MappingProxyType({
-            "PreToolUse": "hooks.PreToolUse",
+            "PreToolUse": "hooks.BeforeTool",
+            "PostToolUse": "hooks.AfterTool",
+            "Stop": "hooks.SessionEnd",
         }),
         merge=MergeSpec(
-            file=".tabnine/config.json",
-            json_path="hooks",
+            file=".tabnine/agent/settings.json",
+            json_path="hooks.BeforeTool",
             mode="list",
             identity=("matcher", "command"),
             entry_template=MappingProxyType({
@@ -101,6 +117,24 @@ _TABNINE = Profile(
             }),
         ),
     ),
+    agents=AgentsTarget(kind="dir", dest=".tabnine/guidelines/"),
+)
+
+# --------------------------------------------------------------------------- #
+# Mistral Vibe                                                                 #
+# --------------------------------------------------------------------------- #
+# Partial profile (DESIGN-agents.md §7): agents/skills/guidelines are supported;
+# mcp and hooks are intentionally None. Vibe stores MCP under [[mcp_servers]] in
+# config.toml and hooks in .vibe/hooks.toml — both TOML. The merge engine emits
+# JSON only and the stdlib has no TOML writer, so honoring the zero-dep rule
+# they are deferred to a future MergeSpec.format="toml" (§7.2).
+_VIBE = Profile(
+    name="vibe",
+    skills=CopyTarget(dir=".vibe/skills/<name>/"),
+    guidelines=GuidelineTarget(mode="append-sentinel", dest="AGENTS.md"),
+    mcp=None,
+    hooks=None,
+    agents=AgentsTarget(kind="file", dest="AGENTS.md"),
 )
 
 # --------------------------------------------------------------------------- #
@@ -110,9 +144,10 @@ _BUILTINS: Mapping[str, Profile] = MappingProxyType({
     "claude": _CLAUDE,
     "opencode": _OPENCODE,
     "tabnine": _TABNINE,
+    "vibe": _VIBE,
 })
 
 
 def builtin() -> Mapping[str, Profile]:
-    """Return the built-in profiles: opencode, claude, tabnine."""
+    """Return the built-in profiles: claude, opencode, tabnine, vibe."""
     return _BUILTINS

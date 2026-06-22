@@ -19,11 +19,13 @@ from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 
 
 class TestBuiltinProfiles(unittest.TestCase):
-    """The three built-in profiles exist and have expected key fields."""
+    """The four built-in profiles exist and have expected key fields."""
 
-    def test_all_three_profiles_exist(self) -> None:
+    def test_all_builtin_profiles_exist(self) -> None:
         profiles = builtin()
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_all_values_are_profile_instances(self) -> None:
         for name, profile in builtin().items():
@@ -100,12 +102,24 @@ class TestBuiltinProfiles(unittest.TestCase):
         self.assertEqual(p.guidelines.dest, ".tabnine/guidelines/")
 
     def test_tabnine_mcp(self) -> None:
+        # Corrected paths (DESIGN-agents.md §6): settings.json, not config.json.
         p = builtin()["tabnine"]
         self.assertIsInstance(p.mcp, MergeSpec)
+        self.assertEqual(p.mcp.file, ".tabnine/agent/settings.json")
+        self.assertEqual(p.mcp.json_path, "mcpServers")
+        self.assertEqual(p.mcp.mode, "key")
 
     def test_tabnine_hooks(self) -> None:
+        # Corrected paths/events (DESIGN-agents.md §6/§6.2).
         p = builtin()["tabnine"]
         self.assertIsInstance(p.hooks, HookTarget)
+        self.assertEqual(p.hooks.scripts_dir, ".tabnine/agent/hooks/<name>/")
+        self.assertEqual(p.hooks.events["PreToolUse"], "hooks.BeforeTool")
+        self.assertEqual(p.hooks.events["PostToolUse"], "hooks.AfterTool")
+        self.assertEqual(p.hooks.events["Stop"], "hooks.SessionEnd")
+        self.assertEqual(p.hooks.merge.file, ".tabnine/agent/settings.json")
+        self.assertEqual(p.hooks.merge.json_path, "hooks.BeforeTool")
+        self.assertEqual(p.hooks.merge.mode, "list")
 
     # ------------------------------------------------------------------ #
     # Immutability                                                        #
@@ -121,16 +135,22 @@ class TestLoadProfilesNoOverride(unittest.TestCase):
 
     def test_no_project(self) -> None:
         profiles = load_profiles()
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_nonexistent_project(self) -> None:
         profiles = load_profiles(project="/nonexistent/path/that/does/not/exist")
-        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+        self.assertEqual(
+            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+        )
 
     def test_project_without_override_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profiles = load_profiles(project=tmp)
-            self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine"})
+            self.assertEqual(
+                set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
+            )
 
 
 class TestLoadProfilesOverride(unittest.TestCase):
@@ -199,7 +219,7 @@ class TestLoadProfilesOverride(unittest.TestCase):
             self._write_override(tmp, override)
             profiles = load_profiles(project=tmp)
 
-            self.assertEqual(len(profiles), 4)
+            self.assertEqual(len(profiles), 5)  # 4 built-ins + antigravity
             self.assertIn("antigravity", profiles)
             ag = profiles["antigravity"]
             self.assertIsInstance(ag, Profile)
