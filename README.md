@@ -137,15 +137,18 @@ prebuilt local wheel when one is present, no package index required.
 
 | Command | Network | Does |
 |---------|:------:|------|
-| `aart list` | — | List catalog artifacts (`--type`, `--bundle`, `--json`) |
-| `aart install` | on remote | Install artifacts/bundles into one or more profiles |
+| `aart list` | source-dependent | List catalog artifacts (`--type`, `--bundle`, `--json`) |
+| `aart install` | source-dependent | Install artifacts/bundles into one or more profiles |
 | `aart status` | no | Show installed artifacts + local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
-| `aart update` | on remote | Re-pull and re-apply; `--prune`, `--force` |
+| `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |
 | `aart upstream check` | yes | Maintainer check for tracked vendored artifact origins |
 | `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 | `aart uninstall` | no | Reverse installed files and merge entries |
 | `aart upgrade` | offline-capable | Reinstall the CLI itself |
+
+`source-dependent` means no network for the bundled catalog or `--source DIR`, and network when
+using a GitHub `--repo`.
 
 Global flags work on any subcommand: `--repo OWNER/NAME`, `--source DIR`, `--project DIR`.
 
