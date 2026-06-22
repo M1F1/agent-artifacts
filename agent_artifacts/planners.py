@@ -16,6 +16,7 @@ from typing import Callable, Mapping, Optional, Sequence, Tuple
 from . import fp, merge
 from .model import (
     Action,
+    AgentsTarget,
     Artifact,
     ArtifactType,
     CopyTree,
@@ -30,6 +31,7 @@ from .model import (
     Plan,
     Profile,
     Result,
+    Warn,
     WriteFile,
     WriteManifest,
 )
@@ -74,18 +76,44 @@ def sentinel_markers(name: str) -> Tuple[str, str]:
     )
 
 
-def _replace_sentinel_block(existing_text: Optional[str], name: str, body: str) -> str:
-    """Insert/replace the ``name`` sentinel block inside `existing_text`.
+def agents_sentinel_markers(name: str) -> Tuple[str, str]:
+    """Return the ``(begin, end)`` HTML-comment markers wrapping our ``agents`` block.
 
-    Idempotent: if a block with the same markers already exists it is replaced in place;
-    otherwise the block is appended. Content outside the markers is preserved verbatim.
+    These differ from `sentinel_markers` in two ways (DESIGN-agents.md §3.3): they are
+    **HTML comments** (invisible in rendered markdown, since the agents file *is* the
+    instruction context the model reads), and they are **type-scoped** (``agents:<name>``),
+    so an ``agents`` block and a same-named *guideline* block can coexist in one file
+    without either clobbering the other on install/uninstall.
     """
-    begin, end = sentinel_markers(name)
+    return (
+        f"<!-- >>> agent-artifacts agents:{name} >>> -->",
+        f"<!-- <<< agent-artifacts agents:{name} <<< -->",
+    )
+
+
+def _replace_marked_block(
+    existing_text: Optional[str],
+    markers: Tuple[str, str],
+    body: str,
+    *,
+    position: str = "bottom",
+) -> str:
+    """Insert/replace the ``markers`` block inside `existing_text`.
+
+    Generalization of the sentinel placement used by both guidelines and agents. The block
+    is ``begin\\n<body>\\nend``. Idempotent in either position: if a block with the same
+    markers already exists it is replaced **in place** (preserving its location), otherwise
+    a fresh block is inserted at ``position`` — ``"bottom"`` after foreign content (the
+    historical guideline behaviour, byte-for-byte) or ``"top"`` before it. Content outside
+    the markers is preserved verbatim.
+    """
+    begin, end = markers
     block = f"{begin}\n{body.rstrip(chr(10))}\n{end}"
 
     base = existing_text or ""
     start = base.find(begin)
     if start != -1:
+        # Replace our existing block in place, wherever it currently sits.
         stop = base.find(end, start)
         if stop != -1:
             stop_end = stop + len(end)
@@ -97,11 +125,29 @@ def _replace_sentinel_block(existing_text: Optional[str], name: str, body: str) 
         # Begin marker without a matching end: treat the rest of the file as the block.
         return base[:start] + block + "\n"
 
+    if position == "top":
+        # Our block goes first; foreign content (if any) follows after one blank line.
+        if base == "":
+            return block + "\n"
+        if not base.endswith("\n"):
+            base += "\n"
+        return block + "\n\n" + base
+
+    # position == "bottom": append after foreign content (historical guideline behaviour).
     if base and not base.endswith("\n"):
         base += "\n"
     if base:
         base += "\n"  # one blank line between foreign content and our block
     return base + block + "\n"
+
+
+def _replace_sentinel_block(existing_text: Optional[str], name: str, body: str) -> str:
+    """Insert/replace the ``name`` guideline sentinel block inside `existing_text`.
+
+    Thin wrapper over `_replace_marked_block` pinned to the guideline markers and the
+    historical ``"bottom"`` placement — kept byte-for-byte compatible for callers/tests.
+    """
+    return _replace_marked_block(existing_text, sentinel_markers(name), body, position="bottom")
 
 
 # --------------------------------------------------------------------------- #
@@ -175,6 +221,88 @@ def plan_guideline(
         merged = _replace_sentinel_block(existing_text, artifact.name, text)
         return Ok((WriteFile(path=target.dest, content=merged.encode("utf-8")),))
     return Err(f"unknown guideline mode: {target.mode!r}")
+
+
+# --------------------------------------------------------------------------- #
+# Agents planner (DESIGN-agents.md §3.2 / §8.1)                                #
+# --------------------------------------------------------------------------- #
+_BAK_SUFFIX = ".agent-artifacts-bak"
+
+
+def plan_agents(
+    artifact: Artifact,
+    target: AgentsTarget,
+    text: str,
+    existing_text: Optional[str],
+    exists: bool,
+    *,
+    mode: str,
+    force: bool = False,
+) -> Result:
+    """Plan installation of an ``agents`` instruction file (DESIGN-agents.md §3.2/§8.1).
+
+    The destination is either a single shared instruction file (``target.kind == "file"``,
+    e.g. ``CLAUDE.md``/``AGENTS.md`` — all four modes apply) or a directory the harness has
+    no single instruction file for (``target.kind == "dir"`` — copy as ``<name>.md``; only
+    ``skip`` is meaningful, the content-merge modes don't apply). Every mode reduces to the
+    existing `WriteFile`/`Warn` actions — no new `Action` type.
+
+    Args:
+        artifact: the resolved ``agents`` `Artifact`.
+        target: the profile's `AgentsTarget` (``kind`` + ``dest``).
+        text: our instruction-file body read from the source artifact.
+        existing_text: current contents of the destination file (``None`` if absent). Only
+            consulted for ``kind == "file"`` content-merge / replace-backup decisions.
+        exists: whether the destination already exists on disk. Drives ``skip`` (both kinds)
+            without forcing a body read for the dir case.
+        mode: the resolved install mode (``replace``/``prepend``/``append``/``skip``).
+        force: gate for the destructive ``replace`` over non-empty existing content.
+
+    Returns:
+        ``Ok(plan)`` for the resolved mode, or ``Err`` (``code=4`` for a ``replace``
+        conflict without ``--force``; ``code=1`` for an unknown mode).
+    """
+    if target.kind == "dir":
+        dest_path = _join(target.dest, f"{artifact.name}.md")
+        if mode == "skip" and exists:
+            return Ok(())  # seed-if-missing: leave the existing file untouched
+        return Ok((WriteFile(path=dest_path, content=text.encode("utf-8")),))
+
+    # target.kind == "file" — the four content modes.
+    dest = target.dest
+
+    if mode == "skip":
+        if exists:
+            return Ok(
+                (Warn(message=f"agents {artifact.name!r}: {dest} exists; skipped"),)
+            )
+        return Ok((WriteFile(path=dest, content=text.encode("utf-8")),))
+
+    if mode == "replace":
+        nonempty = bool((existing_text or "").strip())
+        if nonempty and not force:
+            return Err(
+                f"agents {artifact.name!r}: {dest} exists; use --force to replace",
+                code=4,
+            )
+        actions: Tuple[Action, ...] = ()
+        if nonempty:
+            actions += (
+                WriteFile(
+                    path=dest + _BAK_SUFFIX,
+                    content=(existing_text or "").encode("utf-8"),
+                ),
+            )
+        actions += (WriteFile(path=dest, content=text.encode("utf-8")),)
+        return Ok(actions)
+
+    if mode in ("prepend", "append"):
+        position = "top" if mode == "prepend" else "bottom"
+        markers = agents_sentinel_markers(artifact.name)
+        merged = _replace_marked_block(existing_text, markers, text, position=position)
+        return Ok((WriteFile(path=dest, content=merged.encode("utf-8")),))
+
+    return Err(f"unknown agents mode: {mode!r}")
 
 
 # --------------------------------------------------------------------------- #
@@ -262,6 +390,7 @@ PLANNERS: Mapping[ArtifactType, Callable[..., Result]] = {
     "guideline": plan_guideline,
     "mcp": plan_mcp,
     "hook": plan_hook,
+    "agents": plan_agents,
 }
 
 
@@ -449,5 +578,25 @@ def _plan_one(
         if not isinstance(descriptor, Mapping):
             return Err(f"missing hook descriptor for {artifact.name!r}")
         return plan_hook(artifact, descriptor, profile.hooks, config, force=force)
+
+    if artifact.type == "agents":
+        if profile.agents is None:
+            return Err(f"profile {profile_name!r} does not support agents")
+        body = files.get(f"agents:{artifact.name}")
+        if not isinstance(body, str):
+            return Err(f"missing agents text for {artifact.name!r}")
+        existing = files.get(f"existing-agents:{profile_name}:{artifact.name}")
+        existing_text = existing if isinstance(existing, str) else None
+        exists = bool(files.get(f"agents-exists:{profile_name}:{artifact.name}", False))
+        mode = str(files.get(f"agents-mode:{artifact.name}", "prepend"))
+        return plan_agents(
+            artifact,
+            profile.agents,
+            body,
+            existing_text,
+            exists,
+            mode=mode,
+            force=force,
+        )
 
     return Err(f"unhandled artifact type: {artifact.type!r}")  # pragma: no cover
