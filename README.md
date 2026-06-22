@@ -1,67 +1,131 @@
-# agent-artifacts (aa)
+# agent-artifacts (`aa`)
 
-Install your team's AI artifacts (skills, guidelines, MCP configs, hooks, and memory files) from one central catalog directly into your local IDE harnesses (Claude Code, Tabnine, OpenCode, etc.). 
+**One catalog of AI artifacts. Every agentic harness on your team, in sync.**
 
-Used by humans and agents alike to sync team-wide AI behaviors instantly!
+`agent-artifacts` installs your team's **skills, guidelines, MCP servers, hooks, and memory
+files** from a single source-of-truth repo into whichever AI coding harness each developer
+uses — Claude Code, OpenCode, Tabnine, or Vibe — translating one definition into each
+harness's native file layout.
 
----
+Write a skill once. Ship it everywhere. Then *check for drift* and re-sync on demand.
 
-## 🚀 Getting Started
-
-**1. Install the CLI:**
-```sh
-pip install -e .
-```
-*(Installing in editable mode allows the CLI to dynamically memorize its location, meaning you can run it from anywhere without needing to specify paths).*
-
-**2. Launch the Interactive TUI:**
-```sh
-aa
-```
-Simply run `aa` in any project folder to visually browse, install, and uninstall artifacts from the catalog!
+Zero runtime dependencies (Python stdlib only). Works fully offline.
 
 ---
 
-## 💻 CLI Usage
+## Quick start
 
-If you prefer the command line over the interactive UI:
-
-**List all available artifacts:**
 ```sh
-aa list
+pip install -e .          # editable install: run `aa` from any project folder
+aa                        # bare invocation → interactive TUI (browse / install / remove)
 ```
 
-**Install an artifact (e.g., code-review) for a specific AI:**
-```sh
-aa install code-review --profile claude
-aa install house --profile tabnine
-```
+Prefer the command line?
 
-**Check installed artifacts in the current folder:**
 ```sh
-aa status
-```
-
-**Uninstall an artifact:**
-```sh
-aa uninstall code-review --profile claude
-```
-
-### Advanced Modes
-By default, installing a **memory** artifact (the harness's top-level instruction file — `CLAUDE.md`, `AGENTS.md`, `TABNINE.md`) wraps it in invisible HTML sentinels (`<!-- >>>`) so it can be safely updated/uninstalled later without deleting your manual notes. 
-
-If you just want a perfectly clean file and don't care about the tracking, use `replace` mode to completely overwrite the target file with pure markdown:
-```sh
-aa install house --profile tabnine --memory-mode replace --force
+aa list                                   # see the catalog
+aa install code-review --profile claude   # install one artifact for Claude Code
+aa install --bundle backend --profile claude,tabnine   # install a whole team set
+aa status                                 # what's installed here + has it drifted?
 ```
 
 ---
 
-## 🛠️ Developer Workflow
+## What you can install
 
-If you are actively developing `agent-artifacts`, you can enable the automatic version bumping and wheel building script. This ensures that every local commit automatically increments the package version and regenerates the `dist/*.whl` binary for distribution.
+| Type | What it is | Lands as (Claude example) |
+|------|------------|---------------------------|
+| **skill** | A reusable `SKILL.md` capability | `.claude/skills/<name>/` |
+| **guideline** | A standalone reference doc | `.claude/guidelines/<name>.md` |
+| **mcp** | An MCP server definition | merged into `.mcp.json` |
+| **hook** | An event hook + its scripts | merged into `.claude/settings.json` |
+| **memory** | The top-level instruction file | `CLAUDE.md` (or `AGENTS.md`, `TABNINE.md`) |
 
-To enable the automatic Git hook, simply make the pre-commit script executable:
+Each harness has a **profile** that knows where every type belongs, so the same artifact
+installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/` — you never have to
+remember the paths.
+
+---
+
+## The features that matter
+
+### 📦 Bundles — ship a curated set, not one file at a time
+A bundle is a named group of artifacts. Bundles **`extend`** other bundles (composition with
+cycle detection) and can **`pin`** specific artifacts to a commit, so "the backend team's
+setup" is one install command and stays reproducible.
+
+```sh
+aa install --bundle backend --profile claude
+```
+
+### 🌐 Local *or* remote source — same result either way
+Pull from a GitHub repo, or from a local checkout for offline / air-gapped work. Both produce
+an identical catalog; nothing downstream cares which you used.
+
+```sh
+aa install code-review --repo your-org/ai-catalog          # remote (GitHub)
+aa install code-review --version v2.1 --repo your-org/...   # pin a branch/tag/SHA
+aa install code-review --source ./catalog-checkout         # local, no network
+```
+
+### 🔄 Drift detection & re-sync — know when you're behind, fix it on demand
+Every install is recorded in a manifest (files, hashes, source commit). That unlocks a clean
+sync workflow — and freshness checks are **always opt-in, never ambient**:
+
+- **`aa status`** — *local, no network.* Lists what's installed and flags each file as
+  `ok` / `drift` / `missing`, so you see local edits at a glance.
+- **`aa check`** — *remote, opt-in.* Compares your installed commit against the source's
+  `main` and tells you exactly which artifacts (and whether the CLI itself) fell behind,
+  then suggests the next command.
+- **`aa update`** — re-pulls and re-applies. Local edits are respected: a true conflict is
+  written to a `.agent-artifacts-new` sidecar instead of clobbering your work (override with
+  `--force`). `--prune` drops entries no longer in the set.
+
+### 🧠 Memory files without the clobber
+Installing a memory artifact wraps it in invisible HTML-comment sentinels (`prepend` by
+default) so it can be updated or removed later **without touching your hand-written notes** in
+the same file. Want a clean overwrite instead? `--memory-mode replace --force`.
+
+### 🛟 Safe and scriptable by default
+`--dry-run` prints the plan and touches nothing. `--json` emits machine-readable output for
+agents and CI. Every command returns a **structured exit code** (`0` ok · `2` usage · `3`
+network · `4` conflict · `5` corrupt manifest) so automation can branch on the result.
+
+### ⬆️ Self-update, offline
+`aa upgrade` reinstalls the CLI itself from the source via `pip install --no-index` — from a
+prebuilt local wheel when one is present, no package index required.
+
+---
+
+## Command reference
+
+| Command | Network | Does |
+|---------|:------:|------|
+| `aa list` | — | List catalog artifacts (`--type`, `--bundle`, `--json`) |
+| `aa install` | on remote | Install artifacts/bundles into one or more profiles |
+| `aa status` | no | Show installed artifacts + local drift |
+| `aa check` | yes | Compare installed/CLI commit against the source |
+| `aa update` | on remote | Re-pull and re-apply; `--prune`, `--force` |
+| `aa uninstall` | no | Reverse installed files and merge entries |
+| `aa upgrade` | offline-capable | Reinstall the CLI itself |
+
+Global flags work on any subcommand: `--repo OWNER/NAME`, `--source DIR`, `--project DIR`.
+
+> **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
+> teaching an agent to drive this CLI (always `--json`, never the TUI).
+
+---
+
+## Developer workflow
+
+```sh
+make test       # full unittest suite + bash E2E round-trip
+make validate   # catalog integrity + a "no non-stdlib imports" gate
+make wheel      # stamp the commit and build the offline dist/*.whl
+```
+
+To auto-bump the version and rebuild the wheel on every commit, enable the git hook:
+
 ```sh
 chmod +x .git/hooks/pre-commit
 ```
