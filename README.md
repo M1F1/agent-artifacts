@@ -124,6 +124,16 @@ make validate   # catalog integrity + a "no non-stdlib imports" gate
 make wheel      # stamp the commit and build the offline dist/*.whl
 ```
 
+**Optional linting / formatting / type checking.** These are *not* required to run, test,
+or build the CLI — the runtime stays zero-dependency. Install the dev extra to use them:
+
+```sh
+pip install -e ".[dev]"   # adds ruff + mypy
+make lint                 # ruff: real-bug + import-hygiene checks
+make format               # ruff: auto-format (format-check to verify only)
+make typecheck            # mypy over agent_artifacts/
+```
+
 To auto-bump the version and rebuild the wheel on every commit, enable the git hook:
 
 ```sh

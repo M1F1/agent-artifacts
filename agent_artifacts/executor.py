@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Tuple, Type
 
 from .model import (
     Action,
@@ -164,7 +164,7 @@ def _deep_equal(x: Any, y: Any) -> bool:
             return False
         return all(_deep_equal(x[k], y[k]) for k in x)
     if isinstance(x, list) and isinstance(y, list):
-        return len(x) == len(y) and all(_deep_equal(a, b) for a, b in zip(x, y))
+        return len(x) == len(y) and all(_deep_equal(a, b) for a, b in zip(x, y, strict=True))
     return x == y
 
 

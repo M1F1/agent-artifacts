@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Literal, Optional
 
 from . import catalog as catalog_mod
 from . import fp
@@ -228,7 +228,7 @@ def open_source(
 
     # An explicit version is a pin; the default ("main" / None) tracks the branch tip.
     explicit = request.version is not None
-    ref = request.version if explicit else "main"
+    ref = request.version if request.version is not None else "main"
 
     resolved = net.resolve_ref(repo, ref, token=auth, opener=opener)
     if isinstance(resolved, Err):
@@ -244,6 +244,6 @@ def open_source(
     except Exception as exc:  # snapshot/extract failure — surface as a value
         return Err(f"failed to materialise snapshot {repo}@{sha}: {exc}", code=3)
 
-    kind = "pin" if explicit else "main"
+    kind: Literal["main", "pin"] = "pin" if explicit else "main"
     label = source_label(Resolved(kind=kind, sha=sha))
     return Ok(Source(root=os.path.abspath(root), _label=label, _read=read_fn))

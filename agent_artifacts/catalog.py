@@ -8,16 +8,16 @@ Reading files from disk is the shell's job (source.py / io.fs); this module is p
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from . import fp
 from .fp import Err, Ok
-from .model import Artifact, Bundle, Catalog, ResolvedBundle, Result
+from .model import Artifact, ArtifactType, Bundle, Catalog, ResolvedBundle, Result
 
 _TODO = "WP-1: not implemented"
 
 # Ordered artifact-type sections inside a bundle's `includes`.
-_INCLUDE_TYPES: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook", "memory")
+_INCLUDE_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 # Install modes a declared `memory` frontmatter `mode:` may name (DESIGN-memory.md §3.2/§3.4).
 _MEMORY_MODES: Tuple[str, ...] = ("replace", "prepend", "append", "skip")
@@ -193,7 +193,7 @@ def parse_bundle(text: str, name: str) -> Result:
     includes_raw = data.get("includes", {})
     if not isinstance(includes_raw, dict):
         return Err(f"bundle {name!r}: 'includes' must be an object")
-    includes: Dict[str, Tuple[str, ...]] = {}
+    includes: Dict[ArtifactType, Tuple[str, ...]] = {}
     for section, names in includes_raw.items():
         artifact_type = _section_to_type(section)
         if artifact_type is None:
@@ -220,9 +220,9 @@ def parse_bundle(text: str, name: str) -> Result:
     )
 
 
-def _section_to_type(section: str):
+def _section_to_type(section: str) -> Optional[ArtifactType]:
     """Map an `includes` section key to an `ArtifactType` (plural or singular)."""
-    mapping = {
+    mapping: Dict[str, ArtifactType] = {
         "skills": "skill",
         "skill": "skill",
         "guidelines": "guideline",
@@ -254,7 +254,7 @@ def resolve_bundle(catalog: Catalog, name: str) -> Result:
     if name not in catalog.bundles:
         return Err(f"bundle {name!r}: not found in catalog")
 
-    ordered_artifacts: List[Tuple[str, str]] = []
+    ordered_artifacts: List[Tuple[ArtifactType, str]] = []
     seen: set = set()
     pins: Dict[str, str] = {}
 
@@ -271,7 +271,7 @@ def resolve_bundle(catalog: Catalog, name: str) -> Result:
             if isinstance(res, Err):
                 return res
         for artifact_type in _INCLUDE_TYPES:
-            for artifact_name in bundle.includes.get(artifact_type, ()):  # type: ignore[arg-type]
+            for artifact_name in bundle.includes.get(artifact_type, ()):
                 key = (artifact_type, artifact_name)
                 if key not in seen:
                     seen.add(key)

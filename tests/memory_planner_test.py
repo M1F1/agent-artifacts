@@ -12,10 +12,10 @@ import unittest
 
 from agent_artifacts import planners
 from agent_artifacts.model import (
-    MemoryTarget,
     Artifact,
     CopyTarget,
     Err,
+    MemoryTarget,
     Ok,
     Profile,
     Warn,

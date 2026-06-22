@@ -13,7 +13,6 @@ import json
 import os
 from typing import List, Tuple
 
-from .. import fp
 from ..catalog import resolve_bundle
 from ..io import fs
 from ..manifest import dump_manifest, empty_manifest, parse_manifest

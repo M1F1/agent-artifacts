@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from collections import Counter
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from .. import _commit
 from ..io import net

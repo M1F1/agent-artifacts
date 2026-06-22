@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
-from .model import Artifact, Bundle, Catalog, Err, Request
+from .model import Artifact, Bundle, Catalog, Err, Request, Result
 from .profiles.loader import load_profiles
 from .source import open_source
 
@@ -40,7 +40,7 @@ _TYPE_ORDER: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]
-SourceFactory = Callable[[Request], object]
+SourceFactory = Callable[[Request], Result]
 
 
 # --------------------------------------------------------------------------- #
@@ -452,7 +452,6 @@ def run(
     """
     try:
         import curses  # noqa: F401  (presence check only)
-
         import sys
 
         if not (sys.stdin.isatty() and sys.stdout.isatty()):

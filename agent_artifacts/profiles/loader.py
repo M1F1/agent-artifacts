@@ -8,10 +8,10 @@ from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
 from ..model import (
-    MemoryTarget,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
+    MemoryTarget,
     MergeSpec,
     Profile,
 )

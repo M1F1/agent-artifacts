@@ -9,7 +9,7 @@ import json
 import unittest
 
 from agent_artifacts import catalog
-from agent_artifacts.model import Artifact, Bundle, Catalog, Err, Ok, ResolvedBundle
+from agent_artifacts.model import Artifact, Bundle, Catalog, Err, Ok
 
 
 def _catalog(artifacts=(), bundles=()):

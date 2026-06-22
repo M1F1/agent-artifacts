@@ -20,9 +20,8 @@ import sys
 from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
-from .commands import check, install
+from .commands import check, install, status, uninstall, update, upgrade
 from .commands import list as list_cmd
-from .commands import status, uninstall, update, upgrade
 from .commands._common import OK
 from .model import Request
 
@@ -166,7 +165,7 @@ def _split_csv(values) -> Tuple[str, ...]:
     if not values:
         return ()
     items = values if isinstance(values, list) else [values]
-    out = []
+    out: list[str] = []
     for chunk in items:
         out.extend(part.strip() for part in str(chunk).split(",") if part.strip())
     return tuple(out)
