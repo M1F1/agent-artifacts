@@ -54,3 +54,14 @@ If you just want a perfectly clean file and don't care about the tracking, use `
 ```sh
 aa install house --profile tabnine --agents-mode replace --force
 ```
+
+---
+
+## 🛠️ Developer Workflow
+
+If you are actively developing `agent-artifacts`, you can enable the automatic version bumping and wheel building script. This ensures that every local commit automatically increments the package version and regenerates the `dist/*.whl` binary for distribution.
+
+To enable the automatic Git hook, simply make the pre-commit script executable:
+```sh
+chmod +x .git/hooks/pre-commit
+```
