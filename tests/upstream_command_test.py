@@ -133,7 +133,24 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
     def _seed_skill(self, root: str, name: str, body: str) -> str:
         return self._write(root, f"skills/{name}/SKILL.md", f"---\nname: {name}\n---\n{body}\n")
 
-    def _write_upstreams(self, *, base_sha: str, base_hash: str) -> None:
+    def _write_upstreams(
+        self,
+        *,
+        base_sha: str,
+        base_hash: str,
+        api_url: str | None = None,
+        web_url: str | None = None,
+    ) -> None:
+        source = {
+            "kind": "github",
+            "repo": "acme/demo-skills",
+            "ref": "main",
+            "path": "skills/demo",
+        }
+        if api_url is not None:
+            source["api_url"] = api_url
+        if web_url is not None:
+            source["web_url"] = web_url
         self._write(
             self.catalog_root,
             "upstreams.json",
@@ -142,12 +159,7 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
                     "version": 1,
                     "artifacts": {
                         "skill/demo": {
-                            "source": {
-                                "kind": "github",
-                                "repo": "acme/demo-skills",
-                                "ref": "main",
-                                "path": "skills/demo",
-                            },
+                            "source": source,
                             "last_synced": {
                                 "sha": base_sha,
                                 "content_hash": base_hash,
@@ -259,6 +271,37 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         self.assertEqual(synced["sha"], "new-sha")
         self.assertEqual(synced["content_hash"], head_hash)
         self.assertTrue(synced["synced_at"])
+
+    def test_update_preserves_enterprise_source_metadata_when_persisting_last_sync(self):
+        local_skill = self._seed_skill(self.catalog_root, "demo", "base")
+        staged_skill = self._seed_skill(self.staged_root, "demo", "new")
+        base_hash = hash_upstream_path(os.path.dirname(local_skill))
+        self._write_upstreams(
+            base_sha="base-sha",
+            base_hash=base_hash,
+            api_url="https://github.my-company.com/api/v3",
+            web_url="https://github.my-company.com/acme/demo-skills",
+        )
+
+        code, output = self._run(
+            Request(
+                command="upstream",
+                upstream_action="update",
+                names=("skill/demo",),
+                source_dir=self.catalog_root,
+            ),
+            staged_skill=staged_skill,
+            head_sha="new-sha",
+        )
+
+        self.assertEqual(code, _common.OK)
+        self.assertIn("Updated 1 upstream artifact", output)
+        saved = json.loads(self._read_tracking())
+        source = saved["artifacts"]["skill/demo"]["source"]
+        self.assertEqual(source["repo"], "acme/demo-skills")
+        self.assertEqual(source["api_url"], "https://github.my-company.com/api/v3")
+        self.assertEqual(source["web_url"], "https://github.my-company.com/acme/demo-skills")
+        self.assertEqual(saved["artifacts"]["skill/demo"]["last_synced"]["sha"], "new-sha")
 
     def test_update_conflict_leaves_catalog_and_tracking_file_unchanged(self):
         local_skill = self._seed_skill(self.catalog_root, "demo", "local edit")

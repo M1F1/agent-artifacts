@@ -5,6 +5,7 @@
       "source": {
         "kind": "github",
         "repo": "acme/demo-skills",
+        "api_url": "https://github.my-company.com/api/v3",
         "ref": "main",
         "path": "memory/house.md"
       },

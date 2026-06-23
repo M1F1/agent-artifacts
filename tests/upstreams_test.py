@@ -155,6 +155,61 @@ class ParseDumpTests(unittest.TestCase):
         self.assertEqual(parse_upstreams(dumped), parsed)
         self.assertEqual(dump_upstreams(parse_upstreams(dumped).value), dumped)
 
+    def test_parse_and_dump_preserves_github_host_metadata(self):
+        text = json.dumps(
+            {
+                "version": 1,
+                "artifacts": {
+                    "skill/company": {
+                        "source": {
+                            "kind": "github",
+                            "repo": "platform/company-skills",
+                            "api_url": "https://github.my-company.com/api/v3",
+                            "web_url": "https://github.my-company.com/platform/company-skills",
+                            "ref": "main",
+                            "path": "skills/company",
+                        }
+                    }
+                },
+            }
+        )
+
+        parsed = parse_upstreams(text)
+
+        self.assertIsInstance(parsed, Ok)
+        source = parsed.value.entries[UpstreamKey("skill", "company")].source
+        self.assertEqual(source.repo, "platform/company-skills")
+        self.assertEqual(source.api_url, "https://github.my-company.com/api/v3")
+        self.assertEqual(source.web_url, "https://github.my-company.com/platform/company-skills")
+        self.assertEqual(parse_upstreams(dump_upstreams(parsed.value)), parsed)
+
+    def test_parse_accepts_full_https_github_repo_url(self):
+        text = json.dumps(
+            {
+                "version": 1,
+                "artifacts": {
+                    "skill/company": {
+                        "source": {
+                            "kind": "github",
+                            "repo": "https://github.my-company.com/platform/company-skills.git",
+                            "ref": "main",
+                            "path": "skills/company",
+                        }
+                    }
+                },
+            }
+        )
+
+        parsed = parse_upstreams(text)
+
+        self.assertIsInstance(parsed, Ok)
+        source = parsed.value.entries[UpstreamKey("skill", "company")].source
+        self.assertEqual(
+            source.repo,
+            "https://github.my-company.com/platform/company-skills.git",
+        )
+        self.assertEqual(parse_upstreams(dump_upstreams(parsed.value)), parsed)
+
     def test_invalid_schema_accumulates_errors(self):
         text = json.dumps(
             {

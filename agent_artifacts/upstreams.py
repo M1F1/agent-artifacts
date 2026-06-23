@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Literal, Mapping, Optional, Tuple
 
 from .catalog import resolve_bundle
+from .github_source import github_source_errors
 from .model import Artifact, ArtifactType, Catalog, Err, Ok, Request, Result
 
 _ARTIFACT_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
@@ -40,6 +41,8 @@ class UpstreamSource:
     repo: str
     ref: str
     path: str
+    api_url: Optional[str] = None
+    web_url: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +134,10 @@ def dump_upstreams(catalog: UpstreamCatalog) -> str:
                 "path": entry.source.path,
             }
         }
+        if entry.source.api_url is not None:
+            payload["source"]["api_url"] = entry.source.api_url
+        if entry.source.web_url is not None:
+            payload["source"]["web_url"] = entry.source.web_url
         if entry.last_synced is not None:
             payload["last_synced"] = {
                 "sha": entry.last_synced.sha,
@@ -228,8 +235,8 @@ def validate_upstreams(upstreams: UpstreamCatalog, catalog: Catalog) -> Tuple[Er
 
         if entry.source.kind != "github":
             errors.append(Err(f"{label}: source.kind must be 'github'", code=_USAGE))
-        if not _github_repo(entry.source.repo):
-            errors.append(Err(f"{label}: source.repo must be 'owner/name'", code=_USAGE))
+        for reason in github_source_errors(entry.source):
+            errors.append(Err(f"{label}: source.{reason}", code=_USAGE))
         if not _non_empty_str(entry.source.ref):
             errors.append(Err(f"{label}: source.ref must be a non-empty string", code=_USAGE))
         if not _non_empty_str(entry.source.path):
@@ -284,6 +291,8 @@ def _parse_source(raw_key: str, raw_source, errors: List[str]) -> Optional[Upstr
     repo = raw_source.get("repo")
     ref = raw_source.get("ref")
     path = raw_source.get("path")
+    api_url = raw_source.get("api_url")
+    web_url = raw_source.get("web_url")
 
     ok = True
     if kind != "github":
@@ -298,12 +307,27 @@ def _parse_source(raw_key: str, raw_source, errors: List[str]) -> Optional[Upstr
     if not _non_empty_str(path):
         errors.append(f"{raw_key}: source.path must be a non-empty string")
         ok = False
+    if api_url is not None and not _non_empty_str(api_url):
+        errors.append(f"{raw_key}: source.api_url must be a non-empty string when present")
+        ok = False
+    if web_url is not None and not _non_empty_str(web_url):
+        errors.append(f"{raw_key}: source.web_url must be a non-empty string when present")
+        ok = False
     if not ok:
         return None
     assert isinstance(repo, str)
     assert isinstance(ref, str)
     assert isinstance(path, str)
-    return UpstreamSource(kind="github", repo=repo, ref=ref, path=path)
+    assert api_url is None or isinstance(api_url, str)
+    assert web_url is None or isinstance(web_url, str)
+    return UpstreamSource(
+        kind="github",
+        repo=repo,
+        ref=ref,
+        path=path,
+        api_url=api_url,
+        web_url=web_url,
+    )
 
 
 def _parse_last_synced(raw_key: str, raw_sync, errors: List[str]):
@@ -336,13 +360,6 @@ def _parse_last_synced(raw_key: str, raw_sync, errors: List[str]):
 
 def _non_empty_str(value) -> bool:
     return isinstance(value, str) and value != ""
-
-
-def _github_repo(value: str) -> bool:
-    if not isinstance(value, str):
-        return False
-    owner, sep, name = value.partition("/")
-    return bool(owner and sep and name and "/" not in name)
 
 
 def _expected_root(key: UpstreamKey) -> str:

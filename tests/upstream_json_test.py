@@ -70,6 +70,33 @@ class UpstreamJsonContractTests(unittest.TestCase):
             ],
         )
 
+    def test_check_json_includes_host_metadata_for_enterprise_source(self):
+        local_skill = self._seed_skill(self.catalog_root, "demo", "base")
+        staged_skill = self._seed_skill(self.staged_root, "demo", "new")
+        base_hash = hash_upstream_path(os.path.dirname(local_skill))
+        self._write_upstreams(
+            base_hash=base_hash,
+            api_url="https://github.my-company.com/api/v3",
+            web_url="https://github.my-company.com/acme/demo-skills",
+        )
+
+        code, output = self._run(
+            Request(
+                command="upstream",
+                upstream_action="check",
+                all=True,
+                source_dir=self.catalog_root,
+                json=True,
+            ),
+            staged_skill=staged_skill,
+        )
+
+        self.assertEqual(code, _common.OK)
+        checked = json.loads(output)["checked"][0]
+        self.assertEqual(checked["repo"], "acme/demo-skills")
+        self.assertEqual(checked["api_url"], "https://github.my-company.com/api/v3")
+        self.assertEqual(checked["web_url"], "https://github.my-company.com/acme/demo-skills")
+
     def test_update_json_includes_statuses_source_info_and_planned_actions(self):
         local_skill = self._seed_skill(self.catalog_root, "demo", "base")
         staged_skill = self._seed_skill(self.staged_root, "demo", "new")
@@ -110,6 +137,33 @@ class UpstreamJsonContractTests(unittest.TestCase):
         self.assertEqual(payload["updates"][0]["state"], "changed")
         self.assertEqual([item["action"] for item in payload["plan"]], ["remove-path", "copy-tree"])
 
+    def test_update_json_includes_host_metadata_for_enterprise_source(self):
+        local_skill = self._seed_skill(self.catalog_root, "demo", "base")
+        staged_skill = self._seed_skill(self.staged_root, "demo", "new")
+        base_hash = hash_upstream_path(os.path.dirname(local_skill))
+        self._write_upstreams(
+            base_hash=base_hash,
+            api_url="https://github.my-company.com/api/v3",
+            web_url="https://github.my-company.com/acme/demo-skills",
+        )
+
+        code, output = self._run(
+            Request(
+                command="upstream",
+                upstream_action="update",
+                names=("skill/demo",),
+                source_dir=self.catalog_root,
+                json=True,
+                dry_run=True,
+            ),
+            staged_skill=staged_skill,
+        )
+
+        self.assertEqual(code, _common.OK)
+        update = json.loads(output)["updates"][0]
+        self.assertEqual(update["api_url"], "https://github.my-company.com/api/v3")
+        self.assertEqual(update["web_url"], "https://github.my-company.com/acme/demo-skills")
+
     def _run(self, request: Request, *, staged_skill: str):
         def fake_resolve(entry):
             staged_path = os.path.dirname(staged_skill)
@@ -136,20 +190,31 @@ class UpstreamJsonContractTests(unittest.TestCase):
             fh.write(f"---\nname: {name}\n---\n{body}\n")
         return path
 
-    def _write_upstreams(self, *, base_hash: str) -> None:
+    def _write_upstreams(
+        self,
+        *,
+        base_hash: str,
+        api_url: str | None = None,
+        web_url: str | None = None,
+    ) -> None:
         path = os.path.join(self.catalog_root, "upstreams.json")
+        source = {
+            "kind": "github",
+            "repo": "acme/demo-skills",
+            "ref": "main",
+            "path": "skills/demo",
+        }
+        if api_url is not None:
+            source["api_url"] = api_url
+        if web_url is not None:
+            source["web_url"] = web_url
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(
                 {
                     "version": 1,
                     "artifacts": {
                         "skill/demo": {
-                            "source": {
-                                "kind": "github",
-                                "repo": "acme/demo-skills",
-                                "ref": "main",
-                                "path": "skills/demo",
-                            },
+                            "source": source,
                             "last_synced": {
                                 "sha": "base-sha",
                                 "content_hash": base_hash,

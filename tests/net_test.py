@@ -16,6 +16,7 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from unittest.mock import patch
 
 from agent_artifacts.io import cache, net
 from agent_artifacts.model import Err, Ok
@@ -136,12 +137,69 @@ class NetCacheTest(unittest.TestCase):
         self.assertEqual(seen["auth"], "Bearer secret-token")
         self.assertEqual(seen["accept"], "application/vnd.github+json")
 
+    def test_resolve_ref_uses_per_call_api_url(self):
+        seen = {}
+
+        def capture(request):
+            seen["url"] = request.full_url
+            return io.BytesIO(_COMMIT_JSON)
+
+        result = net.resolve_ref(
+            REPO,
+            "main",
+            api_url="https://github.my-company.com/api/v3",
+            opener=capture,
+        )
+
+        self.assertIsInstance(result, Ok)
+        self.assertEqual(
+            seen["url"],
+            "https://github.my-company.com/api/v3/repos/acme/widgets/commits/main",
+        )
+
+    def test_resolve_ref_reads_global_api_url_at_call_time(self):
+        seen = {}
+
+        def capture(request):
+            seen["url"] = request.full_url
+            return io.BytesIO(_COMMIT_JSON)
+
+        with patch.dict("os.environ", {"GITHUB_API_URL": "https://github.env/api/v3"}):
+            result = net.resolve_ref(REPO, "main", opener=capture)
+
+        self.assertIsInstance(result, Ok)
+        self.assertEqual(seen["url"], "https://github.env/api/v3/repos/acme/widgets/commits/main")
+
     # --- net.compare ------------------------------------------------------ #
     def test_compare_returns_dict(self):
         result = net.compare(REPO, "base123", CANNED_SHA, opener=self._opener())
         self.assertIsInstance(result, Ok)
         self.assertEqual(result.value["status"], "ahead")
         self.assertEqual(result.value["ahead_by"], 2)
+
+    def test_compare_uses_per_call_api_url(self):
+        seen = {}
+
+        def capture(request):
+            seen["url"] = request.full_url
+            return io.BytesIO(_COMPARE_JSON)
+
+        result = net.compare(
+            REPO,
+            "base123",
+            CANNED_SHA,
+            api_url="https://github.my-company.com/api/v3",
+            opener=capture,
+        )
+
+        self.assertIsInstance(result, Ok)
+        self.assertEqual(
+            seen["url"],
+            (
+                "https://github.my-company.com/api/v3/repos/acme/widgets/compare/"
+                f"base123...{CANNED_SHA}"
+            ),
+        )
 
     def test_compare_failure_is_err(self):
         def boom(request):
@@ -158,6 +216,26 @@ class NetCacheTest(unittest.TestCase):
         # And it is a valid gzip tarball.
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as tar:
             self.assertIn(f"{TARBALL_TOP}/README.md", tar.getnames())
+
+    def test_fetch_tarball_uses_per_call_api_url(self):
+        seen = {}
+
+        def capture(request):
+            seen["url"] = request.full_url
+            return io.BytesIO(_TARBALL)
+
+        raw = net.fetch_tarball(
+            REPO,
+            CANNED_SHA,
+            api_url="https://github.my-company.com/api/v3",
+            opener=capture,
+        )
+
+        self.assertEqual(raw, _TARBALL)
+        self.assertEqual(
+            seen["url"],
+            f"https://github.my-company.com/api/v3/repos/acme/widgets/tarball/{CANNED_SHA}",
+        )
 
     # --- cache.cache_dir -------------------------------------------------- #
     def test_cache_dir_layout(self):

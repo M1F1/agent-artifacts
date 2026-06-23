@@ -20,10 +20,16 @@ REPO = "acme/widgets"
 TARBALL_TOP = f"acme-widgets-{CANNED_SHA}"
 
 
-def _entry(path: str = "skills/demo") -> UpstreamEntry:
+def _entry(
+    path: str = "skills/demo",
+    *,
+    repo: str = REPO,
+    api_url: str | None = None,
+    web_url: str | None = None,
+) -> UpstreamEntry:
     return UpstreamEntry(
         key=UpstreamKey("skill", "demo"),
-        source=UpstreamSource("github", REPO, "main", path),
+        source=UpstreamSource("github", repo, "main", path, api_url=api_url, web_url=web_url),
     )
 
 
@@ -142,11 +148,67 @@ class ResolveUpstreamSourceTests(TempCacheTestCase):
         resolved = result.value
         self.assertEqual(resolved.entry, _entry())
         self.assertEqual(resolved.sha, CANNED_SHA)
-        self.assertEqual(resolved.root, cache.cache_dir(REPO, CANNED_SHA))
+        self.assertEqual(resolved.root, cache.cache_dir("github.com/acme/widgets", CANNED_SHA))
         self.assertEqual(resolved.path, os.path.join(resolved.root, "skills", "demo"))
         self.assertEqual(resolved.content_hash, hash_upstream_path(resolved.path))
         self.assertEqual(fake.commit_requests, 1)
         self.assertEqual(fake.tarball_requests, 1)
+
+    def test_resolves_enterprise_github_upstream_with_per_source_api_url(self):
+        fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
+        entry = _entry(repo=REPO, api_url="https://github.my-company.com/api/v3")
+
+        result = resolve_upstream_source(entry, opener=fake.opener)
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(
+            fake.urls,
+            [
+                f"https://github.my-company.com/api/v3/repos/{REPO}/commits/main",
+                f"https://github.my-company.com/api/v3/repos/{REPO}/tarball/{CANNED_SHA}",
+            ],
+        )
+        self.assertEqual(
+            result.value.root,
+            cache.cache_dir("github.my-company.com/acme/widgets", CANNED_SHA),
+        )
+
+    def test_full_repo_url_is_normalized_for_network_and_cache(self):
+        fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
+        entry = _entry(repo="https://github.my-company.com/acme/widgets.git")
+
+        result = resolve_upstream_source(entry, opener=fake.opener)
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(
+            fake.urls,
+            [
+                f"https://github.my-company.com/api/v3/repos/{REPO}/commits/main",
+                f"https://github.my-company.com/api/v3/repos/{REPO}/tarball/{CANNED_SHA}",
+            ],
+        )
+        self.assertEqual(
+            result.value.root,
+            cache.cache_dir("github.my-company.com/acme/widgets", CANNED_SHA),
+        )
+
+    def test_cache_namespace_includes_host_identity(self):
+        fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
+
+        public = resolve_upstream_source(_entry(), opener=fake.opener)
+        enterprise = resolve_upstream_source(
+            _entry(api_url="https://github.my-company.com/api/v3"),
+            opener=fake.opener,
+        )
+
+        self.assertIsInstance(public, Ok, getattr(public, "reason", ""))
+        self.assertIsInstance(enterprise, Ok, getattr(enterprise, "reason", ""))
+        self.assertNotEqual(public.value.root, enterprise.value.root)
+        self.assertEqual(public.value.root, cache.cache_dir("github.com/acme/widgets", CANNED_SHA))
+        self.assertEqual(
+            enterprise.value.root,
+            cache.cache_dir("github.my-company.com/acme/widgets", CANNED_SHA),
+        )
 
     def test_reuses_cached_snapshot_for_same_repo_and_sha(self):
         fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
@@ -158,6 +220,7 @@ class ResolveUpstreamSourceTests(TempCacheTestCase):
         self.assertIsInstance(second, Ok, getattr(second, "reason", ""))
         self.assertEqual(first.value.root, second.value.root)
         self.assertEqual(first.value.content_hash, second.value.content_hash)
+        self.assertEqual(first.value.root, cache.cache_dir("github.com/acme/widgets", CANNED_SHA))
         self.assertEqual(fake.commit_requests, 2)
         self.assertEqual(fake.tarball_requests, 1)
 

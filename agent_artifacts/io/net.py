@@ -21,7 +21,7 @@ from typing import Optional
 
 from ..model import Err, Ok, Result
 
-_API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+_DEFAULT_API = "https://api.github.com"
 _ACCEPT = "application/vnd.github+json"
 
 
@@ -40,13 +40,27 @@ def _open(request: urllib.request.Request, opener) -> bytes:
         return response.read()
 
 
-def resolve_ref(repo: str, ref: str, token: Optional[str] = None, opener=None) -> Result:
+def default_api_url() -> str:
+    return os.environ.get("GITHUB_API_URL", _DEFAULT_API).rstrip("/")
+
+
+def _api_root(api_url: Optional[str]) -> str:
+    return (api_url or default_api_url()).rstrip("/")
+
+
+def resolve_ref(
+    repo: str,
+    ref: str,
+    token: Optional[str] = None,
+    opener=None,
+    api_url: Optional[str] = None,
+) -> Result:
     """Resolve a branch/tag/sha ``ref`` to a concrete SHA -> Ok[str] | Err (code 3).
 
     ``GET /repos/{repo}/commits/{ref}`` -> JSON ``{"sha": "..."}``. Fail-soft: any
     network / HTTP / decode error becomes an ``Err`` (DESIGN.md §8, ``check`` is fail-soft).
     """
-    url = f"{_API}/repos/{repo}/commits/{ref}"
+    url = f"{_api_root(api_url)}/repos/{repo}/commits/{ref}"
     try:
         body = _open(_build_request(url, token), opener)
         data = json.loads(body)
@@ -61,20 +75,33 @@ def resolve_ref(repo: str, ref: str, token: Optional[str] = None, opener=None) -
     return Ok(sha)
 
 
-def fetch_tarball(repo: str, sha: str, token: Optional[str] = None, opener=None) -> bytes:
+def fetch_tarball(
+    repo: str,
+    sha: str,
+    token: Optional[str] = None,
+    opener=None,
+    api_url: Optional[str] = None,
+) -> bytes:
     """``GET /repos/{repo}/tarball/{sha}`` -> raw ``.tar.gz`` bytes.
 
     Returns bytes directly (not a ``Result``); the cache layer wraps the call so a fetch
     failure surfaces where extraction happens. Caller passes this as the ``fetch`` callable
     to :func:`agent_artifacts.io.cache.ensure_snapshot`.
     """
-    url = f"{_API}/repos/{repo}/tarball/{sha}"
+    url = f"{_api_root(api_url)}/repos/{repo}/tarball/{sha}"
     return _open(_build_request(url, token), opener)
 
 
-def compare(repo: str, base: str, head: str, token: Optional[str] = None, opener=None) -> Result:
+def compare(
+    repo: str,
+    base: str,
+    head: str,
+    token: Optional[str] = None,
+    opener=None,
+    api_url: Optional[str] = None,
+) -> Result:
     """``GET /compare/{base}...{head}`` -> Ok[dict] | Err (code 3) — used by ``check`` (WP-16)."""
-    url = f"{_API}/repos/{repo}/compare/{base}...{head}"
+    url = f"{_api_root(api_url)}/repos/{repo}/compare/{base}...{head}"
     try:
         body = _open(_build_request(url, token), opener)
         data = json.loads(body)

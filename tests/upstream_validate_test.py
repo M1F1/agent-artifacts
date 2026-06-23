@@ -40,6 +40,8 @@ def _entry(
     name="demo",
     *,
     repo="acme/demo",
+    api_url=None,
+    web_url=None,
     kind="github",
     last_synced=_DEFAULT_SYNC,
 ) -> UpstreamEntry:
@@ -51,6 +53,8 @@ def _entry(
             repo=repo,
             ref="main",
             path=f"{artifact_type}s/{name}",
+            api_url=api_url,
+            web_url=web_url,
         ),
         last_synced=last_synced,
     )
@@ -98,6 +102,41 @@ class UpstreamValidationTests(unittest.TestCase):
         reasons = [err.reason for err in errors]
         self.assertTrue(any("source.kind must be 'github'" in reason for reason in reasons))
         self.assertTrue(any("source.repo must be 'owner/name'" in reason for reason in reasons))
+
+    def test_accepts_enterprise_api_url_and_full_repo_url(self):
+        errors = validate_upstreams(
+            _upstreams(
+                _entry(
+                    "skill",
+                    "demo",
+                    repo="https://github.my-company.com/platform/demo.git",
+                    api_url="https://github.my-company.com/api/v3",
+                    web_url="https://github.my-company.com/platform/demo",
+                )
+            ),
+            _catalog(_artifact("skill", "demo")),
+        )
+
+        self.assertEqual(errors, ())
+
+    def test_reports_invalid_github_urls(self):
+        errors = validate_upstreams(
+            _upstreams(
+                _entry(
+                    "skill",
+                    "demo",
+                    repo="https://token@github.my-company.com/platform/demo?x=1",
+                    api_url="ftp://github.my-company.com/api/v3",
+                    web_url="https://github.my-company.com/platform/demo#readme",
+                )
+            ),
+            _catalog(_artifact("skill", "demo")),
+        )
+
+        reasons = [err.reason for err in errors]
+        self.assertTrue(any("source.repo" in reason for reason in reasons))
+        self.assertTrue(any("source.api_url" in reason for reason in reasons))
+        self.assertTrue(any("source.web_url" in reason for reason in reasons))
 
     def test_reports_catalog_root_that_does_not_match_key_destination(self):
         errors = validate_upstreams(

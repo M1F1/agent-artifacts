@@ -12,6 +12,7 @@ import tarfile
 from dataclasses import dataclass
 from typing import Optional
 
+from .github_source import resolve_github_location
 from .hashing import sha256_file
 from .io import cache, net
 from .model import Err, Ok, Result
@@ -38,23 +39,39 @@ def resolve_upstream_source(entry: UpstreamEntry, *, opener=None, token=None) ->
     if source.kind != "github":
         return Err(f"unsupported upstream source kind: {source.kind!r}", code=2)
 
+    location = resolve_github_location(source)
+    if isinstance(location, Err):
+        return location
+
     rel = _normalise_snapshot_path(source.path)
     if rel is None:
         return Err(f"invalid upstream path {source.path!r}", code=2)
 
-    resolved = net.resolve_ref(source.repo, source.ref, token=token, opener=opener)
+    resolved = net.resolve_ref(
+        location.value.repo,
+        source.ref,
+        token=token,
+        opener=opener,
+        api_url=location.value.api_url,
+    )
     if isinstance(resolved, Err):
         return resolved
     sha = resolved.value
 
     try:
         root = cache.ensure_snapshot(
-            source.repo,
+            location.value.cache_key,
             sha,
-            lambda: net.fetch_tarball(source.repo, sha, token=token, opener=opener),
+            lambda: net.fetch_tarball(
+                location.value.repo,
+                sha,
+                token=token,
+                opener=opener,
+                api_url=location.value.api_url,
+            ),
         )
     except (OSError, tarfile.TarError, EOFError) as exc:
-        return Err(f"failed to materialise upstream {source.repo}@{sha}: {exc}", code=3)
+        return Err(f"failed to materialise upstream {location.value.repo}@{sha}: {exc}", code=3)
 
     path = os.path.abspath(os.path.join(root, *rel.split("/"))) if rel else os.path.abspath(root)
     root_abs = os.path.abspath(root)
@@ -63,7 +80,7 @@ def resolve_upstream_source(entry: UpstreamEntry, *, opener=None, token=None) ->
 
     if not os.path.exists(path):
         return Err(
-            f"missing_upstream: {source.repo}@{sha} has no path {source.path!r}",
+            f"missing_upstream: {location.value.repo}@{sha} has no path {source.path!r}",
             code=3,
         )
 

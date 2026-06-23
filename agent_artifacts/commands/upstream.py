@@ -9,6 +9,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 
 from .. import catalog as catalog_mod
 from .. import executor
+from ..github_source import resolve_github_location
 from ..io import fs
 from ..model import Err, Ok, Request
 from ..source import open_source
@@ -383,20 +384,46 @@ def _status_to_dict(status: UpstreamStatus, entry: Optional[UpstreamEntry]) -> d
 
 def _automation_status_to_dict(status: UpstreamStatus, entry: Optional[UpstreamEntry]) -> dict:
     source = entry.source if entry is not None else None
+    source_fields = _source_fields(source)
     return {
         "artifact": format_upstream_key(status.key),
         "type": status.key.type,
         "name": status.key.name,
         "state": status.state,
-        "repo": source.repo if source is not None else None,
-        "ref": source.ref if source is not None else None,
-        "path": source.path if source is not None else None,
+        **source_fields,
         "base_sha": status.base_sha,
         "head_sha": status.head_sha,
         "base_hash": status.base_hash,
         "head_hash": status.head_hash,
         "message": status.message,
     }
+
+
+def _source_fields(source) -> dict:
+    if source is None:
+        return {"repo": None, "ref": None, "path": None}
+
+    data = {
+        "repo": source.repo,
+        "ref": source.ref,
+        "path": source.path,
+    }
+    include_host_fields = source.api_url is not None or source.web_url is not None or "://" in source.repo
+    if not include_host_fields:
+        return data
+
+    location = resolve_github_location(source)
+    if isinstance(location, Err):
+        if source.api_url is not None:
+            data["api_url"] = source.api_url
+        if source.web_url is not None:
+            data["web_url"] = source.web_url
+        return data
+
+    data["repo"] = location.value.repo
+    data["api_url"] = location.value.api_url
+    data["web_url"] = location.value.web_url
+    return data
 
 
 def _human_status_line(status: UpstreamStatus) -> str:

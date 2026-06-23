@@ -114,6 +114,20 @@ Minimal `upstreams.json` entry:
 }
 ```
 
+For GitHub Enterprise or mixed-host catalogs, add a per-source API URL:
+
+```json
+{
+  "source": {
+    "kind": "github",
+    "repo": "platform/review-skills",
+    "api_url": "https://github.my-company.com/api/v3",
+    "ref": "main",
+    "path": "skills/code-review"
+  }
+}
+```
+
 Consumer `aart update` still updates from this reviewed catalog, not directly from third-party
 upstream repos.
 

@@ -1,8 +1,9 @@
 # agent-artifacts - Design: upstream tracking for vendored artifacts
 
-Companion to [DESIGN.md](DESIGN.md) and [DESIGN-memory.md](DESIGN-memory.md). This document
-adds a maintainer workflow for tracking third-party or cross-repo artifacts that have been
-copied into the source-of-truth catalog.
+Companion to [DESIGN.md](DESIGN.md), [DESIGN-memory.md](DESIGN-memory.md), and
+[DESIGN-upstream-github-hosts.md](DESIGN-upstream-github-hosts.md). This document adds a
+maintainer workflow for tracking third-party or cross-repo artifacts that have been copied into
+the source-of-truth catalog.
 
 The important boundary is unchanged: consumer projects install from, check against, and update
 from **one curated agent-artifacts repo**. Upstream tracking is for catalog maintainers. It
@@ -128,6 +129,7 @@ Draft schema:
       "source": {
         "kind": "github",
         "repo": "example/karpathy-skills",
+        "api_url": "https://github.my-company.com/api/v3",
         "ref": "main",
         "path": "memory/prompting.md"
       },
@@ -155,6 +157,12 @@ destination is inferred from the artifact type:
 The upstream `path` points at either a directory or a file. Type validation decides what is
 acceptable: `skill` and `hook` import trees; `guideline`, `mcp`, and `memory` import single
 files.
+
+For public GitHub, `repo: "owner/name"` is enough. For GitHub Enterprise Server or mixed-host
+catalogs, `source.api_url` records the API endpoint for that specific artifact. A pasted HTTPS
+GitHub repo URL such as `https://github.my-company.com/org/repo.git` is also accepted and
+normalized for network calls. The compact `owner/name` shape remains the canonical public
+GitHub form.
 
 ### 4.2 Why content hash, not only commit
 
@@ -267,7 +275,9 @@ The upstream file is part of catalog validation:
 
 - every `type/name` key must resolve to an artifact in the catalog;
 - source kind must be known;
-- GitHub repo must be `owner/name`;
+- GitHub repo must be `owner/name` or an HTTPS GitHub repo URL;
+- optional `source.api_url` and `source.web_url` must be valid HTTP(S) URLs without embedded
+  credentials, query strings, or fragments;
 - ref and path must be non-empty strings;
 - `last_synced.sha` and `last_synced.content_hash` must be present after an artifact is first
   synced;
@@ -320,17 +330,20 @@ against many remotes, or trust unreviewed upstream content.
 ## 9. Network and cache behavior
 
 The MVP uses GitHub upstreams because the existing IO layer already knows how to resolve refs,
-fetch tarballs, compare commits, and cache immutable snapshots.
+fetch tarballs, compare commits, and cache immutable snapshots. Public GitHub uses
+`https://api.github.com` by default; an entry can override this with `source.api_url` so one
+catalog can track public GitHub and GitHub Enterprise Server sources in the same run.
 
 For efficiency:
 
-- group selected entries by `(repo, resolved_sha)`;
+- group selected entries by `(api_url, repo, resolved_sha)`;
 - fetch each snapshot once;
 - hash multiple tracked paths from the same snapshot;
-- reuse `~/.cache/agent-artifacts/<repo>/<sha>/`.
+- reuse host-qualified cache entries under `~/.cache/agent-artifacts/`.
 
-Private upstream repos use the same `GITHUB_TOKEN` / `GH_TOKEN` story as existing remote
-source commands.
+Private upstream repos use the same environment-token story as existing remote source commands.
+The global `GITHUB_API_URL` fallback still works for single-host workflows, but mixed catalogs
+should prefer per-source `api_url`.
 
 Local upstream sources can be added later for testing or air-gapped mirrors:
 

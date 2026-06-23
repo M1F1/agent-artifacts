@@ -30,6 +30,10 @@ class UpstreamFixturesTests(unittest.TestCase):
         self.assertEqual(data["version"], 1)
         artifacts = data["artifacts"]
         self.assertEqual(
+            artifacts["memory/house"]["source"]["api_url"],
+            "https://github.my-company.com/api/v3",
+        )
+        self.assertEqual(
             artifacts["skill/demo"]["last_synced"]["content_hash"],
             hash_upstream_path(str(CATALOG / "skills" / "demo")),
         )
