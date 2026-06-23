@@ -32,8 +32,13 @@ from typing import Dict, List, Mapping, Tuple
 
 from .. import catalog as catalog_mod
 from .. import executor, manifest, planners
+from ..compatibility import (
+    INCOMPATIBLE_PROFILE,
+    check_profile_compatibility,
+    skipped_target_to_dict,
+)
 from ..io import fs
-from ..model import Artifact, Profile, Request
+from ..model import Artifact, Profile, Request, SkippedTarget
 from ..source import Source, open_source
 from . import _common
 
@@ -46,6 +51,7 @@ _TYPE_ATTR = {
     "hook": "hooks",
     "memory": "memory",
 }
+UNSUPPORTED_TYPE = "unsupported-type"
 
 
 def _err(message: str) -> None:
@@ -56,6 +62,33 @@ def _err(message: str) -> None:
 def _supports(profile: Profile, art_type: str) -> bool:
     """True when `profile` declares a target for `art_type` (DESIGN-memory.md §5)."""
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
+
+
+def _skip_message(skipped: SkippedTarget) -> str:
+    """Human-readable warning for a structured skipped target."""
+    if skipped.reason == INCOMPATIBLE_PROFILE and skipped.allowed_profiles:
+        allowed = ", ".join(skipped.allowed_profiles)
+        return (
+            f"skipped {skipped.type} {skipped.artifact!r} for profile {skipped.profile!r}: "
+            f"{skipped.reason} (allowed: {allowed})"
+        )
+    if skipped.reason == UNSUPPORTED_TYPE:
+        return (
+            f"skipped {skipped.type} {skipped.artifact!r}: "
+            f"profile {skipped.profile!r} does not support it"
+        )
+    return (
+        f"skipped {skipped.type} {skipped.artifact!r} for profile {skipped.profile!r}: "
+        f"{skipped.reason}"
+    )
+
+
+def _compat_error(a: Artifact, profile_name: str, allowed: Tuple[str, ...]) -> str:
+    allowed_text = ", ".join(allowed)
+    return (
+        f"{a.type} {a.name!r} is not compatible with profile {profile_name!r} "
+        f"(allowed: {allowed_text})"
+    )
 
 
 def _resolve_memory_mode(request: Request, body: str) -> str:
@@ -121,29 +154,53 @@ def run(request: Request) -> int:
     profs: Tuple[Tuple[str, Profile], ...] = profs_res.value
     project = _common.project_root(request)
 
-    # 4. Partition every artifact×profile target by whether the harness supports the type
-    #    (DESIGN-memory.md §5). An explicit by-name request for an unsupported type is a hard
-    #    error (USAGE); an unsupported type that only arrived via --bundle/--all is skipped
-    #    with a warning. Only the supported (kept) targets are planned.
+    # 4. Partition every artifact×profile target by type support and artifact compatibility.
+    #    Explicit by-name requests are hard errors; broad selections skip with structured
+    #    reasons so --json/dry-run callers do not have to parse warning strings.
     by_name = set(request.names)
     kept_targets: List[Tuple[Artifact, str]] = []
     support_errors: List[str] = []
-    support_warnings: List[str] = []
+    compatibility_errors: List[str] = []
+    skipped_targets: List[SkippedTarget] = []
     for a in arts:
         for pname, prof in profs:
-            if _supports(prof, a.type):
-                kept_targets.append((a, pname))
-            elif a.name in by_name:
-                support_errors.append(
-                    f"profile {pname!r} does not support {a.type} {a.name!r}"
+            explicit = a.name in by_name
+            if not _supports(prof, a.type):
+                skipped = SkippedTarget(
+                    artifact=a.name,
+                    type=a.type,
+                    profile=pname,
+                    reason=UNSUPPORTED_TYPE,
                 )
-            else:
-                support_warnings.append(
-                    f"skipped {a.type} {a.name!r}: profile {pname!r} does not support it"
-                )
+                if explicit:
+                    support_errors.append(
+                        f"profile {pname!r} does not support {a.type} {a.name!r}"
+                    )
+                else:
+                    skipped_targets.append(skipped)
+                continue
 
-    if support_errors:
-        for msg in support_errors:
+            decision = check_profile_compatibility(a, pname)
+            if not decision.ok:
+                skipped = SkippedTarget(
+                    artifact=a.name,
+                    type=a.type,
+                    profile=pname,
+                    reason=decision.reason or INCOMPATIBLE_PROFILE,
+                    allowed_profiles=decision.allowed_profiles,
+                )
+                if explicit:
+                    compatibility_errors.append(
+                        _compat_error(a, pname, decision.allowed_profiles)
+                    )
+                else:
+                    skipped_targets.append(skipped)
+                continue
+
+            kept_targets.append((a, pname))
+
+    if support_errors or compatibility_errors:
+        for msg in support_errors + compatibility_errors:
             _err(msg)
         return _common.USAGE
 
@@ -241,10 +298,23 @@ def run(request: Request) -> int:
 
     # 8. Dry-run: print the plan and return without touching disk.
     if request.dry_run:
+        warnings = [_skip_message(s) for s in skipped_targets]
         if request.json:
-            print(executor.plan_to_json(rebased))
+            if skipped_targets:
+                _common.print_json(
+                    {
+                        "actions": json.loads(executor.plan_to_json(rebased)),
+                        "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
+                        "warnings": warnings,
+                    }
+                )
+            else:
+                print(executor.plan_to_json(rebased))
         else:
-            print(executor.render_plan(rebased))
+            rendered = executor.render_plan(rebased)
+            warn_lines = [f"warn        {w}" for w in warnings]
+            lines = warn_lines + ([rendered] if rendered else [])
+            print("\n".join(lines))
         return _common.OK
 
     # 9. Execute the rebased plan (the only disk-touching step).
@@ -258,7 +328,7 @@ def run(request: Request) -> int:
     _common.save_manifest(project, m)
 
     # 11. Report (include the unsupported-type skip warnings from the §5 partition).
-    all_warnings = list(support_warnings) + list(report.warnings)
+    all_warnings = [_skip_message(s) for s in skipped_targets] + list(report.warnings)
     if request.json:
         _common.print_json(
             {
@@ -266,6 +336,7 @@ def run(request: Request) -> int:
                     {"artifact": e.artifact, "type": e.type, "profile": e.profile}
                     for e in entries
                 ],
+                "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
                 "performed": list(report.performed),
                 "warnings": all_warnings,
                 "manifest": _common.manifest_path(project),

@@ -145,6 +145,57 @@ class TestMemoryCli(_ProjectCase):
         self.assertEqual(rc, 2, "installing mcp into vibe (unsupported) is USAGE")
 
 
+class TestCompatibilityCli(_ProjectCase):
+    """Profile-specific artifact compatibility behavior against the real fixture catalog."""
+
+    def test_explicit_incompatible_install_is_usage(self):
+        rc, _out, err = self.install("tabnine-postgres", "--profile", "claude", "--yes")
+        self.assertEqual(rc, 2)
+        self.assertIn("not compatible", err)
+        self.assertIn("allowed: tabnine", err)
+
+    def test_bundle_skips_incompatible_target_in_json(self):
+        rc, out, err = self.install(
+            "--bundle", "backend", "--profile", "claude", "--yes", "--json"
+        )
+        self.assertEqual(rc, 0, err)
+        payload = json.loads(out)
+        self.assertTrue(
+            any(
+                item["artifact"] == "tabnine-postgres"
+                and item["profile"] == "claude"
+                and item["reason"] == "incompatible-profile"
+                for item in payload["skipped"]
+            ),
+            payload,
+        )
+        installed = {item["artifact"] for item in payload["installed"]}
+        self.assertIn("postgres", installed)
+        self.assertNotIn("tabnine-postgres", installed)
+
+    def test_compatible_profile_installs_restricted_mcp(self):
+        rc, out, err = self.install("tabnine-postgres", "--profile", "tabnine", "--yes", "--json")
+        self.assertEqual(rc, 0, err)
+        payload = json.loads(out)
+        self.assertEqual(payload["skipped"], [])
+        self.assertEqual(payload["installed"][0]["artifact"], "tabnine-postgres")
+        settings = pathlib.Path(self.p(".tabnine", "agent", "settings.json"))
+        data = json.loads(settings.read_text())
+        self.assertIn("tabnine-postgres", data["mcpServers"])
+
+    def test_dry_run_json_reports_bundle_skip(self):
+        rc, out, err = self.install(
+            "--bundle", "backend", "--profile", "claude", "--dry-run", "--json"
+        )
+        self.assertEqual(rc, 0, err)
+        payload = json.loads(out)
+        self.assertIn("actions", payload)
+        self.assertTrue(
+            any(item["artifact"] == "tabnine-postgres" for item in payload["skipped"])
+        )
+        self.assertFalse(os.path.exists(self.p(".agent-artifacts")))
+
+
 class TestDryRunIsPure(_ProjectCase):
     """--dry-run prints a Plan and mutates nothing."""
 

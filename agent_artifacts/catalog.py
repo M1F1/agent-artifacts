@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional, Tuple
 
-from . import fp
+from . import compatibility, fp
 from .fp import Err, Ok
 from .model import Artifact, ArtifactType, Bundle, Catalog, ResolvedBundle, Result
 
@@ -96,7 +96,17 @@ def parse_skill(text: str, name: str) -> Result:
         return Err(
             f"skill {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
         )
-    return Ok(Artifact(type="skill", name=name, root=f"skills/{name}"))
+    compat = compatibility.compatibility_from_frontmatter(fields, f"skill {name!r}")
+    if isinstance(compat, Err):
+        return compat
+    return Ok(
+        Artifact(
+            type="skill",
+            name=name,
+            root=f"skills/{name}",
+            compatibility=compat.value,
+        )
+    )
 
 
 def parse_guideline(text: str, name: str) -> Result:
@@ -110,7 +120,17 @@ def parse_guideline(text: str, name: str) -> Result:
             return Err(
                 f"guideline {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
             )
-    return Ok(Artifact(type="guideline", name=name, root=f"guidelines/{name}.md"))
+    compat = compatibility.compatibility_from_frontmatter(fields, f"guideline {name!r}")
+    if isinstance(compat, Err):
+        return compat
+    return Ok(
+        Artifact(
+            type="guideline",
+            name=name,
+            root=f"guidelines/{name}.md",
+            compatibility=compat.value,
+        )
+    )
 
 
 def parse_memory(text: str, name: str) -> Result:
@@ -133,7 +153,17 @@ def parse_memory(text: str, name: str) -> Result:
                 f"memory {name!r}: invalid mode {fields['mode']!r} "
                 f"(expected one of {', '.join(_MEMORY_MODES)})"
             )
-    return Ok(Artifact(type="memory", name=name, root=f"memory/{name}.md"))
+    compat = compatibility.compatibility_from_frontmatter(fields, f"memory {name!r}")
+    if isinstance(compat, Err):
+        return compat
+    return Ok(
+        Artifact(
+            type="memory",
+            name=name,
+            root=f"memory/{name}.md",
+            compatibility=compat.value,
+        )
+    )
 
 
 def parse_mcp(text: str, name: str) -> Result:
@@ -149,7 +179,17 @@ def parse_mcp(text: str, name: str) -> Result:
         return Err(f"mcp {name!r}: missing required key(s) {', '.join(missing)}")
     if data["name"] != name:
         return Err(f"mcp {name!r}: declared name {data['name']!r} does not match {name!r}")
-    return Ok(Artifact(type="mcp", name=name, root=f"mcp/{name}.json"))
+    compat = compatibility.compatibility_from_json(data, f"mcp {name!r}")
+    if isinstance(compat, Err):
+        return compat
+    return Ok(
+        Artifact(
+            type="mcp",
+            name=name,
+            root=f"mcp/{name}.json",
+            compatibility=compat.value,
+        )
+    )
 
 
 def parse_hook(text: str, name: str) -> Result:
@@ -165,7 +205,17 @@ def parse_hook(text: str, name: str) -> Result:
         return Err(f"hook {name!r}: missing required key(s) {', '.join(missing)}")
     if data["name"] != name:
         return Err(f"hook {name!r}: declared name {data['name']!r} does not match {name!r}")
-    return Ok(Artifact(type="hook", name=name, root=f"hooks/{name}"))
+    compat = compatibility.compatibility_from_json(data, f"hook {name!r}")
+    if isinstance(compat, Err):
+        return compat
+    return Ok(
+        Artifact(
+            type="hook",
+            name=name,
+            root=f"hooks/{name}",
+            compatibility=compat.value,
+        )
+    )
 
 
 def parse_bundle(text: str, name: str) -> Result:

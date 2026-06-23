@@ -145,7 +145,7 @@ def _print_json(
     obj: dict = {
         "version": request.version or "main",
         "artifacts": [
-            {"type": a.type, "name": a.name, "root": a.root}
+            _artifact_to_dict(a)
             for a in sorted(artifacts, key=lambda a: (_TYPE_ORDER.index(a.type), a.name))
         ],
     }
@@ -155,6 +155,19 @@ def _print_json(
             for name in sorted(catalog.bundles)
         ]
     _common.print_json(obj)
+
+
+def _artifact_to_dict(artifact: Artifact) -> dict:
+    out: dict[str, object] = {
+        "type": artifact.type,
+        "name": artifact.name,
+        "root": artifact.root,
+    }
+    if artifact.compatibility is not None:
+        out["compatibility"] = {
+            "profiles": list(artifact.compatibility.profiles),
+        }
+    return out
 
 
 def _bundle_to_dict(bundle: Bundle) -> dict:

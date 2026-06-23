@@ -168,14 +168,14 @@ class RequestAssemblyTests(unittest.TestCase):
         self.assertIsNone(req.type_filter)
 
     def test_bundle_selection_populates_bundles(self):
-        # Row 6 = [bundle] backend (see _build_choices ordering).
+        # Row 7 = [bundle] backend (see _build_choices ordering).
         captured = {}
 
         def _recorder(request):
             captured["req"] = request
             return 0
 
-        read = _scripted_reader(["6", "1", "install"])
+        read = _scripted_reader(["7", "1", "install"])
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=None)

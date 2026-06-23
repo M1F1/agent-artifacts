@@ -3,7 +3,7 @@
   "description": "Fixture backend bundle.",
   "extends": ["base"],
   "includes": {
-    "mcp": ["postgres"]
+    "mcp": ["postgres", "tabnine-postgres"]
   },
   "pins": {
     "code-review": "a1b2c3d"

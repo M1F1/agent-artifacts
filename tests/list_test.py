@@ -15,8 +15,15 @@ from agent_artifacts.model import Request
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURES = str(REPO_ROOT / "tests" / "fixtures")
 
-# The four fixture artifacts.
-ALL_NAMES = {"code-review", "python-style", "postgres", "block-secrets", "house"}
+# Fixture artifacts.
+ALL_NAMES = {
+    "code-review",
+    "python-style",
+    "postgres",
+    "tabnine-postgres",
+    "block-secrets",
+    "house",
+}
 
 
 def _capture(request: Request) -> tuple:

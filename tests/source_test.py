@@ -124,15 +124,17 @@ class LocalSourceTest(unittest.TestCase):
         self.assertIn(("skill", "code-review"), cat.artifacts)
         self.assertIn(("guideline", "python-style"), cat.artifacts)
         self.assertIn(("mcp", "postgres"), cat.artifacts)
+        self.assertIn(("mcp", "tabnine-postgres"), cat.artifacts)
         self.assertIn(("hook", "block-secrets"), cat.artifacts)
         self.assertIn(("memory", "house"), cat.artifacts)
-        self.assertEqual(len(cat.artifacts), 5)
+        self.assertEqual(len(cat.artifacts), 6)
         # Both bundles present.
         self.assertEqual(set(cat.bundles), {"base", "backend"})
         # Artifact roots are repo-relative (DESIGN.md §4).
         self.assertEqual(cat.artifacts[("skill", "code-review")].root, "skills/code-review")
         self.assertEqual(cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md")
         self.assertEqual(cat.artifacts[("mcp", "postgres")].root, "mcp/postgres.json")
+        self.assertEqual(cat.artifacts[("mcp", "tabnine-postgres")].root, "mcp/tabnine-postgres.json")
         self.assertEqual(cat.artifacts[("hook", "block-secrets")].root, "hooks/block-secrets")
         self.assertEqual(cat.artifacts[("memory", "house")].root, "memory/house.md")
 

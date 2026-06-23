@@ -43,10 +43,32 @@ Result = Union[Ok, Err]  # conceptually Result[T]
 # Catalog (source side)                                                        #
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
+class Compatibility:
+    profiles: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompatibilityDecision:
+    ok: bool
+    reason: Optional[str] = None
+    allowed_profiles: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedTarget:
+    artifact: str
+    type: ArtifactType
+    profile: str
+    reason: str
+    allowed_profiles: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Artifact:
     type: ArtifactType
     name: str
     root: str  # path of the artifact within the source, relative (e.g. "skills/code-review")
+    compatibility: Optional[Compatibility] = None
 
 
 @dataclass(frozen=True, slots=True)

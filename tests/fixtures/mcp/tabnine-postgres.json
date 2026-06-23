@@ -1,0 +1,14 @@
+{
+  "name": "tabnine-postgres",
+  "description": "Fixture Tabnine-only MCP server.",
+  "compatibility": {
+    "profiles": ["tabnine"]
+  },
+  "server": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "env": {
+      "DATABASE_URL": "${DATABASE_URL}"
+    }
+  }
+}

@@ -210,6 +210,14 @@ class TestFixturesMirror(unittest.TestCase):
         self.assertIn("name", data)
         self.assertIn("server", data)
 
+    def test_fixture_profile_specific_mcp_exists(self) -> None:
+        path = self.FIXTURES / "mcp" / "tabnine-postgres.json"
+        self.assertTrue(path.exists())
+        data = _load_json(path)
+        self.assertEqual(data["name"], "tabnine-postgres")
+        self.assertEqual(data["compatibility"]["profiles"], ["tabnine"])
+        self.assertIn("server", data)
+
     def test_fixture_hook_exists(self) -> None:
         path = self.FIXTURES / "hooks" / "block-secrets" / "hook.json"
         self.assertTrue(path.exists())

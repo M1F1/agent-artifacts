@@ -45,6 +45,34 @@ Each harness has a **profile** that knows where every type belongs, so the same 
 installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/` — you never have to
 remember the paths.
 
+Artifacts can also declare that they are only aligned with specific profiles. JSON descriptors
+use an explicit compatibility object:
+
+```json
+{
+  "name": "tabnine-postgres",
+  "compatibility": {
+    "profiles": ["tabnine"]
+  },
+  "server": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"]
+  }
+}
+```
+
+Markdown/frontmatter artifacts use the same field as a flat dotted key:
+
+```markdown
+---
+name: code-review
+compatibility.profiles: claude, tabnine
+---
+```
+
+An explicit incompatible install is a usage error. Bundle and `--all` installs skip
+incompatible targets with a warning and include machine-readable skip reasons in JSON output.
+
 ---
 
 ## The features that matter

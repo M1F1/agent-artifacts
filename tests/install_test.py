@@ -141,7 +141,12 @@ class InstallEndToEndTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(os.listdir(self.project), [])
         parsed = json.loads(buf.getvalue())  # raises if not valid JSON
-        self.assertIsInstance(parsed, list)
+        self.assertIsInstance(parsed, dict)
+        self.assertIn("actions", parsed)
+        self.assertIn("skipped", parsed)
+        self.assertTrue(
+            any(item["reason"] == "incompatible-profile" for item in parsed["skipped"])
+        )
 
     # ---- --json output is valid JSON ------------------------------------- #
     def test_json_output_is_valid_json(self):

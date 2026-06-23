@@ -20,10 +20,16 @@ Exit-code behaviour (PLAN.md §7):
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Dict, List, Mapping, Optional, Tuple
 
 from .. import planners
+from ..compatibility import (
+    INCOMPATIBLE_PROFILE,
+    check_profile_compatibility,
+    skipped_target_to_dict,
+)
 from ..executor import execute, plan_to_json, render_plan
 from ..hashing import sha256_bytes, sha256_file
 from ..io import fs
@@ -39,6 +45,7 @@ from ..model import (
     Plan,
     Profile,
     Request,
+    SkippedTarget,
     WriteFile,
 )
 from ..policy import classify, decision_action
@@ -85,7 +92,7 @@ def run(request: Request) -> int:
     if isinstance(desired_result, Err):
         print(desired_result.reason)
         return _common.exit_code(desired_result)
-    desired_plan, new_entries = desired_result.value
+    desired_plan, new_entries, skipped = desired_result.value
 
     update_plan, conflict = _apply_policy(desired_plan, selected, project, force=request.force)
 
@@ -100,7 +107,7 @@ def run(request: Request) -> int:
 
     # 5b. --dry-run: present the plan, touch nothing.
     if request.dry_run:
-        _emit(rebased, json_mode=request.json)
+        _emit(rebased, json_mode=request.json, skipped=skipped)
         return _common.CONFLICT if conflict and not request.force else _common.OK
 
     # 5c. Execute and persist the refreshed manifest.
@@ -114,10 +121,13 @@ def run(request: Request) -> int:
             {
                 "performed": list(report.performed),
                 "warnings": list(report.warnings),
+                "skipped": [skipped_target_to_dict(s) for s in skipped],
                 "conflict": conflict,
             }
         )
     else:
+        for s in skipped:
+            print(_skip_message(s))
         for w in report.warnings:
             print(w)
 
@@ -166,13 +176,16 @@ def _build_desired_plan(
 ):
     """Re-derive each selected entry's desired install Plan from the *current* source.
 
-    Returns ``Ok((plan_without_manifest, new_entries))`` or an `Err` from the planner.
+    Returns ``Ok((plan_without_manifest, new_entries, skipped))`` or an `Err` from the planner.
     The trailing ``WriteManifest`` is split off so the shell can persist the manifest itself
     with the refreshed source label (see `_merge_entries`).
     """
     targets: List[Tuple[Artifact, str]] = []
     files: Dict[str, object] = {"__targets__": targets, "__installed_at__": ""}
     configs: Dict[str, Mapping] = {}
+    skipped: List[SkippedTarget] = []
+    explicit_errors: List[str] = []
+    explicit_names = set(request.names)
 
     for entry in selected:
         artifact = catalog.artifacts.get((entry.type, entry.artifact))
@@ -180,13 +193,32 @@ def _build_desired_plan(
             # Artifact no longer exists upstream — skip (the entry simply isn't refreshed).
             continue
         profile_name = entry.profile
+        decision = check_profile_compatibility(artifact, profile_name)
+        if not decision.ok:
+            skipped_target = SkippedTarget(
+                artifact=artifact.name,
+                type=artifact.type,
+                profile=profile_name,
+                reason=decision.reason or INCOMPATIBLE_PROFILE,
+                allowed_profiles=decision.allowed_profiles,
+            )
+            if entry.artifact in explicit_names:
+                explicit_errors.append(
+                    _compat_error(artifact, profile_name, decision.allowed_profiles)
+                )
+            else:
+                skipped.append(skipped_target)
+            continue
         targets.append((artifact, profile_name))
         files[f"bundle:{entry.artifact}"] = entry.bundle
         _gather_inputs(artifact, profile_name, profiles, src, project=_common.project_root(request),
                        files=files, configs=configs)
 
+    if explicit_errors:
+        return Err("; ".join(explicit_errors), code=_common.USAGE)
+
     if not targets:
-        return Ok(((), ()))
+        return Ok(((), (), tuple(skipped)))
 
     plan_result = planners.plan_install(
         request, catalog, files, profiles, manifest=None, configs=configs
@@ -196,7 +228,28 @@ def _build_desired_plan(
 
     plan = plan_result.value
     file_actions, entries = _common.split_manifest(plan)
-    return Ok((file_actions, entries))
+    return Ok((file_actions, entries, tuple(skipped)))
+
+
+def _compat_error(artifact: Artifact, profile_name: str, allowed: Tuple[str, ...]) -> str:
+    allowed_text = ", ".join(allowed)
+    return (
+        f"{artifact.type} {artifact.name!r} is not compatible with profile {profile_name!r} "
+        f"(allowed: {allowed_text})"
+    )
+
+
+def _skip_message(skipped: SkippedTarget) -> str:
+    if skipped.allowed_profiles:
+        allowed = ", ".join(skipped.allowed_profiles)
+        return (
+            f"skipped {skipped.type} {skipped.artifact!r} for profile {skipped.profile!r}: "
+            f"{skipped.reason} (allowed: {allowed})"
+        )
+    return (
+        f"skipped {skipped.type} {skipped.artifact!r} for profile {skipped.profile!r}: "
+        f"{skipped.reason}"
+    )
 
 
 def _gather_inputs(
@@ -406,8 +459,21 @@ def _merge_entries(
 # --------------------------------------------------------------------------- #
 # Rendering                                                                     #
 # --------------------------------------------------------------------------- #
-def _emit(plan: Plan, *, json_mode: bool) -> None:
+def _emit(plan: Plan, *, json_mode: bool, skipped: Tuple[SkippedTarget, ...] = ()) -> None:
     if json_mode:
-        print(plan_to_json(plan))
+        if skipped:
+            _common.print_json(
+                {
+                    "actions": json.loads(plan_to_json(plan)),
+                    "skipped": [skipped_target_to_dict(s) for s in skipped],
+                    "warnings": [_skip_message(s) for s in skipped],
+                }
+            )
+        else:
+            print(plan_to_json(plan))
     else:
-        print(render_plan(plan))
+        rendered = render_plan(plan)
+        lines = [f"warn        {_skip_message(s)}" for s in skipped]
+        if rendered:
+            lines.append(rendered)
+        print("\n".join(lines))
