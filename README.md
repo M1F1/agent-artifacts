@@ -109,9 +109,23 @@ sync workflow — and freshness checks are **always opt-in, never ambient**:
   written to a `.agent-artifacts-new` sidecar instead of clobbering your work (override with
   `--force`). `--prune` drops entries no longer in the set.
 
-### 🧭 Maintainer upstream tracking — review external changes before shipping
-Catalog maintainers can track where vendored artifacts came from in `upstreams.json`, then
-check or import upstream changes into this repo as ordinary working-tree diffs:
+### 🧭 Maintainer upstream tracking — adopt by URL, then review changes
+Catalog maintainers vendor artifacts from other repos and track where they came from in
+`upstreams.json`. **Adopt one by pasting its GitHub URL** — the browser link to the folder, no
+hand-editing:
+
+```sh
+# A /tree/ link to a skill folder; aart decomposes repo, ref, and path for you:
+aart upstream add skill/domain-modeling \
+  https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling
+```
+
+This fetches the directory, copies the **whole tree** into `skills/domain-modeling/`, and writes
+the tracking entry below. A `/blob/` link adopts a single-file artifact (guideline/mcp/memory).
+The key's name must match the upstream's own `name:`. Use `--ref`/`--path` to override when a
+branch name contains slashes, `--force` to overwrite an existing copy, and `--dry-run` to preview.
+
+Then check or import upstream changes into this repo as ordinary working-tree diffs:
 
 ```sh
 aart upstream check --all --json
@@ -119,7 +133,7 @@ aart upstream update skill/code-review --dry-run
 aart upstream update --bundle backend
 ```
 
-Minimal `upstreams.json` entry:
+`aart upstream add` writes a fully-formed entry — identical to a hand-authored one:
 
 ```json
 {
@@ -184,6 +198,7 @@ prebuilt local wheel when one is present, no package index required.
 | `aart status` | no | Show installed artifacts + local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |
+| `aart upstream add` | yes | Adopt an upstream artifact from a GitHub URL (vendor + track) |
 | `aart upstream check` | yes | Maintainer check for tracked vendored artifact origins |
 | `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 | `aart uninstall` | no | Reverse installed files and merge entries |

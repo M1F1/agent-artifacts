@@ -377,8 +377,11 @@ network opener as existing tests do.
    tracked artifact roots with content hashes?
 2. Should `check` fetch tarballs for exact content hashes, or first use GitHub compare as a
    cheaper path filter and fetch only when a tracked path changed?
-3. Should first-time adoption have `aart upstream add type/name --repo ... --path ...` in MVP,
-   or is hand-editing `upstreams.json` acceptable for the first release?
+3. ~~Should first-time adoption have `aart upstream add type/name --repo ... --path ...` in MVP,
+   or is hand-editing `upstreams.json` acceptable for the first release?~~ **Resolved:** shipped as
+   `aart upstream add <type/name> <github-url>`, which decomposes a `/tree//blob` deep link into
+   repo/ref/path, vendors the artifact, and writes the entry. See
+   [DESIGN-frictionless-adoption.md](DESIGN-frictionless-adoption.md).
 4. Should upstream metadata support optional patch files later, for catalogs that intentionally
    carry local modifications on top of upstream?
 5. Should `upstreams.json` eventually move under `.agent-artifacts/`, or is a top-level file

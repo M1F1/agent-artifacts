@@ -9,7 +9,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 
 from .. import catalog as catalog_mod
 from .. import executor
-from ..github_source import resolve_github_location
+from ..github_source import parse_github_url, resolve_github_location
 from ..io import fs
 from ..model import Err, Ok, Request
 from ..source import open_source
@@ -24,9 +24,11 @@ from ..upstreams import (
     UpstreamCatalog,
     UpstreamEntry,
     UpstreamKey,
+    UpstreamSource,
     UpstreamSync,
     dump_upstreams,
     format_upstream_key,
+    parse_upstream_key,
     parse_upstreams,
     select_upstreams,
     validate_upstreams,
@@ -49,6 +51,8 @@ def _has_selector(request: Request) -> bool:
 
 
 def run(request: Request) -> int:
+    if request.upstream_action == "add":
+        return _run_add(request)
     if request.upstream_action not in {"check", "update"}:
         return _common.USAGE
     if request.upstream_action == "update" and not _has_selector(request):
@@ -142,6 +146,161 @@ def run(request: Request) -> int:
         updated_count=len(updated),
     )
     return _common.OK
+
+
+def _run_add(request: Request) -> int:
+    """Adopt one upstream artifact from a GitHub URL: resolve, vendor, and track it."""
+    if not request.names:
+        print("upstream add requires <type/name> and a URL")
+        return _common.USAGE
+    key_res = parse_upstream_key(request.names[0])
+    if isinstance(key_res, Err):
+        print(key_res.reason)
+        return _common.USAGE
+    key = key_res.value
+
+    if not request.url:
+        print("upstream add requires a GitHub URL")
+        return _common.USAGE
+    url_res = parse_github_url(request.url)
+    if isinstance(url_res, Err):
+        print(f"invalid URL: {url_res.reason}")
+        return _common.USAGE
+    parts = url_res.value
+
+    ref = request.ref or parts.ref
+    path = request.path or parts.path
+    if not ref:
+        print("could not determine a ref from the URL; pass --ref")
+        return _common.USAGE
+    if not path:
+        print("could not determine an in-repo path from the URL; pass --path")
+        return _common.USAGE
+
+    # When the URL declares a shape, it must match the artifact type: skills/hooks are
+    # directories (/tree), the others single files (/blob).
+    wants_dir = key.type in {"skill", "hook"}
+    if parts.is_file is True and wants_dir:
+        print(f"{key.type} {key.name!r} is a directory artifact; use a /tree/ URL, not /blob/")
+        return _common.USAGE
+    if parts.is_file is False and not wants_dir:
+        print(f"{key.type} {key.name!r} is a single-file artifact; use a /blob/ URL, not /tree/")
+        return _common.USAGE
+
+    catalog_root = os.path.abspath(_catalog_root(request))
+    tracking_path = os.path.join(catalog_root, UPSTREAMS_FILE)
+
+    existing_catalog: Optional[UpstreamCatalog] = None
+    if os.path.exists(tracking_path):
+        try:
+            loaded = parse_upstreams(fs.read_text(tracking_path))
+        except OSError as exc:
+            print(f"cannot read {tracking_path}: {exc}")
+            return _common.ERROR
+        if isinstance(loaded, Err):
+            print(loaded.reason)
+            return _common.exit_code(loaded)
+        existing_catalog = loaded.value
+        if key in existing_catalog.entries and not request.force:
+            print(
+                f"{format_upstream_key(key)} is already tracked; "
+                "use 'aart upstream update' (or --force to re-adopt)"
+            )
+            return _common.USAGE
+
+    # Public github.com stays compact (no host metadata); enterprise hosts carry api_url/web_url.
+    web_url = parts.web_url if parts.api_url is not None else None
+    source = UpstreamSource(
+        kind="github", repo=parts.repo, ref=ref, path=path, api_url=parts.api_url, web_url=web_url
+    )
+
+    resolved = resolve_upstream_source(UpstreamEntry(key=key, source=source, last_synced=None))
+    if isinstance(resolved, Err):
+        print(resolved.reason)
+        return _common.exit_code(resolved)
+    materialised = resolved.value
+
+    problem = _validate_resolved(materialised)
+    if problem is not None:
+        print(f"resolved content is not a valid {key.type}: {problem}")
+        return _common.USAGE
+
+    dest = _catalog_destination(key, catalog_root)
+    dest_exists = os.path.exists(dest)
+    if dest_exists and not request.force:
+        print(f"{os.path.relpath(dest, catalog_root)} already exists; pass --force to overwrite")
+        return _common.CONFLICT
+
+    synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    new_entry = UpstreamEntry(
+        key=key,
+        source=source,
+        last_synced=UpstreamSync(
+            sha=materialised.sha, content_hash=materialised.content_hash, synced_at=synced_at
+        ),
+    )
+    updated_catalog = _upsert_entry(existing_catalog, new_entry)
+
+    if request.dry_run:
+        _emit_add(request, key=key, dest=dest, catalog_root=catalog_root, sha=materialised.sha,
+                  source=source, dry_run=True)
+        return _common.OK
+
+    # Vendor the content, then write the tracking file last so a failure never leaves a
+    # vendored-but-untracked artifact behind.
+    if os.path.isdir(materialised.path):
+        if dest_exists:
+            fs.remove_path(dest)
+        fs.copy_tree(materialised.path, dest)
+    else:
+        fs.write_atomic(dest, fs.read_bytes(materialised.path))
+    fs.write_atomic(tracking_path, dump_upstreams(updated_catalog).encode("utf-8"))
+
+    _emit_add(request, key=key, dest=dest, catalog_root=catalog_root, sha=materialised.sha,
+              source=source, dry_run=False)
+    return _common.OK
+
+
+def _upsert_entry(
+    catalog: Optional[UpstreamCatalog], entry: UpstreamEntry
+) -> UpstreamCatalog:
+    entries = dict(catalog.entries) if catalog is not None else {}
+    entries[entry.key] = entry
+    version = catalog.version if catalog is not None else 1
+    return UpstreamCatalog(version=version, entries=entries)
+
+
+def _emit_add(
+    request: Request,
+    *,
+    key: UpstreamKey,
+    dest: str,
+    catalog_root: str,
+    sha: str,
+    source: UpstreamSource,
+    dry_run: bool,
+) -> None:
+    rel_dest = os.path.relpath(dest, catalog_root)
+    if request.json:
+        _common.print_json(
+            {
+                "action": "add",
+                "dry_run": dry_run,
+                "artifact": format_upstream_key(key),
+                "type": key.type,
+                "name": key.name,
+                "repo": source.repo,
+                "ref": source.ref,
+                "path": source.path,
+                "sha": sha,
+                "destination": rel_dest,
+            }
+        )
+        return
+    print(f"Resolved {source.repo}@{sha} (ref {source.ref})")
+    print(f"{'Would vendor' if dry_run else 'Vendored'} {rel_dest}")
+    if not dry_run:
+        print(f"Tracked  {format_upstream_key(key)} -> {UPSTREAMS_FILE}")
 
 
 def _load_catalog_and_upstreams(catalog_root: str, tracking_path: str):
