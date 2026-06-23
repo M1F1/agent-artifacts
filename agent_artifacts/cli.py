@@ -177,6 +177,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--force", action="store_true", help="overwrite local catalog drift")
     _add_json(p_update)
 
+    p_add = up.add_parser("add", parents=[glob],
+                          help="adopt an upstream artifact from a GitHub URL")
+    p_add.add_argument("names", nargs=1, metavar="TYPE/NAME",
+                       help="artifact key, e.g. skill/grill-me")
+    p_add.add_argument("url", metavar="URL",
+                       help="GitHub URL: a repo, or a /tree//blob deep link to the artifact")
+    p_add.add_argument("--ref", dest="ref", metavar="REF",
+                       help="override the ref (needed when a branch name contains slashes)")
+    p_add.add_argument("--path", dest="path", metavar="PATH",
+                       help="override the in-repo path to the artifact")
+    p_add.add_argument("--force", action="store_true",
+                       help="overwrite an existing catalog destination / re-adopt a tracked key")
+    p_add.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
+    _add_json(p_add)
+
     return parser
 
 
@@ -220,6 +235,9 @@ def _to_request(args: argparse.Namespace) -> Request:
         prune=bool(getattr(args, "prune", False)),
         memory_mode=getattr(args, "memory_mode", None),
         upstream_action=getattr(args, "upstream_action", None),
+        url=getattr(args, "url", None),
+        ref=getattr(args, "ref", None),
+        path=getattr(args, "path", None),
     )
 
 

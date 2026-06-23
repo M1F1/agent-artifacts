@@ -22,6 +22,22 @@ class GitHubSourceLocation:
 
 
 @dataclass(frozen=True, slots=True)
+class GitHubUrlParts:
+    """A GitHub URL decomposed into the fields an upstream entry needs.
+
+    ``ref``/``path``/``is_file`` are ``None`` for a bare repo-root URL; ``api_url`` is ``None``
+    for public ``github.com``.
+    """
+
+    repo: str
+    web_url: str
+    ref: Optional[str] = None
+    path: Optional[str] = None
+    is_file: Optional[bool] = None
+    api_url: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
 class _ParsedRepo:
     repo: str
     api_url: Optional[str] = None
@@ -127,6 +143,75 @@ def _parse_repo_url(value: str) -> Result:
         urlunsplit((parsed.scheme, parsed.netloc, "/api/v3", "", ""))
     )
     return Ok(_ParsedRepo(repo=repo, api_url=api_url, web_url=web_url))
+
+
+def parse_github_url(value) -> Result:
+    """Decompose a GitHub URL into :class:`GitHubUrlParts`.
+
+    Accepts a bare repo URL *and* the browser deep-link forms ``/tree/<ref>/<path>`` (a
+    directory) and ``/blob/<ref>/<path>`` (a file) — the URLs you copy while viewing an artifact.
+    Query strings and fragments (``?plain=1``, ``#L40``) are stripped, not rejected. The ref is
+    the first segment after ``tree``/``blob``; a ref that itself contains slashes cannot be told
+    from the path here and must be supplied explicitly by the caller.
+
+    This is deliberately separate from :func:`_parse_repo`, which keeps its strict "exactly
+    owner/name" contract for the persisted ``source.repo`` field.
+    """
+    if not isinstance(value, str) or not value:
+        return Err("must be an HTTPS GitHub URL", code=2)
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return Err("must be an absolute HTTPS URL", code=2)
+    if parsed.username or parsed.password:
+        return Err("must not include credentials", code=2)
+
+    segments = [part for part in parsed.path.split("/") if part]
+    if len(segments) < 2:
+        return Err("must identify at least an owner and repository", code=2)
+
+    owner, name = segments[0], segments[1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    if not owner or not name:
+        return Err("must identify exactly an owner and repository", code=2)
+
+    repo = f"{owner}/{name}"
+    web_url = urlunsplit((parsed.scheme, parsed.netloc, f"/{repo}", "", ""))
+    api_url = (
+        None
+        if parsed.netloc == "github.com"
+        else _strip_trailing_slash(urlunsplit((parsed.scheme, parsed.netloc, "/api/v3", "", "")))
+    )
+
+    rest = segments[2:]
+    ref: Optional[str] = None
+    path: Optional[str] = None
+    is_file: Optional[bool] = None
+    if rest:
+        marker = rest[0]
+        if marker not in ("tree", "blob"):
+            return Err(
+                "URL must be a repository root or a '/tree/<ref>/<path>' "
+                "or '/blob/<ref>/<path>' link",
+                code=2,
+            )
+        if len(rest) < 2:
+            return Err(f"'{marker}' URL must include a ref segment", code=2)
+        is_file = marker == "blob"
+        ref = rest[1]
+        path_parts = rest[2:]
+        path = "/".join(path_parts) if path_parts else None
+
+    return Ok(
+        GitHubUrlParts(
+            repo=repo,
+            web_url=web_url,
+            ref=ref,
+            path=path,
+            is_file=is_file,
+            api_url=api_url,
+        )
+    )
 
 
 def _normalise_url(value) -> Result:

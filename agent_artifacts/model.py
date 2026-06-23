@@ -266,4 +266,7 @@ class Request:
     json: bool = False
     prune: bool = False
     memory_mode: Optional[str] = None  # DESIGN-memory.md §3.4; None → planner applies "prepend"
-    upstream_action: Optional[str] = None  # "check" | "update" for maintainer-side upstreams
+    upstream_action: Optional[str] = None  # "check" | "update" | "add" (maintainer-side upstreams)
+    url: Optional[str] = None  # GitHub URL for `upstream add`
+    ref: Optional[str] = None  # explicit ref override for `upstream add`
+    path: Optional[str] = None  # explicit in-repo path override for `upstream add`
