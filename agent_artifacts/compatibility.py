@@ -84,9 +84,7 @@ def compatibility_from_frontmatter(fields: Mapping[str, str], label: str) -> Res
     return Ok(Compatibility(profiles=parsed.value))
 
 
-def check_profile_compatibility(
-    artifact: Artifact, profile_name: str
-) -> CompatibilityDecision:
+def check_profile_compatibility(artifact: Artifact, profile_name: str) -> CompatibilityDecision:
     """Return whether ``artifact`` may target ``profile_name``."""
     if artifact.compatibility is None:
         return CompatibilityDecision(ok=True)

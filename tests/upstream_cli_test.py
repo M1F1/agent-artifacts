@@ -33,11 +33,15 @@ class UpstreamCliTests(unittest.TestCase):
         # --all + --bundle is a now-invalid combination, exercised here only to cover field
         # mapping. The rejection itself is asserted in test_upstream_check_rejects_all_with_bundle.
         argv = [
-            "upstream", "check",
+            "upstream",
+            "check",
             "--all",
-            "--type", "skill",
-            "--bundle", "base",
-            "--source", "/catalog",
+            "--type",
+            "skill",
+            "--bundle",
+            "base",
+            "--source",
+            "/catalog",
             "--json",
         ]
         req = cli._to_request(cli.build_parser().parse_args(argv))
@@ -50,14 +54,18 @@ class UpstreamCliTests(unittest.TestCase):
         self.assertTrue(req.json)
 
     def test_upstream_update_maps_request(self):
-        rc, req = _dispatch([
-            "upstream", "update",
-            "skill/code-review",
-            "--bundle", "backend",
-            "--dry-run",
-            "--force",
-            "--json",
-        ])
+        rc, req = _dispatch(
+            [
+                "upstream",
+                "update",
+                "skill/code-review",
+                "--bundle",
+                "backend",
+                "--dry-run",
+                "--force",
+                "--json",
+            ]
+        )
 
         self.assertEqual(rc, 0)
         self.assertEqual(req.command, "upstream")

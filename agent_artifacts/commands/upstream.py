@@ -242,8 +242,15 @@ def _run_add(request: Request) -> int:
     updated_catalog = _upsert_entry(existing_catalog, new_entry)
 
     if request.dry_run:
-        _emit_add(request, key=key, dest=dest, catalog_root=catalog_root, sha=materialised.sha,
-                  source=source, dry_run=True)
+        _emit_add(
+            request,
+            key=key,
+            dest=dest,
+            catalog_root=catalog_root,
+            sha=materialised.sha,
+            source=source,
+            dry_run=True,
+        )
         return _common.OK
 
     # Vendor the content, then write the tracking file last so a failure never leaves a
@@ -256,14 +263,19 @@ def _run_add(request: Request) -> int:
         fs.write_atomic(dest, fs.read_bytes(materialised.path))
     fs.write_atomic(tracking_path, dump_upstreams(updated_catalog).encode("utf-8"))
 
-    _emit_add(request, key=key, dest=dest, catalog_root=catalog_root, sha=materialised.sha,
-              source=source, dry_run=False)
+    _emit_add(
+        request,
+        key=key,
+        dest=dest,
+        catalog_root=catalog_root,
+        sha=materialised.sha,
+        source=source,
+        dry_run=False,
+    )
     return _common.OK
 
 
-def _upsert_entry(
-    catalog: Optional[UpstreamCatalog], entry: UpstreamEntry
-) -> UpstreamCatalog:
+def _upsert_entry(catalog: Optional[UpstreamCatalog], entry: UpstreamEntry) -> UpstreamCatalog:
     entries = dict(catalog.entries) if catalog is not None else {}
     entries[entry.key] = entry
     version = catalog.version if catalog is not None else 1
@@ -379,7 +391,9 @@ def _validate_resolved(resolved: ResolvedUpstream) -> Optional[str]:
     return None
 
 
-def _statuses_to_persist(statuses: Tuple[UpstreamStatus, ...]) -> Mapping[UpstreamKey, UpstreamSync]:
+def _statuses_to_persist(
+    statuses: Tuple[UpstreamStatus, ...],
+) -> Mapping[UpstreamKey, UpstreamSync]:
     synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out: Dict[UpstreamKey, UpstreamSync] = {}
     for status in statuses:
@@ -567,7 +581,9 @@ def _source_fields(source) -> dict:
         "ref": source.ref,
         "path": source.path,
     }
-    include_host_fields = source.api_url is not None or source.web_url is not None or "://" in source.repo
+    include_host_fields = (
+        source.api_url is not None or source.web_url is not None or "://" in source.repo
+    )
     if not include_host_fields:
         return data
 

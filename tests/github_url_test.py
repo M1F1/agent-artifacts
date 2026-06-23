@@ -62,9 +62,7 @@ class ParseGithubUrlTests(unittest.TestCase):
         self.assertEqual(parts.web_url, "https://github.my-co.com/platform/skills")
 
     def test_query_and_fragment_are_stripped(self):
-        parts = self._ok(
-            "https://github.com/acme/skills/blob/main/guidelines/x.md?plain=1#L40"
-        )
+        parts = self._ok("https://github.com/acme/skills/blob/main/guidelines/x.md?plain=1#L40")
         self.assertEqual(parts.path, "guidelines/x.md")
         self.assertIs(parts.is_file, True)
 

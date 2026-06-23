@@ -139,8 +139,10 @@ def _parse_repo_url(value: str) -> Result:
 
     repo = f"{owner}/{name}"
     web_url = urlunsplit((parsed.scheme, parsed.netloc, f"/{repo}", "", ""))
-    api_url = PUBLIC_API_URL if parsed.netloc == "github.com" else _strip_trailing_slash(
-        urlunsplit((parsed.scheme, parsed.netloc, "/api/v3", "", ""))
+    api_url = (
+        PUBLIC_API_URL
+        if parsed.netloc == "github.com"
+        else _strip_trailing_slash(urlunsplit((parsed.scheme, parsed.netloc, "/api/v3", "", "")))
     )
     return Ok(_ParsedRepo(repo=repo, api_url=api_url, web_url=web_url))
 
@@ -221,7 +223,9 @@ def _normalise_url(value) -> Result:
     error = _url_error(parsed, allow_http=True)
     if error is not None:
         return Err(error)
-    return Ok(_strip_trailing_slash(urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))))
+    return Ok(
+        _strip_trailing_slash(urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", "")))
+    )
 
 
 def _url_error(parsed: SplitResult, *, allow_http: bool) -> Optional[str]:
@@ -245,7 +249,9 @@ def _derive_web_url(api_url: str, repo: str) -> str:
         path = path[: -len("/api/v3")]
     else:
         path = ""
-    return _strip_trailing_slash(urlunsplit((parsed.scheme, parsed.netloc, f"{path}/{repo}", "", "")))
+    return _strip_trailing_slash(
+        urlunsplit((parsed.scheme, parsed.netloc, f"{path}/{repo}", "", ""))
+    )
 
 
 def _cache_host(api_url: str) -> str:

@@ -41,10 +41,13 @@ class UpstreamE2ETests(unittest.TestCase):
 
         self.assertEqual(check_code, 0)
         check_payload = json.loads(check_output)
-        self.assertEqual(self._states_by_key(check_payload), {
-            "memory/house": "up_to_date",
-            "skill/demo": "changed",
-        })
+        self.assertEqual(
+            self._states_by_key(check_payload),
+            {
+                "memory/house": "up_to_date",
+                "skill/demo": "changed",
+            },
+        )
 
         bundle_code, bundle_output = self._run_cli(
             "upstream",
@@ -83,10 +86,13 @@ class UpstreamE2ETests(unittest.TestCase):
 
         self.assertEqual(recheck_code, 0)
         recheck_payload = json.loads(recheck_output)
-        self.assertEqual(self._states_by_key(recheck_payload), {
-            "memory/house": "up_to_date",
-            "skill/demo": "up_to_date",
-        })
+        self.assertEqual(
+            self._states_by_key(recheck_payload),
+            {
+                "memory/house": "up_to_date",
+                "skill/demo": "up_to_date",
+            },
+        )
 
         self._seed_skill(self.catalog_root, "local edit")
         self._seed_skill(self.remote_root, "newer upstream")

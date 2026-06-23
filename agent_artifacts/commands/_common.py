@@ -37,10 +37,10 @@ from ..profiles.loader import load_profiles
 
 # --- exit codes (PLAN.md §7) ------------------------------------------------ #
 OK = 0
-ERROR = 1            # generic failure
-USAGE = 2            # bad invocation / unknown name
-NETWORK = 3          # network / remote failure
-CONFLICT = 4         # conflict needs --force
+ERROR = 1  # generic failure
+USAGE = 2  # bad invocation / unknown name
+NETWORK = 3  # network / remote failure
+CONFLICT = 4  # conflict needs --force
 CORRUPT_MANIFEST = 5
 
 # Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, DESIGN.md §17).
@@ -94,8 +94,7 @@ def resolve_artifacts(request: Request, catalog: Catalog) -> Result:
     unresolved name/bundle (accumulated). Honors ``request.type_filter`` for bare names.
     """
     if request.all:
-        arts = [a for (t, _), a in catalog.artifacts.items()
-                if request.type_filter in (None, t)]
+        arts = [a for (t, _), a in catalog.artifacts.items() if request.type_filter in (None, t)]
         return Ok(_dedup(arts))
 
     out: List[Artifact] = []
@@ -106,10 +105,12 @@ def resolve_artifacts(request: Request, catalog: Catalog) -> Result:
         if isinstance(res, Err):
             errs.append(res)
             continue
-        for (t, name) in res.value.artifacts:
+        for t, name in res.value.artifacts:
             art = catalog.artifacts.get((t, name))
             if art is None:
-                errs.append(Err(f"bundle {bundle_name!r}: unresolved artifact {name!r}", code=USAGE))
+                errs.append(
+                    Err(f"bundle {bundle_name!r}: unresolved artifact {name!r}", code=USAGE)
+                )
             else:
                 out.append(art)
 
@@ -156,7 +157,9 @@ def resolve_profiles(request: Request) -> Result:
     for pname in request.profiles:
         prof = available.get(pname)
         if prof is None:
-            return Err(f"unknown profile {pname!r} (known: {', '.join(sorted(available))})", code=USAGE)
+            return Err(
+                f"unknown profile {pname!r} (known: {', '.join(sorted(available))})", code=USAGE
+            )
         out.append((pname, prof))
     return Ok(tuple(out))
 
@@ -165,6 +168,7 @@ def resolve_profiles(request: Request) -> Result:
 # The pure planners (WP-5) emit project-relative destinations and source-relative
 # ``CopyTree.src``. The shell rebases the *executable* plan onto the real source root
 # (for reads) and project root (for writes) just before handing it to the executor.
+
 
 def _under(root: str, path: str) -> str:
     return path if os.path.isabs(path) else os.path.normpath(os.path.join(root, path))
@@ -186,9 +190,16 @@ def rebase_plan(plan: Plan, *, source_root: str, project_root: str) -> Plan:
         elif isinstance(a, WriteFile):
             out.append(WriteFile(path=_under(project_root, a.path), content=a.content))
         elif isinstance(a, MergeJson):
-            out.append(MergeJson(file=_under(project_root, a.file), json_path=a.json_path,
-                                 mode=a.mode, value=a.value, identity=a.identity,
-                                 create_if_absent=a.create_if_absent))
+            out.append(
+                MergeJson(
+                    file=_under(project_root, a.file),
+                    json_path=a.json_path,
+                    mode=a.mode,
+                    value=a.value,
+                    identity=a.identity,
+                    create_if_absent=a.create_if_absent,
+                )
+            )
         elif isinstance(a, RemovePath):
             out.append(RemovePath(path=_under(project_root, a.path)))
         else:  # WriteManifest, Warn — untouched

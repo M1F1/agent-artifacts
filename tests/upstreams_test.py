@@ -94,7 +94,9 @@ class UpstreamKeyTests(unittest.TestCase):
         key = UpstreamKey.parse("skill/superpowers")
 
         self.assertEqual(key, Ok(UpstreamKey("skill", "superpowers")))
-        self.assertEqual(parse_upstream_key("memory/karpathy"), Ok(UpstreamKey("memory", "karpathy")))
+        self.assertEqual(
+            parse_upstream_key("memory/karpathy"), Ok(UpstreamKey("memory", "karpathy"))
+        )
         self.assertEqual(str(UpstreamKey("guideline", "python-style")), "guideline/python-style")
         self.assertEqual(UpstreamKey("mcp", "postgres").format(), "mcp/postgres")
 

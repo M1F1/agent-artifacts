@@ -93,9 +93,7 @@ def parse_skill(text: str, name: str) -> Result:
     if "name" not in fields:
         return Err(f"skill {name!r}: frontmatter missing required 'name' key")
     if fields["name"] != name:
-        return Err(
-            f"skill {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
-        )
+        return Err(f"skill {name!r}: frontmatter name {fields['name']!r} does not match {name!r}")
     compat = compatibility.compatibility_from_frontmatter(fields, f"skill {name!r}")
     if isinstance(compat, Err):
         return compat

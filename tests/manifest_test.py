@@ -115,9 +115,7 @@ class RoundtripTests(unittest.TestCase):
         self.assertEqual(parsed, Ok(m))
 
     def test_none_fields_omitted(self):
-        e = ManifestEntry(
-            artifact="g", type="guideline", profile="claude", source="main:abc"
-        )
+        e = ManifestEntry(artifact="g", type="guideline", profile="claude", source="main:abc")
         text = manifest.dump_manifest(Manifest(repo="r", installed=(e,)))
         self.assertNotIn('"bundle"', text)
         self.assertNotIn('"merge"', text)
@@ -250,7 +248,9 @@ class ParseErrorTests(unittest.TestCase):
 
     def test_entry_missing_required_field_is_err_code_5(self):
         # Entry missing "source".
-        text = '{"repo": "r", "installed": [{"artifact": "a", "type": "skill", "profile": "claude"}]}'
+        text = (
+            '{"repo": "r", "installed": [{"artifact": "a", "type": "skill", "profile": "claude"}]}'
+        )
         res = manifest.parse_manifest(text)
         self.assertIsInstance(res, Err)
         self.assertEqual(res.code, 5)

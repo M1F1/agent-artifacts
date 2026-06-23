@@ -51,14 +51,14 @@ _FLAG: Dict[str, str] = {
 # turns "quietly ignored" into an explicit usage error. Commands absent from this map (``install``,
 # ``update``) consume every global they accept.
 _FORBIDDEN: Dict[str, Tuple[str, ...]] = {
-    "list": ("project",),                  # lists the source catalog; never touches the project
-    "uninstall": ("repo", "source_dir"),   # reverses from the manifest; no source is opened
-    "status": ("source_dir",),             # local-only; reads the manifest, not the source
-    "check": ("source_dir",),              # remote-only freshness check against --repo@--version
+    "list": ("project",),  # lists the source catalog; never touches the project
+    "uninstall": ("repo", "source_dir"),  # reverses from the manifest; no source is opened
+    "status": ("source_dir",),  # local-only; reads the manifest, not the source
+    "check": ("source_dir",),  # remote-only freshness check against --repo@--version
     "upgrade": ("project", "source_dir"),  # self-update from --repo@--version or a local wheel
-    "upstream:check": ("repo", "project"),    # operates on the catalog repo (--source / cwd)
-    "upstream:update": ("repo", "project"),   # ""
-    "upstream:add": ("repo", "project"),      # ""
+    "upstream:check": ("repo", "project"),  # operates on the catalog repo (--source / cwd)
+    "upstream:update": ("repo", "project"),  # ""
+    "upstream:add": ("repo", "project"),  # ""
 }
 
 

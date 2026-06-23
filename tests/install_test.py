@@ -111,7 +111,9 @@ class InstallEndToEndTests(unittest.TestCase):
 
         # claude skills vs opencode skills
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
-        self.assertTrue(os.path.isfile(self._path(".opencode", "skills", "code-review", "SKILL.md")))
+        self.assertTrue(
+            os.path.isfile(self._path(".opencode", "skills", "code-review", "SKILL.md"))
+        )
 
         # opencode mcp merges into opencode.json under "mcp"
         opencode = json.loads(pathlib.Path(self._path("opencode.json")).read_text())
@@ -144,9 +146,7 @@ class InstallEndToEndTests(unittest.TestCase):
         self.assertIsInstance(parsed, dict)
         self.assertIn("actions", parsed)
         self.assertIn("skipped", parsed)
-        self.assertTrue(
-            any(item["reason"] == "incompatible-profile" for item in parsed["skipped"])
-        )
+        self.assertTrue(any(item["reason"] == "incompatible-profile" for item in parsed["skipped"]))
 
     # ---- --json output is valid JSON ------------------------------------- #
     def test_json_output_is_valid_json(self):

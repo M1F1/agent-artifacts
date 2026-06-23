@@ -173,9 +173,7 @@ def run(request: Request) -> int:
                     reason=UNSUPPORTED_TYPE,
                 )
                 if explicit:
-                    support_errors.append(
-                        f"profile {pname!r} does not support {a.type} {a.name!r}"
-                    )
+                    support_errors.append(f"profile {pname!r} does not support {a.type} {a.name!r}")
                 else:
                     skipped_targets.append(skipped)
                 continue
@@ -190,9 +188,7 @@ def run(request: Request) -> int:
                     allowed_profiles=decision.allowed_profiles,
                 )
                 if explicit:
-                    compatibility_errors.append(
-                        _compat_error(a, pname, decision.allowed_profiles)
-                    )
+                    compatibility_errors.append(_compat_error(a, pname, decision.allowed_profiles))
                 else:
                     skipped_targets.append(skipped)
                 continue
@@ -268,7 +264,7 @@ def run(request: Request) -> int:
                     # Hand the planner the sub-mapping it collision-checks against
                     # (json_path under the merge file, e.g. "mcpServers").
                     node = loaded
-                    for part in (prof.mcp.json_path.split(".") if prof.mcp.json_path else []):
+                    for part in prof.mcp.json_path.split(".") if prof.mcp.json_path else []:
                         nxt = node.get(part) if isinstance(node, dict) else None
                         node = nxt if isinstance(nxt, dict) else {}
                     cfg = node if isinstance(node, dict) else {}
@@ -292,9 +288,7 @@ def run(request: Request) -> int:
 
     # 7. Split off the manifest entries; rebase the executable actions onto real roots.
     file_actions, entries = _common.split_manifest(plan)
-    rebased = _common.rebase_plan(
-        file_actions, source_root=src.root, project_root=project
-    )
+    rebased = _common.rebase_plan(file_actions, source_root=src.root, project_root=project)
 
     # 8. Dry-run: print the plan and return without touching disk.
     if request.dry_run:
@@ -333,8 +327,7 @@ def run(request: Request) -> int:
         _common.print_json(
             {
                 "installed": [
-                    {"artifact": e.artifact, "type": e.type, "profile": e.profile}
-                    for e in entries
+                    {"artifact": e.artifact, "type": e.type, "profile": e.profile} for e in entries
                 ],
                 "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
                 "performed": list(report.performed),

@@ -50,8 +50,13 @@ def _install(source_dir: str, project: str, name: str = "python-style") -> Manif
 
     Returns the persisted `Manifest` (also written to disk) so callers can inspect base hashes.
     """
-    req = Request(command="install", names=(name,), profiles=(PROFILE,),
-                  source_dir=source_dir, project=project)
+    req = Request(
+        command="install",
+        names=(name,),
+        profiles=(PROFILE,),
+        source_dir=source_dir,
+        project=project,
+    )
     src = open_source(req).value
     catalog = src.catalog().value
     profiles = load_profiles(project)
@@ -59,6 +64,7 @@ def _install(source_dir: str, project: str, name: str = "python-style") -> Manif
     artifact = catalog.artifacts[("guideline", name)]
     text = src.read(artifact.root).decode("utf-8")
     from agent_artifacts.catalog import _split_frontmatter
+
     _found, _fields, stripped_text = _split_frontmatter(text)
     files = {
         "__targets__": [(artifact, PROFILE)],
@@ -74,15 +80,24 @@ def _install(source_dir: str, project: str, name: str = "python-style") -> Manif
     # Upsert into the on-disk manifest (so repeated _install calls accumulate, like install).
     manifest = _common.load_manifest(req).value
     for e in entries:
-        manifest = upsert(manifest, ManifestEntry(
-            artifact=e.artifact, type=e.type, profile=e.profile, source=src.label(),
-            bundle=e.bundle, files=e.files, merge=e.merge, installed_at=e.installed_at))
+        manifest = upsert(
+            manifest,
+            ManifestEntry(
+                artifact=e.artifact,
+                type=e.type,
+                profile=e.profile,
+                source=src.label(),
+                bundle=e.bundle,
+                files=e.files,
+                merge=e.merge,
+                installed_at=e.installed_at,
+            ),
+        )
     _common.save_manifest(project, manifest)
     return manifest
 
 
-def _mutated_source(base_fixtures: str, dst: str, new_body: str,
-                    name: str = "python-style") -> str:
+def _mutated_source(base_fixtures: str, dst: str, new_body: str, name: str = "python-style") -> str:
     """Copy the fixtures to `dst` and rewrite the guideline body. Returns `dst`."""
     shutil.copytree(base_fixtures, dst, dirs_exist_ok=True)
     fs.write_atomic(os.path.join(dst, "guidelines", f"{name}.md"), new_body.encode("utf-8"))
@@ -163,8 +178,10 @@ class UpdateDriftKeepTests(unittest.TestCase):
             self.assertEqual(code, _common.OK)
 
             payload = json.loads(buf.getvalue())
-            self.assertTrue(any("drift" in w for w in payload["warnings"]),
-                            f"expected a drift warning, got {payload['warnings']!r}")
+            self.assertTrue(
+                any("drift" in w for w in payload["warnings"]),
+                f"expected a drift warning, got {payload['warnings']!r}",
+            )
             self.assertFalse(payload["conflict"])
             # The local file is preserved (the observable contract of a drift Warn).
             with open(dest, encoding="utf-8") as fh:
@@ -252,8 +269,9 @@ class UpdatePruneTests(unittest.TestCase):
             shutil.copytree(FIXTURES, source)
             # Add a second guideline to the source so we have two installable entries.
             second_body = "---\ndescription: second\n---\n\n# Second guideline\n"
-            fs.write_atomic(os.path.join(source, "guidelines", "second.md"),
-                           second_body.encode("utf-8"))
+            fs.write_atomic(
+                os.path.join(source, "guidelines", "second.md"), second_body.encode("utf-8")
+            )
             _install(source, project, name="python-style")
             man = _install(source, project, name="second")
             self.assertEqual({e.artifact for e in man.installed}, {"python-style", "second"})

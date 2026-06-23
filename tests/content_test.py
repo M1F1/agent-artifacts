@@ -42,8 +42,7 @@ class TestMcpJsonFiles(unittest.TestCase):
                 self.assertIn("name", data, f"{path.name} missing 'name'")
                 self.assertIn("server", data, f"{path.name} missing 'server'")
                 # server must have at least 'command'
-                self.assertIn("command", data["server"],
-                              f"{path.name} server missing 'command'")
+                self.assertIn("command", data["server"], f"{path.name} server missing 'command'")
 
 
 class TestHookJsonFiles(unittest.TestCase):
@@ -58,8 +57,7 @@ class TestHookJsonFiles(unittest.TestCase):
                 self.assertIn("name", data, "missing 'name'")
                 self.assertIn("events", data, "missing 'events'")
                 self.assertIsInstance(data["events"], list)
-                self.assertGreater(len(data["events"]), 0,
-                                   "events must be non-empty")
+                self.assertGreater(len(data["events"]), 0, "events must be non-empty")
                 self.assertIn("command", data, "missing 'command'")
 
     def test_hook_script_files_exist(self) -> None:
@@ -70,8 +68,7 @@ class TestHookJsonFiles(unittest.TestCase):
             for rel in data.get("files", []):
                 with self.subTest(hook=data["name"], file=rel):
                     full = hook_dir / rel
-                    self.assertTrue(full.exists(),
-                                    f"Declared file '{rel}' not found at {full}")
+                    self.assertTrue(full.exists(), f"Declared file '{rel}' not found at {full}")
 
 
 class TestBundleJsonFiles(unittest.TestCase):
@@ -86,8 +83,7 @@ class TestBundleJsonFiles(unittest.TestCase):
                 self.assertIn("name", data, f"{path.name} missing 'name'")
                 # A bundle must have 'includes' or 'extends' (or both)
                 has_content = "includes" in data or "extends" in data
-                self.assertTrue(has_content,
-                                f"{path.name} has neither 'includes' nor 'extends'")
+                self.assertTrue(has_content, f"{path.name} has neither 'includes' nor 'extends'")
 
 
 class TestSkillFiles(unittest.TestCase):
@@ -99,13 +95,13 @@ class TestSkillFiles(unittest.TestCase):
         for path in skill_files:
             with self.subTest(file=str(path.relative_to(REPO_ROOT))):
                 text = _read_text(path)
-                self.assertTrue(text.startswith("---"),
-                                f"{path} does not start with '---' frontmatter")
+                self.assertTrue(
+                    text.startswith("---"), f"{path} does not start with '---' frontmatter"
+                )
                 # Find closing '---'
                 end = text.index("---", 3)
                 frontmatter = text[3:end]
-                self.assertIn("name:", frontmatter,
-                              f"{path} frontmatter missing 'name:'")
+                self.assertIn("name:", frontmatter, f"{path} frontmatter missing 'name:'")
 
 
 class TestBackendBundleReferences(unittest.TestCase):
@@ -115,13 +111,12 @@ class TestBackendBundleReferences(unittest.TestCase):
         self.backend = _load_json(BUNDLES_DIR / "backend.json")
 
     def test_extends_references_existing_bundles(self) -> None:
-        existing_bundles = {
-            p.stem for p in BUNDLES_DIR.glob("*.json")
-        }
+        existing_bundles = {p.stem for p in BUNDLES_DIR.glob("*.json")}
         for ref in self.backend.get("extends", []):
             with self.subTest(extends=ref):
-                self.assertIn(ref, existing_bundles,
-                              f"extends '{ref}' does not match any bundle file")
+                self.assertIn(
+                    ref, existing_bundles, f"extends '{ref}' does not match any bundle file"
+                )
 
     def test_includes_reference_existing_artifacts(self) -> None:
         """Each name in 'includes' must correspond to an on-disk artifact."""
@@ -135,8 +130,7 @@ class TestBackendBundleReferences(unittest.TestCase):
         includes = self.backend.get("includes", {})
         for art_type, names in includes.items():
             base_dir = type_dirs.get(art_type)
-            self.assertIsNotNone(base_dir,
-                                 f"Unknown artifact type '{art_type}'")
+            self.assertIsNotNone(base_dir, f"Unknown artifact type '{art_type}'")
             for name in names:
                 with self.subTest(type=art_type, name=name):
                     if art_type == "skills":
@@ -151,8 +145,9 @@ class TestBackendBundleReferences(unittest.TestCase):
                         target = base_dir / f"{name}.md"
                     else:
                         self.fail(f"Unhandled type {art_type}")
-                    self.assertTrue(target.exists(),
-                                    f"Artifact '{name}' ({art_type}) not found at {target}")
+                    self.assertTrue(
+                        target.exists(), f"Artifact '{name}' ({art_type}) not found at {target}"
+                    )
 
     def test_base_bundle_includes_also_resolve(self) -> None:
         """Transitively: base bundle's includes must also resolve."""
@@ -182,9 +177,11 @@ class TestBackendBundleReferences(unittest.TestCase):
                             target = base_dir / f"{name}.md"
                         else:
                             self.fail(f"Unhandled type {art_type}")
-                        self.assertTrue(target.exists(),
-                                        f"Artifact '{name}' ({art_type}) from bundle '{ref}' "
-                                        f"not found at {target}")
+                        self.assertTrue(
+                            target.exists(),
+                            f"Artifact '{name}' ({art_type}) from bundle '{ref}' "
+                            f"not found at {target}",
+                        )
 
 
 class TestFixturesMirror(unittest.TestCase):

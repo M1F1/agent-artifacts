@@ -36,6 +36,7 @@ def _scripted_reader(answers):
             return next(it)
         except StopIteration:
             raise EOFError from None
+
     return _read
 
 
@@ -87,9 +88,7 @@ class TextFlowInstallTests(unittest.TestCase):
         read = _scripted_reader(["1", "1", "install"])
         write, _ = _collector()
         with redirect_stdout(io.StringIO()):
-            rc = tui._run_text(
-                read, write, source_dir=FIXTURES, project=self.project
-            )
+            rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
         self.assertEqual(rc, 0)
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
 
@@ -151,9 +150,7 @@ class RequestAssemblyTests(unittest.TestCase):
         read = _scripted_reader(["1", "1", "install"])
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
-            rc = tui._run_text(
-                read, write, source_dir=FIXTURES, project="/tmp/example-proj"
-            )
+            rc = tui._run_text(read, write, source_dir=FIXTURES, project="/tmp/example-proj")
         self.assertEqual(rc, 0)
         req = captured["req"]
         self.assertIsInstance(req, Request)
@@ -226,6 +223,7 @@ class DispatchRoutingTests(unittest.TestCase):
 
         fake_dispatch = {"install": _fake_run}
         import agent_artifacts.cli as cli
+
         with mock.patch.object(cli, "DISPATCH", fake_dispatch, create=True):
             rc = tui._dispatch(Request(command="install", names=("code-review",)))
         self.assertEqual(rc, 7)
@@ -244,6 +242,7 @@ class DispatchRoutingTests(unittest.TestCase):
         # Remove DISPATCH (if present) and stub the install module's run.
         with mock.patch.object(cli, "DISPATCH", None, create=True):
             import agent_artifacts.commands.install as install_mod
+
             with mock.patch.object(install_mod, "run", side_effect=_fake_run):
                 rc = tui._dispatch(Request(command="install", names=("code-review",)))
         self.assertEqual(rc, 0)
@@ -294,14 +293,13 @@ class SourceErrorTests(unittest.TestCase):
 
             def catalog(self):
                 from agent_artifacts.model import Catalog
+
                 return Ok(Catalog(artifacts={}, bundles={}))
 
         read = _scripted_reader(["1"])
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
-            rc = tui._run_text(
-                read, write, source_factory=lambda _r: Ok(_EmptySource())
-            )
+            rc = tui._run_text(read, write, source_factory=lambda _r: Ok(_EmptySource()))
         self.assertEqual(rc, 0)
         disp.assert_not_called()
         self.assertTrue(any("No artifacts" in ln for ln in lines))

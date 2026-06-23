@@ -23,9 +23,7 @@ class TestBuiltinProfiles(unittest.TestCase):
 
     def test_all_builtin_profiles_exist(self) -> None:
         profiles = builtin()
-        self.assertEqual(
-            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
-        )
+        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"})
 
     def test_all_values_are_profile_instances(self) -> None:
         for name, profile in builtin().items():
@@ -134,22 +132,16 @@ class TestLoadProfilesNoOverride(unittest.TestCase):
 
     def test_no_project(self) -> None:
         profiles = load_profiles()
-        self.assertEqual(
-            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
-        )
+        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"})
 
     def test_nonexistent_project(self) -> None:
         profiles = load_profiles(project="/nonexistent/path/that/does/not/exist")
-        self.assertEqual(
-            set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
-        )
+        self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"})
 
     def test_project_without_override_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profiles = load_profiles(project=tmp)
-            self.assertEqual(
-                set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"}
-            )
+            self.assertEqual(set(profiles.keys()), {"claude", "opencode", "tabnine", "vibe"})
 
 
 class TestLoadProfilesOverride(unittest.TestCase):

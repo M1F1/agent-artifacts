@@ -79,7 +79,14 @@ def _check(request: Request, opener=None) -> int:
             }
         )
     else:
-        _print_summary(repo, head_sha, artifacts_changed, cli_changed, suggestion, has_remote_artifacts=bool(base))
+        _print_summary(
+            repo,
+            head_sha,
+            artifacts_changed,
+            cli_changed,
+            suggestion,
+            has_remote_artifacts=bool(base),
+        )
 
     return _common.OK
 

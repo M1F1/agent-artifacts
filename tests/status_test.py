@@ -75,10 +75,14 @@ class TestStatusAllOk(unittest.TestCase):
                 ),
             )
 
-            _setup_project(tmp, entries, {
-                ".claude/skills/code-review/SKILL.md": content_a,
-                ".claude/guidelines/style.md": content_b,
-            })
+            _setup_project(
+                tmp,
+                entries,
+                {
+                    ".claude/skills/code-review/SKILL.md": content_a,
+                    ".claude/guidelines/style.md": content_b,
+                },
+            )
 
             req = _make_request(tmp, use_json=True)
             rc = run(req)
@@ -105,9 +109,13 @@ class TestStatusDrift(unittest.TestCase):
                 ),
             )
 
-            _setup_project(tmp, entries, {
-                ".claude/skills/code-review/SKILL.md": original,
-            })
+            _setup_project(
+                tmp,
+                entries,
+                {
+                    ".claude/skills/code-review/SKILL.md": original,
+                },
+            )
 
             # Modify the file on disk.
             with open(os.path.join(tmp, ".claude/skills/code-review/SKILL.md"), "wb") as f:
@@ -120,14 +128,13 @@ class TestStatusDrift(unittest.TestCase):
             # Re-run capturing JSON to verify drift state.
             import contextlib
             import io
+
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 run(req)
             output = json.loads(buf.getvalue())
             file_states = {
-                f["path"]: f["state"]
-                for entry in output["installed"]
-                for f in entry["files"]
+                f["path"]: f["state"] for entry in output["installed"] for f in entry["files"]
             }
             self.assertEqual(
                 file_states[".claude/skills/code-review/SKILL.md"],
@@ -160,15 +167,14 @@ class TestStatusMissing(unittest.TestCase):
 
             import contextlib
             import io
+
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
                 run(req)
             output = json.loads(buf.getvalue())
             file_states = {
-                f["path"]: f["state"]
-                for entry in output["installed"]
-                for f in entry["files"]
+                f["path"]: f["state"] for entry in output["installed"] for f in entry["files"]
             }
             self.assertEqual(
                 file_states[".claude/skills/code-review/SKILL.md"],
@@ -205,11 +211,15 @@ class TestStatusDriftAndMissing(unittest.TestCase):
                 ),
             )
 
-            _setup_project(tmp, entries, {
-                "a.md": ok_content,
-                "b.md": drift_content,  # will be modified
-                # c.md deliberately not created
-            })
+            _setup_project(
+                tmp,
+                entries,
+                {
+                    "a.md": ok_content,
+                    "b.md": drift_content,  # will be modified
+                    # c.md deliberately not created
+                },
+            )
 
             # Modify b.md.
             with open(os.path.join(tmp, "b.md"), "wb") as f:
@@ -217,15 +227,14 @@ class TestStatusDriftAndMissing(unittest.TestCase):
 
             import contextlib
             import io
+
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
                 run(req)
             output = json.loads(buf.getvalue())
             states = {
-                f["path"]: f["state"]
-                for entry in output["installed"]
-                for f in entry["files"]
+                f["path"]: f["state"] for entry in output["installed"] for f in entry["files"]
             }
             self.assertEqual(states["a.md"], "ok")
             self.assertEqual(states["b.md"], "drift")
@@ -254,6 +263,7 @@ class TestStatusCopyTreeDirectory(unittest.TestCase):
 
             import contextlib
             import io
+
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -280,6 +290,7 @@ class TestStatusCopyTreeDirectory(unittest.TestCase):
 
             import contextlib
             import io
+
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -308,12 +319,17 @@ class TestStatusJsonShape(unittest.TestCase):
                     files={".claude/skills/code-review/SKILL.md": h},
                 ),
             )
-            _setup_project(tmp, entries, {
-                ".claude/skills/code-review/SKILL.md": content,
-            })
+            _setup_project(
+                tmp,
+                entries,
+                {
+                    ".claude/skills/code-review/SKILL.md": content,
+                },
+            )
 
             import contextlib
             import io
+
             buf = io.StringIO()
             req = _make_request(tmp, use_json=True)
             with contextlib.redirect_stdout(buf):
@@ -350,6 +366,7 @@ class TestStatusCorruptManifest(unittest.TestCase):
             req = _make_request(tmp)
             import contextlib
             import io
+
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = run(req)
@@ -367,6 +384,7 @@ class TestStatusEmptyManifest(unittest.TestCase):
 
             import contextlib
             import io
+
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = run(req)

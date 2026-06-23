@@ -402,15 +402,17 @@ def run(request) -> int:
         lines.extend(merge_descs)
         text = "\n".join(line for line in lines if line)
         if request.json:
-            _common.print_json({
-                "ok": True,
-                "dry_run": True,
-                "removed_entries": [
-                    {"artifact": e.artifact, "profile": e.profile, "type": e.type}
-                    for e in selected
-                ],
-                "actions": text.splitlines(),
-            })
+            _common.print_json(
+                {
+                    "ok": True,
+                    "dry_run": True,
+                    "removed_entries": [
+                        {"artifact": e.artifact, "profile": e.profile, "type": e.type}
+                        for e in selected
+                    ],
+                    "actions": text.splitlines(),
+                }
+            )
         else:
             print(text or "nothing to do")
         return OK
@@ -438,14 +440,15 @@ def run(request) -> int:
     _common.save_manifest(project, new_manifest)
 
     if request.json:
-        _common.print_json({
-            "ok": True,
-            "removed_entries": [
-                {"artifact": e.artifact, "profile": e.profile, "type": e.type}
-                for e in selected
-            ],
-            "actions": performed,
-        })
+        _common.print_json(
+            {
+                "ok": True,
+                "removed_entries": [
+                    {"artifact": e.artifact, "profile": e.profile, "type": e.type} for e in selected
+                ],
+                "actions": performed,
+            }
+        )
     else:
         for line in performed:
             print(line)

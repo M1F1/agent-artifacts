@@ -11,8 +11,10 @@ HOOK_SPEC = MergeSpec(
     json_path="hooks.PreToolUse",
     mode="list",
     identity=("matcher", "command"),
-    entry_template={"matcher": "${matcher}",
-                    "hooks": [{"type": "command", "command": "${command}"}]},
+    entry_template={
+        "matcher": "${matcher}",
+        "hooks": [{"type": "command", "command": "${command}"}],
+    },
 )
 
 
@@ -27,10 +29,13 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(out, "python3 .claude/hooks/x/guard.py")
 
     def test_nested_template_renders_recursively(self):
-        out = merge.render(HOOK_SPEC.entry_template,
-                           {"matcher": "Edit|Write", "command": "python3 g.py"})
-        self.assertEqual(out, {"matcher": "Edit|Write",
-                               "hooks": [{"type": "command", "command": "python3 g.py"}]})
+        out = merge.render(
+            HOOK_SPEC.entry_template, {"matcher": "Edit|Write", "command": "python3 g.py"}
+        )
+        self.assertEqual(
+            out,
+            {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "python3 g.py"}]},
+        )
 
     def test_missing_field_in_substring_becomes_empty(self):
         self.assertEqual(merge.render("a${gone}b", {}), "ab")
@@ -38,8 +43,9 @@ class RenderTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     def test_identity_of_pulls_declared_fields(self):
-        ident = merge.identity_of(HOOK_SPEC,
-                                  {"matcher": "Edit", "command": "c", "extra": "ignored"})
+        ident = merge.identity_of(
+            HOOK_SPEC, {"matcher": "Edit", "command": "c", "extra": "ignored"}
+        )
         self.assertEqual(ident, (("matcher", "Edit"), ("command", "c")))
 
 
@@ -49,8 +55,13 @@ class KeyMergeTests(unittest.TestCase):
         self.assertIsInstance(res, Ok)
         self.assertEqual(
             res.value,
-            MergeJson(file=".mcp.json", json_path="mcpServers",
-                      mode="key", value={"command": "npx"}, identity=("postgres",)),
+            MergeJson(
+                file=".mcp.json",
+                json_path="mcpServers",
+                mode="key",
+                value={"command": "npx"},
+                identity=("postgres",),
+            ),
         )
 
     def test_identical_existing_value_is_not_a_collision(self):

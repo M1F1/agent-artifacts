@@ -62,7 +62,11 @@ class MemoryMarkerTests(unittest.TestCase):
 class PrependModeTests(unittest.TestCase):
     def test_prepend_into_empty_file_golden(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text=None, exists=False,
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text=None,
+            exists=False,
             mode="prepend",
         )
         expected = f"{BEGIN}\nHouse rules.\n{END}\n"
@@ -72,8 +76,12 @@ class PrependModeTests(unittest.TestCase):
         existing = "# My project\nBe nice.\n"
         text = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "House rules.", existing_text=existing,
-                exists=True, mode="prepend",
+                memory_artifact(),
+                FILE_TARGET,
+                "House rules.",
+                existing_text=existing,
+                exists=True,
+                mode="prepend",
             )
         )
         # Our block precedes the foreign content.
@@ -83,13 +91,21 @@ class PrependModeTests(unittest.TestCase):
 
     def test_prepend_is_idempotent(self):
         once = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text="# Header\nx\n",
-            exists=True, mode="prepend",
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text="# Header\nx\n",
+            exists=True,
+            mode="prepend",
         )
         first = _written(once)
         twice = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text=first,
-            exists=True, mode="prepend",
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text=first,
+            exists=True,
+            mode="prepend",
         )
         # Re-running with the prior output as existing_text yields a byte-identical file.
         self.assertEqual(_written(twice), first)
@@ -99,14 +115,22 @@ class PrependModeTests(unittest.TestCase):
     def test_prepend_replaces_changed_block_in_place(self):
         first = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "Old.", existing_text="# Header\n",
-                exists=True, mode="prepend",
+                memory_artifact(),
+                FILE_TARGET,
+                "Old.",
+                existing_text="# Header\n",
+                exists=True,
+                mode="prepend",
             )
         )
         updated = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "New.", existing_text=first,
-                exists=True, mode="prepend",
+                memory_artifact(),
+                FILE_TARGET,
+                "New.",
+                existing_text=first,
+                exists=True,
+                mode="prepend",
             )
         )
         self.assertIn("New.", updated)
@@ -120,7 +144,11 @@ class PrependModeTests(unittest.TestCase):
 class AppendModeTests(unittest.TestCase):
     def test_append_into_empty_file_golden(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text=None, exists=False,
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text=None,
+            exists=False,
             mode="append",
         )
         expected = f"{BEGIN}\nHouse rules.\n{END}\n"
@@ -130,8 +158,12 @@ class AppendModeTests(unittest.TestCase):
         existing = "# My project\nBe nice.\n"
         text = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "House rules.", existing_text=existing,
-                exists=True, mode="append",
+                memory_artifact(),
+                FILE_TARGET,
+                "House rules.",
+                existing_text=existing,
+                exists=True,
+                mode="append",
             )
         )
         # Foreign content precedes our block.
@@ -140,13 +172,21 @@ class AppendModeTests(unittest.TestCase):
 
     def test_append_is_idempotent(self):
         once = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text="# Header\nx\n",
-            exists=True, mode="append",
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text="# Header\nx\n",
+            exists=True,
+            mode="append",
         )
         first = _written(once)
         twice = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "House rules.", existing_text=first,
-            exists=True, mode="append",
+            memory_artifact(),
+            FILE_TARGET,
+            "House rules.",
+            existing_text=first,
+            exists=True,
+            mode="append",
         )
         self.assertEqual(_written(twice), first)
         self.assertEqual(first.count(BEGIN), 1)
@@ -155,14 +195,22 @@ class AppendModeTests(unittest.TestCase):
         existing = "# Foreign\nbody\n"
         pre = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "Ours.", existing_text=existing,
-                exists=True, mode="prepend",
+                memory_artifact(),
+                FILE_TARGET,
+                "Ours.",
+                existing_text=existing,
+                exists=True,
+                mode="prepend",
             )
         )
         app = _written(
             planners.plan_memory(
-                memory_artifact(), FILE_TARGET, "Ours.", existing_text=existing,
-                exists=True, mode="append",
+                memory_artifact(),
+                FILE_TARGET,
+                "Ours.",
+                existing_text=existing,
+                exists=True,
+                mode="append",
             )
         )
         self.assertNotEqual(pre, app)
@@ -176,7 +224,11 @@ class AppendModeTests(unittest.TestCase):
 class ReplaceModeTests(unittest.TestCase):
     def test_replace_nonempty_without_force_is_conflict(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text="prior\n", exists=True,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text="prior\n",
+            exists=True,
             mode="replace",
         )
         self.assertIsInstance(result, Err)
@@ -185,8 +237,13 @@ class ReplaceModeTests(unittest.TestCase):
 
     def test_replace_nonempty_with_force_backs_up_then_writes(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text="prior\n", exists=True,
-            mode="replace", force=True,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text="prior\n",
+            exists=True,
+            mode="replace",
+            force=True,
         )
         self.assertEqual(
             result,
@@ -200,7 +257,11 @@ class ReplaceModeTests(unittest.TestCase):
 
     def test_replace_over_absent_file_single_write_no_bak(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text=None, exists=False,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=False,
             mode="replace",
         )
         self.assertEqual(result, Ok((WriteFile(path="AGENTS.md", content=b"Ours."),)))
@@ -208,7 +269,11 @@ class ReplaceModeTests(unittest.TestCase):
     def test_replace_over_whitespace_only_file_treated_as_empty(self):
         # An existing-but-blank file is not "non-empty": no --force needed, no .bak.
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text="\n  \n", exists=True,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text="\n  \n",
+            exists=True,
             mode="replace",
         )
         self.assertEqual(result, Ok((WriteFile(path="AGENTS.md", content=b"Ours."),)))
@@ -220,7 +285,11 @@ class ReplaceModeTests(unittest.TestCase):
 class SkipModeTests(unittest.TestCase):
     def test_skip_when_exists_warns_no_write(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text="prior\n", exists=True,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text="prior\n",
+            exists=True,
             mode="skip",
         )
         self.assertEqual(
@@ -232,7 +301,11 @@ class SkipModeTests(unittest.TestCase):
 
     def test_skip_when_absent_writes_once(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text=None, exists=False,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=False,
             mode="skip",
         )
         self.assertEqual(result, Ok((WriteFile(path="AGENTS.md", content=b"Ours."),)))
@@ -244,7 +317,11 @@ class SkipModeTests(unittest.TestCase):
 class DirKindTests(unittest.TestCase):
     def test_dir_copy_writes_name_md(self):
         result = planners.plan_memory(
-            memory_artifact(), DIR_TARGET, "Ours.", existing_text=None, exists=False,
+            memory_artifact(),
+            DIR_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=False,
             mode="prepend",  # content modes don't apply to dir kind; still a plain copy
         )
         self.assertEqual(
@@ -254,14 +331,22 @@ class DirKindTests(unittest.TestCase):
 
     def test_dir_skip_when_exists_is_empty_plan(self):
         result = planners.plan_memory(
-            memory_artifact(), DIR_TARGET, "Ours.", existing_text=None, exists=True,
+            memory_artifact(),
+            DIR_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=True,
             mode="skip",
         )
         self.assertEqual(result, Ok(()))
 
     def test_dir_skip_when_absent_writes(self):
         result = planners.plan_memory(
-            memory_artifact(), DIR_TARGET, "Ours.", existing_text=None, exists=False,
+            memory_artifact(),
+            DIR_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=False,
             mode="skip",
         )
         self.assertEqual(
@@ -276,7 +361,11 @@ class DirKindTests(unittest.TestCase):
 class MemoryErrorTests(unittest.TestCase):
     def test_unknown_mode_is_err(self):
         result = planners.plan_memory(
-            memory_artifact(), FILE_TARGET, "Ours.", existing_text=None, exists=False,
+            memory_artifact(),
+            FILE_TARGET,
+            "Ours.",
+            existing_text=None,
+            exists=False,
             mode="bogus",
         )
         self.assertIsInstance(result, Err)

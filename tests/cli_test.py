@@ -57,6 +57,7 @@ class TestStaticWiring(unittest.TestCase):
             upgrade,
         )
         from agent_artifacts.commands import list as list_cmd
+
         self.assertIs(cli.DISPATCH["list"], list_cmd.run)
         self.assertIs(cli.DISPATCH["install"], install.run)
         self.assertIs(cli.DISPATCH["status"], status.run)
@@ -69,6 +70,7 @@ class TestStaticWiring(unittest.TestCase):
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()
         import argparse
+
         sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
         self.assertEqual(set(sub.choices), self.EXPECTED)
 
@@ -98,12 +100,30 @@ class TestRequestMapping(unittest.TestCase):
         # validity of the combination is a separate concern, checked in TestFlagCombinationRules
         # and cli_rules_test.py — so this maps via _to_request and bypasses cli.main's validator.
         argv = [
-            "install", "code-review", "second",
-            "--bundle", "base", "--bundle", "backend",
-            "--profile", "claude,opencode", "--profile", "tabnine",
-            "--all", "--version", "v1.2",
-            "--source", "/src", "--repo", "o/r", "--project", "/proj",
-            "--dry-run", "--yes", "--force", "--json",
+            "install",
+            "code-review",
+            "second",
+            "--bundle",
+            "base",
+            "--bundle",
+            "backend",
+            "--profile",
+            "claude,opencode",
+            "--profile",
+            "tabnine",
+            "--all",
+            "--version",
+            "v1.2",
+            "--source",
+            "/src",
+            "--repo",
+            "o/r",
+            "--project",
+            "/proj",
+            "--dry-run",
+            "--yes",
+            "--force",
+            "--json",
         ]
         req = cli._to_request(cli.build_parser().parse_args(argv))
         self.assertEqual(req.command, "install")
@@ -189,8 +209,7 @@ class TestProfileSplitting(unittest.TestCase):
         self.assertEqual(req.profiles, ("a", "b"))
 
     def test_mixed_with_whitespace(self):
-        _, req = _dispatch(["install", "--profile", " a , b ", "--profile", "c"],
-                           command="install")
+        _, req = _dispatch(["install", "--profile", " a , b ", "--profile", "c"], command="install")
         self.assertEqual(req.profiles, ("a", "b", "c"))
 
 
@@ -314,9 +333,12 @@ class TestBareInvocation(unittest.TestCase):
     def test_tty_launches_tui(self):
         # On a TTY, bare invocation delegates to tui.run() and returns its code.
         import agent_artifacts.tui as tui_mod
-        with patch.object(tui_mod, "run", return_value=7), \
-             patch.object(sys.stdin, "isatty", return_value=True), \
-             patch.object(sys.stdout, "isatty", return_value=True):
+
+        with (
+            patch.object(tui_mod, "run", return_value=7),
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch.object(sys.stdout, "isatty", return_value=True),
+        ):
             rc = cli.main([])
         self.assertEqual(rc, 7)
 

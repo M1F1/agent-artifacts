@@ -13,9 +13,19 @@ from typing import Callable, Iterable, Tuple
 from .model import Err, Ok, Result
 
 __all__ = [
-    "Ok", "Err",
-    "is_ok", "is_err", "map_ok", "map_err", "bind", "unwrap_or",
-    "sequence", "partition", "collect", "compose", "pipe",
+    "Ok",
+    "Err",
+    "is_ok",
+    "is_err",
+    "map_ok",
+    "map_err",
+    "bind",
+    "unwrap_or",
+    "sequence",
+    "partition",
+    "collect",
+    "compose",
+    "pipe",
 ]
 
 
@@ -78,7 +88,7 @@ def collect(results: Iterable[Result]) -> Result:
 
 def compose(*fns: Callable) -> Callable:
     """Left-to-right composition: ``compose(f, g)(x) == g(f(x))``."""
-    return reduce(lambda f, g: (lambda x: g(f(x))), fns, lambda x: x)
+    return reduce(lambda f, g: lambda x: g(f(x)), fns, lambda x: x)
 
 
 def pipe(value, *fns: Callable):

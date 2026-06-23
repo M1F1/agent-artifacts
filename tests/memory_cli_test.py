@@ -34,8 +34,16 @@ class TestMemoryModeFlag(unittest.TestCase):
         for mode in ("replace", "prepend", "append", "skip"):
             with self.subTest(mode=mode):
                 _, req = _dispatch(
-                    ["install", "house", "--profile", "claude", "--source", ".",
-                     "--memory-mode", mode],
+                    [
+                        "install",
+                        "house",
+                        "--profile",
+                        "claude",
+                        "--source",
+                        ".",
+                        "--memory-mode",
+                        mode,
+                    ],
                     command="install",
                 )
                 self.assertEqual(req.memory_mode, mode)

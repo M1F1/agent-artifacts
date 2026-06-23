@@ -18,11 +18,13 @@ def _source_with_restricted_mcp(tmp: str) -> str:
     shutil.copytree(FIXTURES, source)
     path = os.path.join(source, "mcp", "tabnine-postgres.json")
     pathlib.Path(path).write_text(
-        json.dumps({
-            "name": "tabnine-postgres",
-            "compatibility": {"profiles": ["tabnine"]},
-            "server": {"command": "npx"},
-        }),
+        json.dumps(
+            {
+                "name": "tabnine-postgres",
+                "compatibility": {"profiles": ["tabnine"]},
+                "server": {"command": "npx"},
+            }
+        ),
         encoding="utf-8",
     )
     return source
@@ -62,9 +64,9 @@ class CompatibilityListTests(unittest.TestCase):
                 )
             )
 
-            restricted = [
-                item for item in data["artifacts"] if item["name"] == "tabnine-postgres"
-            ][0]
+            restricted = [item for item in data["artifacts"] if item["name"] == "tabnine-postgres"][
+                0
+            ]
             self.assertEqual(restricted["compatibility"]["profiles"], ["tabnine"])
             self.assertNotIn("bundles", data)
 

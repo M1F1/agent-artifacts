@@ -182,7 +182,9 @@ def plan_upstream_update(
     )
 
 
-def _resolved_by_key(resolved: Tuple[ResolvedUpstream, ...]) -> Mapping[UpstreamKey, ResolvedUpstream]:
+def _resolved_by_key(
+    resolved: Tuple[ResolvedUpstream, ...],
+) -> Mapping[UpstreamKey, ResolvedUpstream]:
     return {item.entry.key: item for item in resolved}
 
 
@@ -315,7 +317,9 @@ def _base_hash(entry: UpstreamEntry) -> Optional[str]:
     return entry.last_synced.content_hash if entry.last_synced is not None else None
 
 
-def _local_hash(entry: UpstreamEntry, local_hashes: Optional[Mapping[object, str]]) -> Optional[str]:
+def _local_hash(
+    entry: UpstreamEntry, local_hashes: Optional[Mapping[object, str]]
+) -> Optional[str]:
     return _lookup(local_hashes, entry.key, default=_base_hash(entry))
 
 

@@ -53,9 +53,15 @@ def decision_action(
         return (Warn(message=f"drift: kept local changes to {path}"),)
     if decision == "conflict":
         if force:
-            return (WriteFile(path=path, content=content or b""),
-                    Warn(message=f"forced overwrite of locally-modified {path}"))
-        return (WriteFile(path=path + NEW_SUFFIX, content=content or b""),
-                Warn(message=f"conflict: {path} changed both locally and upstream; "
-                             f"wrote {path}{NEW_SUFFIX} (use --force to overwrite)"))
+            return (
+                WriteFile(path=path, content=content or b""),
+                Warn(message=f"forced overwrite of locally-modified {path}"),
+            )
+        return (
+            WriteFile(path=path + NEW_SUFFIX, content=content or b""),
+            Warn(
+                message=f"conflict: {path} changed both locally and upstream; "
+                f"wrote {path}{NEW_SUFFIX} (use --force to overwrite)"
+            ),
+        )
     raise ValueError(f"unknown decision: {decision!r}")  # pragma: no cover

@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 INIT_FILE = ROOT / "agent_artifacts" / "__init__.py"
 PYPROJECT_FILE = ROOT / "pyproject.toml"
 
+
 def bump_version():
     init_content = INIT_FILE.read_text(encoding="utf-8")
 
@@ -22,18 +23,21 @@ def bump_version():
     print(f"Bumping version: {old_version} -> {new_version}")
 
     # Update __init__.py
-    INIT_FILE.write_text(init_content.replace(f'"{old_version}"', f'"{new_version}"'), encoding="utf-8")
+    INIT_FILE.write_text(
+        init_content.replace(f'"{old_version}"', f'"{new_version}"'), encoding="utf-8"
+    )
 
     # Update pyproject.toml
     pyproject_content = PYPROJECT_FILE.read_text(encoding="utf-8")
     pyproject_content = re.sub(
         r'version\s*=\s*"{}"'.format(re.escape(old_version)),
         f'version = "{new_version}"',
-        pyproject_content
+        pyproject_content,
     )
     PYPROJECT_FILE.write_text(pyproject_content, encoding="utf-8")
 
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(bump_version())
