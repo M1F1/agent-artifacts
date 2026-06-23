@@ -329,13 +329,17 @@ def _run_curses(
     def _ui(stdscr) -> None:
         curses.curs_set(0)
         picked_arts = _curses_multiselect(
-            curses, stdscr, "Select artifact(s)/bundle(s)  (space=toggle, enter=confirm, q=quit)",
+            curses,
+            stdscr,
+            "Select artifact(s)/bundle(s)  (space=toggle, enter=confirm, q=quit)",
             [c.label for c in choices],
         )
         if picked_arts is None:
             return
         picked_profs = _curses_multiselect(
-            curses, stdscr, "Select profile(s)  (space=toggle, enter=confirm, q=quit)",
+            curses,
+            stdscr,
+            "Select profile(s)  (space=toggle, enter=confirm, q=quit)",
             profile_names,
         )
         if picked_profs is None:

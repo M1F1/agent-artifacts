@@ -295,7 +295,9 @@ class TestRunEntryPoint(unittest.TestCase):
             contextlib.redirect_stdout(buf),
             patch("agent_artifacts.commands.upgrade._find_local_wheel") as mock_find,
         ):
-            mock_find.return_value = os.path.join(dist_dir, "agent_artifacts-1.0.0-py3-none-any.whl")
+            mock_find.return_value = os.path.join(
+                dist_dir, "agent_artifacts-1.0.0-py3-none-any.whl"
+            )
             rc = run(_request(dry_run=True))
         self.assertEqual(rc, 0)
 

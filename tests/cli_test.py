@@ -57,6 +57,7 @@ class TestStaticWiring(unittest.TestCase):
             upgrade,
         )
         from agent_artifacts.commands import list as list_cmd
+
         self.assertIs(cli.DISPATCH["list"], list_cmd.run)
         self.assertIs(cli.DISPATCH["install"], install.run)
         self.assertIs(cli.DISPATCH["status"], status.run)
@@ -69,6 +70,7 @@ class TestStaticWiring(unittest.TestCase):
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()
         import argparse
+
         sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
         self.assertEqual(set(sub.choices), self.EXPECTED)
 
@@ -93,16 +95,37 @@ class TestRequestMapping(unittest.TestCase):
     """Flags land on the correct Request fields per subcommand."""
 
     def test_install_full(self):
+        # Pure namespace->Request mapping: deliberately exercises a kitchen-sink combo
+        # (mutually-exclusive flags together) so every field is covered. The semantic
+        # validity of the combination is a separate concern, checked in TestFlagCombinationRules
+        # and cli_rules_test.py — so this maps via _to_request and bypasses cli.main's validator.
         argv = [
-            "install", "code-review", "second",
-            "--bundle", "base", "--bundle", "backend",
-            "--profile", "claude,opencode", "--profile", "tabnine",
-            "--all", "--version", "v1.2",
-            "--source", "/src", "--repo", "o/r", "--project", "/proj",
-            "--dry-run", "--yes", "--force", "--json",
+            "install",
+            "code-review",
+            "second",
+            "--bundle",
+            "base",
+            "--bundle",
+            "backend",
+            "--profile",
+            "claude,opencode",
+            "--profile",
+            "tabnine",
+            "--all",
+            "--version",
+            "v1.2",
+            "--source",
+            "/src",
+            "--repo",
+            "o/r",
+            "--project",
+            "/proj",
+            "--dry-run",
+            "--yes",
+            "--force",
+            "--json",
         ]
-        rc, req = _dispatch(argv, command="install")
-        self.assertEqual(rc, 0)
+        req = cli._to_request(cli.build_parser().parse_args(argv))
         self.assertEqual(req.command, "install")
         self.assertEqual(req.names, ("code-review", "second"))
         self.assertEqual(req.bundles, ("base", "backend"))
@@ -186,8 +209,7 @@ class TestProfileSplitting(unittest.TestCase):
         self.assertEqual(req.profiles, ("a", "b"))
 
     def test_mixed_with_whitespace(self):
-        _, req = _dispatch(["install", "--profile", " a , b ", "--profile", "c"],
-                           command="install")
+        _, req = _dispatch(["install", "--profile", " a , b ", "--profile", "c"], command="install")
         self.assertEqual(req.profiles, ("a", "b", "c"))
 
 
@@ -200,6 +222,12 @@ class TestUsageErrors(unittest.TestCase):
                 cli.main(argv)
         return ctx.exception.code
 
+    def _run_argparse_error(self, argv):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
+            cli.main(argv)
+        return cm.exception.code, err.getvalue()
+
     def test_unknown_command(self):
         self.assertEqual(self._exit_code(["frobnicate"]), 2)
 
@@ -208,6 +236,74 @@ class TestUsageErrors(unittest.TestCase):
 
     def test_unknown_flag(self):
         self.assertEqual(self._exit_code(["status", "--nope"]), 2)
+
+    def test_status_rejects_source(self):
+        rc, err = self._run_argparse_error(["status", "--source", "/s"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --source", err)
+
+    def test_upgrade_rejects_project(self):
+        rc, err = self._run_argparse_error(["upgrade", "--project", "./app"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --project", err)
+
+
+class TestFlagCombinationRules(unittest.TestCase):
+    """End-to-end (issue #4): cli.main rejects incompatible combos with USAGE (2) before dispatch.
+
+    The validator runs between _to_request and dispatch, so a rejected invocation never reaches
+    the command handler. Valid combos pass straight through to the (stubbed) handler.
+    """
+
+    def _run(self, argv, *, command):
+        """Return (rc, stderr, dispatched?) for cli.main(argv) with command's handler stubbed."""
+        rec = _recorder(0)
+        err = io.StringIO()
+        with patch.dict(cli.DISPATCH, {command: rec}), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        return rc, err.getvalue(), bool(rec.calls)  # type: ignore[attr-defined]
+
+    def test_repo_and_source_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "x", "--profile", "claude", "--repo", "o/r", "--source", "/s"],
+            command="install",
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("mutually exclusive", err)
+        self.assertFalse(dispatched)
+
+    def test_source_and_version_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "x", "--profile", "claude", "--source", "/s", "--version", "v1"],
+            command="install",
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("--source and --version", err)
+        self.assertFalse(dispatched)
+
+    def test_all_with_name_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "code-review", "--all", "--profile", "claude"], command="install"
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("--all cannot be combined", err)
+        self.assertFalse(dispatched)
+
+    def test_valid_install_dispatches(self):
+        rc, err, dispatched = self._run(
+            ["install", "code-review", "--profile", "claude", "--source", "/s"],
+            command="install",
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(err, "")
+        self.assertTrue(dispatched)
+
+    def test_valid_all_alone_dispatches(self):
+        rc, _err, dispatched = self._run(
+            ["install", "--all", "--profile", "claude"], command="install"
+        )
+        self.assertEqual(rc, 0)
+        self.assertTrue(dispatched)
 
 
 class TestHelpAndVersion(unittest.TestCase):
@@ -241,9 +337,12 @@ class TestBareInvocation(unittest.TestCase):
     def test_tty_launches_tui(self):
         # On a TTY, bare invocation delegates to tui.run() and returns its code.
         import agent_artifacts.tui as tui_mod
-        with patch.object(tui_mod, "run", return_value=7), \
-             patch.object(sys.stdin, "isatty", return_value=True), \
-             patch.object(sys.stdout, "isatty", return_value=True):
+
+        with (
+            patch.object(tui_mod, "run", return_value=7),
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch.object(sys.stdout, "isatty", return_value=True),
+        ):
             rc = cli.main([])
         self.assertEqual(rc, 7)
 

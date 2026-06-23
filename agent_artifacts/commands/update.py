@@ -86,9 +86,7 @@ def run(request: Request) -> int:
     selected, others = _select_entries(manifest, request)
 
     # 3. Recompute the desired install plan for each selected entry, then apply §9.
-    desired_result = _build_desired_plan(
-        request, catalog, profiles, src, selected
-    )
+    desired_result = _build_desired_plan(request, catalog, profiles, src, selected)
     if isinstance(desired_result, Err):
         print(desired_result.reason)
         return _common.exit_code(desired_result)
@@ -211,8 +209,15 @@ def _build_desired_plan(
             continue
         targets.append((artifact, profile_name))
         files[f"bundle:{entry.artifact}"] = entry.bundle
-        _gather_inputs(artifact, profile_name, profiles, src, project=_common.project_root(request),
-                       files=files, configs=configs)
+        _gather_inputs(
+            artifact,
+            profile_name,
+            profiles,
+            src,
+            project=_common.project_root(request),
+            files=files,
+            configs=configs,
+        )
 
     if explicit_errors:
         return Err("; ".join(explicit_errors), code=_common.USAGE)
@@ -269,6 +274,7 @@ def _gather_inputs(
         # Guidelines are copied verbatim as standalone docs — no shared-file merge.
         body = src.read(artifact.root).decode("utf-8")
         from ..catalog import _split_frontmatter
+
         _found, _fields, stripped_body = _split_frontmatter(body)
         files[f"guideline:{artifact.name}"] = stripped_body
         return
@@ -284,8 +290,10 @@ def _gather_inputs(
         # manifest proof identical to the original install (idempotent re-copy under §9).
         # Load the existing harness config for collision detection (mirrors install).
         if profile is not None:
-            spec = profile.mcp if artifact.type == "mcp" else (
-                profile.hooks.merge if profile.hooks is not None else None
+            spec = (
+                profile.mcp
+                if artifact.type == "mcp"
+                else (profile.hooks.merge if profile.hooks is not None else None)
             )
             if spec is not None:
                 configs[profile_name] = _read_config(project, spec.file)
@@ -294,6 +302,7 @@ def _gather_inputs(
     if artifact.type == "memory":
         body = src.read(artifact.root).decode("utf-8")
         from ..catalog import _split_frontmatter
+
         _found, _fields, stripped_body = _split_frontmatter(body)
         files[f"memory:{artifact.name}"] = stripped_body
         # update has no --memory-mode flag in MVP: frontmatter `mode:` else "prepend".
@@ -411,9 +420,7 @@ def _base_hash_index(selected: Tuple[ManifestEntry, ...]) -> Dict[str, Optional[
 # --------------------------------------------------------------------------- #
 # Pruning                                                                       #
 # --------------------------------------------------------------------------- #
-def _prune(
-    manifest: Manifest, selected: Tuple[ManifestEntry, ...]
-) -> Tuple[Plan, Manifest]:
+def _prune(manifest: Manifest, selected: Tuple[ManifestEntry, ...]) -> Tuple[Plan, Manifest]:
     """Remove non-selected entries' files and drop them from the manifest.
 
     Uses ``manifest.prune_plan`` (keep == the selected (artifact, profile) keys), then strips

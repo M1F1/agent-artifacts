@@ -84,9 +84,7 @@ class GuidelineParsingTests(unittest.TestCase):
 
 class McpParsingTests(unittest.TestCase):
     def test_happy(self):
-        text = json.dumps(
-            {"name": "postgres", "description": "PG", "server": {"command": "npx"}}
-        )
+        text = json.dumps({"name": "postgres", "description": "PG", "server": {"command": "npx"}})
         res = catalog.parse_mcp(text, "postgres")
         self.assertEqual(res, Ok(Artifact("mcp", "postgres", "mcp/postgres.json")))
 
@@ -205,9 +203,7 @@ class ResolveExtendsUnionTests(unittest.TestCase):
             ),
         )
         # No duplicate of code-review.
-        self.assertEqual(
-            sum(1 for k in res.value.artifacts if k == ("skill", "code-review")), 1
-        )
+        self.assertEqual(sum(1 for k in res.value.artifacts if k == ("skill", "code-review")), 1)
 
     def test_missing_bundle_name_is_err(self):
         res = catalog.resolve_bundle(_catalog(), "nope")
@@ -294,9 +290,7 @@ class ResolvePinPrecedenceTests(unittest.TestCase):
         )
         res = catalog.resolve_bundle(_catalog(artifacts, (base, derived)), "derived")
         self.assertIsInstance(res, Ok)
-        self.assertEqual(
-            res.value.pins, {"code-review": "BASE_SHA", "test-writer": "DERIVED_SHA"}
-        )
+        self.assertEqual(res.value.pins, {"code-review": "BASE_SHA", "test-writer": "DERIVED_SHA"})
 
 
 class ValidateCatalogTests(unittest.TestCase):
@@ -304,9 +298,7 @@ class ValidateCatalogTests(unittest.TestCase):
         artifacts = [Artifact("skill", "code-review", "skills/code-review")]
         base = _bundle("base", includes={"skill": ("code-review",)})
         derived = _bundle("derived", extends=("base",))
-        self.assertEqual(
-            catalog.validate_catalog(_catalog(artifacts, (base, derived))), ()
-        )
+        self.assertEqual(catalog.validate_catalog(_catalog(artifacts, (base, derived))), ())
 
     def test_reports_each_broken_bundle(self):
         good = _bundle("good")  # empty, resolves fine

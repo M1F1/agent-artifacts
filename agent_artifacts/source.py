@@ -219,6 +219,7 @@ def open_source(
     if not request.repo:
         # Default to the package's installation root (where skills/, bundles/ live)
         import agent_artifacts
+
         pkg_dir = os.path.dirname(os.path.abspath(agent_artifacts.__file__))
         root = os.path.dirname(pkg_dir)
         return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))

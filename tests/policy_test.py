@@ -5,9 +5,9 @@ import unittest
 from agent_artifacts import policy
 from agent_artifacts.model import RemovePath, Warn, WriteFile
 
-A = "h_disk"   # an on-disk hash
-B = "h_base"   # the hash recorded at install
-N = "h_new"    # the incoming hash
+A = "h_disk"  # an on-disk hash
+B = "h_base"  # the hash recorded at install
+N = "h_new"  # the incoming hash
 
 
 class ClassifyTests(unittest.TestCase):
@@ -78,9 +78,7 @@ class DecisionActionTests(unittest.TestCase):
             WriteFile(path="f.txt" + policy.NEW_SUFFIX, content=b"new"),
         )
         self.assertIsInstance(actions[1], Warn)
-        self.assertNotIn(
-            WriteFile(path="f.txt", content=b"new"), actions
-        )  # original untouched
+        self.assertNotIn(WriteFile(path="f.txt", content=b"new"), actions)  # original untouched
 
     def test_conflict_with_force_overwrites_original_and_warns(self):
         actions = policy.decision_action("conflict", "f.txt", b"new", force=True)

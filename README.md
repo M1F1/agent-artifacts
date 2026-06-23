@@ -207,7 +207,15 @@ prebuilt local wheel when one is present, no package index required.
 `source-dependent` means no network for the bundled catalog or `--source DIR`, and network when
 using a GitHub `--repo`.
 
-Global flags work on any subcommand: `--repo OWNER/NAME`, `--source DIR`, `--project DIR`.
+**Context-Dependent Options:** Instead of exposing every option globally, `agent-artifacts` strictly attaches options only to the commands that consume them:
+
+**Catalog source** — Commands like `list`, `install`, and `update` accept `--repo OWNER/NAME` (remote) or `--source DIR` (local checkout). These are mutually exclusive. (`--source` cannot be combined with `--version` since a local checkout has no ref to resolve). Remote-only commands like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
+
+**Consumer project** — Commands that modify or inspect the consumer project (`install`, `update`, `uninstall`, `status`, `check`) accept `--project DIR` (default: cwd). Catalog-only commands (`list`) or self-updaters (`upgrade`) do not.
+
+**Maintainer upstream** — `aart upstream …` operates on the *catalog repo* (using `--source DIR` to mean the catalog directory to maintain, defaulting to cwd), never a consumer project. It intentionally does not accept `--repo` or `--project`.
+
+Supplying an unrecognized option is a usage error (exit `2`). Likewise, `--all` cannot be combined with named artifacts or `--bundle`.
 
 > **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
 > teaching an agent to drive this CLI (always `--json`, never the TUI).

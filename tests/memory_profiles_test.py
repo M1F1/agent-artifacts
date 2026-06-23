@@ -153,9 +153,7 @@ class TestLoaderPartialProfile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             override_dir = os.path.join(tmp, ".agent-artifacts")
             os.makedirs(override_dir, exist_ok=True)
-            with open(
-                os.path.join(override_dir, "profiles.json"), "w", encoding="utf-8"
-            ) as fh:
+            with open(os.path.join(override_dir, "profiles.json"), "w", encoding="utf-8") as fh:
                 json.dump(override, fh)
 
             profiles = load_profiles(project=tmp)

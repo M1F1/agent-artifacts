@@ -67,8 +67,12 @@ def plan_merge(
                 f"'{spec.json_path}.{key}' already exists and differs; use --force",
                 code=4,
             )
-        return Ok(MergeJson(file=spec.file, json_path=spec.json_path, mode="key",
-                            value=value, identity=(key,)))
+        return Ok(
+            MergeJson(
+                file=spec.file, json_path=spec.json_path, mode="key", value=value, identity=(key,)
+            )
+        )
     # list-mode: coexist with foreign entries; executor dedups by deep equality.
-    return Ok(MergeJson(file=spec.file, json_path=spec.json_path, mode="list",
-                        value=value, identity=()))
+    return Ok(
+        MergeJson(file=spec.file, json_path=spec.json_path, mode="list", value=value, identity=())
+    )

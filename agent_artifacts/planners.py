@@ -240,9 +240,7 @@ def plan_memory(
 
     if mode == "skip":
         if exists:
-            return Ok(
-                (Warn(message=f"memory {artifact.name!r}: {dest} exists; skipped"),)
-            )
+            return Ok((Warn(message=f"memory {artifact.name!r}: {dest} exists; skipped"),))
         return Ok((WriteFile(path=dest, content=text.encode("utf-8")),))
 
     if mode == "replace":

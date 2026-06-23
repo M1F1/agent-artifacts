@@ -26,20 +26,24 @@ _CLAUDE = Profile(
     mcp=MergeSpec(file=".mcp.json", json_path="mcpServers", mode="key"),
     hooks=HookTarget(
         scripts_dir=".claude/hooks/<name>/",
-        events=MappingProxyType({
-            "PreToolUse": "hooks.PreToolUse",
-            "PostToolUse": "hooks.PostToolUse",
-            "Stop": "hooks.Stop",
-        }),
+        events=MappingProxyType(
+            {
+                "PreToolUse": "hooks.PreToolUse",
+                "PostToolUse": "hooks.PostToolUse",
+                "Stop": "hooks.Stop",
+            }
+        ),
         merge=MergeSpec(
             file=".claude/settings.json",
             json_path="hooks.PreToolUse",
             mode="list",
             identity=("matcher", "command"),
-            entry_template=MappingProxyType({
-                "matcher": "${matcher}",
-                "hooks": [{"type": "command", "command": "${command}"}],
-            }),
+            entry_template=MappingProxyType(
+                {
+                    "matcher": "${matcher}",
+                    "hooks": [{"type": "command", "command": "${command}"}],
+                }
+            ),
         ),
     ),
     memory=MemoryTarget(kind="file", dest="CLAUDE.md"),
@@ -59,20 +63,24 @@ _OPENCODE = Profile(
     hooks=HookTarget(
         scripts_dir=".opencode/hooks/<name>/",
         # Best-effort event mapping — OpenCode's hook event model is unverified (§19).
-        events=MappingProxyType({
-            "PreToolUse": "hooks.PreToolUse",
-            "PostToolUse": "hooks.PostToolUse",
-            "Stop": "hooks.Stop",
-        }),
+        events=MappingProxyType(
+            {
+                "PreToolUse": "hooks.PreToolUse",
+                "PostToolUse": "hooks.PostToolUse",
+                "Stop": "hooks.Stop",
+            }
+        ),
         merge=MergeSpec(
             file="opencode.json",
             json_path="hooks",
             mode="list",
             identity=("matcher", "command"),
-            entry_template=MappingProxyType({
-                "matcher": "${matcher}",
-                "command": "${command}",
-            }),
+            entry_template=MappingProxyType(
+                {
+                    "matcher": "${matcher}",
+                    "command": "${command}",
+                }
+            ),
         ),
     ),
     memory=MemoryTarget(kind="file", dest="AGENTS.md"),
@@ -103,20 +111,24 @@ _TABNINE = Profile(
     # Tabnine's BeforeTool/AfterTool/SessionEnd (DESIGN-memory.md §6.2).
     hooks=HookTarget(
         scripts_dir=".tabnine/agent/hooks/<name>/",
-        events=MappingProxyType({
-            "PreToolUse": "hooks.BeforeTool",
-            "PostToolUse": "hooks.AfterTool",
-            "Stop": "hooks.SessionEnd",
-        }),
+        events=MappingProxyType(
+            {
+                "PreToolUse": "hooks.BeforeTool",
+                "PostToolUse": "hooks.AfterTool",
+                "Stop": "hooks.SessionEnd",
+            }
+        ),
         merge=MergeSpec(
             file=".tabnine/agent/settings.json",
             json_path="hooks.BeforeTool",
             mode="list",
             identity=("matcher", "command"),
-            entry_template=MappingProxyType({
-                "matcher": "${matcher}",
-                "command": "${command}",
-            }),
+            entry_template=MappingProxyType(
+                {
+                    "matcher": "${matcher}",
+                    "command": "${command}",
+                }
+            ),
         ),
     ),
     memory=MemoryTarget(kind="file", dest="TABNINE.md"),
@@ -142,12 +154,14 @@ _VIBE = Profile(
 # --------------------------------------------------------------------------- #
 # Public API                                                                   #
 # --------------------------------------------------------------------------- #
-_BUILTINS: Mapping[str, Profile] = MappingProxyType({
-    "claude": _CLAUDE,
-    "opencode": _OPENCODE,
-    "tabnine": _TABNINE,
-    "vibe": _VIBE,
-})
+_BUILTINS: Mapping[str, Profile] = MappingProxyType(
+    {
+        "claude": _CLAUDE,
+        "opencode": _OPENCODE,
+        "tabnine": _TABNINE,
+        "vibe": _VIBE,
+    }
+)
 
 
 def builtin() -> Mapping[str, Profile]:

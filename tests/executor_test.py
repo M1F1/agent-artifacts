@@ -126,9 +126,7 @@ class MergeJsonKeyModeTest(unittest.TestCase):
         execute((action,), fs=fs)
 
         data = json.loads(fs.files["dst/.mcp.json"].decode())
-        self.assertEqual(
-            data, {"mcpServers": {"fetch": {"command": "uvx", "args": ["fetch"]}}}
-        )
+        self.assertEqual(data, {"mcpServers": {"fetch": {"command": "uvx", "args": ["fetch"]}}})
 
     def test_key_mode_preserves_siblings_and_merges_into_existing_file(self):
         fs = FakeFs()

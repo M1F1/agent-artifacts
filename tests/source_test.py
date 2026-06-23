@@ -132,9 +132,13 @@ class LocalSourceTest(unittest.TestCase):
         self.assertEqual(set(cat.bundles), {"base", "backend"})
         # Artifact roots are repo-relative (DESIGN.md §4).
         self.assertEqual(cat.artifacts[("skill", "code-review")].root, "skills/code-review")
-        self.assertEqual(cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md")
+        self.assertEqual(
+            cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md"
+        )
         self.assertEqual(cat.artifacts[("mcp", "postgres")].root, "mcp/postgres.json")
-        self.assertEqual(cat.artifacts[("mcp", "tabnine-postgres")].root, "mcp/tabnine-postgres.json")
+        self.assertEqual(
+            cat.artifacts[("mcp", "tabnine-postgres")].root, "mcp/tabnine-postgres.json"
+        )
         self.assertEqual(cat.artifacts[("hook", "block-secrets")].root, "hooks/block-secrets")
         self.assertEqual(cat.artifacts[("memory", "house")].root, "memory/house.md")
 
@@ -239,17 +243,21 @@ class IdenticalCatalogTest(unittest.TestCase):
         return opener
 
     def test_local_and_remote_catalogs_identical(self):
-        local_cat = source.open_source(
-            Request(command="install", source_dir=str(FIXTURES))
-        ).value.catalog().value
+        local_cat = (
+            source.open_source(Request(command="install", source_dir=str(FIXTURES)))
+            .value.catalog()
+            .value
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             orig = cache.cache_dir
             cache.cache_dir = lambda repo, sha: os.path.join(tmp, repo.replace("/", "_"), sha)
             try:
-                remote_cat = source.open_source(
-                    Request(command="install", repo=REPO), opener=self._opener()
-                ).value.catalog().value
+                remote_cat = (
+                    source.open_source(Request(command="install", repo=REPO), opener=self._opener())
+                    .value.catalog()
+                    .value
+                )
             finally:
                 cache.cache_dir = orig
 

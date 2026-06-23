@@ -29,16 +29,22 @@ def _dispatch(argv, code=0):
 
 class UpstreamCliTests(unittest.TestCase):
     def test_upstream_check_maps_request(self):
-        rc, req = _dispatch([
-            "upstream", "check",
+        # Pure namespace->Request mapping (maps via _to_request, bypassing cli.main's validator):
+        # --all + --bundle is a now-invalid combination, exercised here only to cover field
+        # mapping. The rejection itself is asserted in test_upstream_check_rejects_all_with_bundle.
+        argv = [
+            "upstream",
+            "check",
             "--all",
-            "--type", "skill",
-            "--bundle", "base",
-            "--source", "/catalog",
+            "--type",
+            "skill",
+            "--bundle",
+            "base",
+            "--source",
+            "/catalog",
             "--json",
-        ])
-
-        self.assertEqual(rc, 0)
+        ]
+        req = cli._to_request(cli.build_parser().parse_args(argv))
         self.assertEqual(req.command, "upstream")
         self.assertEqual(req.upstream_action, "check")
         self.assertTrue(req.all)
@@ -48,14 +54,18 @@ class UpstreamCliTests(unittest.TestCase):
         self.assertTrue(req.json)
 
     def test_upstream_update_maps_request(self):
-        rc, req = _dispatch([
-            "upstream", "update",
-            "skill/code-review",
-            "--bundle", "backend",
-            "--dry-run",
-            "--force",
-            "--json",
-        ])
+        rc, req = _dispatch(
+            [
+                "upstream",
+                "update",
+                "skill/code-review",
+                "--bundle",
+                "backend",
+                "--dry-run",
+                "--force",
+                "--json",
+            ]
+        )
 
         self.assertEqual(rc, 0)
         self.assertEqual(req.command, "upstream")
@@ -75,6 +85,60 @@ class UpstreamCliTests(unittest.TestCase):
 
                 self.assertEqual(ctx.exception.code, 0)
                 self.assertIn("upstream", out.getvalue())
+
+
+class UpstreamFlagRejectionTests(unittest.TestCase):
+    """Issue #4: ``upstream`` operates on a catalog repo, so consumer-side globals are rejected."""
+
+    def _reject(self, argv):
+        """Run ``cli.main(argv)`` (no dispatch stub) and return (rc, stderr); never dispatches."""
+        rec = _recorder()
+        err = io.StringIO()
+        with patch.dict(cli.DISPATCH, {"upstream": rec}), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        self.assertEqual(rec.calls, [])  # type: ignore[attr-defined]  rejected before dispatch
+        return rc, err.getvalue()
+
+    def _reject_argparse(self, argv):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
+            cli.main(argv)
+        return cm.exception.code, err.getvalue()
+
+    def test_check_rejects_project(self):
+        rc, err = self._reject_argparse(["upstream", "check", "--all", "--project", "./app"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --project", err)
+
+    def test_update_rejects_project(self):
+        rc, err = self._reject_argparse(["upstream", "update", "skill/x", "--project", "./app"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --project", err)
+
+    def test_add_rejects_project(self):
+        rc, err = self._reject_argparse(
+            ["upstream", "add", "skill/x", "https://github.com/o/r", "--project", "./app"]
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --project", err)
+
+    def test_check_rejects_repo(self):
+        rc, err = self._reject_argparse(["upstream", "check", "--all", "--repo", "o/r"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --repo", err)
+
+    def test_check_rejects_all_with_bundle(self):
+        rc, err = self._reject(["upstream", "check", "--all", "--bundle", "base"])
+        self.assertEqual(rc, 2)
+        self.assertIn("--all cannot be combined", err)
+
+    def test_source_is_still_accepted(self):
+        # --source names the catalog repo for upstream commands and must remain valid.
+        rec = _recorder()
+        with patch.dict(cli.DISPATCH, {"upstream": rec}):
+            rc = cli.main(["upstream", "check", "--all", "--source", "/catalog"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(rec.calls), 1)  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

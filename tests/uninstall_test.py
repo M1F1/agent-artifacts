@@ -139,19 +139,28 @@ class HookUninstallTest(_Tmp):
         script = _write(self.project, ".claude/hooks/block-secrets/guard.py", "print('x')\n")
         settings = os.path.join(self.project, ".claude", "settings.json")
         # Our install created settings.json with exactly our one registration.
-        _write(self.project, ".claude/settings.json", json.dumps({
-            "hooks": {
-                "PreToolUse": [
-                    {
-                        "matcher": "Edit|Write|MultiEdit",
-                        "hooks": [
-                            {"type": "command",
-                             "command": "python3 .claude/hooks/block-secrets/guard.py"}
-                        ],
+        _write(
+            self.project,
+            ".claude/settings.json",
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Edit|Write|MultiEdit",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 .claude/hooks/block-secrets/guard.py",
+                                    }
+                                ],
+                            }
+                        ]
                     }
-                ]
-            }
-        }, indent=2))
+                },
+                indent=2,
+            ),
+        )
         _write_manifest(self.project, Manifest(repo="org/x", installed=(_hook_entry(),)))
 
         rc = self.run_uninstall(self.req(names=("block-secrets",)))
@@ -176,20 +185,31 @@ class HookUninstallTest(_Tmp):
         }
         ours = {
             "matcher": "Edit|Write|MultiEdit",
-            "hooks": [{"type": "command",
-                       "command": "python3 .claude/hooks/block-secrets/guard.py"}],
+            "hooks": [
+                {"type": "command", "command": "python3 .claude/hooks/block-secrets/guard.py"}
+            ],
         }
-        settings = _write(self.project, ".claude/settings.json", json.dumps(
-            {"hooks": {"PreToolUse": [foreign, ours]}}, indent=2))
+        settings = _write(
+            self.project,
+            ".claude/settings.json",
+            json.dumps({"hooks": {"PreToolUse": [foreign, ours]}}, indent=2),
+        )
         # created_file=False here since the file held a foreign entry too.
         entry = _hook_entry()
         entry = ManifestEntry(
-            artifact=entry.artifact, type=entry.type, profile=entry.profile,
-            source=entry.source, bundle=entry.bundle, files=entry.files,
+            artifact=entry.artifact,
+            type=entry.type,
+            profile=entry.profile,
+            source=entry.source,
+            bundle=entry.bundle,
+            files=entry.files,
             merge=MergeProof(
-                file=entry.merge.file, json_path=entry.merge.json_path,
-                mode=entry.merge.mode, identity=entry.merge.identity,
-                value_hash=entry.merge.value_hash, created_file=False,
+                file=entry.merge.file,
+                json_path=entry.merge.json_path,
+                mode=entry.merge.mode,
+                identity=entry.merge.identity,
+                value_hash=entry.merge.value_hash,
+                created_file=False,
             ),
             installed_at=entry.installed_at,
         )
@@ -208,12 +228,19 @@ class HookUninstallTest(_Tmp):
 # --------------------------------------------------------------------------- #
 class McpUninstallTest(_Tmp):
     def test_our_key_removed_foreign_preserved(self):
-        mcp = _write(self.project, ".mcp.json", json.dumps({
-            "mcpServers": {
-                "postgres": {"command": "npx", "args": ["-y", "x"]},
-                "foreign": {"command": "keep-me"},
-            }
-        }, indent=2))
+        mcp = _write(
+            self.project,
+            ".mcp.json",
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "postgres": {"command": "npx", "args": ["-y", "x"]},
+                        "foreign": {"command": "keep-me"},
+                    }
+                },
+                indent=2,
+            ),
+        )
         _write_manifest(self.project, Manifest(repo="org/x", installed=(_mcp_entry(),)))
 
         rc = self.run_uninstall(self.req(names=("postgres",)))
@@ -281,18 +308,38 @@ class SelectionTest(_Tmp):
 
     def test_all_removes_everything_and_reverses_each(self):
         _write(self.project, ".claude/hooks/block-secrets/guard.py", "x\n")
-        _write(self.project, ".claude/settings.json", json.dumps({
-            "hooks": {"PreToolUse": [{
-                "matcher": "Edit|Write|MultiEdit",
-                "hooks": [{"type": "command",
-                           "command": "python3 .claude/hooks/block-secrets/guard.py"}],
-            }]}}, indent=2))
-        _write(self.project, ".mcp.json", json.dumps(
-            {"mcpServers": {"postgres": {"command": "npx"}, "foreign": {"command": "x"}}},
-            indent=2))
+        _write(
+            self.project,
+            ".claude/settings.json",
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Edit|Write|MultiEdit",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 .claude/hooks/block-secrets/guard.py",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            ),
+        )
+        _write(
+            self.project,
+            ".mcp.json",
+            json.dumps(
+                {"mcpServers": {"postgres": {"command": "npx"}, "foreign": {"command": "x"}}},
+                indent=2,
+            ),
+        )
         guideline = _write(self.project, ".claude/guidelines/python-style.md", "body\n")
-        m = Manifest(repo="org/x",
-                     installed=(_hook_entry(), _mcp_entry(), _guideline_entry()))
+        m = Manifest(repo="org/x", installed=(_hook_entry(), _mcp_entry(), _guideline_entry()))
         _write_manifest(self.project, m)
 
         rc = self.run_uninstall(self.req(all=True))
@@ -308,15 +355,29 @@ class SelectionTest(_Tmp):
     def test_profile_filter_scopes_removal(self):
         e_claude = _mcp_entry()
         e_other = ManifestEntry(
-            artifact="postgres", type="mcp", profile="opencode", source="main:abc",
-            merge=MergeProof(file="opencode.json", json_path="mcp.postgres",
-                             mode="key", identity={}, value_hash="x"),
+            artifact="postgres",
+            type="mcp",
+            profile="opencode",
+            source="main:abc",
+            merge=MergeProof(
+                file="opencode.json",
+                json_path="mcp.postgres",
+                mode="key",
+                identity={},
+                value_hash="x",
+            ),
             installed_at="t",
         )
-        _write(self.project, ".mcp.json", json.dumps(
-            {"mcpServers": {"postgres": {"command": "npx"}}}, indent=2))
-        _write(self.project, "opencode.json", json.dumps(
-            {"mcp": {"postgres": {"command": "npx"}}}, indent=2))
+        _write(
+            self.project,
+            ".mcp.json",
+            json.dumps({"mcpServers": {"postgres": {"command": "npx"}}}, indent=2),
+        )
+        _write(
+            self.project,
+            "opencode.json",
+            json.dumps({"mcp": {"postgres": {"command": "npx"}}}, indent=2),
+        )
         _write_manifest(self.project, Manifest(repo="org/x", installed=(e_claude, e_other)))
 
         rc = self.run_uninstall(self.req(names=("postgres",), profiles=("claude",)))
@@ -326,10 +387,12 @@ class SelectionTest(_Tmp):
         self.assertEqual(len(installed), 1)
         self.assertEqual(installed[0]["profile"], "opencode")
         # claude .mcp.json pruned, opencode.json untouched.
-        self.assertNotIn("postgres",
-                         json.loads(_read(os.path.join(self.project, ".mcp.json")))["mcpServers"])
-        self.assertIn("postgres",
-                      json.loads(_read(os.path.join(self.project, "opencode.json")))["mcp"])
+        self.assertNotIn(
+            "postgres", json.loads(_read(os.path.join(self.project, ".mcp.json")))["mcpServers"]
+        )
+        self.assertIn(
+            "postgres", json.loads(_read(os.path.join(self.project, "opencode.json")))["mcp"]
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -338,12 +401,28 @@ class SelectionTest(_Tmp):
 class DryRunTest(_Tmp):
     def test_dry_run_touches_nothing(self):
         script = _write(self.project, ".claude/hooks/block-secrets/guard.py", "x\n")
-        settings = _write(self.project, ".claude/settings.json", json.dumps({
-            "hooks": {"PreToolUse": [{
-                "matcher": "Edit|Write|MultiEdit",
-                "hooks": [{"type": "command",
-                           "command": "python3 .claude/hooks/block-secrets/guard.py"}],
-            }]}}, indent=2))
+        settings = _write(
+            self.project,
+            ".claude/settings.json",
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Edit|Write|MultiEdit",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 .claude/hooks/block-secrets/guard.py",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            ),
+        )
         _write_manifest(self.project, Manifest(repo="org/x", installed=(_hook_entry(),)))
         before_manifest = _read(os.path.join(self.project, ".agent-artifacts", "manifest.json"))
         before_settings = _read(settings)

@@ -258,9 +258,7 @@ def validate_upstreams(upstreams: UpstreamCatalog, catalog: Catalog) -> Tuple[Er
                     )
                 )
             if not isinstance(sync.synced_at, str):
-                errors.append(
-                    Err(f"{label}: last_synced.synced_at must be a string", code=_USAGE)
-                )
+                errors.append(Err(f"{label}: last_synced.synced_at must be a string", code=_USAGE))
 
     return tuple(errors)
 

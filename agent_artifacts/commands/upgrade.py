@@ -67,8 +67,13 @@ def _upgrade(
     if wheel is not None:
         # Local wheel path — no network needed.
         argv: List[str] = [
-            sys.executable, "-m", "pip", "install",
-            "--no-index", "--force-reinstall", wheel,
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--force-reinstall",
+            wheel,
         ]
     else:
         # Remote: resolve ref → SHA → snapshot → pip install from snapshot dir.
@@ -83,12 +88,20 @@ def _upgrade(
 
         sha: str = result.value
         snapshot_dir = ensure_snapshot(
-            repo, sha, fetch=lambda: fetch_tarball(repo, sha, token, opener),
+            repo,
+            sha,
+            fetch=lambda: fetch_tarball(repo, sha, token, opener),
         )
 
         argv = [
-            sys.executable, "-m", "pip", "install",
-            "--no-index", "--no-build-isolation", "--force-reinstall", snapshot_dir,
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--no-build-isolation",
+            "--force-reinstall",
+            snapshot_dir,
         ]
 
     # --- 2. Print the pip invocation and optionally execute ------------------ #

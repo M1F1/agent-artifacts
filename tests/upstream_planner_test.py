@@ -208,9 +208,7 @@ class UpstreamUpdatePlannerTests(unittest.TestCase):
         self.assertTrue(result.conflict)
         self.assertEqual(result.statuses[0].state, "invalid")
         self.assertIn("missing SKILL.md", result.statuses[0].message)
-        self.assertFalse(
-            any(isinstance(a, (CopyTree, RemovePath, WriteFile)) for a in result.plan)
-        )
+        self.assertFalse(any(isinstance(a, (CopyTree, RemovePath, WriteFile)) for a in result.plan))
 
     def test_update_warns_and_leaves_missing_upstream_in_place(self):
         entry = make_entry()

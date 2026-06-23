@@ -78,10 +78,7 @@ def _select_artifacts(request: Request, catalog: Catalog):
 
     if has_type:
         # All artifacts of the given type.
-        arts = tuple(
-            a for (t, _), a in catalog.artifacts.items()
-            if t == request.type_filter
-        )
+        arts = tuple(a for (t, _), a in catalog.artifacts.items() if t == request.type_filter)
         return Ok(arts)
 
     # No selector — everything.
@@ -151,8 +148,7 @@ def _print_json(
     }
     if show_bundles:
         obj["bundles"] = [
-            _bundle_to_dict(catalog.bundles[name])
-            for name in sorted(catalog.bundles)
+            _bundle_to_dict(catalog.bundles[name]) for name in sorted(catalog.bundles)
         ]
     _common.print_json(obj)
 

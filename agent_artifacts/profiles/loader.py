@@ -26,9 +26,7 @@ def _merge_spec_from_dict(d: Mapping[str, Any]) -> MergeSpec:
         mode=d["mode"],
         identity=tuple(d.get("identity", ())),
         entry_template=(
-            MappingProxyType(d["entry_template"])
-            if d.get("entry_template") is not None
-            else None
+            MappingProxyType(d["entry_template"]) if d.get("entry_template") is not None else None
         ),
     )
 
@@ -68,11 +66,7 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
     return Profile(
         name=record["name"],
         skills=CopyTarget(dir=skills_d["dir"]) if skills_d is not None else None,
-        guidelines=(
-            GuidelineTarget(dest=guide_d["dest"])
-            if guide_d is not None
-            else None
-        ),
+        guidelines=(GuidelineTarget(dest=guide_d["dest"]) if guide_d is not None else None),
         mcp=_merge_spec_from_dict(mcp_d) if mcp_d is not None else None,
         hooks=_hook_target_from_dict(hooks_d) if hooks_d is not None else None,
         memory=(

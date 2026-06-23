@@ -106,9 +106,7 @@ class BuildWheelTest(unittest.TestCase):
     def test_entry_points_list_both_scripts(self):
         wheel = self._build()
         with zipfile.ZipFile(wheel) as z:
-            info = next(
-                n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD")
-            )
+            info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             eps = z.read(f"{info}/entry_points.txt").decode("utf-8")
         self.assertIn("[console_scripts]", eps)
         self.assertIn("agent-artifacts = agent_artifacts.cli:main", eps)
@@ -118,9 +116,7 @@ class BuildWheelTest(unittest.TestCase):
     def test_metadata_has_name_version_and_zero_deps(self):
         wheel = self._build()
         with zipfile.ZipFile(wheel) as z:
-            info = next(
-                n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD")
-            )
+            info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             meta = z.read(f"{info}/METADATA").decode("utf-8")
         self.assertIn("Name: agent-artifacts", meta)
         self.assertIn("Version: ", meta)

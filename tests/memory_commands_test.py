@@ -84,6 +84,7 @@ class InstallFileModes(_Base):
         os.makedirs(self.project, exist_ok=True)
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
         import agent_artifacts.commands.install as install
+
         code = install.run(
             _install(self.project, names=("house",), profiles=("claude",), memory_mode="prepend")
         )
@@ -122,8 +123,11 @@ class InstallFileModes(_Base):
         # With --force: body replaces the file and the prior content is backed up.
         code = self.run_quiet(
             _install(
-                self.project, names=("house",), profiles=("claude",),
-                memory_mode="replace", force=True,
+                self.project,
+                names=("house",),
+                profiles=("claude",),
+                memory_mode="replace",
+                force=True,
             )
         )
         self.assertEqual(code, 0)
@@ -160,12 +164,11 @@ class InstallDirKind(_Base):
     def setUp(self):
         super().setUp()
         os.makedirs(self.path(".agent-artifacts"), exist_ok=True)
-        pathlib.Path(self.path(".agent-artifacts", "profiles.json")).write_text(json.dumps({
-            "dirprof": {
-                "name": "dirprof",
-                "memory": {"kind": "dir", "dest": "somedir/"}
-            }
-        }))
+        pathlib.Path(self.path(".agent-artifacts", "profiles.json")).write_text(
+            json.dumps(
+                {"dirprof": {"name": "dirprof", "memory": {"kind": "dir", "dest": "somedir/"}}}
+            )
+        )
 
     def test_dir_kind_writes_named_file_in_dest_dir(self):
         code = self.run_quiet(_install(self.project, names=("house",), profiles=("dirprof",)))
@@ -222,7 +225,9 @@ class UninstallReversal(_Base):
         self.assertIn(BEGIN, self.read("CLAUDE.md"))
         # uninstall by name from the claude profile.
         code = self.run_quiet(
-            Request(command="uninstall", names=("house",), profiles=("claude",), project=self.project)
+            Request(
+                command="uninstall", names=("house",), profiles=("claude",), project=self.project
+            )
         )
         self.assertEqual(code, 0)
         text = self.read("CLAUDE.md")
@@ -236,8 +241,11 @@ class UninstallReversal(_Base):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Foreign rules\n- precious\n")
         self.run_quiet(
             _install(
-                self.project, names=("house",), profiles=("claude",),
-                memory_mode="replace", force=True,
+                self.project,
+                names=("house",),
+                profiles=("claude",),
+                memory_mode="replace",
+                force=True,
             )
         )
         # after replace: our body in CLAUDE.md, foreign in the .bak
@@ -245,7 +253,9 @@ class UninstallReversal(_Base):
         self.assertTrue(os.path.exists(self.path("CLAUDE.md" + BAK_SUFFIX)))
         # uninstall removes our file and restores the backup over it.
         code = self.run_quiet(
-            Request(command="uninstall", names=("house",), profiles=("claude",), project=self.project)
+            Request(
+                command="uninstall", names=("house",), profiles=("claude",), project=self.project
+            )
         )
         self.assertEqual(code, 0)
         self.assertEqual(self.read("CLAUDE.md"), "# Foreign rules\n- precious\n")  # restored

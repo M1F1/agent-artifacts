@@ -28,7 +28,9 @@ class ContractTests(unittest.TestCase):
     def test_action_algebra_present(self):
         plan: model.Plan = (
             WriteFile(path="a.txt", content=b"x"),
-            MergeJson(file=".mcp.json", json_path="mcpServers", mode="key", value={}, identity=("name",)),
+            MergeJson(
+                file=".mcp.json", json_path="mcpServers", mode="key", value={}, identity=("name",)
+            ),
         )
         self.assertEqual(len(plan), 2)
 

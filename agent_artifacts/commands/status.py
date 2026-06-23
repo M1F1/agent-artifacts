@@ -35,6 +35,7 @@ CORRUPT_MANIFEST = _common.CORRUPT_MANIFEST
 
 # -- per-file state --------------------------------------------------------- #
 
+
 def _file_state(project: str, rel_path: str, base_hash: str) -> str:
     """Determine the on-disk state of a single manifest-tracked path.
 
@@ -69,6 +70,7 @@ def _file_state(project: str, rel_path: str, base_hash: str) -> str:
 
 # -- JSON output shape ------------------------------------------------------ #
 
+
 def _entry_json(project: str, entry: ManifestEntry) -> dict:
     """Build the stable JSON dict for one installed entry."""
     files_report: List[dict] = []
@@ -85,6 +87,7 @@ def _entry_json(project: str, entry: ManifestEntry) -> dict:
 
 
 # -- human-readable output -------------------------------------------------- #
+
 
 def _print_human(project: str, repo: str, entries: tuple) -> None:
     """Print a human-readable status report to stdout."""
@@ -104,6 +107,7 @@ def _print_human(project: str, repo: str, entries: tuple) -> None:
 
 
 # -- entry point ------------------------------------------------------------- #
+
 
 def run(request: Request) -> int:
     """Report installed entries and on-disk drift. Fully offline — no network access.

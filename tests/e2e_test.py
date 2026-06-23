@@ -81,8 +81,13 @@ class TestRoundTrip(_ProjectCase):
 
         # representative files/merges for every type landed (both profiles).
         for path in (
-            ".claude/skills/code-review", "CLAUDE.md", ".mcp.json", ".claude/settings.json",
-            ".opencode/skills/code-review", "AGENTS.md", "opencode.json",
+            ".claude/skills/code-review",
+            "CLAUDE.md",
+            ".mcp.json",
+            ".claude/settings.json",
+            ".opencode/skills/code-review",
+            "AGENTS.md",
+            "opencode.json",
         ):
             self.assertTrue(os.path.exists(self.p(path)), f"missing {path}")
 
@@ -90,8 +95,9 @@ class TestRoundTrip(_ProjectCase):
         # each under its own sentinel markers (DESIGN-memory.md §3.5).
         for inst_file in ("CLAUDE.md", "AGENTS.md"):
             text = pathlib.Path(self.p(inst_file)).read_text()
-            self.assertIn("agent-artifacts memory:house", text,
-                          f"{inst_file} should carry the memory block")
+            self.assertIn(
+                "agent-artifacts memory:house", text, f"{inst_file} should carry the memory block"
+            )
 
         # update with no changes upstream -> clean, no error.
         rc, _out, err = _cli("update", "--source", FIXTURES, "--project", self.project, "--yes")
@@ -100,8 +106,13 @@ class TestRoundTrip(_ProjectCase):
 
         # uninstall everything -> manifest empty, skill trees gone.
         rc, _out, err = _cli(
-            "uninstall", "--all", "--profile", "claude,opencode",
-            "--project", self.project, "--yes",
+            "uninstall",
+            "--all",
+            "--profile",
+            "claude,opencode",
+            "--project",
+            self.project,
+            "--yes",
         )
         self.assertEqual(rc, 0, f"uninstall failed: {err}")
         self.assertEqual(self.manifest_entries(), [], "uninstall clears the manifest")
@@ -126,18 +137,22 @@ class TestMemoryCli(_ProjectCase):
         # A hand-authored instruction file: `replace` without --force is a CONFLICT (4)...
         claude_md = self.p("CLAUDE.md")
         pathlib.Path(claude_md).write_text("# my own notes\n- keep me\n")
-        rc, _out, _err = self.install("house", "--profile", "claude",
-                                      "--memory-mode", "replace", "--yes")
+        rc, _out, _err = self.install(
+            "house", "--profile", "claude", "--memory-mode", "replace", "--yes"
+        )
         self.assertEqual(rc, 4, "replace over foreign content without --force is CONFLICT")
         self.assertIn("my own notes", pathlib.Path(claude_md).read_text())  # untouched
 
         # ...with --force the body replaces the file and the prior content is backed up.
-        rc, _out, err = self.install("house", "--profile", "claude",
-                                     "--memory-mode", "replace", "--force", "--yes")
+        rc, _out, err = self.install(
+            "house", "--profile", "claude", "--memory-mode", "replace", "--force", "--yes"
+        )
         self.assertEqual(rc, 0, f"forced replace failed: {err}")
         self.assertNotIn("my own notes", pathlib.Path(claude_md).read_text())
-        self.assertTrue(os.path.exists(claude_md + ".agent-artifacts-bak"),
-                        "replace should back up the prior content")
+        self.assertTrue(
+            os.path.exists(claude_md + ".agent-artifacts-bak"),
+            "replace should back up the prior content",
+        )
 
     def test_vibe_rejects_unsupported_type_by_name(self):
         # vibe declares no MCP target; an explicit by-name request is a USAGE error (§5).
@@ -155,9 +170,7 @@ class TestCompatibilityCli(_ProjectCase):
         self.assertIn("allowed: tabnine", err)
 
     def test_bundle_skips_incompatible_target_in_json(self):
-        rc, out, err = self.install(
-            "--bundle", "backend", "--profile", "claude", "--yes", "--json"
-        )
+        rc, out, err = self.install("--bundle", "backend", "--profile", "claude", "--yes", "--json")
         self.assertEqual(rc, 0, err)
         payload = json.loads(out)
         self.assertTrue(
@@ -190,9 +203,7 @@ class TestCompatibilityCli(_ProjectCase):
         self.assertEqual(rc, 0, err)
         payload = json.loads(out)
         self.assertIn("actions", payload)
-        self.assertTrue(
-            any(item["artifact"] == "tabnine-postgres" for item in payload["skipped"])
-        )
+        self.assertTrue(any(item["artifact"] == "tabnine-postgres" for item in payload["skipped"]))
         self.assertFalse(os.path.exists(self.p(".agent-artifacts")))
 
 
@@ -209,9 +220,7 @@ class TestDryRunIsPure(_ProjectCase):
         self.assertFalse(os.path.exists(self.p("CLAUDE.md")))
 
     def test_dry_run_json_is_a_plan(self):
-        rc, out, _err = self.install(
-            "code-review", "--profile", "claude", "--dry-run", "--json"
-        )
+        rc, out, _err = self.install("code-review", "--profile", "claude", "--dry-run", "--json")
         self.assertEqual(rc, 0)
         plan = json.loads(out)  # a JSON array of actions
         self.assertIsInstance(plan, list)

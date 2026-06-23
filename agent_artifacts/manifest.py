@@ -170,9 +170,7 @@ def upsert(m: Manifest, entry: ManifestEntry) -> Manifest:
 def remove_entry(m: Manifest, artifact: str, profile: str) -> Manifest:
     """Return a new manifest with the `(artifact, profile)` entry filtered out."""
     key = (artifact, profile)
-    kept = tuple(
-        e for e in m.installed if (e.artifact, e.profile) != key
-    )
+    kept = tuple(e for e in m.installed if (e.artifact, e.profile) != key)
     return Manifest(repo=m.repo, installed=kept)
 
 

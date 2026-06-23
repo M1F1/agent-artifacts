@@ -20,6 +20,7 @@ import sys
 from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
+from .cli_rules import validate_flags
 from .commands import check, install, status, uninstall, update, upgrade
 from .commands import list as list_cmd
 from .commands._common import OK
@@ -56,22 +57,29 @@ def _add_json(p: argparse.ArgumentParser) -> None:
 
 
 def _add_version(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--version", dest="version", metavar="REF",
-                   help="source git ref (branch/tag/SHA); defaults to main")
+    p.add_argument(
+        "--version",
+        dest="version",
+        metavar="REF",
+        help="source git ref (branch/tag/SHA); defaults to main",
+    )
 
 
 def _add_selection(p: argparse.ArgumentParser, *, names: bool = True) -> None:
     """Artifact-selection flags shared by install/update/uninstall (and partly list)."""
     if names:
         p.add_argument("names", nargs="*", metavar="NAME", help="artifact name(s) to select")
-    p.add_argument("--bundle", action="append", metavar="B",
-                   help="select a bundle (repeatable)")
+    p.add_argument("--bundle", action="append", metavar="B", help="select a bundle (repeatable)")
     p.add_argument("--all", action="store_true", help="select every catalog artifact")
 
 
 def _add_profile(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--profile", action="append", metavar="P[,P...]",
-                   help="target harness profile(s); comma-separated or repeated")
+    p.add_argument(
+        "--profile",
+        action="append",
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,116 +87,157 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-artifacts",
         description="Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) "
-                    "into agentic harnesses.",
+        "into agentic harnesses.",
     )
-    parser.add_argument("--version", action="version",
-                        version=f"agent-artifacts {__version__}")
+    parser.add_argument("--version", action="version", version=f"agent-artifacts {__version__}")
 
-    # Global options (DESIGN.md §13). Attached to every subcommand via parents= so they may
-    # follow the verb, e.g. `agent-artifacts list --source ./checkout`.
-    glob = argparse.ArgumentParser(add_help=False)
-    glob.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
-    glob.add_argument("--project", metavar="DIR",
-                      help="consumer project directory (default: current dir)")
-    glob.add_argument("--source", dest="source_dir", metavar="DIR",
-                      help="install from a local checkout (offline / air-gapped)")
+    def _add_repo(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
+
+    def _add_project(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--project", metavar="DIR", help="consumer project directory (default: current dir)")
+
+    def _add_source(p: argparse.ArgumentParser, help_text: str) -> None:
+        p.add_argument("--source", dest="source_dir", metavar="DIR", help=help_text)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     # list -------------------------------------------------------------------- #
-    p = sub.add_parser("list", parents=[glob], help="list catalog artifacts")
+    p = sub.add_parser("list", help="list catalog artifacts")
+    _add_repo(p)
+    _add_source(p, "read catalog from a local checkout (offline / air-gapped)")
     p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
-    p.add_argument("--type", dest="type_filter", choices=_ARTIFACT_TYPES,
-                   help="restrict to an artifact type")
+    p.add_argument(
+        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
+    )
     _add_version(p)
     _add_json(p)
 
     # install ----------------------------------------------------------------- #
-    p = sub.add_parser("install", parents=[glob], help="install artifacts into profiles")
+    p = sub.add_parser("install", help="install artifacts into profiles")
+    _add_repo(p)
+    _add_project(p)
+    _add_source(p, "install from a local checkout (offline / air-gapped)")
     _add_selection(p)
     _add_profile(p)
     _add_version(p)
-    p.add_argument("--memory-mode", dest="memory_mode", choices=_MEMORY_MODES,
-                   help="how an `memory` instruction file combines with an existing one "
-                        "(default: prepend); see DESIGN-memory.md §3.2")
+    p.add_argument(
+        "--memory-mode",
+        dest="memory_mode",
+        choices=_MEMORY_MODES,
+        help="how an `memory` instruction file combines with an existing one "
+        "(default: prepend); see DESIGN-memory.md §3.2",
+    )
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
-    p.add_argument("--force", action="store_true",
-                   help="authorize overwrites and merge-entry collisions")
+    p.add_argument(
+        "--force", action="store_true", help="authorize overwrites and merge-entry collisions"
+    )
     _add_json(p)
 
     # status ------------------------------------------------------------------ #
-    p = sub.add_parser("status", parents=[glob],
-                       help="show installed artifacts and on-disk drift (local, no network)")
+    p = sub.add_parser(
+        "status",
+        help="show installed artifacts and on-disk drift (local, no network)",
+    )
+    _add_repo(p)
+    _add_project(p)
     _add_json(p)
 
     # check ------------------------------------------------------------------- #
-    p = sub.add_parser("check", parents=[glob],
-                       help="compare installed/CLI commit against the source (remote)")
+    p = sub.add_parser(
+        "check", help="compare installed/CLI commit against the source (remote)"
+    )
+    _add_repo(p)
+    _add_project(p)
     _add_version(p)
     _add_json(p)
 
     # update ------------------------------------------------------------------ #
-    p = sub.add_parser("update", parents=[glob],
-                       help="re-pull and re-apply installed artifacts")
+    p = sub.add_parser("update", help="re-pull and re-apply installed artifacts")
+    _add_repo(p)
+    _add_project(p)
+    _add_source(p, "update from a local checkout (offline / air-gapped)")
     p.add_argument("names", nargs="*", metavar="NAME", help="restrict to artifact name(s)")
     p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
     _add_profile(p)
-    p.add_argument("--prune", action="store_true",
-                   help="remove installed entries no longer in the selection")
+    p.add_argument(
+        "--prune", action="store_true", help="remove installed entries no longer in the selection"
+    )
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--force", action="store_true", help="overwrite drift / merge collisions")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
     _add_json(p)
 
     # uninstall --------------------------------------------------------------- #
-    p = sub.add_parser("uninstall", parents=[glob],
-                       help="reverse installed files and merges")
+    p = sub.add_parser("uninstall", help="reverse installed files and merges")
+    _add_project(p)
     _add_selection(p)
     _add_profile(p)
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
-    p.add_argument("--force", action="store_true",
-                   help="remove merge entries even if locally modified")
+    p.add_argument(
+        "--force", action="store_true", help="remove merge entries even if locally modified"
+    )
     _add_json(p)
 
     # upgrade ----------------------------------------------------------------- #
-    p = sub.add_parser("upgrade", parents=[glob],
-                       help="reinstall the tool itself from the source (offline-capable)")
+    p = sub.add_parser(
+        "upgrade",
+        help="reinstall the tool itself from the source (offline-capable)",
+    )
+    _add_repo(p)
     _add_version(p)
-    p.add_argument("--dry-run", action="store_true",
-                   help="print the pip invocation; install nothing")
+    p.add_argument(
+        "--dry-run", action="store_true", help="print the pip invocation; install nothing"
+    )
 
     # upstream ---------------------------------------------------------------- #
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
     up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
 
-    p_check = up.add_parser("check", parents=[glob], help="check tracked upstream artifacts")
+    p_check = up.add_parser("check", help="check tracked upstream artifacts")
+    _add_source(p_check, "catalog repository directory to maintain (default: current dir)")
     _add_selection(p_check)
-    p_check.add_argument("--type", dest="type_filter", choices=_ARTIFACT_TYPES,
-                         help="restrict to an artifact type")
+    p_check.add_argument(
+        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
+    )
     _add_json(p_check)
 
-    p_update = up.add_parser("update", parents=[glob], help="update tracked upstream artifacts")
+    p_update = up.add_parser("update", help="update tracked upstream artifacts")
+    _add_source(p_update, "catalog repository directory to maintain (default: current dir)")
     _add_selection(p_update)
-    p_update.add_argument("--type", dest="type_filter", choices=_ARTIFACT_TYPES,
-                          help="restrict to an artifact type")
+    p_update.add_argument(
+        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
+    )
     p_update.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p_update.add_argument("--force", action="store_true", help="overwrite local catalog drift")
     _add_json(p_update)
 
-    p_add = up.add_parser("add", parents=[glob],
-                          help="adopt an upstream artifact from a GitHub URL")
-    p_add.add_argument("names", nargs=1, metavar="TYPE/NAME",
-                       help="artifact key, e.g. skill/grill-me")
-    p_add.add_argument("url", metavar="URL",
-                       help="GitHub URL: a repo, or a /tree//blob deep link to the artifact")
-    p_add.add_argument("--ref", dest="ref", metavar="REF",
-                       help="override the ref (needed when a branch name contains slashes)")
-    p_add.add_argument("--path", dest="path", metavar="PATH",
-                       help="override the in-repo path to the artifact")
-    p_add.add_argument("--force", action="store_true",
-                       help="overwrite an existing catalog destination / re-adopt a tracked key")
+    p_add = up.add_parser(
+        "add", help="adopt an upstream artifact from a GitHub URL"
+    )
+    _add_source(p_add, "catalog repository directory to maintain (default: current dir)")
+    p_add.add_argument(
+        "names", nargs=1, metavar="TYPE/NAME", help="artifact key, e.g. skill/grill-me"
+    )
+    p_add.add_argument(
+        "url", metavar="URL", help="GitHub URL: a repo, or a /tree//blob deep link to the artifact"
+    )
+    p_add.add_argument(
+        "--ref",
+        dest="ref",
+        metavar="REF",
+        help="override the ref (needed when a branch name contains slashes)",
+    )
+    p_add.add_argument(
+        "--path", dest="path", metavar="PATH", help="override the in-repo path to the artifact"
+    )
+    p_add.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing catalog destination / re-adopt a tracked key",
+    )
     p_add.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     _add_json(p_add)
 
@@ -248,11 +297,15 @@ def _run_bare(parser: argparse.ArgumentParser, args: Optional[argparse.Namespace
     """Bare invocation (DESIGN.md §13): launch the TUI on a TTY, else print help."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         from . import tui  # WP-20: always present in the package.
+
         kwargs = {}
         if args:
-            if getattr(args, "source_dir", None): kwargs["source_dir"] = args.source_dir
-            if getattr(args, "repo", None): kwargs["repo"] = args.repo
-            if getattr(args, "project", None): kwargs["project"] = args.project
+            if getattr(args, "source_dir", None):
+                kwargs["source_dir"] = args.source_dir
+            if getattr(args, "repo", None):
+                kwargs["repo"] = args.repo
+            if getattr(args, "project", None):
+                kwargs["project"] = args.project
         return int(tui.run(**kwargs))
     parser.print_help()
     return OK
@@ -264,7 +317,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     if not args.command:
         return _run_bare(parser, args)
-    return DISPATCH[args.command](_to_request(args))
+    request = _to_request(args)
+    # Semantic flag-combination check (issue #4): argparse validates syntax; this rejects
+    # combinations that argparse accepts but the core would silently mishandle (USAGE == 2).
+    problem = validate_flags(request)
+    if problem is not None:
+        print(problem.reason, file=sys.stderr)
+        return problem.code
+    return DISPATCH[args.command](request)
 
 
 if __name__ == "__main__":

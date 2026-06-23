@@ -38,11 +38,7 @@ def _install_guideline(source: str, project: str) -> None:
 def _restrict_guideline(source: str, body: str = "# Restricted upstream\n") -> None:
     path = os.path.join(source, "guidelines", "python-style.md")
     pathlib.Path(path).write_text(
-        "---\n"
-        "description: Python style\n"
-        "compatibility.profiles: tabnine\n"
-        "---\n"
-        f"{body}",
+        f"---\ndescription: Python style\ncompatibility.profiles: tabnine\n---\n{body}",
         encoding="utf-8",
     )
 
@@ -106,13 +102,15 @@ class CompatibilityUpdateTests(unittest.TestCase):
             self.assertEqual(payload["conflict"], False)
             self.assertEqual(
                 payload["skipped"],
-                [{
-                    "artifact": "python-style",
-                    "type": "guideline",
-                    "profile": PROFILE,
-                    "reason": "incompatible-profile",
-                    "allowed_profiles": ["tabnine"],
-                }],
+                [
+                    {
+                        "artifact": "python-style",
+                        "type": "guideline",
+                        "profile": PROFILE,
+                        "reason": "incompatible-profile",
+                        "allowed_profiles": ["tabnine"],
+                    }
+                ],
             )
             self.assertEqual(pathlib.Path(dest).read_text(encoding="utf-8"), before_text)
 
@@ -159,9 +157,7 @@ class CompatibilityUpdateTests(unittest.TestCase):
             code, _out = _run(request)
 
             self.assertEqual(code, _common.OK)
-            manifest = _common.load_manifest(
-                Request(command="status", project=project)
-            ).value
+            manifest = _common.load_manifest(Request(command="status", project=project)).value
             self.assertEqual(len(manifest.installed), 1)
             self.assertEqual(manifest.installed[0].artifact, "python-style")
             self.assertTrue(os.path.exists(os.path.join(project, DEST)))

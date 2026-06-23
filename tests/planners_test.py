@@ -204,6 +204,7 @@ class HookPlannerTests(unittest.TestCase):
             ),
         )
 
+
 # --------------------------------------------------------------------------- #
 # plan_install aggregator                                                      #
 # --------------------------------------------------------------------------- #
@@ -214,7 +215,9 @@ class PlanInstallTests(unittest.TestCase):
     def test_aggregates_multiple_artifacts_and_appends_manifest(self):
         skill = Artifact(type="skill", name="code-review", root="skills/code-review")
         mcp = Artifact(type="mcp", name="postgres", root="mcp/postgres.json")
-        request = Request(command="install", names=("code-review", "postgres"), profiles=("claude",))
+        request = Request(
+            command="install", names=("code-review", "postgres"), profiles=("claude",)
+        )
         files = {
             "__targets__": ((skill, "claude"), (mcp, "claude")),
             "__installed_at__": "2026-06-20T00:00:00Z",

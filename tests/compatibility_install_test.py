@@ -154,15 +154,12 @@ class CompatibilityInstallTests(unittest.TestCase):
 
             self.assertEqual(code, 0, err)
             payload = json.loads(out)
-            installed = {
-                (item["artifact"], item["profile"]) for item in payload["installed"]
-            }
+            installed = {(item["artifact"], item["profile"]) for item in payload["installed"]}
             self.assertIn(("tabnine-postgres", "tabnine"), installed)
             self.assertNotIn(("tabnine-postgres", "claude"), installed)
             self.assertTrue(
                 any(
-                    item["artifact"] == "tabnine-postgres"
-                    and item["profile"] == "claude"
+                    item["artifact"] == "tabnine-postgres" and item["profile"] == "claude"
                     for item in payload["skipped"]
                 )
             )
