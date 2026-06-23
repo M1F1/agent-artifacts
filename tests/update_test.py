@@ -259,6 +259,45 @@ class UpdateDryRunTests(unittest.TestCase):
                 self.assertEqual(fh.read(), before)  # unchanged
 
 
+class UpdateSelectionTests(unittest.TestCase):
+    """Selection filters combine by intersection, not by broad OR."""
+
+    def test_name_and_profile_filters_intersect(self):
+        manifest = Manifest(
+            repo="r",
+            installed=(
+                ManifestEntry("code-review", "skill", "claude", "main:1"),
+                ManifestEntry("python-style", "guideline", "claude", "main:1"),
+                ManifestEntry("code-review", "skill", "tabnine", "main:1"),
+            ),
+        )
+        request = Request(command="update", names=("code-review",), profiles=("claude",))
+
+        selected, others = update._select_entries(manifest, request)
+
+        self.assertEqual(
+            [(entry.artifact, entry.profile) for entry in selected],
+            [("code-review", "claude")],
+        )
+        self.assertEqual(len(others), 2)
+
+    def test_bundle_and_profile_filters_intersect(self):
+        manifest = Manifest(
+            repo="r",
+            installed=(
+                ManifestEntry("a", "skill", "claude", "main:1", bundle="base"),
+                ManifestEntry("b", "skill", "tabnine", "main:1", bundle="base"),
+                ManifestEntry("c", "skill", "claude", "main:1", bundle="backend"),
+            ),
+        )
+        request = Request(command="update", bundles=("base",), profiles=("claude",))
+
+        selected, others = update._select_entries(manifest, request)
+
+        self.assertEqual([(entry.artifact, entry.profile) for entry in selected], [("a", "claude")])
+        self.assertEqual(len(others), 2)
+
+
 class UpdatePruneTests(unittest.TestCase):
     """--prune removes a no-longer-selected entry's files + manifest record."""
 

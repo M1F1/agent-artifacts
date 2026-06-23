@@ -2,7 +2,7 @@
 
 DESIGN.md §13 ("one core, two skins"): a bare ``agent-artifacts`` on a TTY launches this
 selector; otherwise the CLI runs in flag mode. This module owns **no** install/update/
-uninstall logic — it only gathers a selection (artifact(s), profile(s), action), assembles a
+uninstall logic — it only gathers a selection (profile(s), action, artifact(s)), assembles a
 :class:`~agent_artifacts.model.Request`, and dispatches it through the exact same command
 handlers the flag-mode CLI uses. The decision logic stays in the pure core / commands.
 
@@ -25,18 +25,28 @@ functions, so no command logic is ever duplicated here.
 
 from __future__ import annotations
 
-from typing import Callable, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
-from .model import Artifact, Bundle, Catalog, Err, Request, Result
+from .catalog import resolve_bundle
+from .compatibility import check_profile_compatibility
+from .model import Artifact, ArtifactType, Catalog, Err, Manifest, Profile, Request, Result
 from .profiles.loader import load_profiles
 from .source import open_source
 
-# The three write actions the selector can drive. ``list`` is implicit (we always show the
-# catalog first); these are the verbs that build and dispatch a Request.
+# The three write actions the selector can drive; these are the verbs that build and dispatch a
+# Request.
 ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall")
 
 # Canonical artifact-type display order (matches commands.list / DESIGN.md §4).
-_TYPE_ORDER: Tuple[str, ...] = ("skill", "guideline", "mcp", "hook", "memory")
+_TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
+_TYPE_ATTR = {
+    "skill": "skills",
+    "guideline": "guidelines",
+    "mcp": "mcp",
+    "hook": "hooks",
+    "memory": "memory",
+}
 
 ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]
@@ -46,6 +56,7 @@ SourceFactory = Callable[[Request], Result]
 # --------------------------------------------------------------------------- #
 # Choice model — a flat, ordered menu derived from the catalog (pure).         #
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
 class _Choice:
     """One selectable catalog row: either a single artifact or a whole bundle.
 
@@ -54,31 +65,153 @@ class _Choice:
     selection) or the bundle name for a bundle.
     """
 
-    __slots__ = ("kind", "label", "name", "type")
+    kind: Literal["artifact", "bundle", "profile"]
+    name: str
+    type: Optional[ArtifactType]
+    label: str
+    hidden_count: int = 0
+    complete: bool = True
 
-    def __init__(self, kind: str, name: str, type_: Optional[str], label: str) -> None:
-        self.kind = kind
-        self.name = name
-        self.type = type_
-        self.label = label
+
+def _type_rank(t: ArtifactType) -> int:
+    return _TYPE_ORDER.index(t) if t in _TYPE_ORDER else len(_TYPE_ORDER)
 
 
-def _build_choices(catalog: Catalog) -> Tuple[_Choice, ...]:
-    """Flatten a catalog into an ordered list of selectable rows (artifacts then bundles)."""
+def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
+    """True when a profile has a target for ``art_type``."""
+    return getattr(profile, _TYPE_ATTR[art_type], None) is not None
+
+
+def artifact_visible_for_profiles(
+    artifact: Artifact,
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+) -> bool:
+    """Whether ``artifact`` is installable for every selected profile.
+
+    This is intentionally an intersection check: selecting ``claude,vibe`` hides MCP/hooks
+    because ``vibe`` cannot install them.
+    """
+    if not profile_names:
+        return False
+    for profile_name in profile_names:
+        profile = profiles.get(profile_name)
+        if profile is None:
+            return False
+        if not _profile_supports(profile, artifact.type):
+            return False
+        if not check_profile_compatibility(artifact, profile_name).ok:
+            return False
+    return True
+
+
+def build_install_choices(
+    catalog: Catalog,
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+) -> Tuple[_Choice, ...]:
+    """Build installable artifact/bundle choices for selected profiles."""
     out: List[_Choice] = []
     arts: List[Artifact] = list(catalog.artifacts.values())
     arts.sort(key=lambda a: (_type_rank(a.type), a.name))
-    for a in arts:
-        out.append(_Choice("artifact", a.name, a.type, f"[{a.type}] {a.name}"))
-    for bname in sorted(catalog.bundles):
-        b: Bundle = catalog.bundles[bname]
-        desc = f" — {b.description}" if b.description else ""
-        out.append(_Choice("bundle", bname, None, f"[bundle] {bname}{desc}"))
+    for artifact in arts:
+        if artifact_visible_for_profiles(artifact, profile_names, profiles):
+            out.append(
+                _Choice("artifact", artifact.name, artifact.type, f"[{artifact.type}] {artifact.name}")
+            )
+
+    for bundle_name in sorted(catalog.bundles):
+        resolved = resolve_bundle(catalog, bundle_name)
+        if isinstance(resolved, Err):
+            continue
+
+        visible_count = 0
+        hidden_count = 0
+        for artifact_type, artifact_name in resolved.value.artifacts:
+            bundle_artifact = catalog.artifacts.get((artifact_type, artifact_name))
+            if bundle_artifact is None:
+                continue
+            if artifact_visible_for_profiles(bundle_artifact, profile_names, profiles):
+                visible_count += 1
+            else:
+                hidden_count += 1
+
+        if visible_count == 0:
+            continue
+
+        bundle = catalog.bundles[bundle_name]
+        desc = f" — {bundle.description}" if bundle.description else ""
+        if hidden_count:
+            label = (
+                f"[bundle] {bundle_name}{desc} - "
+                f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
+            )
+        else:
+            label = f"[bundle] {bundle_name}{desc}"
+        out.append(
+            _Choice(
+                "bundle",
+                bundle_name,
+                None,
+                label,
+                hidden_count=hidden_count,
+                complete=hidden_count == 0,
+            )
+        )
+
     return tuple(out)
 
 
-def _type_rank(t: str) -> int:
-    return _TYPE_ORDER.index(t) if t in _TYPE_ORDER else len(_TYPE_ORDER)
+def build_action_choices(
+    action: str,
+    catalog: Catalog,
+    manifest: Optional[Manifest],
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+) -> Tuple[_Choice, ...]:
+    """Build the selectable rows for an action after profile selection."""
+    if action == "install":
+        return build_install_choices(catalog, profile_names, profiles)
+    if action in ("update", "uninstall"):
+        if manifest is None:
+            return ()
+        return _build_manifest_choices(action, catalog, manifest, profile_names, profiles)
+    return ()
+
+
+def _build_manifest_choices(
+    action: str,
+    catalog: Catalog,
+    manifest: Manifest,
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+) -> Tuple[_Choice, ...]:
+    """Build update/uninstall choices from installed manifest entries."""
+    profile_set = set(profile_names)
+    entries = [entry for entry in manifest.installed if entry.profile in profile_set]
+    out: List[_Choice] = []
+    seen_names = set()
+    bundle_names = set()
+
+    for entry in entries:
+        if action == "update":
+            artifact = catalog.artifacts.get((entry.type, entry.artifact))
+            if artifact is None:
+                continue
+            if not artifact_visible_for_profiles(artifact, (entry.profile,), profiles):
+                continue
+
+        if entry.artifact not in seen_names:
+            seen_names.add(entry.artifact)
+            out.append(
+                _Choice("artifact", entry.artifact, entry.type, f"[{entry.type}] {entry.artifact}")
+            )
+        if entry.bundle:
+            bundle_names.add(entry.bundle)
+
+    for bundle_name in sorted(bundle_names):
+        out.append(_Choice("bundle", bundle_name, None, f"[bundle] {bundle_name} - installed"))
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -153,10 +286,10 @@ def _run_text(
 ) -> int:
     """Plain prompt-driven selector. Returns a process exit code.
 
-    Drives three prompts — artifact/bundle row(s), profile(s), action — assembles a `Request`
-    and dispatches it through the command core. Blank input or ``q`` at any prompt is a clean
-    quit (returns 0 without dispatching). Bad numbers re-prompt rather than crash; EOF on the
-    input stream is treated as a quit.
+    Drives profile -> action -> filtered artifact/bundle prompts, assembles a `Request`, and
+    dispatches it through the command core. Blank input or ``q`` at any prompt is a clean quit
+    (returns 0 without dispatching). Bad numbers re-prompt rather than crash; EOF on the input
+    stream is treated as a quit.
 
     Injection points (so the flow is testable with no real terminal):
 
@@ -166,35 +299,8 @@ def _run_text(
     * ``source_dir`` / ``repo`` / ``project`` — threaded into every `Request` so the catalog
       shown and the command dispatched resolve against the **same** source (offline-friendly).
     """
-    base = Request(command="list", source_dir=source_dir, repo=repo, project=project)
-
-    src_res = source_factory(base)
-    if isinstance(src_res, Err):
-        write(f"error: {src_res.reason}")
-        return getattr(src_res, "code", 1)
-    source = src_res.value
-
-    cat_res = source.catalog()
-    if isinstance(cat_res, Err):
-        write(f"error: {cat_res.reason}")
-        return getattr(cat_res, "code", 1)
-    catalog: Catalog = cat_res.value
-
-    choices = _build_choices(catalog)
-    if not choices:
-        write("No artifacts found in source.")
-        return 0
-
-    write(f"Source: {source.label()}")
-    write("Select artifact(s)/bundle(s) to act on (blank or 'q' to quit):")
-    for i, c in enumerate(choices, start=1):
-        write(f"  {i:>2}. {c.label}")
-
-    picked = _prompt_indices(read, write, "Selection (e.g. 1,3): ", choices)
-    if not picked:
-        return 0  # clean quit / empty selection
-
-    profile_names = sorted(load_profiles(project))
+    profiles_map = load_profiles(project)
+    profile_names = sorted(profiles_map)
     if not profile_names:  # pragma: no cover - built-ins always present
         write("No profiles available.")
         return 0
@@ -215,6 +321,48 @@ def _run_text(
     if action is None:
         return 0
 
+    catalog = Catalog(artifacts={}, bundles={})
+    if action in ("install", "update"):
+        base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+        src_res = source_factory(base)
+        if isinstance(src_res, Err):
+            write(f"error: {src_res.reason}")
+            return getattr(src_res, "code", 1)
+        source = src_res.value
+
+        cat_res = source.catalog()
+        if isinstance(cat_res, Err):
+            write(f"error: {cat_res.reason}")
+            return getattr(cat_res, "code", 1)
+        catalog = cat_res.value
+        write(f"Source: {source.label()}")
+
+    manifest: Optional[Manifest] = None
+    if action in ("update", "uninstall"):
+        manifest_res = _load_manifest_for_action(
+            action,
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+        )
+        if isinstance(manifest_res, Err):
+            write(f"error: {manifest_res.reason}")
+            return getattr(manifest_res, "code", 1)
+        manifest = manifest_res.value
+
+    choices = build_action_choices(action, catalog, manifest, profiles, profiles_map)
+    if not choices:
+        write(_empty_choices_message(action, profiles))
+        return 0
+
+    write(f"Select artifact(s)/bundle(s) for {_profiles_label(profiles)}:")
+    for i, c in enumerate(choices, start=1):
+        write(f"  {i:>2}. {c.label}")
+
+    picked = _prompt_indices(read, write, "Selection (e.g. 1,3): ", choices)
+    if not picked:
+        return 0  # clean quit / empty selection
+
     request = _build_request(
         action,
         [choices[i] for i in picked],
@@ -224,6 +372,36 @@ def _run_text(
         project=project,
     )
     return _dispatch(request)
+
+
+def _load_manifest_for_action(
+    action: str,
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+) -> Result:
+    """Load the consumer manifest for update/uninstall choice building."""
+    from .commands import _common
+
+    return _common.load_manifest(
+        Request(command=action, source_dir=source_dir, repo=repo, project=project)
+    )
+
+
+def _profiles_label(profile_names: Sequence[str]) -> str:
+    return ", ".join(profile_names)
+
+
+def _empty_choices_message(action: str, profile_names: Sequence[str]) -> str:
+    profiles = _profiles_label(profile_names)
+    if action == "install":
+        return f"No installable artifacts or bundles for profile(s): {profiles}."
+    if action == "update":
+        return f"No installed artifacts to update for profile(s): {profiles}."
+    if action == "uninstall":
+        return f"No installed artifacts to uninstall for profile(s): {profiles}."
+    return f"No choices for profile(s): {profiles}."
 
 
 def _read_line(read: ReadFn, prompt: str) -> Optional[str]:
@@ -300,42 +478,23 @@ def _run_curses(
 ) -> int:
     """Full-screen selector via stdlib ``curses``; falls back to text on any failure.
 
-    The curses layer only collects the same three selections; once gathered it leaves curses
-    and calls the shared `_build_request` / `_dispatch` (so the install/update/uninstall logic
-    and its stdout summary are identical to flag mode). Any curses error -> the text flow.
+    The curses layer only collects the same profile -> action -> filtered choice selections;
+    once gathered it leaves curses and calls the shared `_build_request` / `_dispatch` (so the
+    install/update/uninstall logic and its stdout summary are identical to flag mode). Any
+    curses error -> the text flow.
     """
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
 
-    # Resolve the catalog up front (outside curses) so an open/catalog error degrades cleanly.
-    base = Request(command="list", source_dir=source_dir, repo=repo, project=project)
-    src_res = open_source(base)
-    if isinstance(src_res, Err):
-        return _run_text(source_dir=source_dir, repo=repo, project=project)
-    source = src_res.value
-    cat_res = source.catalog()
-    if isinstance(cat_res, Err):
-        print(f"error: {cat_res.reason}")
-        return getattr(cat_res, "code", 1)
-    catalog: Catalog = cat_res.value
-
-    choices = _build_choices(catalog)
-    if not choices:
-        print("No artifacts found in source.")
+    profiles_map = load_profiles(project)
+    profile_names = sorted(profiles_map)
+    if not profile_names:  # pragma: no cover - built-ins always present
+        print("No profiles available.")
         return 0
-    profile_names = sorted(load_profiles(project))
 
     selection: dict = {}
 
     def _ui(stdscr) -> None:
         curses.curs_set(0)
-        picked_arts = _curses_multiselect(
-            curses,
-            stdscr,
-            "Select artifact(s)/bundle(s)  (space=toggle, enter=confirm, q=quit)",
-            [c.label for c in choices],
-        )
-        if picked_arts is None:
-            return
         picked_profs = _curses_multiselect(
             curses,
             stdscr,
@@ -349,9 +508,52 @@ def _run_curses(
         )
         if action_idx is None:
             return
+        action = ACTIONS[action_idx]
+        catalog = Catalog(artifacts={}, bundles={})
+        if action in ("install", "update"):
+            src_res = open_source(
+                Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            )
+            if isinstance(src_res, Err):
+                selection["error"] = (src_res.reason, getattr(src_res, "code", 1))
+                return
+            cat_res = src_res.value.catalog()
+            if isinstance(cat_res, Err):
+                selection["error"] = (cat_res.reason, getattr(cat_res, "code", 1))
+                return
+            catalog = cat_res.value
+
+        manifest: Optional[Manifest] = None
+        if action in ("update", "uninstall"):
+            manifest_res = _load_manifest_for_action(
+                action,
+                source_dir=source_dir,
+                repo=repo,
+                project=project,
+            )
+            if isinstance(manifest_res, Err):
+                selection["error"] = (manifest_res.reason, getattr(manifest_res, "code", 1))
+                return
+            manifest = manifest_res.value
+
+        selected_profiles = [profile_names[i] for i in picked_profs]
+        choices = build_action_choices(action, catalog, manifest, selected_profiles, profiles_map)
+        if not choices:
+            selection["empty"] = (action, selected_profiles)
+            return
+
+        picked_arts = _curses_multiselect(
+            curses,
+            stdscr,
+            "Select artifact(s)/bundle(s)  (space=toggle, enter=confirm, q=quit)",
+            [c.label for c in choices],
+        )
+        if picked_arts is None:
+            return
         selection["arts"] = picked_arts
         selection["profs"] = picked_profs
         selection["action"] = action_idx
+        selection["choices"] = choices
 
     try:
         curses.wrapper(_ui)
@@ -359,9 +561,18 @@ def _run_curses(
         # Terminal too small, no color, init failure, etc. — degrade gracefully.
         return _run_text(source_dir=source_dir, repo=repo, project=project)
 
+    if "error" in selection:
+        reason, code = selection["error"]
+        print(f"error: {reason}")
+        return code
+    if "empty" in selection:
+        action, profiles = selection["empty"]
+        print(_empty_choices_message(action, profiles))
+        return 0
     if "action" not in selection:
         return 0  # user quit before completing the flow
 
+    choices = selection["choices"]
     chosen = [choices[i] for i in selection["arts"]]
     profiles = [profile_names[i] for i in selection["profs"]]
     if not chosen or not profiles:

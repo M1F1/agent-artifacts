@@ -17,7 +17,7 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 
 ```sh
 pip install -e .          # editable install: run `aart` from any project folder
-aart                      # bare invocation -> interactive TUI (browse / install / remove)
+aart                      # bare invocation -> profile-first TUI (install / update / remove)
 ```
 
 Prefer the command line?
@@ -72,6 +72,12 @@ compatibility.profiles: claude, tabnine
 
 An explicit incompatible install is a usage error. Bundle and `--all` installs skip
 incompatible targets with a warning and include machine-readable skip reasons in JSON output.
+
+The interactive TUI uses the same rules. It asks for profile(s) first, then action, then shows
+only artifacts and bundles that make sense for that profile selection. For example, choosing
+`vibe` hides MCP and hook artifacts; choosing `tabnine` can show Tabnine-only artifacts. Bundle
+rows remain selectable, with partial bundles labelled when some contents are hidden for the
+selected profile(s).
 
 ---
 

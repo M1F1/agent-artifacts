@@ -141,6 +141,8 @@ def _select_entries(
     """Partition installed entries into ``(selected, others)`` by the request filters.
 
     No ``--bundle`` / ``--profile`` / ``NAME`` filter given -> every installed entry is selected.
+    When multiple filters are present, they narrow the selection together. For example,
+    ``update NAME --profile claude`` selects only installed ``NAME`` entries for ``claude``.
     """
     name_set = set(request.names)
     profile_set = set(request.profiles)
@@ -154,9 +156,9 @@ def _select_entries(
     others: List[ManifestEntry] = []
     for entry in manifest.installed:
         keep = (
-            (name_set and entry.artifact in name_set)
-            or (profile_set and entry.profile in profile_set)
-            or (bundle_set and entry.bundle in bundle_set)
+            (not name_set or entry.artifact in name_set)
+            and (not profile_set or entry.profile in profile_set)
+            and (not bundle_set or entry.bundle in bundle_set)
         )
         (selected if keep else others).append(entry)
     return tuple(selected), tuple(others)
