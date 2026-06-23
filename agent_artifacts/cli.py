@@ -91,24 +91,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"agent-artifacts {__version__}")
 
-    # Global options (DESIGN.md §13). Attached to every subcommand via parents= so they may
-    # follow the verb, e.g. `agent-artifacts list --source ./checkout`.
-    glob = argparse.ArgumentParser(add_help=False)
-    glob.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
-    glob.add_argument(
-        "--project", metavar="DIR", help="consumer project directory (default: current dir)"
-    )
-    glob.add_argument(
-        "--source",
-        dest="source_dir",
-        metavar="DIR",
-        help="install from a local checkout (offline / air-gapped)",
-    )
+    def _add_repo(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
+
+    def _add_project(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--project", metavar="DIR", help="consumer project directory (default: current dir)")
+
+    def _add_source(p: argparse.ArgumentParser, help_text: str) -> None:
+        p.add_argument("--source", dest="source_dir", metavar="DIR", help=help_text)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     # list -------------------------------------------------------------------- #
-    p = sub.add_parser("list", parents=[glob], help="list catalog artifacts")
+    p = sub.add_parser("list", help="list catalog artifacts")
+    _add_repo(p)
+    _add_source(p, "read catalog from a local checkout (offline / air-gapped)")
     p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
     p.add_argument(
         "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
@@ -117,7 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p)
 
     # install ----------------------------------------------------------------- #
-    p = sub.add_parser("install", parents=[glob], help="install artifacts into profiles")
+    p = sub.add_parser("install", help="install artifacts into profiles")
+    _add_repo(p)
+    _add_project(p)
+    _add_source(p, "install from a local checkout (offline / air-gapped)")
     _add_selection(p)
     _add_profile(p)
     _add_version(p)
@@ -138,20 +138,26 @@ def build_parser() -> argparse.ArgumentParser:
     # status ------------------------------------------------------------------ #
     p = sub.add_parser(
         "status",
-        parents=[glob],
         help="show installed artifacts and on-disk drift (local, no network)",
     )
+    _add_repo(p)
+    _add_project(p)
     _add_json(p)
 
     # check ------------------------------------------------------------------- #
     p = sub.add_parser(
-        "check", parents=[glob], help="compare installed/CLI commit against the source (remote)"
+        "check", help="compare installed/CLI commit against the source (remote)"
     )
+    _add_repo(p)
+    _add_project(p)
     _add_version(p)
     _add_json(p)
 
     # update ------------------------------------------------------------------ #
-    p = sub.add_parser("update", parents=[glob], help="re-pull and re-apply installed artifacts")
+    p = sub.add_parser("update", help="re-pull and re-apply installed artifacts")
+    _add_repo(p)
+    _add_project(p)
+    _add_source(p, "update from a local checkout (offline / air-gapped)")
     p.add_argument("names", nargs="*", metavar="NAME", help="restrict to artifact name(s)")
     p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
     _add_profile(p)
@@ -164,7 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p)
 
     # uninstall --------------------------------------------------------------- #
-    p = sub.add_parser("uninstall", parents=[glob], help="reverse installed files and merges")
+    p = sub.add_parser("uninstall", help="reverse installed files and merges")
+    _add_project(p)
     _add_selection(p)
     _add_profile(p)
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
@@ -177,9 +184,9 @@ def build_parser() -> argparse.ArgumentParser:
     # upgrade ----------------------------------------------------------------- #
     p = sub.add_parser(
         "upgrade",
-        parents=[glob],
         help="reinstall the tool itself from the source (offline-capable)",
     )
+    _add_repo(p)
     _add_version(p)
     p.add_argument(
         "--dry-run", action="store_true", help="print the pip invocation; install nothing"
@@ -189,14 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
     up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
 
-    p_check = up.add_parser("check", parents=[glob], help="check tracked upstream artifacts")
+    p_check = up.add_parser("check", help="check tracked upstream artifacts")
+    _add_source(p_check, "catalog repository directory to maintain (default: current dir)")
     _add_selection(p_check)
     p_check.add_argument(
         "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
     )
     _add_json(p_check)
 
-    p_update = up.add_parser("update", parents=[glob], help="update tracked upstream artifacts")
+    p_update = up.add_parser("update", help="update tracked upstream artifacts")
+    _add_source(p_update, "catalog repository directory to maintain (default: current dir)")
     _add_selection(p_update)
     p_update.add_argument(
         "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
@@ -206,8 +215,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p_update)
 
     p_add = up.add_parser(
-        "add", parents=[glob], help="adopt an upstream artifact from a GitHub URL"
+        "add", help="adopt an upstream artifact from a GitHub URL"
     )
+    _add_source(p_add, "catalog repository directory to maintain (default: current dir)")
     p_add.add_argument(
         "names", nargs=1, metavar="TYPE/NAME", help="artifact key, e.g. skill/grill-me"
     )

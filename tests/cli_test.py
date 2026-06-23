@@ -222,6 +222,12 @@ class TestUsageErrors(unittest.TestCase):
                 cli.main(argv)
         return ctx.exception.code
 
+    def _run_argparse_error(self, argv):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
+            cli.main(argv)
+        return cm.exception.code, err.getvalue()
+
     def test_unknown_command(self):
         self.assertEqual(self._exit_code(["frobnicate"]), 2)
 
@@ -230,6 +236,16 @@ class TestUsageErrors(unittest.TestCase):
 
     def test_unknown_flag(self):
         self.assertEqual(self._exit_code(["status", "--nope"]), 2)
+
+    def test_status_rejects_source(self):
+        rc, err = self._run_argparse_error(["status", "--source", "/s"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --source", err)
+
+    def test_upgrade_rejects_project(self):
+        rc, err = self._run_argparse_error(["upgrade", "--project", "./app"])
+        self.assertEqual(rc, 2)
+        self.assertIn("unrecognized arguments: --project", err)
 
 
 class TestFlagCombinationRules(unittest.TestCase):
@@ -271,18 +287,6 @@ class TestFlagCombinationRules(unittest.TestCase):
         )
         self.assertEqual(rc, 2)
         self.assertIn("--all cannot be combined", err)
-        self.assertFalse(dispatched)
-
-    def test_status_rejects_source(self):
-        rc, err, dispatched = self._run(["status", "--source", "/s"], command="status")
-        self.assertEqual(rc, 2)
-        self.assertIn("status does not accept --source", err)
-        self.assertFalse(dispatched)
-
-    def test_upgrade_rejects_project(self):
-        rc, err, dispatched = self._run(["upgrade", "--project", "./app"], command="upgrade")
-        self.assertEqual(rc, 2)
-        self.assertIn("upgrade does not accept --project", err)
         self.assertFalse(dispatched)
 
     def test_valid_install_dispatches(self):

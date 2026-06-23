@@ -59,51 +59,6 @@ class Class1SilentPrecedence(unittest.TestCase):
         self.assertIsNone(validate_flags(_req("install", repo="o/r", version="v2")))
 
 
-class Class2IgnoredGlobals(unittest.TestCase):
-    """Globals attached by the shared parent but never read by a given command are rejected."""
-
-    def test_list_rejects_project(self):
-        err = validate_flags(_req("list", project="./app"))
-        self.assertIsInstance(err, Err)
-        self.assertEqual(err.reason, "list does not accept --project")
-
-    def test_uninstall_rejects_repo(self):
-        err = validate_flags(_req("uninstall", repo="o/r"))
-        self.assertEqual(err.reason, "uninstall does not accept --repo")
-
-    def test_uninstall_rejects_source(self):
-        err = validate_flags(_req("uninstall", source_dir="/src"))
-        self.assertEqual(err.reason, "uninstall does not accept --source")
-
-    def test_status_rejects_source(self):
-        err = validate_flags(_req("status", source_dir="/src"))
-        self.assertEqual(err.reason, "status does not accept --source")
-
-    def test_check_rejects_source(self):
-        err = validate_flags(_req("check", source_dir="/src"))
-        self.assertEqual(err.reason, "check does not accept --source")
-
-    def test_upgrade_rejects_project(self):
-        err = validate_flags(_req("upgrade", project="./app"))
-        self.assertEqual(err.reason, "upgrade does not accept --project")
-
-    def test_upgrade_rejects_source(self):
-        err = validate_flags(_req("upgrade", source_dir="/src"))
-        self.assertEqual(err.reason, "upgrade does not accept --source")
-
-    def test_upstream_check_rejects_repo(self):
-        err = validate_flags(_req("upstream", upstream_action="check", repo="o/r"))
-        self.assertEqual(err.reason, "upstream check does not accept --repo")
-
-    def test_upstream_update_rejects_project(self):
-        err = validate_flags(_req("upstream", upstream_action="update", project="./app"))
-        self.assertEqual(err.reason, "upstream update does not accept --project")
-
-    def test_upstream_add_rejects_repo(self):
-        err = validate_flags(_req("upstream", upstream_action="add", repo="o/r"))
-        self.assertEqual(err.reason, "upstream add does not accept --repo")
-
-
 class AcceptedGlobals(unittest.TestCase):
     """Globals each command *does* consume stay valid (the happy paths)."""
 
@@ -135,19 +90,6 @@ class AcceptedGlobals(unittest.TestCase):
         self.assertIsNone(
             validate_flags(_req("install", repo="o/r", project="./app", profiles=("claude",)))
         )
-
-
-class MessagePrecedence(unittest.TestCase):
-    """A forbidden-here global is reported before a generic mutual-exclusion message."""
-
-    def test_uninstall_repo_plus_source_reports_forbidden_first(self):
-        # Both are forbidden on uninstall AND mutually exclusive; the specific message wins.
-        err = validate_flags(_req("uninstall", repo="o/r", source_dir="/src"))
-        self.assertEqual(err.reason, "uninstall does not accept --repo")
-
-    def test_check_source_plus_version_reports_forbidden_first(self):
-        err = validate_flags(_req("check", source_dir="/src", version="main"))
-        self.assertEqual(err.reason, "check does not accept --source")
 
 
 if __name__ == "__main__":

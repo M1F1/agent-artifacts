@@ -99,27 +99,33 @@ class UpstreamFlagRejectionTests(unittest.TestCase):
         self.assertEqual(rec.calls, [])  # type: ignore[attr-defined]  rejected before dispatch
         return rc, err.getvalue()
 
+    def _reject_argparse(self, argv):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
+            cli.main(argv)
+        return cm.exception.code, err.getvalue()
+
     def test_check_rejects_project(self):
-        rc, err = self._reject(["upstream", "check", "--all", "--project", "./app"])
+        rc, err = self._reject_argparse(["upstream", "check", "--all", "--project", "./app"])
         self.assertEqual(rc, 2)
-        self.assertIn("upstream check does not accept --project", err)
+        self.assertIn("unrecognized arguments: --project", err)
 
     def test_update_rejects_project(self):
-        rc, err = self._reject(["upstream", "update", "skill/x", "--project", "./app"])
+        rc, err = self._reject_argparse(["upstream", "update", "skill/x", "--project", "./app"])
         self.assertEqual(rc, 2)
-        self.assertIn("upstream update does not accept --project", err)
+        self.assertIn("unrecognized arguments: --project", err)
 
     def test_add_rejects_project(self):
-        rc, err = self._reject(
+        rc, err = self._reject_argparse(
             ["upstream", "add", "skill/x", "https://github.com/o/r", "--project", "./app"]
         )
         self.assertEqual(rc, 2)
-        self.assertIn("upstream add does not accept --project", err)
+        self.assertIn("unrecognized arguments: --project", err)
 
     def test_check_rejects_repo(self):
-        rc, err = self._reject(["upstream", "check", "--all", "--repo", "o/r"])
+        rc, err = self._reject_argparse(["upstream", "check", "--all", "--repo", "o/r"])
         self.assertEqual(rc, 2)
-        self.assertIn("upstream check does not accept --repo", err)
+        self.assertIn("unrecognized arguments: --repo", err)
 
     def test_check_rejects_all_with_bundle(self):
         rc, err = self._reject(["upstream", "check", "--all", "--bundle", "base"])
