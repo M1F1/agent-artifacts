@@ -93,6 +93,10 @@ class TestRequestMapping(unittest.TestCase):
     """Flags land on the correct Request fields per subcommand."""
 
     def test_install_full(self):
+        # Pure namespace->Request mapping: deliberately exercises a kitchen-sink combo
+        # (mutually-exclusive flags together) so every field is covered. The semantic
+        # validity of the combination is a separate concern, checked in TestFlagCombinationRules
+        # and cli_rules_test.py — so this maps via _to_request and bypasses cli.main's validator.
         argv = [
             "install", "code-review", "second",
             "--bundle", "base", "--bundle", "backend",
@@ -101,8 +105,7 @@ class TestRequestMapping(unittest.TestCase):
             "--source", "/src", "--repo", "o/r", "--project", "/proj",
             "--dry-run", "--yes", "--force", "--json",
         ]
-        rc, req = _dispatch(argv, command="install")
-        self.assertEqual(rc, 0)
+        req = cli._to_request(cli.build_parser().parse_args(argv))
         self.assertEqual(req.command, "install")
         self.assertEqual(req.names, ("code-review", "second"))
         self.assertEqual(req.bundles, ("base", "backend"))
@@ -208,6 +211,76 @@ class TestUsageErrors(unittest.TestCase):
 
     def test_unknown_flag(self):
         self.assertEqual(self._exit_code(["status", "--nope"]), 2)
+
+
+class TestFlagCombinationRules(unittest.TestCase):
+    """End-to-end (issue #4): cli.main rejects incompatible combos with USAGE (2) before dispatch.
+
+    The validator runs between _to_request and dispatch, so a rejected invocation never reaches
+    the command handler. Valid combos pass straight through to the (stubbed) handler.
+    """
+
+    def _run(self, argv, *, command):
+        """Return (rc, stderr, dispatched?) for cli.main(argv) with command's handler stubbed."""
+        rec = _recorder(0)
+        err = io.StringIO()
+        with patch.dict(cli.DISPATCH, {command: rec}), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        return rc, err.getvalue(), bool(rec.calls)  # type: ignore[attr-defined]
+
+    def test_repo_and_source_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "x", "--profile", "claude", "--repo", "o/r", "--source", "/s"],
+            command="install",
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("mutually exclusive", err)
+        self.assertFalse(dispatched)
+
+    def test_source_and_version_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "x", "--profile", "claude", "--source", "/s", "--version", "v1"],
+            command="install",
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("--source and --version", err)
+        self.assertFalse(dispatched)
+
+    def test_all_with_name_rejected(self):
+        rc, err, dispatched = self._run(
+            ["install", "code-review", "--all", "--profile", "claude"], command="install"
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("--all cannot be combined", err)
+        self.assertFalse(dispatched)
+
+    def test_status_rejects_source(self):
+        rc, err, dispatched = self._run(["status", "--source", "/s"], command="status")
+        self.assertEqual(rc, 2)
+        self.assertIn("status does not accept --source", err)
+        self.assertFalse(dispatched)
+
+    def test_upgrade_rejects_project(self):
+        rc, err, dispatched = self._run(["upgrade", "--project", "./app"], command="upgrade")
+        self.assertEqual(rc, 2)
+        self.assertIn("upgrade does not accept --project", err)
+        self.assertFalse(dispatched)
+
+    def test_valid_install_dispatches(self):
+        rc, err, dispatched = self._run(
+            ["install", "code-review", "--profile", "claude", "--source", "/s"],
+            command="install",
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(err, "")
+        self.assertTrue(dispatched)
+
+    def test_valid_all_alone_dispatches(self):
+        rc, _err, dispatched = self._run(
+            ["install", "--all", "--profile", "claude"], command="install"
+        )
+        self.assertEqual(rc, 0)
+        self.assertTrue(dispatched)
 
 
 class TestHelpAndVersion(unittest.TestCase):

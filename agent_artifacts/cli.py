@@ -20,6 +20,7 @@ import sys
 from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
+from .cli_rules import validate_flags
 from .commands import check, install, status, uninstall, update, upgrade
 from .commands import list as list_cmd
 from .commands._common import OK
@@ -264,7 +265,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     if not args.command:
         return _run_bare(parser, args)
-    return DISPATCH[args.command](_to_request(args))
+    request = _to_request(args)
+    # Semantic flag-combination check (issue #4): argparse validates syntax; this rejects
+    # combinations that argparse accepts but the core would silently mishandle (USAGE == 2).
+    problem = validate_flags(request)
+    if problem is not None:
+        print(problem.reason, file=sys.stderr)
+        return problem.code
+    return DISPATCH[args.command](request)
 
 
 if __name__ == "__main__":
