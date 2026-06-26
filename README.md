@@ -140,6 +140,9 @@ branch name contains slashes, `--force` to overwrite an existing copy, and `--dr
 Then check or import upstream changes into this repo as ordinary working-tree diffs:
 
 ```sh
+aart upstream scan https://github.com/org/superpowers/tree/main --json
+aart upstream import https://github.com/org/superpowers/tree/main --bundle superpowers --dry-run
+aart upstream import https://github.com/org/superpowers/tree/main --bundle superpowers
 aart upstream check --all --json
 aart upstream update skill/code-review --dry-run
 aart upstream update --bundle backend
@@ -211,6 +214,8 @@ prebuilt local wheel when one is present, no package index required.
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |
 | `aart upstream add` | yes | Adopt an upstream artifact from a GitHub URL (vendor + track) |
+| `aart upstream scan` | yes | Scan a GitHub repo/path for batch-importable artifacts |
+| `aart upstream import` | yes | Batch-vendor selected GitHub artifacts and optionally create a bundle |
 | `aart upstream check` | yes | Maintainer check for tracked vendored artifact origins |
 | `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 | `aart uninstall` | no | Reverse installed files and merge entries |

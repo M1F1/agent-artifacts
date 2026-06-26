@@ -270,3 +270,7 @@ class Request:
     url: Optional[str] = None  # GitHub URL for `upstream add`
     ref: Optional[str] = None  # explicit ref override for `upstream add`
     path: Optional[str] = None  # explicit in-repo path override for `upstream add`
+    import_mode: Optional[str] = None  # "auto" | "manifest" | "heuristic" for upstream import
+    bundle_mode: Optional[str] = None  # "append" | "replace" | "fail" for import-created bundles
+    bundle_description: Optional[str] = None
+    interactive: bool = False

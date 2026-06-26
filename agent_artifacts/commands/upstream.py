@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple, cast
 
 from .. import catalog as catalog_mod
 from .. import executor
 from ..github_source import parse_github_url, resolve_github_location
+from ..import_candidates import candidate_to_dict, render_scan, scan_to_dict
+from ..import_planner import BundleMode, ImportPlan, plan_import
+from ..import_scanner import ImportMode, scan_import_root
 from ..io import fs
 from ..model import Err, Ok, Request
 from ..source import open_source
@@ -53,6 +57,10 @@ def _has_selector(request: Request) -> bool:
 def run(request: Request) -> int:
     if request.upstream_action == "add":
         return _run_add(request)
+    if request.upstream_action == "scan":
+        return _run_scan(request)
+    if request.upstream_action == "import":
+        return _run_import(request)
     if request.upstream_action not in {"check", "update"}:
         return _common.USAGE
     if request.upstream_action == "update" and not _has_selector(request):
@@ -146,6 +154,198 @@ def run(request: Request) -> int:
         updated_count=len(updated),
     )
     return _common.OK
+
+
+def _run_scan(request: Request) -> int:
+    scan_res = _resolve_import_scan(request)
+    if isinstance(scan_res, Err):
+        print(scan_res.reason)
+        return _common.exit_code(scan_res)
+    _emit_scan(request, scan_res.value)
+    return _common.OK
+
+
+def _run_import(request: Request) -> int:
+    scan_res = _resolve_import_scan(request)
+    if isinstance(scan_res, Err):
+        print(scan_res.reason)
+        return _common.exit_code(scan_res)
+    scan = scan_res.value
+
+    names = request.names
+    if request.interactive and not names:
+        names = _interactive_selection(scan)
+
+    if len(request.bundles) > 1:
+        print("upstream import accepts at most one --bundle")
+        return _common.USAGE
+    bundle_name = request.bundles[0] if request.bundles else None
+    bundle_mode = cast(BundleMode, request.bundle_mode or "append")
+    catalog_root = os.path.abspath(_catalog_root(request))
+
+    planned = plan_import(
+        scan,
+        catalog_root=catalog_root,
+        names=names,
+        bundle_name=bundle_name,
+        bundle_description=request.bundle_description,
+        bundle_mode=bundle_mode,
+        force=request.force,
+    )
+    if isinstance(planned, Err):
+        print(planned.reason)
+        return _common.exit_code(planned)
+    import_plan: ImportPlan = planned.value
+
+    if request.dry_run:
+        _emit_import_dry_run(request, scan, import_plan)
+        return _common.CONFLICT if import_plan.selection.conflicts else _common.OK
+
+    if import_plan.selection.conflicts:
+        _emit_import_conflict(request, scan, import_plan)
+        return _common.CONFLICT
+
+    report = executor.execute(import_plan.plan)
+    _emit_import_result(request, scan, import_plan, performed=report.performed)
+    return _common.OK
+
+
+def _resolve_import_scan(request: Request):
+    if not request.url:
+        return Err(f"upstream {request.upstream_action} requires a GitHub URL", code=_common.USAGE)
+    url_res = parse_github_url(request.url)
+    if isinstance(url_res, Err):
+        return Err(f"invalid URL: {url_res.reason}", code=_common.USAGE)
+    parts = url_res.value
+    ref = request.ref or parts.ref or "main"
+    path = request.path if request.path is not None else (parts.path or "")
+    source = UpstreamSource(
+        kind="github",
+        repo=parts.repo,
+        ref=ref,
+        path=path,
+        api_url=parts.api_url,
+        web_url=parts.web_url if parts.api_url is not None else None,
+    )
+    entry = UpstreamEntry(key=UpstreamKey("skill", "__scan__"), source=source, last_synced=None)
+    resolved = resolve_upstream_source(entry)
+    if isinstance(resolved, Err):
+        return resolved
+
+    scan_root = resolved.value.path
+    scan_source_path = path
+    if os.path.isfile(scan_root):
+        scan_root = os.path.dirname(scan_root)
+        scan_source_path = posixpath.dirname(path)
+    scan_source = UpstreamSource(
+        kind=source.kind,
+        repo=source.repo,
+        ref=source.ref,
+        path="" if scan_source_path == "." else scan_source_path,
+        api_url=source.api_url,
+        web_url=source.web_url,
+    )
+    mode = cast(ImportMode, request.import_mode or "auto")
+    return scan_import_root(
+        scan_root,
+        source=scan_source,
+        sha=resolved.value.sha,
+        mode=mode,
+    )
+
+
+def _interactive_selection(scan) -> Tuple[str, ...]:
+    print(render_scan(scan))
+    print("")
+    answer = input("Select artifacts (comma-separated type/name, blank for defaults): ").strip()
+    if not answer:
+        return ()
+    return tuple(part.strip() for part in answer.split(",") if part.strip())
+
+
+def _emit_scan(request: Request, scan) -> None:
+    if request.json:
+        _common.print_json({"action": "scan", **scan_to_dict(scan)})
+        return
+    print(render_scan(scan))
+
+
+def _emit_import_dry_run(request: Request, scan, import_plan: ImportPlan) -> None:
+    if request.json:
+        _common.print_json(_import_payload("import", request, scan, import_plan, dry_run=True))
+        return
+    _print_import_summary(import_plan, dry_run=True)
+    rendered = executor.render_plan(import_plan.plan)
+    if rendered:
+        print(rendered)
+
+
+def _emit_import_conflict(request: Request, scan, import_plan: ImportPlan) -> None:
+    if request.json:
+        _common.print_json(_import_payload("import", request, scan, import_plan, dry_run=False))
+        return
+    _print_import_summary(import_plan, dry_run=False)
+
+
+def _emit_import_result(
+    request: Request,
+    scan,
+    import_plan: ImportPlan,
+    *,
+    performed: Tuple[str, ...],
+) -> None:
+    if request.json:
+        payload = _import_payload("import", request, scan, import_plan, dry_run=False)
+        payload["performed"] = list(performed)
+        _common.print_json(payload)
+        return
+    print(
+        f"Imported {len(import_plan.selection.selected)} artifact"
+        f"{'s' if len(import_plan.selection.selected) != 1 else ''}."
+    )
+    if import_plan.bundle_path:
+        print(f"Bundle: {import_plan.bundle_path}")
+    if import_plan.tracking_path:
+        print(f"Tracked: {import_plan.tracking_path}")
+    for warning in import_plan.selection.warnings:
+        print(f"warning: {warning}")
+
+
+def _import_payload(action: str, request: Request, scan, import_plan: ImportPlan, *, dry_run: bool):
+    return {
+        "action": action,
+        "dry_run": dry_run,
+        "mode": scan.mode,
+        "repo": scan.repo,
+        "ref": scan.ref,
+        "sha": scan.sha,
+        "selected": [candidate_to_dict(c) for c in import_plan.selection.selected],
+        "skipped": [candidate_to_dict(c) for c in import_plan.selection.skipped],
+        "conflicts": [
+            {"key": f"{c.key.type}/{c.key.name}", "reason": c.reason, "path": c.path}
+            for c in import_plan.selection.conflicts
+        ],
+        "warnings": list(import_plan.selection.warnings),
+        "bundle": request.bundles[0] if request.bundles else None,
+        "plan": json.loads(executor.plan_to_json(import_plan.plan)),
+    }
+
+
+def _print_import_summary(import_plan: ImportPlan, *, dry_run: bool) -> None:
+    verb = "Would import" if dry_run else "Import blocked"
+    print(
+        f"{verb} {len(import_plan.selection.selected)} artifact"
+        f"{'s' if len(import_plan.selection.selected) != 1 else ''}:"
+    )
+    for candidate in import_plan.selection.selected:
+        print(f"  - {candidate.key.type:<9} {candidate.key.name} <- {candidate.source.path}")
+    for candidate in import_plan.selection.skipped:
+        if candidate.confidence == "ambiguous":
+            print(f"warning: skipped ambiguous {candidate.key.type} {candidate.key.name!r}")
+    for warning in import_plan.selection.warnings:
+        print(f"warning: {warning}")
+    for conflict in import_plan.selection.conflicts:
+        print(f"conflict: {conflict.reason}")
 
 
 def _run_add(request: Request) -> int:

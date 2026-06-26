@@ -76,6 +76,65 @@ class UpstreamCliTests(unittest.TestCase):
         self.assertTrue(req.force)
         self.assertTrue(req.json)
 
+    def test_upstream_scan_maps_request(self):
+        rc, req = _dispatch(
+            [
+                "upstream",
+                "scan",
+                "https://github.com/acme/superpowers",
+                "--mode",
+                "heuristic",
+                "--ref",
+                "main",
+                "--path",
+                "kits",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(req.command, "upstream")
+        self.assertEqual(req.upstream_action, "scan")
+        self.assertEqual(req.url, "https://github.com/acme/superpowers")
+        self.assertEqual(req.import_mode, "heuristic")
+        self.assertEqual(req.ref, "main")
+        self.assertEqual(req.path, "kits")
+        self.assertTrue(req.json)
+
+    def test_upstream_import_maps_request(self):
+        rc, req = _dispatch(
+            [
+                "upstream",
+                "import",
+                "https://github.com/acme/superpowers",
+                "--mode",
+                "manifest",
+                "--select",
+                "skill/debugging,memory/superpowers",
+                "--bundle",
+                "superpowers",
+                "--bundle-description",
+                "Superpowers kit",
+                "--bundle-mode",
+                "replace",
+                "--interactive",
+                "--dry-run",
+                "--force",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(req.upstream_action, "import")
+        self.assertEqual(req.names, ("skill/debugging", "memory/superpowers"))
+        self.assertEqual(req.bundles, ("superpowers",))
+        self.assertEqual(req.bundle_description, "Superpowers kit")
+        self.assertEqual(req.bundle_mode, "replace")
+        self.assertTrue(req.interactive)
+        self.assertTrue(req.dry_run)
+        self.assertTrue(req.force)
+        self.assertTrue(req.json)
+
     def test_upstream_help_exits_zero(self):
         for argv in (["upstream", "--help"], ["upstream", "check", "--help"]):
             with self.subTest(argv=argv):

@@ -47,6 +47,8 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
 
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
 _MEMORY_MODES = ("replace", "prepend", "append", "skip")
+_IMPORT_MODES = ("auto", "manifest", "heuristic")
+_BUNDLE_MODES = ("append", "replace", "fail")
 
 
 # --------------------------------------------------------------------------- #
@@ -241,6 +243,59 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     _add_json(p_add)
 
+    p_scan = up.add_parser("scan", help="scan a GitHub repo for importable artifacts")
+    _add_source(p_scan, "catalog repository directory to maintain (default: current dir)")
+    p_scan.add_argument("url", metavar="URL", help="GitHub repo or /tree URL to scan")
+    p_scan.add_argument(
+        "--mode",
+        dest="import_mode",
+        choices=_IMPORT_MODES,
+        default="auto",
+        help="candidate discovery mode",
+    )
+    p_scan.add_argument("--ref", dest="ref", metavar="REF", help="override the ref to scan")
+    p_scan.add_argument(
+        "--path", dest="path", metavar="PATH", help="override the in-repo path to scan"
+    )
+    _add_json(p_scan)
+
+    p_import = up.add_parser("import", help="batch-import artifacts from a GitHub repo")
+    _add_source(p_import, "catalog repository directory to maintain (default: current dir)")
+    p_import.add_argument("url", metavar="URL", help="GitHub repo or /tree URL to import from")
+    p_import.add_argument(
+        "--mode",
+        dest="import_mode",
+        choices=_IMPORT_MODES,
+        default="auto",
+        help="candidate discovery mode",
+    )
+    p_import.add_argument(
+        "--select",
+        action="append",
+        metavar="TYPE/NAME[,TYPE/NAME...]",
+        help="candidate(s) to import; defaults to non-ambiguous candidates",
+    )
+    p_import.add_argument("--bundle", action="append", metavar="B", help="create/update a bundle")
+    p_import.add_argument(
+        "--bundle-description",
+        metavar="TEXT",
+        help="description for a created/replaced import bundle",
+    )
+    p_import.add_argument(
+        "--bundle-mode",
+        choices=_BUNDLE_MODES,
+        default="append",
+        help="how to handle an existing bundle",
+    )
+    p_import.add_argument("--ref", dest="ref", metavar="REF", help="override the ref to import")
+    p_import.add_argument(
+        "--path", dest="path", metavar="PATH", help="override the in-repo path to import"
+    )
+    p_import.add_argument("--interactive", action="store_true", help="prompt for candidate selection")
+    p_import.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
+    p_import.add_argument("--force", action="store_true", help="replace existing catalog entries")
+    _add_json(p_import)
+
     return parser
 
 
@@ -266,9 +321,10 @@ def _to_request(args: argparse.Namespace) -> Request:
 
     Uses ``getattr`` with defaults because each subparser defines only its own flags.
     """
+    select = getattr(args, "select", None)
     return Request(
         command=args.command,
-        names=tuple(getattr(args, "names", None) or ()),
+        names=_split_csv(select) if select is not None else tuple(getattr(args, "names", None) or ()),
         bundles=tuple(getattr(args, "bundle", None) or ()),
         profiles=_split_csv(getattr(args, "profile", None)),
         all=bool(getattr(args, "all", False)),
@@ -287,6 +343,10 @@ def _to_request(args: argparse.Namespace) -> Request:
         url=getattr(args, "url", None),
         ref=getattr(args, "ref", None),
         path=getattr(args, "path", None),
+        import_mode=getattr(args, "import_mode", None),
+        bundle_mode=getattr(args, "bundle_mode", None),
+        bundle_description=getattr(args, "bundle_description", None),
+        interactive=bool(getattr(args, "interactive", False)),
     )
 
 
