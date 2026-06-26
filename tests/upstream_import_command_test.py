@@ -51,7 +51,7 @@ class UpstreamImportCommandTests(unittest.TestCase):
         self._write(self.staged_root, "memory/superpowers.md", "# Memory\n")
 
     def _run(self, request: Request):
-        def fake_resolve(entry):
+        def fake_resolve(entry, **_kw):
             return Ok(
                 ResolvedUpstream(
                     entry=entry,
@@ -92,6 +92,31 @@ class UpstreamImportCommandTests(unittest.TestCase):
             [item["key"] for item in payload["candidates"]],
             ["skill/debugging", "memory/superpowers"],
         )
+
+    def test_scan_forwards_github_token_to_resolver(self):
+        self._seed_manifest_repo()
+        seen = {}
+
+        def fake_resolve(entry, **kw):
+            seen["token"] = kw.get("token")
+            return Ok(
+                ResolvedUpstream(
+                    entry=entry,
+                    sha="abc123",
+                    root=self.staged_root,
+                    path=self.staged_root,
+                    content_hash=hash_upstream_path(self.staged_root),
+                )
+            )
+
+        out = io.StringIO()
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "secret-token"}):
+            with patch.object(upstream, "resolve_upstream_source", side_effect=fake_resolve):
+                with redirect_stdout(out):
+                    code = upstream.run(self._request("scan"))
+
+        self.assertEqual(code, _common.OK, msg=out.getvalue())
+        self.assertEqual(seen["token"], "secret-token")
 
     def test_import_dry_run_writes_nothing_and_reports_bundle_plan(self):
         self._seed_manifest_repo()

@@ -48,6 +48,16 @@ def _api_root(api_url: Optional[str]) -> str:
     return (api_url or default_api_url()).rstrip("/")
 
 
+def _auth_hint(code: int) -> str:
+    if code in (401, 403, 404):
+        return (
+            " (If the repository is private or on GitHub Enterprise, set GITHUB_TOKEN "
+            "with read access and make sure GITHUB_API_URL/source.api_url points at the "
+            "Enterprise API, usually https://<host>/api/v3)"
+        )
+    return ""
+
+
 def resolve_ref(
     repo: str,
     ref: str,
@@ -66,9 +76,7 @@ def resolve_ref(
         data = json.loads(body)
         sha = data["sha"]
     except urllib.error.HTTPError as exc:
-        msg = f"failed to resolve {repo}@{ref}: {exc}"
-        if exc.code == 404:
-            msg += " (Is the repository private? Make sure GITHUB_TOKEN is set)"
+        msg = f"failed to resolve {repo}@{ref}: {exc}{_auth_hint(exc.code)}"
         return Err(msg, code=3)
     except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
         return Err(f"failed to resolve {repo}@{ref}: {exc}", code=3)
@@ -106,9 +114,7 @@ def compare(
         body = _open(_build_request(url, token), opener)
         data = json.loads(body)
     except urllib.error.HTTPError as exc:
-        msg = f"failed to compare {repo} {base}...{head}: {exc}"
-        if exc.code == 404:
-            msg += " (Is the repository private? Make sure GITHUB_TOKEN is set)"
+        msg = f"failed to compare {repo} {base}...{head}: {exc}{_auth_hint(exc.code)}"
         return Err(msg, code=3)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return Err(f"failed to compare {repo} {base}...{head}: {exc}", code=3)

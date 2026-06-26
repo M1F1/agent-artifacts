@@ -165,7 +165,7 @@ class UpstreamJsonContractTests(unittest.TestCase):
         self.assertEqual(update["web_url"], "https://github.my-company.com/acme/demo-skills")
 
     def _run(self, request: Request, *, staged_skill: str):
-        def fake_resolve(entry):
+        def fake_resolve(entry, **_kw):
             staged_path = os.path.dirname(staged_skill)
             return Ok(
                 ResolvedUpstream(

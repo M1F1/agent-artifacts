@@ -119,7 +119,7 @@ class UpstreamE2ETests(unittest.TestCase):
         )
 
     def _run_cli(self, *argv: str):
-        def fake_resolve(entry):
+        def fake_resolve(entry, **_kw):
             staged_path = os.path.join(self.remote_root, *entry.source.path.split("/"))
             return Ok(
                 ResolvedUpstream(
