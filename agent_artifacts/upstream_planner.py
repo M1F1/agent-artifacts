@@ -253,10 +253,11 @@ def _update_actions(
     file_contents: Optional[Mapping[object, bytes]],
     catalog_root: str,
 ) -> Result:
-    dst = _catalog_destination(entry.key, catalog_root)
+    tree = _is_tree_artifact(entry)
+    dst = _catalog_destination(entry.key, catalog_root, tree=tree)
     src = _staged_path(resolved)
 
-    if entry.key.type in ("skill", "hook"):
+    if tree:
         return Ok((RemovePath(path=dst), CopyTree(src=src, dst=dst)))
 
     content = _lookup(file_contents, entry.key)
@@ -276,10 +277,14 @@ def _sidecar_actions(
     file_contents: Optional[Mapping[object, bytes]],
     catalog_root: str,
 ) -> Result:
-    dst = _catalog_destination(entry.key, catalog_root) + ".agent-artifacts-upstream-new"
+    tree = _is_tree_artifact(entry)
+    dst = (
+        _catalog_destination(entry.key, catalog_root, tree=tree)
+        + ".agent-artifacts-upstream-new"
+    )
     src = _staged_path(resolved)
 
-    if entry.key.type in ("skill", "hook"):
+    if tree:
         return Ok((RemovePath(path=dst), CopyTree(src=src, dst=dst)))
 
     content = _lookup(file_contents, entry.key)
@@ -293,7 +298,15 @@ def _sidecar_actions(
     return Ok((WriteFile(path=dst, content=content),))
 
 
-def _catalog_destination(key: UpstreamKey, catalog_root: str = "") -> str:
+def _is_tree_artifact(entry: UpstreamEntry) -> bool:
+    if entry.key.type in ("skill", "hook"):
+        return True
+    if entry.key.type == "mcp":
+        return not entry.source.path.endswith(".json")
+    return False
+
+
+def _catalog_destination(key: UpstreamKey, catalog_root: str = "", *, tree: bool = False) -> str:
     if key.type == "skill":
         rel = _join("skills", key.name)
     elif key.type == "hook":
@@ -301,7 +314,7 @@ def _catalog_destination(key: UpstreamKey, catalog_root: str = "") -> str:
     elif key.type == "guideline":
         rel = _join("guidelines", f"{key.name}.md")
     elif key.type == "mcp":
-        rel = _join("mcp", f"{key.name}.json")
+        rel = _join("mcp", key.name if tree else f"{key.name}.json")
     elif key.type == "memory":
         rel = _join("memory", f"{key.name}.md")
     else:

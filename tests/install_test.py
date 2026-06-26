@@ -81,6 +81,38 @@ class InstallEndToEndTests(unittest.TestCase):
             os.path.isfile(self._path(".claude", "hooks", "block-secrets", "scripts", "guard.py"))
         )
 
+    def test_directory_mcp_installs_config_only(self):
+        with tempfile.TemporaryDirectory() as catalog:
+            mcp_dir = pathlib.Path(catalog) / "mcp" / "stripe"
+            mcp_dir.mkdir(parents=True)
+            (mcp_dir / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "stripe",
+                        "description": "Stripe MCP",
+                        "server": {"command": "npx", "args": ["-y", "@stripe/mcp"]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (mcp_dir / "SETUP.md").write_text("# Stripe setup\n", encoding="utf-8")
+
+            req = Request(
+                command="install",
+                source_dir=catalog,
+                project=self.project,
+                profiles=("claude",),
+                names=("stripe",),
+                type_filter="mcp",
+            )
+            with redirect_stdout(io.StringIO()):
+                code = install.run(req)
+
+        self.assertEqual(code, 0)
+        mcp = json.loads(pathlib.Path(self._path(".mcp.json")).read_text())
+        self.assertEqual(mcp["mcpServers"]["stripe"]["command"], "npx")
+        self.assertFalse(os.path.exists(self._path("mcp", "stripe", "SETUP.md")))
+
     def test_manifest_has_five_entries(self):
         with redirect_stdout(io.StringIO()):
             install.run(_request(self.project))

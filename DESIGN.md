@@ -151,8 +151,10 @@ File `mcp/<name>.json` describing one MCP server in a tool-agnostic shape:
 }
 ```
 
-A single MCP file is **self-contained**. Install is **not a file copy** but **merging** the
-entry into the harness's shared config (§10).
+The same descriptor may also live inside a directory artifact as `mcp/<name>/mcp.json` (or
+`mcp/<name>/<name>.json`) so maintainers can keep docs like `SETUP.md` beside the config.
+Install is **not a file copy** but **merging** the descriptor's `server` entry into the
+harness's shared config (§10); companion docs are never copied into the harness.
 
 ### 5.4 Hooks (new)
 Hooks are **event automations**: on some harness event (a tool is about to run, a prompt was

@@ -45,15 +45,16 @@ from .model import Catalog, Request, Resolved, Result, source_label
 # defaults to the real filesystem performer.
 Reader = Callable[[str], bytes]
 
-# Each artifact type maps to (subdir, how-to-locate-the-file, parser). The "locate"
-# closure turns an entry name into the path (relative to root) that holds the artifact's
-# definition. Skills/hooks live in a per-name directory; guidelines/mcp are flat files.
+# Each artifact type maps to a standard directory. Skills/hooks live in per-name directories;
+# guidelines/memory are flat files; MCP accepts the legacy flat file plus a directory shape
+# with docs beside the installable descriptor.
 _SKILL_DIR = "skills"
 _GUIDELINE_DIR = "guidelines"
 _MCP_DIR = "mcp"
 _HOOK_DIR = "hooks"
 _MEMORY_DIR = "memory"
 _BUNDLE_DIR = "bundles"
+_MCP_DESCRIPTOR_FILES = ("mcp.json",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +96,7 @@ class Source:
 
         * skill     — ``skills/<name>/SKILL.md``
         * guideline — ``guidelines/<name>.md``
-        * mcp       — ``mcp/<name>.json``
+        * mcp       — ``mcp/<name>.json`` or ``mcp/<name>/mcp.json``
         * hook      — ``hooks/<name>/hook.json``
         * memory    — ``memory/<name>.md``
         * bundle    — ``bundles/<name>.json``
@@ -156,13 +157,42 @@ class Source:
 
     def _scan_mcp(self) -> List[Result]:
         out: List[Result] = []
+        seen = set()
         for entry in self._names_in(_MCP_DIR):
             if not entry.endswith(".json"):
                 continue
             name = entry[: -len(".json")]
             text = self._read_text(os.path.join(_MCP_DIR, entry))
             out.append(catalog_mod.parse_mcp(text, name))
+            seen.add(name)
+        for name in self._names_in(_MCP_DIR):
+            rel = self._mcp_descriptor_rel(name)
+            if rel is None:
+                continue
+            if name in seen:
+                out.append(
+                    Err(
+                        f"mcp {name!r}: duplicate descriptors "
+                        f"mcp/{name}.json and {rel}"
+                    )
+                )
+                continue
+            text = self._read_text(rel)
+            out.append(catalog_mod.parse_mcp(text, name, root=rel))
+            seen.add(name)
         return out
+
+    def _mcp_descriptor_rel(self, name: str) -> Optional[str]:
+        """Return the descriptor path for a directory-shaped MCP artifact, if present."""
+        base = os.path.join(_MCP_DIR, name)
+        if not os.path.isdir(os.path.join(self.root, base)):
+            return None
+        candidates = tuple(os.path.join(base, filename) for filename in _MCP_DESCRIPTOR_FILES)
+        candidates += (os.path.join(base, f"{name}.json"),)
+        for rel in candidates:
+            if fs.exists(os.path.join(self.root, rel)):
+                return rel
+        return None
 
     def _scan_hooks(self) -> List[Result]:
         out: List[Result] = []

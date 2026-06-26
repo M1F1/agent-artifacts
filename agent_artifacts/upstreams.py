@@ -225,10 +225,11 @@ def validate_upstreams(upstreams: UpstreamCatalog, catalog: Catalog) -> Tuple[Er
         artifact = catalog.artifacts.get((key.type, key.name))
         if artifact is None:
             errors.append(Err(f"unknown artifact {label}", code=_USAGE))
-        elif artifact.root != _expected_root(key):
+        elif artifact.root not in _expected_roots(key):
+            expected = " or ".join(_expected_roots(key))
             errors.append(
                 Err(
-                    f"{label}: expected catalog root {_expected_root(key)}, found {artifact.root}",
+                    f"{label}: expected catalog root {expected}, found {artifact.root}",
                     code=_USAGE,
                 )
             )
@@ -360,18 +361,22 @@ def _non_empty_str(value) -> bool:
     return isinstance(value, str) and value != ""
 
 
-def _expected_root(key: UpstreamKey) -> str:
+def _expected_roots(key: UpstreamKey) -> Tuple[str, ...]:
     if key.type == "skill":
-        return f"skills/{key.name}"
+        return (f"skills/{key.name}",)
     if key.type == "guideline":
-        return f"guidelines/{key.name}.md"
+        return (f"guidelines/{key.name}.md",)
     if key.type == "mcp":
-        return f"mcp/{key.name}.json"
+        return (
+            f"mcp/{key.name}.json",
+            f"mcp/{key.name}/mcp.json",
+            f"mcp/{key.name}/{key.name}.json",
+        )
     if key.type == "hook":
-        return f"hooks/{key.name}"
+        return (f"hooks/{key.name}",)
     if key.type == "memory":
-        return f"memory/{key.name}.md"
-    return f"{key.type}/{key.name}"
+        return (f"memory/{key.name}.md",)
+    return (f"{key.type}/{key.name}",)
 
 
 def _has_no_selector(request: Request) -> bool:

@@ -164,8 +164,13 @@ def parse_memory(text: str, name: str) -> Result:
     )
 
 
-def parse_mcp(text: str, name: str) -> Result:
-    """Parse an ``mcp/<name>.json`` server definition: require ``name`` and ``server``."""
+def parse_mcp(text: str, name: str, *, root: Optional[str] = None) -> Result:
+    """Parse an MCP server definition: require ``name`` and ``server``.
+
+    The historical catalog shape is the flat file ``mcp/<name>.json``. Directory-shaped
+    MCP artifacts may instead keep the installable descriptor under ``mcp/<name>/mcp.json``
+    or ``mcp/<name>/<name>.json`` while carrying docs such as ``SETUP.md`` beside it.
+    """
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError) as exc:
@@ -184,7 +189,7 @@ def parse_mcp(text: str, name: str) -> Result:
         Artifact(
             type="mcp",
             name=name,
-            root=f"mcp/{name}.json",
+            root=root or f"mcp/{name}.json",
             compatibility=compat.value,
         )
     )

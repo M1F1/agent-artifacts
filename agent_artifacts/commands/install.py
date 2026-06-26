@@ -219,8 +219,8 @@ def run(request: Request) -> int:
             _found, _fields, stripped_body = catalog_mod._split_frontmatter(body)
             files[f"guideline:{a.name}"] = stripped_body
         elif a.type in ("mcp", "hook"):
-            # mcp descriptor lives at a.root (e.g. "mcp/postgres.json"); a hook's lives at
-            # a.root + "/hook.json" (e.g. "hooks/block-secrets/hook.json").
+            # MCP descriptor lives at a.root (flat "mcp/postgres.json" or directory
+            # "mcp/postgres/mcp.json"); a hook's descriptor lives at a.root + "/hook.json".
             rel = a.root if a.type == "mcp" else f"{a.root}/hook.json"
             files[f"descriptor:{a.name}"] = json.loads(src.read(rel).decode("utf-8"))
         elif a.type == "memory":

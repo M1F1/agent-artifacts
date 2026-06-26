@@ -147,6 +147,14 @@ class UpstreamValidationTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("expected catalog root skills/demo", errors[0].reason)
 
+    def test_accepts_directory_mcp_catalog_root(self):
+        errors = validate_upstreams(
+            _upstreams(_entry("mcp", "stripe")),
+            _catalog(_artifact("mcp", "stripe", root="mcp/stripe/mcp.json")),
+        )
+
+        self.assertEqual(errors, ())
+
 
 if __name__ == "__main__":
     unittest.main()

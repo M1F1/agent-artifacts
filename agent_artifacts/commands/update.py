@@ -337,7 +337,7 @@ def _memory_mode_from_body(body: str) -> str:
 
 
 def _read_descriptor(artifact: Artifact, src) -> Optional[Mapping]:
-    """Read the mcp/<name>.json or hooks/<name>/hook.json descriptor from the source."""
+    """Read an MCP descriptor or hooks/<name>/hook.json descriptor from the source."""
     import json
 
     rel = artifact.root if artifact.type == "mcp" else os.path.join(artifact.root, "hook.json")

@@ -150,13 +150,14 @@ destination is inferred from the artifact type:
 | --- | --- |
 | `skill` | `skills/<name>/` |
 | `guideline` | `guidelines/<name>.md` |
-| `mcp` | `mcp/<name>.json` |
+| `mcp` | `mcp/<name>.json` or `mcp/<name>/` |
 | `hook` | `hooks/<name>/` |
 | `memory` | `memory/<name>.md` |
 
 The upstream `path` points at either a directory or a file. Type validation decides what is
-acceptable: `skill` and `hook` import trees; `guideline`, `mcp`, and `memory` import single
-files.
+acceptable: `skill` and `hook` import trees; `guideline` and `memory` import single files;
+`mcp` may import a single descriptor file or a directory containing `mcp.json`/`<name>.json`
+plus supporting docs such as `SETUP.md`.
 
 For public GitHub, `repo: "owner/name"` is enough. For GitHub Enterprise Server or mixed-host
 catalogs, `source.api_url` records the API endpoint for that specific artifact. A pasted HTTPS

@@ -285,8 +285,8 @@ def plan_mcp(
 
     Args:
         artifact: the resolved mcp `Artifact`.
-        descriptor: the parsed ``mcp/<name>.json`` dict, with at least ``name`` and
-            ``server`` keys (DESIGN.md §5.3).
+        descriptor: the parsed MCP descriptor dict, with at least ``name`` and ``server``
+            keys (DESIGN.md §5.3).
         spec: the profile's key-mode `MergeSpec` (e.g. ``.mcp.json`` · ``mcpServers``).
         existing_config: the already-loaded target config dict (``{}`` if the file is
             absent). Used only to detect a collision; never mutated.
@@ -457,7 +457,7 @@ def plan_install(
         * for each **guideline** ``a``: ``f"guideline:{a.name}"`` -> ``str`` body text
           (copied verbatim into the profile's guidelines dir as ``<name>.md``).
         * for each **mcp**/**hook** ``a``: ``f"descriptor:{a.name}"`` -> ``dict`` (parsed
-          ``mcp/<name>.json`` or ``hook.json``). Hooks copy their whole script tree.
+          MCP descriptor or ``hook.json``). Hooks copy their whole script tree.
       Optional metadata keys (used only to fill manifest proofs, all default sensibly):
         * ``f"source:{a.name}"`` -> ``str`` resolved source label (default ``"main:?"``).
         * ``f"bundle:{a.name}"`` -> ``str`` bundle name (default ``None``).

@@ -177,13 +177,15 @@ def _run_add(request: Request) -> int:
         print("could not determine an in-repo path from the URL; pass --path")
         return _common.USAGE
 
-    # When the URL declares a shape, it must match the artifact type: skills/hooks are
-    # directories (/tree), the others single files (/blob).
+    # When the URL declares a shape, it must match the artifact type. Skills/hooks are
+    # directories; guidelines/memory are single files. MCP accepts either the legacy single
+    # JSON file or a directory carrying mcp.json plus supporting docs such as SETUP.md.
     wants_dir = key.type in {"skill", "hook"}
+    wants_file = key.type in {"guideline", "memory"}
     if parts.is_file is True and wants_dir:
         print(f"{key.type} {key.name!r} is a directory artifact; use a /tree/ URL, not /blob/")
         return _common.USAGE
-    if parts.is_file is False and not wants_dir:
+    if parts.is_file is False and wants_file:
         print(f"{key.type} {key.name!r} is a single-file artifact; use a /blob/ URL, not /tree/")
         return _common.USAGE
 
@@ -225,7 +227,7 @@ def _run_add(request: Request) -> int:
         print(f"resolved content is not a valid {key.type}: {problem}")
         return _common.USAGE
 
-    dest = _catalog_destination(key, catalog_root)
+    dest = _catalog_destination(key, catalog_root, tree=os.path.isdir(materialised.path))
     dest_exists = os.path.exists(dest)
     if dest_exists and not request.force:
         print(f"{os.path.relpath(dest, catalog_root)} already exists; pass --force to overwrite")
@@ -378,7 +380,10 @@ def _validate_resolved(resolved: ResolvedUpstream) -> Optional[str]:
         elif key.type == "guideline":
             result = catalog_mod.parse_guideline(fs.read_text(resolved.path), key.name)
         elif key.type == "mcp":
-            result = catalog_mod.parse_mcp(fs.read_text(resolved.path), key.name)
+            descriptor = _mcp_descriptor_path(resolved.path, key.name)
+            if descriptor is None:
+                return f"missing MCP descriptor mcp.json or {key.name}.json"
+            result = catalog_mod.parse_mcp(fs.read_text(descriptor), key.name)
         elif key.type == "memory":
             result = catalog_mod.parse_memory(fs.read_text(resolved.path), key.name)
         else:
@@ -607,7 +612,20 @@ def _human_status_line(status: UpstreamStatus) -> str:
     return f"{label}: {status.state}{detail}"
 
 
-def _catalog_destination(key: UpstreamKey, catalog_root: str) -> str:
+def _mcp_descriptor_path(path: str, name: str) -> Optional[str]:
+    if not os.path.isdir(path):
+        return path
+    candidates = (
+        os.path.join(path, "mcp.json"),
+        os.path.join(path, f"{name}.json"),
+    )
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _catalog_destination(key: UpstreamKey, catalog_root: str, *, tree: Optional[bool] = None) -> str:
     if key.type == "skill":
         rel = os.path.join("skills", key.name)
     elif key.type == "hook":
@@ -615,7 +633,9 @@ def _catalog_destination(key: UpstreamKey, catalog_root: str) -> str:
     elif key.type == "guideline":
         rel = os.path.join("guidelines", f"{key.name}.md")
     elif key.type == "mcp":
-        rel = os.path.join("mcp", f"{key.name}.json")
+        if tree is None:
+            tree = os.path.isdir(os.path.join(catalog_root, "mcp", key.name))
+        rel = os.path.join("mcp", key.name if tree else f"{key.name}.json")
     elif key.type == "memory":
         rel = os.path.join("memory", f"{key.name}.md")
     else:

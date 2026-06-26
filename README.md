@@ -45,6 +45,10 @@ Each harness has a **profile** that knows where every type belongs, so the same 
 installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/` — you never have to
 remember the paths.
 
+MCP artifacts can be a single `mcp/<name>.json` file, or a directory like
+`mcp/<name>/mcp.json` with supporting docs such as `SETUP.md`. Harness installs merge only the
+JSON server definition; setup docs stay in the catalog for humans.
+
 Artifacts can also declare that they are only aligned with specific profiles. JSON descriptors
 use an explicit compatibility object:
 
@@ -127,7 +131,9 @@ aart upstream add skill/domain-modeling \
 ```
 
 This fetches the directory, copies the **whole tree** into `skills/domain-modeling/`, and writes
-the tracking entry below. A `/blob/` link adopts a single-file artifact (guideline/mcp/memory).
+the tracking entry below. MCP can also be adopted from a `/tree/` link when the directory has
+`mcp.json` or `<name>.json` plus docs like `SETUP.md`; installing it into a harness still
+merges only the config. A `/blob/` link adopts a single-file artifact (guideline/mcp/memory).
 The key's name must match the upstream's own `name:`. Use `--ref`/`--path` to override when a
 branch name contains slashes, `--force` to overwrite an existing copy, and `--dry-run` to preview.
 

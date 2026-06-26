@@ -143,6 +143,30 @@ class LocalSourceTest(unittest.TestCase):
         self.assertEqual(cat.artifacts[("memory", "house")].root, "memory/house.md")
 
 
+class DirectoryMcpSourceTest(unittest.TestCase):
+    def test_catalog_discovers_directory_mcp_descriptor_and_ignores_setup_doc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_dir = pathlib.Path(tmp) / "mcp" / "stripe"
+            mcp_dir.mkdir(parents=True)
+            (mcp_dir / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "stripe",
+                        "server": {"command": "npx", "args": ["-y", "@stripe/mcp"]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (mcp_dir / "SETUP.md").write_text("# Stripe setup\n", encoding="utf-8")
+
+            src = source.open_source(Request(command="install", source_dir=tmp)).value
+            result = src.catalog()
+
+            self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+            artifact = result.value.artifacts[("mcp", "stripe")]
+            self.assertEqual(artifact.root, "mcp/stripe/mcp.json")
+
+
 class RemoteSourceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

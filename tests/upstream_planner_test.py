@@ -284,6 +284,45 @@ class UpstreamUpdatePlannerTests(unittest.TestCase):
                     (WriteFile(path=destination, content=b"new body\n"),),
                 )
 
+    def test_update_copies_directory_mcp_artifacts(self):
+        entry = UpstreamEntry(
+            key=UpstreamKey("mcp", "stripe"),
+            source=UpstreamSource(
+                kind="github",
+                repo="example/source",
+                ref="main",
+                path="servers/stripe",
+            ),
+            last_synced=UpstreamSync(
+                sha="base-sha",
+                content_hash="sha256:base",
+                synced_at="2026-06-22T00:00:00Z",
+            ),
+        )
+
+        result = unwrap_ok(
+            plan_upstream_update(
+                (entry,),
+                (
+                    make_resolved(
+                        entry,
+                        head_hash="sha256:new",
+                        root="staged",
+                        path="servers/stripe",
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(result.statuses[0].state, "changed")
+        self.assertEqual(
+            result.plan,
+            (
+                RemovePath(path="mcp/stripe"),
+                CopyTree(src="staged/servers/stripe", dst="mcp/stripe"),
+            ),
+        )
+
     def test_update_keeps_local_drift_when_upstream_has_not_changed(self):
         entry = make_entry()
         result = unwrap_ok(

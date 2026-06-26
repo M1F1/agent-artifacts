@@ -36,6 +36,18 @@ class UpstreamAddTests(unittest.TestCase):
         self._write(os.path.join(root, "references", "deep", "notes.md"), "nested\n")
         return root
 
+    def _stage_mcp_dir(self, name: str, *, with_descriptor: bool = True) -> str:
+        """Create a staged MCP directory with config plus setup guide; return its path."""
+        root = os.path.join(self.staged_root, name)
+        os.makedirs(root)
+        if with_descriptor:
+            self._write(
+                os.path.join(root, "mcp.json"),
+                json.dumps({"name": name, "server": {"command": "npx"}}),
+            )
+        self._write(os.path.join(root, "SETUP.md"), "# Setup\n")
+        return root
+
     @staticmethod
     def _write(path: str, text: str) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -122,6 +134,35 @@ class UpstreamAddTests(unittest.TestCase):
         self.assertEqual(payload["artifact"], "skill/grill-me")
         self.assertEqual(payload["path"], "skills/engineering/grill-me")
         self.assertEqual(payload["destination"], os.path.join("skills", "grill-me"))
+
+    def test_add_mcp_tree_vendors_directory_with_setup_guide(self):
+        staged = self._stage_mcp_dir("stripe")
+        req = self._req(
+            names=("mcp/stripe",),
+            url="https://github.com/acme/mcps/tree/main/servers/stripe",
+        )
+        code, output = self._add(req, staged_path=staged)
+
+        self.assertEqual(code, _common.OK, msg=output)
+        dest = os.path.join(self.catalog_root, "mcp", "stripe")
+        self.assertTrue(os.path.isfile(os.path.join(dest, "mcp.json")))
+        self.assertTrue(os.path.isfile(os.path.join(dest, "SETUP.md")))
+        entry = self._tracking()["artifacts"]["mcp/stripe"]
+        self.assertEqual(entry["source"]["repo"], "acme/mcps")
+        self.assertEqual(entry["source"]["path"], "servers/stripe")
+
+    def test_invalid_mcp_tree_writes_nothing(self):
+        staged = self._stage_mcp_dir("stripe", with_descriptor=False)
+        req = self._req(
+            names=("mcp/stripe",),
+            url="https://github.com/acme/mcps/tree/main/servers/stripe",
+        )
+        code, output = self._add(req, staged_path=staged)
+
+        self.assertEqual(code, _common.USAGE)
+        self.assertIn("missing MCP descriptor", output)
+        self.assertFalse(os.path.exists(os.path.join(self.catalog_root, "mcp", "stripe")))
+        self.assertFalse(os.path.exists(os.path.join(self.catalog_root, "upstreams.json")))
 
     # --- guards ----------------------------------------------------------- #
     def test_invalid_url_is_usage_without_network(self):
