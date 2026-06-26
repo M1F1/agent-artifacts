@@ -1,4 +1,4 @@
-"""Immutable snapshot cache — shell (WP-7). ``~/.cache/agent-artifacts/<repo>/<sha>/`` (DESIGN.md §8).
+"""Immutable snapshot cache — shell (WP-7). ``~/.cache/agent-artifacts/<repo>/<sha>/`` (docs/design/DESIGN.md §8).
 
 A commit SHA is immutable, so a snapshot is downloaded + extracted exactly once and reused
 forever. GitHub tarballs nest everything under a single ``<owner>-<repo>-<sha>/`` top-level

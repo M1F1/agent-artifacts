@@ -1,6 +1,6 @@
 # agent-artifacts - Implementation Plan: per-artifact profile compatibility
 
-Companion to [DESIGN-compatibility.md](DESIGN-compatibility.md) and GitHub issue
+Companion to [../design/DESIGN-compatibility.md](../design/DESIGN-compatibility.md) and GitHub issue
 [#6](https://github.com/M1F1/agent-artifacts/issues/6).
 
 This plan is TDD-first and DDD-first. The first work package freezes the domain language and
@@ -307,8 +307,8 @@ PYTHONPATH=$(pwd) python -m unittest discover -s tests -p "list_test.py" -v
 - `tests/fixtures/`
 - `tests/fixtures/bundles/`
 - `README.md`
-- `DESIGN.md` only if adding a short pointer to the focused design
-- `DESIGN-compatibility.md`
+- `../design/DESIGN.md` only if adding a short pointer to the focused design
+- `../design/DESIGN-compatibility.md`
 - `PLAN-compatibility.md`
 
 **Tests first**

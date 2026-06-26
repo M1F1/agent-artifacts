@@ -6,7 +6,7 @@ same change touches: **correcting the `tabnine` profile paths** against the offi
 CLI docs, and **adding a `vibe` profile** for Mistral Vibe.
 
 As with the parent design, this document is **what** and **why**; the **how** is in
-[PLAN-memory.md](PLAN-memory.md) and should be read after this is approved.
+[../plan/PLAN-memory.md](../plan/PLAN-memory.md) and should be read after this is approved.
 
 > **Decisions already taken** (in review, before this draft): type name = **`memory`**;
 > default install mode = **`prepend`**; per-profile type support is made **optional** so a

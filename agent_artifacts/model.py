@@ -3,7 +3,7 @@
 Everything here is immutable data: domain records, the effect/`Action` algebra, the
 `Plan`, the consumer manifest, and the `Result` type. No behaviour lives in this module;
 logic lives in the pure core (catalog/policy/merge/manifest/planners) and the imperative
-shell (io/executor/commands). See PLAN.md §2/§5 and DESIGN.md §14.
+shell (io/executor/commands). See docs/plan/PLAN.md §2/§5 and docs/design/DESIGN.md §14.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Generic, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
 ArtifactType = Literal["skill", "guideline", "mcp", "hook", "memory"]
 
-# Install modes for the `memory` instruction-file type (DESIGN-memory.md §3.2). Default when
+# Install modes for the `memory` instruction-file type (docs/design/DESIGN-memory.md §3.2). Default when
 # unspecified is "prepend"; resolution precedence is CLI flag → frontmatter `mode:` → default.
 MemoryMode = Literal["replace", "prepend", "append", "skip"]
 
@@ -94,7 +94,7 @@ class ResolvedBundle:
 
 
 # --------------------------------------------------------------------------- #
-# Profiles (harness mapping — data, see DESIGN.md §11)                          #
+# Profiles (harness mapping — data, see docs/design/DESIGN.md §11)                          #
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
 class CopyTarget:
@@ -127,7 +127,7 @@ class HookTarget:
 
 @dataclass(frozen=True, slots=True)
 class MemoryTarget:
-    """Where a harness's top-level instruction file lives (DESIGN-memory.md §4).
+    """Where a harness's top-level instruction file lives (docs/design/DESIGN-memory.md §4).
 
     ``kind="file"`` — a single shared instruction file (``CLAUDE.md`` / ``AGENTS.md``); all
     four `MemoryMode` modes apply. ``kind="dir"`` — the harness has no single instruction
@@ -143,7 +143,7 @@ class MemoryTarget:
 class Profile:
     name: str
     # Every artifact-type target is optional: ``None`` means this harness does not support
-    # that type (DESIGN-memory.md §5). Installing an unsupported type errors (by-name) or is
+    # that type (docs/design/DESIGN-memory.md §5). Installing an unsupported type errors (by-name) or is
     # skipped with a warning (bundle/--all expansion).
     skills: Optional[CopyTarget] = None
     guidelines: Optional[GuidelineTarget] = None
@@ -167,7 +167,7 @@ def source_label(resolved: Resolved) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Effects as data — the Action algebra and the Plan (DESIGN.md §14)            #
+# Effects as data — the Action algebra and the Plan (docs/design/DESIGN.md §14)            #
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
 class CopyTree:
@@ -205,7 +205,7 @@ class Warn:
 
 
 # --------------------------------------------------------------------------- #
-# Consumer manifest (DESIGN.md §12)                                            #
+# Consumer manifest (docs/design/DESIGN.md §12)                                            #
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
 class MergeProof:
@@ -265,7 +265,7 @@ class Request:
     dry_run: bool = False
     json: bool = False
     prune: bool = False
-    memory_mode: Optional[str] = None  # DESIGN-memory.md §3.4; None → planner applies "prepend"
+    memory_mode: Optional[str] = None  # docs/design/DESIGN-memory.md §3.4; None → planner applies "prepend"
     upstream_action: Optional[str] = None  # "check" | "update" | "add" (maintainer-side upstreams)
     url: Optional[str] = None  # GitHub URL for `upstream add`
     ref: Optional[str] = None  # explicit ref override for `upstream add`

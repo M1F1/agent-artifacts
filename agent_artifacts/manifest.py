@@ -1,4 +1,4 @@
-"""Consumer manifest — pure (WP-4). Build/diff/prune/serialize (DESIGN.md §12).
+"""Consumer manifest — pure (WP-4). Build/diff/prune/serialize (docs/design/DESIGN.md §12).
 
 Reading/writing the manifest file is the shell's job; this module operates on text and
 `Manifest` values only.
@@ -22,7 +22,7 @@ from .model import (
 
 _TODO = "WP-4: not implemented"
 
-# Exit code for a corrupt manifest (PLAN.md §7).
+# Exit code for a corrupt manifest (docs/plan/PLAN.md §7).
 _CORRUPT = 5
 
 
@@ -36,7 +36,7 @@ def _merge_to_dict(p: MergeProof) -> dict:
         "json_path": p.json_path,
         "mode": p.mode,
     }
-    # identity is only meaningful for list-mode merges (DESIGN.md §12 examples).
+    # identity is only meaningful for list-mode merges (docs/design/DESIGN.md §12 examples).
     if p.identity:
         out["identity"] = dict(p.identity)
     out["value_hash"] = p.value_hash

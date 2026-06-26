@@ -1,6 +1,6 @@
-"""status command (WP-15). LOCAL only — no network. Installed entries + on-disk drift (DESIGN.md §8).
+"""status command (WP-15). LOCAL only — no network. Installed entries + on-disk drift (docs/design/DESIGN.md §8).
 
-Invariant: this module must not import agent_artifacts.io.net (enforced by a test, PLAN.md §7).
+Invariant: this module must not import agent_artifacts.io.net (enforced by a test, docs/plan/PLAN.md §7).
 
 Behaviour:
   1. Load the consumer manifest; corrupt → print message, return CORRUPT_MANIFEST (5).

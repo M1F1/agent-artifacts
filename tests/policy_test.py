@@ -1,4 +1,4 @@
-"""WP-2 update-policy tests: one case per DESIGN.md §9 decision-table row + the --force path."""
+"""WP-2 update-policy tests: one case per docs/design/DESIGN.md §9 decision-table row + the --force path."""
 
 import unittest
 

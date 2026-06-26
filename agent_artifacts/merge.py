@@ -1,4 +1,4 @@
-"""Generic merge engine — pure (WP-3). Drives MCP (`key`) and hooks (`list`), DESIGN.md §10.
+"""Generic merge engine — pure (WP-3). Drives MCP (`key`) and hooks (`list`), docs/design/DESIGN.md §10.
 
 Operates on an already-loaded config `dict` (the shell reads/writes the file). Produces a
 `MergeJson` Action or an `Err` on a key collision. Idempotency for list-mode (don't append a

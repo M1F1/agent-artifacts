@@ -1,7 +1,7 @@
 """Shared command helpers (Wave 2 integration glue).
 
 These are the small, cross-cutting pieces every command needs: the exit-code vocabulary
-(PLAN.md §7), consumer-project / manifest paths, manifest load, target & profile resolution,
+(docs/plan/PLAN.md §7), consumer-project / manifest paths, manifest load, target & profile resolution,
 and JSON output. Pure-ish: the only IO is reading the manifest file (via io.fs). Commands
 own their own orchestration and import from here read-only — this module is shared and must
 not grow command-specific logic.
@@ -35,7 +35,7 @@ from ..model import (
 )
 from ..profiles.loader import load_profiles
 
-# --- exit codes (PLAN.md §7) ------------------------------------------------ #
+# --- exit codes (docs/plan/PLAN.md §7) ------------------------------------------------ #
 OK = 0
 ERROR = 1  # generic failure
 USAGE = 2  # bad invocation / unknown name
@@ -43,7 +43,7 @@ NETWORK = 3  # network / remote failure
 CONFLICT = 4  # conflict needs --force
 CORRUPT_MANIFEST = 5
 
-# Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, DESIGN.md §17).
+# Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, docs/design/DESIGN.md §17).
 DEFAULT_REPO = "M1F1/agent-artifacts"
 
 _TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
@@ -164,7 +164,7 @@ def resolve_profiles(request: Request) -> Result:
     return Ok(tuple(out))
 
 
-# --- plan rebasing & manifest persistence (shell glue, DESIGN.md §14) ------- #
+# --- plan rebasing & manifest persistence (shell glue, docs/design/DESIGN.md §14) ------- #
 # The pure planners (WP-5) emit project-relative destinations and source-relative
 # ``CopyTree.src``. The shell rebases the *executable* plan onto the real source root
 # (for reads) and project root (for writes) just before handing it to the executor.

@@ -92,7 +92,7 @@ class TestRoundTrip(_ProjectCase):
             self.assertTrue(os.path.exists(self.p(path)), f"missing {path}")
 
         # The memory instruction block landed in the same file as the guideline block,
-        # each under its own sentinel markers (DESIGN-memory.md §3.5).
+        # each under its own sentinel markers (docs/design/DESIGN-memory.md §3.5).
         for inst_file in ("CLAUDE.md", "AGENTS.md"):
             text = pathlib.Path(self.p(inst_file)).read_text()
             self.assertIn(

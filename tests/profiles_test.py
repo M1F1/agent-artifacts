@@ -99,7 +99,7 @@ class TestBuiltinProfiles(unittest.TestCase):
         self.assertEqual(p.guidelines.dest, ".tabnine/guidelines/")
 
     def test_tabnine_mcp(self) -> None:
-        # Corrected paths (DESIGN-memory.md §6): settings.json, not config.json.
+        # Corrected paths (docs/design/DESIGN-memory.md §6): settings.json, not config.json.
         p = builtin()["tabnine"]
         self.assertIsInstance(p.mcp, MergeSpec)
         self.assertEqual(p.mcp.file, ".tabnine/agent/settings.json")
@@ -107,7 +107,7 @@ class TestBuiltinProfiles(unittest.TestCase):
         self.assertEqual(p.mcp.mode, "key")
 
     def test_tabnine_hooks(self) -> None:
-        # Corrected paths/events (DESIGN-memory.md §6/§6.2).
+        # Corrected paths/events (docs/design/DESIGN-memory.md §6/§6.2).
         p = builtin()["tabnine"]
         self.assertIsInstance(p.hooks, HookTarget)
         self.assertEqual(p.hooks.scripts_dir, ".tabnine/agent/hooks/<name>/")

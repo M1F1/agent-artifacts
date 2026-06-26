@@ -6,7 +6,7 @@ asserting on-disk effects + manifest entries. Covers:
 
 - install ``house`` into ``claude`` (file kind) in every mode (prepend/append/replace/skip);
 - install into ``tabnine`` (dir kind) -> ``.tabnine/guidelines/house.md``;
-- the unsupported-type policy (DESIGN-memory.md §5): by-name -> USAGE; by-bundle -> warn+skip;
+- the unsupported-type policy (docs/design/DESIGN-memory.md §5): by-name -> USAGE; by-bundle -> warn+skip;
 - uninstall: prepend strips the block (foreign content preserved); replace restores the .bak;
 - status / ``list --type memory`` smoke.
 
@@ -27,7 +27,7 @@ from agent_artifacts.model import Request
 
 REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
 
-# The HTML-comment markers plan_memory wraps our block in (DESIGN-memory.md §3.3).
+# The HTML-comment markers plan_memory wraps our block in (docs/design/DESIGN-memory.md §3.3).
 BEGIN = "<!-- >>> agent-artifacts memory:house >>> -->"
 END = "<!-- <<< agent-artifacts memory:house <<< -->"
 # A line we know is in memory/house.md (the seeded body).
@@ -182,7 +182,7 @@ class InstallDirKind(_Base):
 
 
 # --------------------------------------------------------------------------- #
-# unsupported-type policy (DESIGN-memory.md §5)                                 #
+# unsupported-type policy (docs/design/DESIGN-memory.md §5)                                 #
 # --------------------------------------------------------------------------- #
 class UnsupportedTypePolicy(_Base):
     def test_by_name_unsupported_type_errors_usage(self):

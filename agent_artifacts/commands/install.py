@@ -1,6 +1,6 @@
 """install command (WP-12). Gather configs -> plan_install -> execute/render -> manifest upsert.
 
-Orchestration only (imperative shell, DESIGN.md §14). The decision logic lives in the pure
+Orchestration only (imperative shell, docs/design/DESIGN.md §14). The decision logic lives in the pure
 core: source resolution (WP-11), target/profile resolution + manifest glue (`_common`), and
 `planners.plan_install` (WP-5). This module's single job is to assemble the inputs those
 pieces need, thread `--dry-run`/`--json`/`--force`, run the executor, and persist the manifest.
@@ -18,7 +18,7 @@ Flow (matches the WP-12 contract):
 8. ``--dry-run``: print the rendered/JSON plan and return without touching disk.
 9. ``executor.execute`` the rebased plan.
 10. Merge the manifest entries into the on-disk manifest (real `WriteFile` hashes from the
-    pure plan; `CopyTree` payload hashes are left empty by the core — see DESIGN.md §12).
+    pure plan; `CopyTree` payload hashes are left empty by the core — see docs/design/DESIGN.md §12).
 11. Print a human summary or JSON; return ``OK``.
 """
 
@@ -43,7 +43,7 @@ from ..source import Source, open_source
 from . import _common
 
 # Type -> the `Profile` attribute that targets it. A `None` value on that attribute means the
-# harness does not support that type (DESIGN-memory.md §5).
+# harness does not support that type (docs/design/DESIGN-memory.md §5).
 _TYPE_ATTR = {
     "skill": "skills",
     "guideline": "guidelines",
@@ -60,7 +60,7 @@ def _err(message: str) -> None:
 
 
 def _supports(profile: Profile, art_type: str) -> bool:
-    """True when `profile` declares a target for `art_type` (DESIGN-memory.md §5)."""
+    """True when `profile` declares a target for `art_type` (docs/design/DESIGN-memory.md §5)."""
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
 
 
@@ -121,7 +121,7 @@ def _memory_dest(profile: Profile, project: str, name: str) -> str:
 def run(request: Request) -> int:
     """Install the requested artifacts into the selected profiles.
 
-    Returns a process exit code (PLAN.md §7): ``OK`` (0) on success or dry-run; ``USAGE``
+    Returns a process exit code (docs/plan/PLAN.md §7): ``OK`` (0) on success or dry-run; ``USAGE``
     (2) for a bad selection (unknown name/bundle/profile or no profile); ``NETWORK`` (3)
     for a remote-source failure; ``CONFLICT`` (4) for a merge collision needing ``--force``;
     ``CORRUPT_MANIFEST`` (5) for an unreadable manifest; ``ERROR`` (1) otherwise.

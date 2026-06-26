@@ -1,4 +1,4 @@
-"""Update policy — pure (WP-2). The per-file decision table from DESIGN.md §9.
+"""Update policy — pure (WP-2). The per-file decision table from docs/design/DESIGN.md §9.
 
 `classify` is total over ``(disk, base, new)`` hash triples (each may be ``None``):
   - ``disk`` — hash of the file currently on disk, or None if absent
@@ -15,7 +15,7 @@ from typing import Literal, Optional, Tuple
 
 from .model import Action, RemovePath, Warn, WriteFile
 
-# "remove" extends the DESIGN.md §9 table to keep `classify` total (upstream-deleted files).
+# "remove" extends the docs/design/DESIGN.md §9 table to keep `classify` total (upstream-deleted files).
 Decision = Literal["create", "noop", "overwrite", "keep-drift", "conflict", "remove"]
 
 NEW_SUFFIX = ".agent-artifacts-new"

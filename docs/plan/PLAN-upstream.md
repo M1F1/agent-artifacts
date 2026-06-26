@@ -1,6 +1,6 @@
 # agent-artifacts - Implementation Plan: upstream tracking for vendored artifacts
 
-Companion to [DESIGN-upstream.md](DESIGN-upstream.md), continuing the base plan and the memory
+Companion to [../design/DESIGN-upstream.md](../design/DESIGN-upstream.md), continuing the base plan and the memory
 extension plan. This plan adds `aart upstream check/update` as a maintainer workflow. It keeps
 the existing ground rules: functional core / imperative shell, immutable data, stdlib only,
 `unittest`, no ambient network calls, disjoint file ownership for parallel work, and **TDD:
@@ -103,7 +103,7 @@ agent-artifacts/
 │   ├── upstream_cli_test.py               # WP-39
 │   └── upstream_e2e_test.py               # WP-44
 ├── tests/fixtures/upstreams/              # WP-43 local/fake upstream fixtures
-├── DESIGN-upstream.md                     # this design
+├── ../design/DESIGN-upstream.md                     # this design
 ├── PLAN-upstream.md                       # this plan
 └── README.md                              # WP-44 docs
 ```
@@ -439,8 +439,8 @@ tests.
 
 ### WP-44 - End-to-end gate and docs *(D, final, medium)*
 
-**Owns:** `tests/upstream_e2e_test.py`, `README.md`, any updates to `DESIGN.md` or
-`DESIGN-upstream.md` open questions after implementation.
+**Owns:** `tests/upstream_e2e_test.py`, `README.md`, any updates to `../design/DESIGN.md` or
+`../design/DESIGN-upstream.md` open questions after implementation.
 
 **Depends:** WP-38, WP-39, WP-43.
 

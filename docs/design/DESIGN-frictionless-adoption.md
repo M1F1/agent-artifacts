@@ -42,7 +42,7 @@ document as a single workstream.
 
 **Finding.** With `pip install -e .`, `aart` already defaults the catalog source to the repo it
 was installed from, from any working directory. `open_source` derives it as
-`os.path.dirname(pkg_dir)` from `agent_artifacts.__file__` ([source.py:221](agent_artifacts/source.py:221));
+`os.path.dirname(pkg_dir)` from `agent_artifacts.__file__` ([source.py:221](../../agent_artifacts/source.py:221));
 the editable finder makes `__file__` resolve to the real checkout, so the default root is the
 repo. Verified: `aart list` and `aart install` resolve to the repo with no `--source`, even run
 from outside it. The original "`--source` required / `list` shows nothing" symptom reproduces only
@@ -82,7 +82,7 @@ https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modelin
 ```
 
 It already carries the three fields an upstream needs — `repo`, `ref`, `path` — but
-[`_parse_repo_url`](agent_artifacts/github_source.py) requires the path to be *exactly*
+[`_parse_repo_url`](../../agent_artifacts/github_source.py) requires the path to be *exactly*
 `owner/name` (`if len(raw_parts) != 2: Err("must identify exactly an owner and repository")`)
 and rejects query/fragment outright. The "paste a browser URL" convenience the host design
 intended ([DESIGN-upstream-github-hosts.md §3](DESIGN-upstream-github-hosts.md)) never covered the
@@ -91,7 +91,7 @@ exposes only `check` and `update`.
 
 ### 3.2 Deep-link parsing contract
 
-A new pure helper in [github_source.py](agent_artifacts/github_source.py), **separate from**
+A new pure helper in [github_source.py](../../agent_artifacts/github_source.py), **separate from**
 `_parse_repo` (which keeps its strict "exactly owner/name" contract for the `source.repo` field):
 
 ```python
@@ -122,7 +122,7 @@ of `_parse_repo_url` for the first two rows.
 
 - **Query/fragment are stripped, not rejected** (browser URLs carry `?plain=1`, `#L40`). This
   softening is *local* to `parse_github_url`; the persisted-metadata validators
-  ([`_normalise_url`](agent_artifacts/github_source.py)) stay strict.
+  ([`_normalise_url`](../../agent_artifacts/github_source.py)) stay strict.
 - **Slashed-ref ambiguity.** `.../tree/feature/login/skills/x` cannot be split from the string
   alone (GitHub resolves it server-side). The parser uses the only safe local rule — first
   segment after `tree`/`blob` is the ref, remainder is the path — correct for simple refs
@@ -140,25 +140,25 @@ aart upstream add <type/name> <url> [--ref REF] [--path PATH] [--force] [--dry-r
 
 **Flow**
 
-1. Parse the key ([`parse_upstream_key`](agent_artifacts/upstreams.py)) and the URL (§3.2). Merge
+1. Parse the key ([`parse_upstream_key`](../../agent_artifacts/upstreams.py)) and the URL (§3.2). Merge
    `--ref`/`--path` overrides (flags win). Error if no ref or path can be determined.
 2. **Type ↔ shape check.** `skill`/`hook` import directories (`tree`); `guideline`/`mcp`/`memory`
    import single files (`blob`) — the table in [DESIGN-upstream.md §4](DESIGN-upstream.md). A
    `blob` URL for a `skill` (or vice-versa) is rejected. A bare repo + flags carries no shape
    hint; rely on step 4.
-3. Build an [`UpstreamSource`](agent_artifacts/upstreams.py) and resolve it through the existing
-   [`resolve_upstream_source`](agent_artifacts/upstream_source.py) — which already resolves the
+3. Build an [`UpstreamSource`](../../agent_artifacts/upstreams.py) and resolve it through the existing
+   [`resolve_upstream_source`](../../agent_artifacts/upstream_source.py) — which already resolves the
    ref to a SHA, materializes an immutable snapshot, locates the sub-`path` with an escape guard,
    and content-hashes the result. No new network or hashing code.
 4. **Validate** the fetched content parses as the declared type, reusing `_validate_resolved`
-   ([commands/upstream.py](agent_artifacts/commands/upstream.py)).
+   ([commands/upstream.py](../../agent_artifacts/commands/upstream.py)).
 5. **Guards.** Destination exists (`skills/<name>/`, …) → `CONFLICT` unless `--force`. An
    `upstreams.json` entry for the key exists → `USAGE` pointing at `aart upstream update`, unless
    `--force`.
-6. **Vendor + record** (executor-driven, JSON write last/atomic): [`CopyTree`](agent_artifacts/model.py)
-   for directories / [`WriteFile`](agent_artifacts/model.py) for files into the catalog, then
+6. **Vendor + record** (executor-driven, JSON write last/atomic): [`CopyTree`](../../agent_artifacts/model.py)
+   for directories / [`WriteFile`](../../agent_artifacts/model.py) for files into the catalog, then
    upsert the entry into `upstreams.json` (`last_synced = {sha, content_hash, synced_at}`) via
-   [`dump_upstreams`](agent_artifacts/upstreams.py) + [`fs.write_atomic`](agent_artifacts/io/fs.py).
+   [`dump_upstreams`](../../agent_artifacts/upstreams.py) + [`fs.write_atomic`](../../agent_artifacts/io/fs.py).
    Create `upstreams.json` if absent.
 7. `--dry-run` prints the plan and touches nothing; `--json` mirrors the `check`/`update` result
    shape.
@@ -185,7 +185,7 @@ canonicalize into the three fields, deterministically, covered by parse/dump tes
 
 ### 3.5 Errors
 
-Reuse the `_common` vocabulary (PLAN.md §7): `USAGE (2)` for a bad key, unparseable/ambiguous URL,
+Reuse the `_common` vocabulary (../plan/PLAN.md §7): `USAGE (2)` for a bad key, unparseable/ambiguous URL,
 type↔shape mismatch, or an existing entry without `--force`; `NETWORK (3)` for resolve/fetch
 failure; `CONFLICT (4)` for an existing destination without `--force`; `OK (0)` on success or
 `--dry-run`.

@@ -1,1 +1,1 @@
-"""Built-in harness profiles + user-override loader (WP-8). Profiles are data (DESIGN.md §11)."""
+"""Built-in harness profiles + user-override loader (WP-8). Profiles are data (docs/design/DESIGN.md §11)."""

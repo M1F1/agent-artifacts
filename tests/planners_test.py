@@ -27,7 +27,7 @@ from agent_artifacts.model import (
 
 
 # --------------------------------------------------------------------------- #
-# Shared fixtures (Claude-like profile, mirroring DESIGN.md §11)              #
+# Shared fixtures (Claude-like profile, mirroring docs/design/DESIGN.md §11)              #
 # --------------------------------------------------------------------------- #
 def claude_profile() -> Profile:
     return Profile(

@@ -1,4 +1,4 @@
-"""Executor — imperative shell (WP-9). The only place a Plan touches disk (DESIGN.md §14).
+"""Executor — imperative shell (WP-9). The only place a Plan touches disk (docs/design/DESIGN.md §14).
 
 `execute` dispatches each `Action` to a performer (using io.fs); `render_plan`/`plan_to_json`
 present a Plan for ``--dry-run`` / ``--json`` without performing any effect.

@@ -1,6 +1,6 @@
 # agent-artifacts — Implementation Plan (parallel, multi-agent)
 
-Companion to [DESIGN.md](DESIGN.md). This plan splits the build into **work packages (WPs)**
+Companion to [../design/DESIGN.md](../design/DESIGN.md). This plan splits the build into **work packages (WPs)**
 sized for parallel execution by multiple agents. The functional architecture (§14 of the
 design) is what makes this parallelizable: once the **data contracts and function signatures
 are frozen** (Wave 0), nearly every pure planner, IO performer, and command is an independent
@@ -42,7 +42,7 @@ agent-artifacts/
 ├── pyproject.toml                      # WP-0 / finalized WP-21
 ├── Makefile                            # WP-21  (build/test/wheel targets)
 ├── README.md                           # WP-23
-├── DESIGN.md  PLAN.md                  # (this) existing
+├── ../design/DESIGN.md  PLAN.md                  # (this) existing
 ├── dist/                               # WP-21  (prebuilt offline wheel)
 ├── agent_artifacts/
 │   ├── __init__.py  __main__.py        # WP-0

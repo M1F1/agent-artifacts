@@ -1,4 +1,4 @@
-"""WP-14 uninstall tests: reverse files AND merges, ours-only (DESIGN.md §10/§12).
+"""WP-14 uninstall tests: reverse files AND merges, ours-only (docs/design/DESIGN.md §10/§12).
 
 Builds a temp project with a known install (manifest + on-disk state constructed directly,
 matching exactly what the WP-12 install command would produce), then drives

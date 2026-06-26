@@ -409,7 +409,7 @@ class TestStatusNoNetwork(unittest.TestCase):
         self.assertNotIn(
             "agent_artifacts.io.net",
             sys.modules,
-            "status command must not import agent_artifacts.io.net (DESIGN.md §8)",
+            "status command must not import agent_artifacts.io.net (docs/design/DESIGN.md §8)",
         )
 
     def test_source_no_net_import(self):

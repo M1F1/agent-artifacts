@@ -1,6 +1,6 @@
 """WP-26 unit tests: `memory` catalog parsing, bundle resolution & source scan.
 
-Covers (PLAN-memory.md WP-26 "Done when"):
+Covers (docs/plan/PLAN-memory.md WP-26 "Done when"):
 
 * ``catalog.parse_memory`` — valid (no frontmatter), valid (matching name + valid mode),
   name mismatch → Err, invalid mode → Err.

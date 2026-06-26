@@ -1,6 +1,6 @@
 # agent-artifacts - Implementation Plan: per-upstream GitHub host metadata
 
-Companion to [DESIGN-upstream-github-hosts.md](DESIGN-upstream-github-hosts.md) and GitHub
+Companion to [../design/DESIGN-upstream-github-hosts.md](../design/DESIGN-upstream-github-hosts.md) and GitHub
 issue [#5](https://github.com/M1F1/agent-artifacts/issues/5).
 
 This plan follows TDD: each work package starts by adding failing tests, then implements the
@@ -176,8 +176,8 @@ Worker A's model fields before final implementation.
 - `tests/fixtures/upstreams/`
 - `tests/upstream_fixtures_test.py`
 - `README.md`
-- `DESIGN-upstream.md`
-- `DESIGN-upstream-github-hosts.md`
+- `../design/DESIGN-upstream.md`
+- `../design/DESIGN-upstream-github-hosts.md`
 
 **Tests first**
 
@@ -240,7 +240,7 @@ After the sequential bootstrap lands, dispatch at most three workers:
 - **Worker C - command/docs contract**
   - Files: `agent_artifacts/commands/upstream.py`, `tests/upstream_json_test.py`,
     `tests/upstream_command_test.py`, `tests/fixtures/upstreams/`, `README.md`,
-    `DESIGN-upstream.md`.
+    `../design/DESIGN-upstream.md`.
   - Deliverable: JSON output/persistence/docs updated for enterprise source metadata.
 
 Worker C can write tests early, but final implementation may depend on Worker A's helper. The

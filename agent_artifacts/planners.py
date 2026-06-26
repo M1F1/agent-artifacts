@@ -2,7 +2,7 @@
 
 Each `plan_<type>` takes the resolved artifact plus the bytes/values read from the source
 and the current on-disk state, and returns ``Result[Plan]``. The hook planner emits both
-copy actions (scripts) and a `MergeJson` action (registration) — the hybrid of DESIGN.md §5.4.
+copy actions (scripts) and a `MergeJson` action (registration) — the hybrid of docs/design/DESIGN.md §5.4.
 ``plan_install`` is the top-level aggregator that accumulates errors across artifacts.
 
 Everything here is **pure**: no filesystem or network access. Planners build immutable
@@ -70,7 +70,7 @@ def memory_sentinel_markers(name: str) -> Tuple[str, str]:
     The memory file *is* the instruction context the model reads, so the markers are **HTML
     comments** (invisible in rendered markdown) and **name-scoped** (``memory:<name>``):
     stable markers let `plan_memory` replace exactly our prior block on re-install
-    (idempotent) while leaving foreign content untouched (DESIGN-memory.md §3.3). Guidelines
+    (idempotent) while leaving foreign content untouched (docs/design/DESIGN-memory.md §3.3). Guidelines
     do NOT use sentinels — they are standalone copied files, never merged into a shared file.
     """
     return (
@@ -191,7 +191,7 @@ def plan_guideline(
 
 
 # --------------------------------------------------------------------------- #
-# Memory planner (DESIGN-memory.md §3.2 / §8.1)                                #
+# Memory planner (docs/design/DESIGN-memory.md §3.2 / §8.1)                                #
 # --------------------------------------------------------------------------- #
 _BAK_SUFFIX = ".agent-artifacts-bak"
 
@@ -206,7 +206,7 @@ def plan_memory(
     mode: str,
     force: bool = False,
 ) -> Result:
-    """Plan installation of an ``memory`` instruction file (DESIGN-memory.md §3.2/§8.1).
+    """Plan installation of an ``memory`` instruction file (docs/design/DESIGN-memory.md §3.2/§8.1).
 
     The destination is either a single shared instruction file (``target.kind == "file"``,
     e.g. ``CLAUDE.md``/``AGENTS.md`` — all four modes apply) or a directory the harness has
@@ -286,7 +286,7 @@ def plan_mcp(
     Args:
         artifact: the resolved mcp `Artifact`.
         descriptor: the parsed MCP descriptor dict, with at least ``name`` and ``server``
-            keys (DESIGN.md §5.3).
+            keys (docs/design/DESIGN.md §5.3).
         spec: the profile's key-mode `MergeSpec` (e.g. ``.mcp.json`` · ``mcpServers``).
         existing_config: the already-loaded target config dict (``{}`` if the file is
             absent). Used only to detect a collision; never mutated.
@@ -315,7 +315,7 @@ def plan_hook(
 ) -> Result:
     """Plan installation of a hook: copy scripts (skill mechanics) + merge registration.
 
-    A hook is a hybrid (DESIGN.md §5.4): its script files land on disk like a skill, and
+    A hook is a hybrid (docs/design/DESIGN.md §5.4): its script files land on disk like a skill, and
     its *registration* is merged into the harness's shared config like an MCP entry. This
     planner therefore always emits BOTH a copy action AND one `MergeJson`.
 
@@ -348,7 +348,7 @@ def plan_hook(
 
 
 # --------------------------------------------------------------------------- #
-# Dispatch table (value-keyed, not subclasses — DESIGN.md §14)                 #
+# Dispatch table (value-keyed, not subclasses — docs/design/DESIGN.md §14)                 #
 # --------------------------------------------------------------------------- #
 PLANNERS: Mapping[ArtifactType, Callable[..., Result]] = {
     "skill": plan_skill,
@@ -360,7 +360,7 @@ PLANNERS: Mapping[ArtifactType, Callable[..., Result]] = {
 
 
 # --------------------------------------------------------------------------- #
-# Manifest-entry construction (proof of install, DESIGN.md §12)                #
+# Manifest-entry construction (proof of install, docs/design/DESIGN.md §12)                #
 # --------------------------------------------------------------------------- #
 def _files_proof(plan: Plan) -> Mapping[str, str]:
     """Collect ``path -> sha256`` proofs for the copy/write actions in `plan`.
@@ -374,7 +374,7 @@ def _files_proof(plan: Plan) -> Mapping[str, str]:
         if isinstance(action, WriteFile):
             if action.path.endswith(_BAK_SUFFIX):
                 # The replace-mode backup sidecar is not an installed file: uninstall restores
-                # it rather than tracking/removing it (DESIGN-memory.md §8.3). Recording it
+                # it rather than tracking/removing it (docs/design/DESIGN-memory.md §8.3). Recording it
                 # would make uninstall delete the backup before it could be restored.
                 continue
             proof[action.path] = sha256_bytes(action.content)

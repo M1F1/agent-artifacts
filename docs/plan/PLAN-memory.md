@@ -1,6 +1,6 @@
 # agent-artifacts — Implementation Plan: the `memory` artifact type (parallel, multi-agent)
 
-Companion to [DESIGN-memory.md](DESIGN-memory.md) and continuation of [PLAN.md](PLAN.md). The
+Companion to [../design/DESIGN-memory.md](../design/DESIGN-memory.md) and continuation of [PLAN.md](PLAN.md). The
 base system (WP-0…WP-24) is built; this plan adds the `memory` type, corrects the `tabnine`
 profile, and adds the `vibe` profile as **work packages WP-25…WP-32**. It keeps PLAN.md's
 ground rules verbatim (§1 there): functional core / imperative shell, frozen data, stdlib
@@ -67,7 +67,7 @@ agent-artifacts/
 ├── tests/memory_test.py             # WP-27 (planner) + WP-26 (catalog) split by area
 ├── tests/{profiles,install,uninstall,update,status,list,cli,tui}_test.py  # extend in-place per WP
 ├── tests/e2e_test.py                # WP-32  (final gate)
-└── README.md  DESIGN-memory.md PLAN-memory.md   # WP-32 docs / (these)
+└── README.md  ../design/DESIGN-memory.md PLAN-memory.md   # WP-32 docs / (these)
 ```
 
 > **Shared-file note.** WP-29 and WP-30 extend several existing command/CLI test files. To keep

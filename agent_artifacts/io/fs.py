@@ -1,4 +1,4 @@
-"""Filesystem performers — shell (WP-6). Atomic, idempotent (DESIGN.md §9)."""
+"""Filesystem performers — shell (WP-6). Atomic, idempotent (docs/design/DESIGN.md §9)."""
 
 from __future__ import annotations
 

@@ -37,7 +37,7 @@ def run(request: Request) -> int:
     selected: Tuple[Artifact, ...] = artifacts.value
 
     # 3. Decide whether to include bundles.
-    #    Bundles are shown unless a --type filter is given (DESIGN.md §13).
+    #    Bundles are shown unless a --type filter is given (docs/design/DESIGN.md §13).
     show_bundles = request.type_filter is None
 
     # 4. Output.
@@ -138,7 +138,7 @@ def _print_json(
     catalog: Catalog,
     show_bundles: bool,
 ) -> None:
-    """Stable JSON shape (DESIGN.md §13)."""
+    """Stable JSON shape (docs/design/DESIGN.md §13)."""
     obj: dict = {
         "version": request.version or "main",
         "artifacts": [

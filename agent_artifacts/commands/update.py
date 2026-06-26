@@ -7,7 +7,7 @@ running it through ``policy.classify`` / ``policy.decision_action`` (overwrite /
 conflict-sidecar). ``CopyTree`` (skills, hook scripts) and ``MergeJson`` (mcp/hook registration)
 are kept as-is — re-copy / re-merge for *our own* entry is idempotent (MVP simplification).
 
-Exit-code behaviour (PLAN.md §7):
+Exit-code behaviour (docs/plan/PLAN.md §7):
   * source open failure          -> 3 (NETWORK)
   * corrupt manifest             -> 5 (CORRUPT_MANIFEST)
   * planning error (bad catalog) -> the planner's code (1)
@@ -328,7 +328,7 @@ def _gather_inputs(
 
 def _memory_mode_from_body(body: str) -> str:
     """Resolve an ``memory`` artifact's install mode for update: frontmatter ``mode:`` else
-    ``"prepend"`` (update has no ``--memory-mode`` flag in MVP — DESIGN-memory.md §3.4)."""
+    ``"prepend"`` (update has no ``--memory-mode`` flag in MVP — docs/design/DESIGN-memory.md §3.4)."""
     from ..catalog import _split_frontmatter
 
     _found, fields, _body = _split_frontmatter(body)
@@ -376,7 +376,7 @@ def _apply_policy(
 
     ``CopyTree`` (skills, hook scripts) and ``MergeJson`` (mcp/hook registration) are kept
     verbatim: re-copy / re-merge of *our own* entry is idempotent, so an MVP update doesn't
-    diff their per-file content (a deliberate simplification — DESIGN.md §9 covers WriteFiles).
+    diff their per-file content (a deliberate simplification — docs/design/DESIGN.md §9 covers WriteFiles).
 
     Returns ``(update_plan, conflict_occurred)``.
     """

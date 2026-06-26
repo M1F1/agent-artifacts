@@ -19,7 +19,7 @@ The pure decision-making (what to remove, what the reversed config looks like) i
 small helpers; the imperative shell (reading/writing files, deleting paths) is confined to
 `run` and the few `fs`-touching helpers it calls.
 
-Exit codes (PLAN.md §7): OK=0, USAGE=2 (unknown ``NAME``), CORRUPT_MANIFEST=5 (bad manifest).
+Exit codes (docs/plan/PLAN.md §7): OK=0, USAGE=2 (unknown ``NAME``), CORRUPT_MANIFEST=5 (bad manifest).
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def _select(
 def _markers_for(entry: ManifestEntry) -> Tuple[str, str]:
     """The ``(begin, end)`` HTML-comment markers wrapping our ``memory`` block.
 
-    Only ``memory`` entries carry a marker block (DESIGN-memory.md §3.3); they are stripped
+    Only ``memory`` entries carry a marker block (docs/design/DESIGN-memory.md §3.3); they are stripped
     by `_strip_block` on uninstall.
     """
     return memory_sentinel_markers(entry.artifact)
@@ -258,7 +258,7 @@ def _file_actions(
       deleted — its resolved path lands in ``sentinel_paths`` for the shell to rewrite;
     - a removed **memory** file (``replace`` or ``dir`` copy) is recorded in ``restore_paths``
       so the shell can restore a sibling ``<dest>.agent-artifacts-bak`` afterwards, undoing a
-      destructive ``replace`` (DESIGN-memory.md §8.3).
+      destructive ``replace`` (docs/design/DESIGN-memory.md §8.3).
     """
     removes: List[RemovePath] = []
     sentinels: List[str] = []

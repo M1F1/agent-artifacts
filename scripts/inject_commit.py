@@ -3,7 +3,7 @@
 
 A build-time step: it overwrites ``agent_artifacts/_commit.py`` with the full git ``HEAD``
 sha (via ``git rev-parse HEAD``) so the built wheel records exactly which source it came
-from (DESIGN.md §15, consumed by ``check`` / ``upgrade``). When git is unavailable or this
+from (docs/design/DESIGN.md §15, consumed by ``check`` / ``upgrade``). When git is unavailable or this
 is not a checkout, it falls back to ``"unknown"``.
 
 Idempotent and re-runnable: it always rewrites the file from scratch and preserves the
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "agent_artifacts" / "_commit.py"
 
 # Kept verbatim so the rewritten module reads the same as the version-controlled one.
-DOCSTRING = '''"""Source commit the package was built from (DESIGN.md §15).
+DOCSTRING = '''"""Source commit the package was built from (docs/design/DESIGN.md §15).
 
 Generated at build time by ``scripts/inject_commit.py`` (WP-21). The ``"unknown"`` default
 is used for editable/dev installs and is only consulted by ``check`` / ``upgrade`` (WP-16/17).

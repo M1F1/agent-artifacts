@@ -26,7 +26,7 @@ validate:
 # --------------------------------------------------------------------------- #
 # Optional developer tooling. Requires the dev extra:  pip install -e ".[dev]"
 # Deliberately NOT wired into `validate` / CI — the runtime and test paths stay
-# zero-dependency (DESIGN.md §4/§15). All config lives in pyproject.toml.
+# zero-dependency (docs/design/DESIGN.md §4/§15). All config lives in pyproject.toml.
 # --------------------------------------------------------------------------- #
 lint:
 	$(PYTHON) -m ruff check agent_artifacts tests scripts

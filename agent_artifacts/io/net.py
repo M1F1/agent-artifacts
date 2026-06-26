@@ -1,4 +1,4 @@
-"""GitHub network IO — shell (WP-7). urllib + tarfile, no third-party deps (DESIGN.md §8).
+"""GitHub network IO — shell (WP-7). urllib + tarfile, no third-party deps (docs/design/DESIGN.md §8).
 
 The URL opener is injectable so tests drive a local ``http.server`` fixture (no live network).
 
@@ -58,7 +58,7 @@ def resolve_ref(
     """Resolve a branch/tag/sha ``ref`` to a concrete SHA -> Ok[str] | Err (code 3).
 
     ``GET /repos/{repo}/commits/{ref}`` -> JSON ``{"sha": "..."}``. Fail-soft: any
-    network / HTTP / decode error becomes an ``Err`` (DESIGN.md §8, ``check`` is fail-soft).
+    network / HTTP / decode error becomes an ``Err`` (docs/design/DESIGN.md §8, ``check`` is fail-soft).
     """
     url = f"{_api_root(api_url)}/repos/{repo}/commits/{ref}"
     try:

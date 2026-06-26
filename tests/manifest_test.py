@@ -50,7 +50,7 @@ def _mcp_entry() -> ManifestEntry:
 
 
 def _hook_entry() -> ManifestEntry:
-    # Hooks carry BOTH files and merge (DESIGN.md §12).
+    # Hooks carry BOTH files and merge (docs/design/DESIGN.md §12).
     return ManifestEntry(
         artifact="block-secrets",
         type="hook",

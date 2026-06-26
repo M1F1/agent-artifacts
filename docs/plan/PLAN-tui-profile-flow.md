@@ -1,6 +1,6 @@
 # agent-artifacts - Implementation Plan: profile-first TUI flow
 
-Companion to [DESIGN-tui-profile-flow.md](DESIGN-tui-profile-flow.md).
+Companion to [../design/DESIGN-tui-profile-flow.md](../design/DESIGN-tui-profile-flow.md).
 
 This plan changes the TUI behavior in slices. The first slice fixes the install UX requested by
 users: choose profile first, then show only artifacts and bundle rows that make sense for that
@@ -76,7 +76,7 @@ After WP-TUI0 lands, the implementation can be split across subagents:
 | A | Text fallback flow | `agent_artifacts/tui.py`, `tests/tui_test.py` | B, C, D |
 | B | Curses flow | `agent_artifacts/tui.py`, `tests/tui_test.py` | A, C, D |
 | C | Action-aware update/uninstall design slice | `agent_artifacts/tui.py`, `tests/tui_test.py` | A, B, D |
-| D | Docs and integration/e2e coverage | `README.md`, `DESIGN-tui-profile-flow.md`, tests | A, B, C |
+| D | Docs and integration/e2e coverage | `README.md`, `../design/DESIGN-tui-profile-flow.md`, tests | A, B, C |
 
 Coordination rule: subagents should not change command handlers unless the plan is amended. The
 TUI remains a view/request builder over the existing command core.
@@ -233,7 +233,7 @@ python -m unittest tests.update_test -v
 **Owns**
 
 - `README.md` if the TUI behavior is documented there
-- `DESIGN-tui-profile-flow.md`
+- `../design/DESIGN-tui-profile-flow.md`
 - `PLAN-tui-profile-flow.md`
 - optional e2e coverage
 

@@ -1,11 +1,11 @@
 # agent-artifacts - Implementation Plan: paste-a-link upstream adoption
 
-Companion to [DESIGN-frictionless-adoption.md](DESIGN-frictionless-adoption.md).
+Companion to [../design/DESIGN-frictionless-adoption.md](../design/DESIGN-frictionless-adoption.md).
 
 **Status (2026-06-23):** WP-0/1/2/3/4 **done** — parser, `Request`/CLI surface, `_run_add`
 command, docs (README + this doc), and verification (513 tests, validate, mypy, ruff all green;
 live adoption confirmed). WP-A (optional "no catalog" error) **not done** — Part A stays a
-decision per [DESIGN-frictionless-adoption.md §2](DESIGN-frictionless-adoption.md).
+decision per [../design/DESIGN-frictionless-adoption.md §2](../design/DESIGN-frictionless-adoption.md).
 
 One mostly-sequential workstream. Part A (default source) needs no build — it is a recorded
 decision (DESIGN §2) plus one *optional* hardening WP. The work is Part B: a deep-link parser and
@@ -99,7 +99,7 @@ no regression.
 
 ### WP-3 - Fixtures, end-to-end, docs
 
-**Owns:** `tests/upstream_e2e_test.py`, `tests/fixtures/`, `README.md`, `DESIGN-upstream.md`.
+**Owns:** `tests/upstream_e2e_test.py`, `tests/fixtures/`, `README.md`, `../design/DESIGN-upstream.md`.
 
 **Tests first**
 - E2E: fake-opener repo tarball; `upstream add` a skill by deep-link; assert the vendored tree,
@@ -107,7 +107,7 @@ no regression.
   type. Round-trip: `add`-written `upstreams.json` re-parses/re-dumps byte-identically.
 
 **Implementation**
-- README: document the paste-a-link adoption flow. Mark [DESIGN-upstream.md §11 Q3](DESIGN-upstream.md)
+- README: document the paste-a-link adoption flow. Mark [../design/DESIGN-upstream.md §11 Q3](../design/DESIGN-upstream.md)
   resolved.
 
 **Done when:** e2e tests pass; README shows the flow.

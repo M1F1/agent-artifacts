@@ -1,4 +1,4 @@
-"""WP-3 merge-engine tests: render, identity, key-merge (MCP) and list-merge (hooks), DESIGN.md §10."""
+"""WP-3 merge-engine tests: render, identity, key-merge (MCP) and list-merge (hooks), docs/design/DESIGN.md §10."""
 
 import unittest
 
@@ -73,7 +73,7 @@ class KeyMergeTests(unittest.TestCase):
         existing = {"mcpServers": {"postgres": {"command": "OLD"}}}
         res = merge.plan_merge(MCP_SPEC, {"command": "npx"}, existing, key="postgres")
         self.assertIsInstance(res, Err)
-        self.assertEqual(res.code, 4)  # conflict-needs-force exit code (PLAN.md §7)
+        self.assertEqual(res.code, 4)  # conflict-needs-force exit code (docs/plan/PLAN.md §7)
 
     def test_force_overrides_collision(self):
         existing = {"mcpServers": {"postgres": {"command": "OLD"}}}

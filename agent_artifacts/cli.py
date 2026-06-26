@@ -1,6 +1,6 @@
 """CLI wiring (WP-19): argparse subcommands -> Request -> command dispatch -> exit code.
 
-One core, two skins (DESIGN.md §13). This module is the flag-mode skin: it parses ``argv``
+One core, two skins (docs/design/DESIGN.md §13). This module is the flag-mode skin: it parses ``argv``
 into the frozen :class:`~agent_artifacts.model.Request`, dispatches to the matching command's
 ``run(request) -> int`` (the commands already map their `Result`s to the §7 exit-code
 vocabulary via ``commands._common.exit_code``), and returns that code. A bare invocation on a
@@ -33,7 +33,7 @@ def _run_upstream(request: Request) -> int:
     return upstream.run(request)
 
 
-# Command name -> handler. Value-keyed dispatch, not a class hierarchy (DESIGN.md §14).
+# Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
     "install": install.run,
@@ -85,7 +85,7 @@ def _add_profile(p: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the full argparse parser mirroring DESIGN.md §13."""
+    """Build the full argparse parser mirroring docs/design/DESIGN.md §13."""
     parser = argparse.ArgumentParser(
         prog="agent-artifacts",
         description="Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) "
@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="memory_mode",
         choices=_MEMORY_MODES,
         help="how an `memory` instruction file combines with an existing one "
-        "(default: prepend); see DESIGN-memory.md §3.2",
+        "(default: prepend); see docs/design/DESIGN-memory.md §3.2",
     )
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
@@ -354,7 +354,7 @@ def _to_request(args: argparse.Namespace) -> Request:
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
 def _run_bare(parser: argparse.ArgumentParser, args: Optional[argparse.Namespace] = None) -> int:
-    """Bare invocation (DESIGN.md §13): launch the TUI on a TTY, else print help."""
+    """Bare invocation (docs/design/DESIGN.md §13): launch the TUI on a TTY, else print help."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         from . import tui  # WP-20: always present in the package.
 

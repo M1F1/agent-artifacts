@@ -1,7 +1,7 @@
 """Small functional toolkit (WP-0): Result combinators + composition helpers.
 
 Pure, stdlib-only. The rest of the codebase chains `Result` values through these instead
-of raising for domain errors (DESIGN.md §14). Re-exports `Ok`/`Err` so callers can do
+of raising for domain errors (docs/design/DESIGN.md §14). Re-exports `Ok`/`Err` so callers can do
 ``from agent_artifacts.fp import Ok, Err, bind``.
 """
 
@@ -75,7 +75,7 @@ def partition(results: Iterable[Result]) -> Tuple[tuple, tuple]:
 
 
 def collect(results: Iterable[Result]) -> Result:
-    """Like `sequence`, but **accumulates** every error (used for validation, PLAN.md §5/WP-5)."""
+    """Like `sequence`, but **accumulates** every error (used for validation, docs/plan/PLAN.md §5/WP-5)."""
     oks, errs = partition(results)
     if errs:
         # Preserve the error code when all accumulated errors agree, so a lone CONFLICT (4)

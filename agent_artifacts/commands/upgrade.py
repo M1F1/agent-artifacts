@@ -1,4 +1,4 @@
-"""upgrade command (WP-17). Reinstall the tool itself from main via ``pip install --no-index`` (DESIGN.md §15).
+"""upgrade command (WP-17). Reinstall the tool itself from main via ``pip install --no-index`` (docs/design/DESIGN.md §15).
 
 Index-free by construction: the pip argv always includes ``--no-index`` and never adds
 ``--index-url`` or ``--extra-index-url``. Self-update is explicit, never automatic (§16).

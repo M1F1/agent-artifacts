@@ -4,10 +4,10 @@ The argparse layer (``cli.build_parser``) checks *syntax*: known flags, valid ch
 positionals. It cannot see that two individually-valid flags make no sense *together*.
 
 This module is the missing *semantic* layer: one pure function, :func:`validate_flags`, that maps
-a parsed :class:`~agent_artifacts.model.Request` to ``Optional[Err]`` (errors as values, DESIGN.md
+a parsed :class:`~agent_artifacts.model.Request` to ``Optional[Err]`` (errors as values, docs/design/DESIGN.md
 §14). ``cli.main`` calls it as a thin wiring step between ``_to_request`` and dispatch; a returned
 ``Err`` is printed to stderr and becomes exit code ``2`` (``USAGE``) — the same code argparse uses
-for its own usage errors (PLAN.md §7).
+for its own usage errors (docs/plan/PLAN.md §7).
 
 **Class 1 — silent precedence.** Two flags that both feed one decision, where the core silently
 lets one win:

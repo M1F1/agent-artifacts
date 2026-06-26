@@ -1,4 +1,4 @@
-"""check command (WP-16). REMOTE, opt-in: installed/CLI commit vs main + what changed (DESIGN.md §8).
+"""check command (WP-16). REMOTE, opt-in: installed/CLI commit vs main + what changed (docs/design/DESIGN.md §8).
 
 Fail-soft: any network error prints one line, exits non-zero (NETWORK=3), changes nothing.
 

@@ -44,7 +44,7 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
     """Build a ``Profile`` from a JSON-parsed dict (the §11 record shape).
 
     Every artifact-type section is **optional**: a missing key yields ``None``
-    (this harness does not support that type — DESIGN-memory.md §5), so partial
+    (this harness does not support that type — docs/design/DESIGN-memory.md §5), so partial
     profiles load without a ``KeyError``.
 
     Expected JSON shape (a partial ``vibe``-style profile + an ``memory`` target)::

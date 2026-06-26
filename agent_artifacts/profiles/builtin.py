@@ -1,4 +1,4 @@
-"""Built-in harness profiles — data (WP-8). Adding a harness = adding a record here (DESIGN.md §11)."""
+"""Built-in harness profiles — data (WP-8). Adding a harness = adding a record here (docs/design/DESIGN.md §11)."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ _CLAUDE = Profile(
 # --------------------------------------------------------------------------- #
 # OpenCode                                                                     #
 # --------------------------------------------------------------------------- #
-# NOTE: OpenCode paths are best-effort defaults (DESIGN.md §19). The exact MCP
+# NOTE: OpenCode paths are best-effort defaults (docs/design/DESIGN.md §19). The exact MCP
 # key in opencode.json ("mcp") and hook/plugin event model need verification
 # against a live OpenCode environment.
 _OPENCODE = Profile(
@@ -89,7 +89,7 @@ _OPENCODE = Profile(
 # --------------------------------------------------------------------------- #
 # Tabnine                                                                      #
 # --------------------------------------------------------------------------- #
-# Paths corrected against the official Tabnine CLI docs (DESIGN-memory.md §6).
+# Paths corrected against the official Tabnine CLI docs (docs/design/DESIGN-memory.md §6).
 # Skills (.tabnine/agent/skills/) and guidelines (copy → .tabnine/guidelines/)
 # were already correct and are kept; MCP and hooks are corrected below.
 _TABNINE = Profile(
@@ -97,7 +97,7 @@ _TABNINE = Profile(
     skills=CopyTarget(dir=".tabnine/agent/skills/<name>/"),
     guidelines=GuidelineTarget(dest=".tabnine/guidelines/"),
     # MCP target set to .tabnine/agent/settings.json · mcpServers per directive
-    # (DESIGN-memory.md §6.1). DOC CAVEAT: the published docs put server
+    # (docs/design/DESIGN-memory.md §6.1). DOC CAVEAT: the published docs put server
     # *definitions* in the standalone .tabnine/mcp_servers.json (key
     # "mcpServers"); settings.json documents a different "mcp" key (governance
     # only). Verify in-environment — switching the file later is a one-line
@@ -108,7 +108,7 @@ _TABNINE = Profile(
         mode="key",
     ),
     # Hooks live in settings.json under hooks.<event>; abstract events map to
-    # Tabnine's BeforeTool/AfterTool/SessionEnd (DESIGN-memory.md §6.2).
+    # Tabnine's BeforeTool/AfterTool/SessionEnd (docs/design/DESIGN-memory.md §6.2).
     hooks=HookTarget(
         scripts_dir=".tabnine/agent/hooks/<name>/",
         events=MappingProxyType(
@@ -137,7 +137,7 @@ _TABNINE = Profile(
 # --------------------------------------------------------------------------- #
 # Mistral Vibe                                                                 #
 # --------------------------------------------------------------------------- #
-# Partial profile (DESIGN-memory.md §7): memory/skills/guidelines are supported;
+# Partial profile (docs/design/DESIGN-memory.md §7): memory/skills/guidelines are supported;
 # mcp and hooks are intentionally None. Vibe stores MCP under [[mcp_servers]] in
 # config.toml and hooks in .vibe/hooks.toml — both TOML. The merge engine emits
 # JSON only and the stdlib has no TOML writer, so honoring the zero-dep rule

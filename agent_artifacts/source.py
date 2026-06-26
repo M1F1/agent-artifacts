@@ -2,7 +2,7 @@
 
 Returns a `Source` handle exposing ``read(rel) -> bytes``, ``catalog() -> Result[Catalog]``,
 a ``root`` attribute, and ``label() -> str`` so the rest of the system is agnostic to where
-artifacts come from (DESIGN.md §4 repo layout, §7 versioning, §8 fetch mechanics).
+artifacts come from (docs/design/DESIGN.md §4 repo layout, §7 versioning, §8 fetch mechanics).
 
 Public API
 ----------
@@ -65,7 +65,7 @@ class Source:
     ----------
     root : str
         Absolute filesystem path whose immediate children are ``skills/ guidelines/ mcp/
-        hooks/ bundles/`` (DESIGN.md §4).
+        hooks/ bundles/`` (docs/design/DESIGN.md §4).
     _label : str
         The manifest source string: ``"local:<abspath>"`` | ``"main:<sha>"`` | ``"pin:<sha>"``.
     _read : Reader
@@ -92,7 +92,7 @@ class Source:
         """Scan the standard directories, parse every entry, build a `Catalog`.
 
         Returns ``Ok(Catalog)`` when everything parses, or an ``Err`` accumulating **all**
-        malformed artifacts/bundles (via :func:`fp.partition`). Layout (DESIGN.md §4):
+        malformed artifacts/bundles (via :func:`fp.partition`). Layout (docs/design/DESIGN.md §4):
 
         * skill     — ``skills/<name>/SKILL.md``
         * guideline — ``guidelines/<name>.md``

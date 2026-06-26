@@ -1,6 +1,6 @@
 """WP-11 tests: unified local/remote source resolver.
 
-Covers three things (PLAN.md WP-11 "Done when"):
+Covers three things (docs/plan/PLAN.md WP-11 "Done when"):
 
 * LOCAL backend reads ``tests/fixtures/`` and yields the expected `Catalog`.
 * REMOTE backend resolves a ``repo@ref`` to a SHA, extracts an in-memory ``.tar.gz`` via
@@ -120,7 +120,7 @@ class LocalSourceTest(unittest.TestCase):
         result = self.src.catalog()
         self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
         cat = result.value
-        # One of each artifact type, keyed (type, name) — "name = key" (DESIGN.md §4).
+        # One of each artifact type, keyed (type, name) — "name = key" (docs/design/DESIGN.md §4).
         self.assertIn(("skill", "code-review"), cat.artifacts)
         self.assertIn(("guideline", "python-style"), cat.artifacts)
         self.assertIn(("mcp", "postgres"), cat.artifacts)
@@ -130,7 +130,7 @@ class LocalSourceTest(unittest.TestCase):
         self.assertEqual(len(cat.artifacts), 6)
         # Both bundles present.
         self.assertEqual(set(cat.bundles), {"base", "backend"})
-        # Artifact roots are repo-relative (DESIGN.md §4).
+        # Artifact roots are repo-relative (docs/design/DESIGN.md §4).
         self.assertEqual(cat.artifacts[("skill", "code-review")].root, "skills/code-review")
         self.assertEqual(
             cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md"
@@ -238,7 +238,7 @@ class RemoteSourceTest(unittest.TestCase):
 
 
 class IdenticalCatalogTest(unittest.TestCase):
-    """PLAN.md WP-11 key requirement: both backends -> identical catalogs from same content."""
+    """docs/plan/PLAN.md WP-11 key requirement: both backends -> identical catalogs from same content."""
 
     @classmethod
     def setUpClass(cls):

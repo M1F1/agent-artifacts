@@ -1,6 +1,6 @@
 """Interactive selector — WP-20. The second "skin" over the one command core.
 
-DESIGN.md §13 ("one core, two skins"): a bare ``agent-artifacts`` on a TTY launches this
+docs/design/DESIGN.md §13 ("one core, two skins"): a bare ``agent-artifacts`` on a TTY launches this
 selector; otherwise the CLI runs in flag mode. This module owns **no** install/update/
 uninstall logic — it only gathers a selection (profile(s), action, artifact(s)), assembles a
 :class:`~agent_artifacts.model.Request`, and dispatches it through the exact same command
@@ -38,7 +38,7 @@ from .source import open_source
 # Request.
 ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall")
 
-# Canonical artifact-type display order (matches commands.list / DESIGN.md §4).
+# Canonical artifact-type display order (matches commands.list / docs/design/DESIGN.md §4).
 _TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 _TYPE_ATTR = {
     "skill": "skills",

@@ -1,6 +1,6 @@
 # agent-artifacts - Implementation Plan: batch upstream import
 
-Companion to [DESIGN-upstream-import.md](DESIGN-upstream-import.md). This plan adds
+Companion to [../design/DESIGN-upstream-import.md](../design/DESIGN-upstream-import.md). This plan adds
 `aart upstream scan` and `aart upstream import` for batch maintainer adoption from GitHub
 repos. It follows the repo's existing rules: stdlib only, pure core plus imperative shell,
 `unittest`, no live network tests, and tests first for each work package.
@@ -42,7 +42,7 @@ tests/fixtures/imports/
 Docs:
 
 ```text
-DESIGN-upstream-import.md
+../design/DESIGN-upstream-import.md
 PLAN-upstream-import.md
 README.md
 ```
@@ -358,7 +358,7 @@ WP-I0 contract
 
 ### WP-I9 - Docs and final verification
 
-**Owns:** `README.md`, `DESIGN-upstream-import.md`, `PLAN-upstream-import.md`.
+**Owns:** `README.md`, `../design/DESIGN-upstream-import.md`, `PLAN-upstream-import.md`.
 
 **Tasks**
 
