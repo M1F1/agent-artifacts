@@ -8,6 +8,7 @@ checked against its standard ``SystemExit`` codes.
 Run: ``python -m unittest discover -s tests -p "cli_test.py" -v``
 """
 
+import argparse
 import contextlib
 import io
 import sys
@@ -356,6 +357,48 @@ class TestHelpAndVersion(unittest.TestCase):
                 cli.main(["--version"])
         self.assertEqual(ctx.exception.code, 0)
         self.assertIn("agent-artifacts", buf.getvalue())
+
+
+class TestHelpCoverage(unittest.TestCase):
+    """Regression guard: every visible CLI surface should explain itself in --help."""
+
+    def _walk_parsers(self, parser, path=()):
+        yield path, parser
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for name, child in action.choices.items():
+                    yield from self._walk_parsers(child, (*path, name))
+
+    def test_every_visible_option_has_help_text(self):
+        missing = []
+        for path, parser in self._walk_parsers(cli.build_parser()):
+            command = " ".join(("agent-artifacts", *path))
+            for action in parser._actions:
+                if not action.option_strings:
+                    continue
+                if action.help in (None, "", argparse.SUPPRESS):
+                    missing.append(f"{command}: {', '.join(action.option_strings)}")
+        self.assertEqual(missing, [])
+
+    def test_every_subcommand_has_parent_help_summary(self):
+        missing = []
+        for path, parser in self._walk_parsers(cli.build_parser()):
+            command = " ".join(("agent-artifacts", *path))
+            for action in parser._actions:
+                if not isinstance(action, argparse._SubParsersAction):
+                    continue
+                for choice in action._choices_actions:
+                    if choice.help in (None, "", argparse.SUPPRESS):
+                        missing.append(f"{command}: {choice.dest}")
+        self.assertEqual(missing, [])
+
+    def test_every_help_surface_renders(self):
+        for path, _parser in self._walk_parsers(cli.build_parser()):
+            argv = [*path, "--help"] if path else ["--help"]
+            with self.subTest(argv=argv), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(list(argv))
+            self.assertEqual(ctx.exception.code, 0)
 
 
 class TestBareInvocation(unittest.TestCase):
