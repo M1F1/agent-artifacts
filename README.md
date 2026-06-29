@@ -106,6 +106,41 @@ aart install code-review --version v2.1 --repo your-org/...   # pin a branch/tag
 aart install code-review --source ./catalog-checkout         # local, no network
 ```
 
+Private repos, GitHub Enterprise repos, and higher-rate-limit remote installs use
+`GITHUB_TOKEN` when it is present in the environment. Prefer a fine-grained, read-only token
+with access only to the catalog/upstream repos the command needs. On macOS, keep the token in
+Keychain instead of committing it, pasting it into shell history, or writing the raw token into
+`~/.zshrc`:
+
+```sh
+# Store once. The prompt input is hidden; -U updates an existing Keychain item.
+printf "GitHub token: "
+IFS= read -r -s AART_GITHUB_TOKEN; echo
+security add-generic-password -U \
+  -a "$USER" \
+  -s agent-artifacts.github-token \
+  -w "$AART_GITHUB_TOKEN"
+unset AART_GITHUB_TOKEN
+
+# Use for one command without leaving the token in your long-lived shell environment.
+GITHUB_TOKEN="$(security find-generic-password \
+  -a "$USER" \
+  -s agent-artifacts.github-token \
+  -w)" \
+  aart install code-review --repo your-org/private-ai-catalog --profile claude
+
+# Or export for the current terminal session, then unset it when finished.
+export GITHUB_TOKEN="$(security find-generic-password \
+  -a "$USER" \
+  -s agent-artifacts.github-token \
+  -w)"
+# Run aart commands here.
+unset GITHUB_TOKEN
+```
+
+For GitHub Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` field shown
+in the maintainer section below.
+
 For shared local development, directory artifacts can be live-linked from a local checkout:
 
 ```sh
@@ -159,6 +194,10 @@ aart upstream check --all --json
 aart upstream update skill/code-review --dry-run
 aart upstream update --bundle backend
 ```
+
+Maintainer commands that read GitHub (`upstream add`, `scan`, `import`, `check`, and `update`)
+use the same `GITHUB_TOKEN` environment variable. That lets maintainers vendor artifacts from
+private upstream repos without embedding credentials in `upstreams.json` or command history.
 
 `aart upstream add` writes a fully-formed entry — identical to a hand-authored one:
 
