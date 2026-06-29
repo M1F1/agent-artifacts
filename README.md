@@ -115,24 +115,24 @@ Keychain instead of committing it, pasting it into shell history, or writing the
 ```sh
 # Store once. The prompt input is hidden; -U updates an existing Keychain item.
 printf "GitHub token: "
-IFS= read -r -s AART_GITHUB_TOKEN; echo
+IFS= read -r -s GITHUB_TOKEN; echo
 security add-generic-password -U \
   -a "$USER" \
-  -s agent-artifacts.github-token \
-  -w "$AART_GITHUB_TOKEN"
-unset AART_GITHUB_TOKEN
+  -s GITHUB_TOKEN \
+  -w "$GITHUB_TOKEN"
+unset GITHUB_TOKEN
 
 # Use for one command without leaving the token in your long-lived shell environment.
 GITHUB_TOKEN="$(security find-generic-password \
   -a "$USER" \
-  -s agent-artifacts.github-token \
+  -s GITHUB_TOKEN \
   -w)" \
   aart install code-review --repo your-org/private-ai-catalog --profile claude
 
 # Or export for the current terminal session, then unset it when finished.
 export GITHUB_TOKEN="$(security find-generic-password \
   -a "$USER" \
-  -s agent-artifacts.github-token \
+  -s GITHUB_TOKEN \
   -w)"
 # Run aart commands here.
 unset GITHUB_TOKEN
@@ -145,7 +145,7 @@ shell config such as `~/.zshrc` or `~/.zprofile`:
 # ~/.zshrc
 export GITHUB_TOKEN="$(security find-generic-password \
   -a "$USER" \
-  -s agent-artifacts.github-token \
+  -s GITHUB_TOKEN \
   -w 2>/dev/null || true)"
 ```
 
