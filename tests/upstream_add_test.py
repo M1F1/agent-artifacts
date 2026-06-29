@@ -55,7 +55,7 @@ class UpstreamAddTests(unittest.TestCase):
             fh.write(text)
 
     def _add(self, request: Request, *, staged_path: str, sha: str = "abc123"):
-        def fake_resolve(entry):
+        def fake_resolve(entry, **_kw):
             return Ok(
                 ResolvedUpstream(
                     entry=entry,

@@ -54,6 +54,10 @@ def _has_selector(request: Request) -> bool:
     return bool(request.names or request.bundles or request.all or request.type_filter)
 
 
+def _github_token() -> Optional[str]:
+    return os.environ.get("GITHUB_TOKEN")
+
+
 def run(request: Request) -> int:
     if request.upstream_action == "add":
         return _run_add(request)
@@ -228,7 +232,7 @@ def _resolve_import_scan(request: Request):
         web_url=parts.web_url if parts.api_url is not None else None,
     )
     entry = UpstreamEntry(key=UpstreamKey("skill", "__scan__"), source=source, last_synced=None)
-    resolved = resolve_upstream_source(entry)
+    resolved = resolve_upstream_source(entry, token=_github_token())
     if isinstance(resolved, Err):
         return resolved
 
@@ -416,7 +420,10 @@ def _run_add(request: Request) -> int:
         kind="github", repo=parts.repo, ref=ref, path=path, api_url=parts.api_url, web_url=web_url
     )
 
-    resolved = resolve_upstream_source(UpstreamEntry(key=key, source=source, last_synced=None))
+    resolved = resolve_upstream_source(
+        UpstreamEntry(key=key, source=source, last_synced=None),
+        token=_github_token(),
+    )
     if isinstance(resolved, Err):
         print(resolved.reason)
         return _common.exit_code(resolved)
@@ -540,8 +547,9 @@ def _load_catalog_and_upstreams(catalog_root: str, tracking_path: str):
 
 def _resolve_all(entries: Tuple[UpstreamEntry, ...]):
     resolved: List[ResolvedUpstream] = []
+    token = _github_token()
     for entry in entries:
-        result = resolve_upstream_source(entry)
+        result = resolve_upstream_source(entry, token=token)
         if isinstance(result, Err):
             if "missing_upstream" in result.reason:
                 continue

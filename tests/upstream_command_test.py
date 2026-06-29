@@ -174,7 +174,7 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         )
 
     def _run(self, request: Request, *, staged_skill: str, head_sha: str = "head-sha"):
-        def fake_resolve(entry):
+        def fake_resolve(entry, **_kw):
             staged_path = os.path.dirname(staged_skill)
             return Ok(
                 ResolvedUpstream(
@@ -389,7 +389,7 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         tracking_before = self._read_tracking()
         skill_before = self._read_file(local_skill)
 
-        def missing(_entry):
+        def missing(_entry, **_kw):
             return Err("missing_upstream: upstream path is gone", code=_common.NETWORK)
 
         out = io.StringIO()

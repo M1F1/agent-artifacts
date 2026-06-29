@@ -125,6 +125,16 @@ class NetCacheTest(unittest.TestCase):
         self.assertIsInstance(result, Err)
         self.assertEqual(result.code, 3)
 
+    def test_resolve_ref_auth_failure_points_at_github_token(self):
+        def auth_failure(request):
+            raise urllib.error.HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+
+        result = net.resolve_ref(REPO, "main", opener=auth_failure)
+
+        self.assertIsInstance(result, Err)
+        self.assertIn("GITHUB_TOKEN", result.reason)
+        self.assertIn("api/v3", result.reason)
+
     def test_resolve_ref_attaches_auth_header(self):
         seen = {}
 

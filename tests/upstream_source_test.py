@@ -9,6 +9,7 @@ import os
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 
 from agent_artifacts.io import cache
 from agent_artifacts.model import Err, Ok
@@ -233,6 +234,18 @@ class ResolveUpstreamSourceTests(TempCacheTestCase):
         self.assertEqual(result.code, 3)
         self.assertIn("missing_upstream", result.reason)
         self.assertIn("skills/missing", result.reason)
+
+    def test_tarball_auth_failure_points_at_github_token(self):
+        def auth_failure(request):
+            if "/commits/" in request.full_url:
+                return io.BytesIO(json.dumps({"sha": CANNED_SHA}).encode("utf-8"))
+            raise urllib.error.HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+
+        result = resolve_upstream_source(_entry(), opener=auth_failure)
+
+        self.assertIsInstance(result, Err)
+        self.assertIn("GITHUB_TOKEN", result.reason)
+        self.assertIn("api/v3", result.reason)
 
 
 if __name__ == "__main__":

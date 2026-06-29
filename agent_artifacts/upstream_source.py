@@ -71,7 +71,11 @@ def resolve_upstream_source(entry: UpstreamEntry, *, opener=None, token=None) ->
             ),
         )
     except (OSError, tarfile.TarError, EOFError) as exc:
-        return Err(f"failed to materialise upstream {location.value.repo}@{sha}: {exc}", code=3)
+        return Err(
+            f"failed to materialise upstream {location.value.repo}@{sha}: "
+            f"{exc}{_auth_hint(exc)}",
+            code=3,
+        )
 
     path = os.path.abspath(os.path.join(root, *rel.split("/"))) if rel else os.path.abspath(root)
     root_abs = os.path.abspath(root)
@@ -123,6 +127,17 @@ def _normalise_snapshot_path(path: str) -> Optional[str]:
     if norm == ".." or norm.startswith("../"):
         return None
     return norm
+
+
+def _auth_hint(exc: BaseException) -> str:
+    code = getattr(exc, "code", None)
+    if code in (401, 403, 404):
+        return (
+            " (If the repository is private or on GitHub Enterprise, set GITHUB_TOKEN "
+            "with read access and make sure GITHUB_API_URL/source.api_url points at the "
+            "Enterprise API, usually https://<host>/api/v3)"
+        )
+    return ""
 
 
 def _hash_tree(path: str) -> str:
