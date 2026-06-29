@@ -310,11 +310,44 @@ class TestFlagCombinationRules(unittest.TestCase):
 
 
 class TestHelpAndVersion(unittest.TestCase):
-    def test_help_exits_zero(self):
-        with contextlib.redirect_stdout(io.StringIO()):
+    def _help_text(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
             with self.assertRaises(SystemExit) as ctx:
-                cli.main(["--help"])
+                cli.main(argv)
         self.assertEqual(ctx.exception.code, 0)
+        return buf.getvalue()
+
+    def test_help_exits_zero(self):
+        self._help_text(["--help"])
+
+    def test_top_level_help_mentions_local_live_link_install(self):
+        out = self._help_text(["--help"])
+        self.assertIn("--link for local live links", out)
+
+    def test_install_help_documents_symlink_context(self):
+        out = self._help_text(["install", "--help"])
+        self.assertIn("--link", out)
+        self.assertIn("--link is local-only", out)
+        self.assertIn("Changes propagate only when that local checkout changes", out)
+        self.assertIn("install.mode, requested_mode, and link targets", out)
+
+    def test_lifecycle_help_mentions_symlink_state(self):
+        status_help = self._help_text(["status", "--help"])
+        self.assertIn("install.links[].target", status_help)
+        self.assertIn("retargeted symlink", status_help)
+
+        update_help = self._help_text(["update", "--help"])
+        self.assertIn("reported as live-linked", update_help)
+        self.assertIn("require --force", update_help)
+
+        uninstall_help = self._help_text(["uninstall", "--help"])
+        self.assertIn("removes the symlink path", uninstall_help)
+        self.assertIn("not the", uninstall_help)
+
+        check_help = self._help_text(["check", "--help"])
+        self.assertIn("live-linked entries", check_help)
+        self.assertIn("local checkout target changes", check_help)
 
     def test_version_exits_zero(self):
         buf = io.StringIO()
