@@ -138,6 +138,22 @@ export GITHUB_TOKEN="$(security find-generic-password \
 unset GITHUB_TOKEN
 ```
 
+For a permanent convenience setup, add the Keychain lookup (not the raw token) to a trusted
+shell config such as `~/.zshrc` or `~/.zprofile`:
+
+```sh
+# ~/.zshrc
+export GITHUB_TOKEN="$(security find-generic-password \
+  -a "$USER" \
+  -s agent-artifacts.github-token \
+  -w 2>/dev/null || true)"
+```
+
+That makes new terminal sessions ready for `aart` without repeating the export command. The
+tradeoff is that every process started from that shell can inherit `GITHUB_TOKEN`, so avoid
+`export GITHUB_TOKEN=ghp_...` with the raw secret and prefer the one-command form above when
+you want narrower exposure.
+
 For GitHub Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` field shown
 in the maintainer section below.
 

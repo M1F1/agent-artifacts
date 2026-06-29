@@ -5,4 +5,4 @@ Zero runtime dependencies, functional core / imperative shell. See docs/design/D
 
 from __future__ import annotations
 
-__version__ = "0.1.18"
+__version__ = "0.1.19"
