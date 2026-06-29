@@ -123,6 +123,7 @@ class TestRequestMapping(unittest.TestCase):
             "--dry-run",
             "--yes",
             "--force",
+            "--link",
             "--json",
         ]
         req = cli._to_request(cli.build_parser().parse_args(argv))
@@ -136,6 +137,7 @@ class TestRequestMapping(unittest.TestCase):
         self.assertEqual(req.repo, "o/r")
         self.assertEqual(req.project, "/proj")
         self.assertTrue(req.dry_run and req.yes and req.force and req.json)
+        self.assertEqual(req.install_mode, "symlink")
 
     def test_install_defaults(self):
         rc, req = _dispatch(["install", "--profile", "claude"], command="install")
@@ -144,6 +146,7 @@ class TestRequestMapping(unittest.TestCase):
         self.assertEqual(req.bundles, ())
         self.assertEqual(req.profiles, ("claude",))
         self.assertFalse(req.all or req.dry_run or req.yes or req.force or req.json)
+        self.assertEqual(req.install_mode, "copy")
         self.assertIsNone(req.version)
         self.assertIsNone(req.source_dir)
         self.assertIsNone(req.type_filter)

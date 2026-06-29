@@ -13,6 +13,10 @@ from typing import Generic, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
 ArtifactType = Literal["skill", "guideline", "mcp", "hook", "memory"]
 
+# Install mode for directory tree artifacts. Copy is the stable default; symlink is an
+# explicit local/live-linked mode.
+InstallMode = Literal["copy", "symlink"]
+
 # Install modes for the `memory` instruction-file type (docs/design/DESIGN-memory.md §3.2). Default when
 # unspecified is "prepend"; resolution precedence is CLI flag → frontmatter `mode:` → default.
 MemoryMode = Literal["replace", "prepend", "append", "skip"]
@@ -176,6 +180,12 @@ class CopyTree:
 
 
 @dataclass(frozen=True, slots=True)
+class SymlinkTree:
+    src: str
+    dst: str
+
+
+@dataclass(frozen=True, slots=True)
 class WriteFile:
     path: str
     content: bytes
@@ -219,6 +229,20 @@ class MergeProof:
 
 
 @dataclass(frozen=True, slots=True)
+class InstallLink:
+    path: str
+    target: str
+    target_kind: Literal["dir"] = "dir"
+
+
+@dataclass(frozen=True, slots=True)
+class InstallProof:
+    mode: InstallMode = "copy"
+    requested_mode: InstallMode = "copy"
+    links: Tuple[InstallLink, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ManifestEntry:
     artifact: str
     type: ArtifactType
@@ -228,6 +252,7 @@ class ManifestEntry:
     files: Mapping[str, str] = field(default_factory=dict)  # path -> "sha256:…"
     merge: Optional[MergeProof] = None  # hooks carry both files and merge
     installed_at: str = ""
+    install: InstallProof = field(default_factory=InstallProof)
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,7 +266,7 @@ class WriteManifest:
     entries: Tuple[ManifestEntry, ...]
 
 
-Action = Union[CopyTree, WriteFile, MergeJson, RemovePath, WriteManifest, Warn]
+Action = Union[CopyTree, SymlinkTree, WriteFile, MergeJson, RemovePath, WriteManifest, Warn]
 Plan = Tuple[Action, ...]
 
 
@@ -265,6 +290,7 @@ class Request:
     dry_run: bool = False
     json: bool = False
     prune: bool = False
+    install_mode: InstallMode = "copy"
     memory_mode: Optional[str] = None  # docs/design/DESIGN-memory.md §3.4; None → planner applies "prepend"
     upstream_action: Optional[str] = None  # "check" | "update" | "add" (maintainer-side upstreams)
     url: Optional[str] = None  # GitHub URL for `upstream add`

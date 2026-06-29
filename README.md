@@ -106,6 +106,18 @@ aart install code-review --version v2.1 --repo your-org/...   # pin a branch/tag
 aart install code-review --source ./catalog-checkout         # local, no network
 ```
 
+For shared local development, directory artifacts can be live-linked from a local checkout:
+
+```sh
+aart install code-review --source /Users/me/code/agent-artifacts --profile claude --link
+```
+
+`--link` is opt-in and local-only. It creates symlinks for directory artifacts such as skills
+and hook payloads, while copy remains the default. Changes propagate only when that local
+checkout changes (local edits, `git pull`, branch switches, or `aart upstream update` in the
+catalog). Use `aart status --json` to see whether an installed artifact is `copy` or `symlink`
+and where a link points.
+
 ### 🔄 Drift detection & re-sync — know when you're behind, fix it on demand
 Every install is recorded in a manifest (files, hashes, source commit). That unlocks a clean
 sync workflow — and freshness checks are **always opt-in, never ambient**:
@@ -209,7 +221,7 @@ prebuilt local wheel when one is present, no package index required.
 | Command | Network | Does |
 |---------|:------:|------|
 | `aart list` | source-dependent | List catalog artifacts (`--type`, `--bundle`, `--json`) |
-| `aart install` | source-dependent | Install artifacts/bundles into one or more profiles |
+| `aart install` | source-dependent | Install artifacts/bundles into one or more profiles; `--link` for local live-linked directory artifacts |
 | `aart status` | no | Show installed artifacts + local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |

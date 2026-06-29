@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--force", action="store_true", help="authorize overwrites and merge-entry collisions"
     )
+    p.add_argument(
+        "--link",
+        action="store_true",
+        help="symlink supported directory artifacts from a local source instead of copying",
+    )
     _add_json(p)
 
     # status ------------------------------------------------------------------ #
@@ -338,6 +343,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
+        install_mode="symlink" if bool(getattr(args, "link", False)) else "copy",
         memory_mode=getattr(args, "memory_mode", None),
         upstream_action=getattr(args, "upstream_action", None),
         url=getattr(args, "url", None),

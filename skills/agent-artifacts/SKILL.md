@@ -45,11 +45,15 @@ When asked "what's available", run this and summarize.
 aart install code-review --profile claude --yes --json
 aart install --bundle backend --profile claude,tabnine --yes --json   # a curated team set
 aart install --all --profile claude --yes --json                      # whole catalog
+aart install code-review --source /path/to/catalog --profile claude --link --yes --json
 ```
 - A **bundle** installs a named, possibly-pinned set in one go (`--bundle NAME`).
 - **`--dry-run`** prints the plan and touches nothing — use it to preview before committing.
 - **`--force`** authorizes overwriting locally-modified files / merge collisions. Only use it
   when the user has authorized overwrites.
+- **`--link`** is opt-in and local-only. It symlinks supported directory artifacts (skills and
+  hook payloads) to the local catalog checkout; copy remains the default. Use it only when the
+  user asks for local/shared/live installs.
 - **Memory files** (`CLAUDE.md` / `AGENTS.md` / `TABNINE.md`) default to `prepend` mode,
   wrapping the content in sentinels so it's safely removable later. If the user wants a clean
   file with no tracking markers, add `--memory-mode replace --force`.
@@ -58,8 +62,11 @@ aart install --all --profile claude --yes --json                      # whole ca
 ```sh
 aart status --json
 ```
-Lists installed artifacts; each file is `ok` / `drift` (locally modified) / `missing`. Use this
-first whenever the user asks "what's installed" or "did anything change locally".
+Lists installed artifacts; each file is `ok` / `drift` (locally modified) / `missing`, with
+`install.mode` showing `copy` or `symlink`. For `install.mode == "symlink"`, changes under
+`install.links[].target` are live and do not need `aart update` to propagate. Report broken,
+replaced, or retargeted symlinks to the user instead of silently reinstalling. Use this first
+whenever the user asks "what's installed" or "did anything change locally".
 
 ### `aart check` — remote freshness (opt-in, network)
 ```sh

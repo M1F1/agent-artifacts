@@ -30,6 +30,7 @@ from ..model import (
     RemovePath,
     Request,
     Result,
+    SymlinkTree,
     WriteFile,
     WriteManifest,
 )
@@ -187,6 +188,10 @@ def rebase_plan(plan: Plan, *, source_root: str, project_root: str) -> Plan:
     for a in plan:
         if isinstance(a, CopyTree):
             out.append(CopyTree(src=_under(source_root, a.src), dst=_under(project_root, a.dst)))
+        elif isinstance(a, SymlinkTree):
+            out.append(
+                SymlinkTree(src=_under(source_root, a.src), dst=_under(project_root, a.dst))
+            )
         elif isinstance(a, WriteFile):
             out.append(WriteFile(path=_under(project_root, a.path), content=a.content))
         elif isinstance(a, MergeJson):
