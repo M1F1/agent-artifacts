@@ -156,7 +156,7 @@ Compatibility is checked after artifact and profile resolution and before planni
 
 The installer already has two broad selection categories:
 
-- explicit by-name selection: `aart install postgres --profile claude`
+- explicit by-name selection: `aart install postgres --profile tabnine`
 - broad selection: `aart install --bundle backend ...` or `aart install --all ...`
 
 Use the same shape as unsupported type handling:

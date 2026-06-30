@@ -65,15 +65,15 @@ for directory links, then carry that proof into `ManifestEntry` and `status`.
 Add an opt-in install mode flag:
 
 ```sh
-aart install code-review --profile claude --link
-aart install --bundle backend --profile claude --link
+aart install code-review --profile tabnine --link
+aart install --bundle backend --profile tabnine --link
 ```
 
 Equivalent long-form spelling is acceptable if the CLI wants an extensible enum:
 
 ```sh
-aart install code-review --profile claude --install-mode symlink
-aart install code-review --profile claude --install-mode copy
+aart install code-review --profile tabnine --install-mode symlink
+aart install code-review --profile tabnine --install-mode copy
 ```
 
 Proposal: expose `--link` as the friendly flag and model it internally as
@@ -82,7 +82,7 @@ Proposal: expose `--link` as the friendly flag and model it internally as
 Default remains copy:
 
 ```sh
-aart install code-review --profile claude
+aart install code-review --profile tabnine
 ```
 
 ### Local-source requirement

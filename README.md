@@ -4,7 +4,7 @@
 
 `agent-artifacts` installs your team's **skills, guidelines, MCP servers, hooks, and memory
 files** from a single source-of-truth repo into whichever AI coding harness each developer
-uses — Claude Code, OpenCode, Tabnine, or Vibe — translating one definition into each
+uses — Tabnine, Claude Code, OpenCode, or Vibe — translating one definition into each
 harness's native file layout.
 
 Write a skill once. Ship it everywhere. Then *check for drift* and re-sync on demand.
@@ -15,19 +15,58 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 
 ## Quick Start
 
+From this catalog repo, install the CLI:
+
 ```sh
-pip install -e .          # editable install: run `aart` from any project folder
-aart                      # bare invocation -> profile-first TUI (install / update / remove)
+pip install -e .
 ```
 
-Prefer the command line?
+If `pip` or `pip3` is unavailable in your environment, try an editable `pipx` install:
+
+```sh
+pipx install -e .
+```
+
+If you changed this repo and need to rebuild the installed `aart` tool, prefer:
+
+```sh
+aart upgrade
+```
+
+You can force a reinstall with your package manager, but `aart upgrade` is the intended refresh
+path for an already installed local tool.
+
+Then install the onboarding skill into your project harness:
+
+```sh
+cd /path/to/your/project
+aart install agent-artifacts --profile tabnine
+```
+
+This installs the onboarding skill into your harness, for example
+`.tabnine/agent/skills/agent-artifacts/` for Tabnine. For another harness, replace
+`tabnine` with `claude`, `opencode`, or `vibe`, or pass a comma-separated list.
+
+Prefer the interactive flow?
+
+```sh
+aart
+```
+
+The bare `aart` command opens a profile-first TUI for install, update, and remove flows.
+
+Prefer more command line examples?
 
 ```sh
 aart list
-aart install code-review --profile claude
-aart install --bundle backend --profile claude,tabnine
+aart install code-review --profile tabnine
+aart install --bundle backend --profile tabnine,claude
 aart status
 ```
+
+**TL;DR:** ask an agent to use the `agent-artifacts` skill for guided onboarding. It will ask
+what you are trying to do, explain the relevant `aart` options, recommend a plan, wait for your
+confirmation, and then run the right commands.
 
 ---
 
@@ -39,13 +78,13 @@ where the catalog repo lives or pass catalog source flags for normal use.
 
 ### What You Can Install
 
-| Type | What it is | Lands as (Claude example) |
+| Type | What it is | Lands as (Tabnine example) |
 |------|------------|---------------------------|
-| **skill** | A reusable `SKILL.md` capability | `.claude/skills/<name>/` |
-| **guideline** | A standalone reference doc | `.claude/guidelines/<name>.md` |
-| **mcp** | An MCP server definition | merged into `.mcp.json` |
-| **hook** | An event hook + its scripts | merged into `.claude/settings.json` |
-| **memory** | The top-level instruction file | `CLAUDE.md` (or `AGENTS.md`, `TABNINE.md`) |
+| **skill** | A reusable `SKILL.md` capability | `.tabnine/agent/skills/<name>/` |
+| **guideline** | A standalone reference doc | `.tabnine/guidelines/<name>.md` |
+| **mcp** | An MCP server definition | merged into `.tabnine/agent/settings.json` |
+| **hook** | An event hook + its scripts | merged into `.tabnine/agent/settings.json` |
+| **memory** | The top-level instruction file | `TABNINE.md` (or `CLAUDE.md`, `AGENTS.md`) |
 
 Each harness has a **profile** that knows where every type belongs, so the same artifact
 installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/`.
@@ -74,7 +113,7 @@ Markdown/frontmatter artifacts use the same field as a dotted key:
 ```markdown
 ---
 name: code-review
-compatibility.profiles: claude, tabnine
+compatibility.profiles: tabnine, claude
 ---
 ```
 
@@ -93,9 +132,9 @@ aart list
 aart list --type skill
 aart list --bundle backend
 
-aart install code-review --profile claude
-aart install --bundle backend --profile claude,tabnine
-aart install --all --profile claude --dry-run
+aart install code-review --profile tabnine
+aart install --bundle backend --profile tabnine,claude
+aart install --all --profile tabnine --dry-run
 ```
 
 Bundles are curated sets such as "base" or "backend". They can include multiple artifact types
@@ -107,7 +146,7 @@ Use `--link` when you want artifacts installed into your project to stay connect
 catalog checkout instead of being copied as a snapshot.
 
 ```sh
-aart install code-review --profile claude --link
+aart install code-review --profile tabnine --link
 ```
 
 `--link` is opt-in and local-only. By default, `aart` uses the artifact catalog located beside
@@ -135,8 +174,8 @@ aart check
 aart update
 aart update --prune
 
-aart uninstall code-review --profile claude
-aart uninstall --all --profile claude --dry-run
+aart uninstall code-review --profile tabnine
+aart uninstall --all --profile tabnine --dry-run
 ```
 
 `aart status` is local and uses no network. `aart check` tells you whether the installed tool
@@ -207,11 +246,11 @@ remote catalog to verify catalog changes before users receive a new tool build.
 
 ```sh
 aart list --source .
-aart install --bundle backend --source . --profile claude --dry-run
+aart install --bundle backend --source . --profile tabnine --dry-run
 
 aart list --repo your-org/ai-catalog
-aart install code-review --repo your-org/ai-catalog --profile claude --dry-run
-aart install code-review --version v2.1 --repo your-org/ai-catalog --profile claude --dry-run
+aart install code-review --repo your-org/ai-catalog --profile tabnine --dry-run
+aart install code-review --version v2.1 --repo your-org/ai-catalog --profile tabnine --dry-run
 ```
 
 ### Create Or Edit Artifacts Manually
@@ -230,8 +269,8 @@ After editing, validate and smoke-test the install plan:
 
 ```sh
 aart list --source . --type skill
-aart install code-review --source . --profile claude --dry-run
-aart install --bundle backend --source . --profile claude --dry-run
+aart install code-review --source . --profile tabnine --dry-run
+aart install --bundle backend --source . --profile tabnine --dry-run
 make validate
 ```
 
@@ -263,7 +302,7 @@ To create a bundle, add a new `bundles/<name>.json`. To edit one, change `includ
 
 ```sh
 aart list --source . --bundle backend
-aart install --bundle backend --source . --profile claude,tabnine --dry-run
+aart install --bundle backend --source . --profile tabnine,claude --dry-run
 make validate
 ```
 

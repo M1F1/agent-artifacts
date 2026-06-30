@@ -124,14 +124,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="install artifacts (copy by default; --link for local live links)",
         description=(
             "Install artifacts into a consumer project.\n\n"
-            "Default mode copies artifacts. Use --link with --source DIR when you want "
-            "supported directory artifacts to stay live-linked to that local checkout."
+            "Default mode copies artifacts. Use --link when you want supported directory "
+            "artifacts to stay live-linked to the local catalog used by the installed tool. "
+            "Pass --source DIR only when you want a different local checkout."
         ),
         epilog=(
             "Symlink install:\n"
-            "  agent-artifacts install code-review --profile claude --source ~/code/agent-artifacts --link\n\n"
-            "  --link is local-only: it links to the checkout passed with --source.\n"
-            "  Changes propagate only when that local checkout changes, for example after you edit it\n"
+            "  agent-artifacts install code-review --profile tabnine --link\n\n"
+            "  --link is local-only: by default it links to the local catalog used by this tool.\n"
+            "  Pass --source DIR only to link to a different local checkout.\n"
+            "  Changes propagate only when that local source changes, for example after you edit it\n"
             "  or pull upstream updates into it.\n"
             "  Supported directory artifacts are linked; unsupported explicit selections fail.\n"
             "  Unsupported entries selected by --all or --bundle are copied and reported.\n"
@@ -161,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--link",
         action="store_true",
         help=(
-            "symlink supported directory artifacts from --source instead of copying; "
+            "symlink supported directory artifacts from a local catalog instead of copying; "
             "local-only live link"
         ),
     )

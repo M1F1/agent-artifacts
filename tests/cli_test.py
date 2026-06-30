@@ -329,8 +329,10 @@ class TestHelpAndVersion(unittest.TestCase):
     def test_install_help_documents_symlink_context(self):
         out = self._help_text(["install", "--help"])
         self.assertIn("--link", out)
+        self.assertIn("agent-artifacts install code-review --profile tabnine", out)
         self.assertIn("--link is local-only", out)
-        self.assertIn("Changes propagate only when that local checkout changes", out)
+        self.assertIn("Pass --source DIR only to link to a different local checkout", out)
+        self.assertIn("Changes propagate only when that local source changes", out)
         self.assertIn("install.mode, requested_mode, and link targets", out)
 
     def test_lifecycle_help_mentions_symlink_state(self):
