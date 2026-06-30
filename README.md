@@ -108,12 +108,11 @@ aart install code-review --source ./catalog-checkout         # local, no network
 
 Private repos, GitHub Enterprise repos, and higher-rate-limit remote installs use
 `GITHUB_TOKEN` when it is present in the environment. Prefer a fine-grained, read-only token
-with access only to the catalog/upstream repos the command needs. On macOS, keep the token in
-Keychain instead of committing it, pasting it into shell history, or writing the raw token into
-`~/.zshrc`:
+with access only to the catalog/upstream repos the command needs. On macOS, store the token in
+Keychain, then export `GITHUB_TOKEN` from that secret in your shell config:
 
 ```sh
-# Store once. The prompt input is hidden; -U updates an existing Keychain item.
+# Store once in macOS Keychain. The prompt input is hidden; -U updates an existing item.
 printf "GitHub token: "
 IFS= read -r -s GITHUB_TOKEN; echo
 security add-generic-password -U \
@@ -122,37 +121,14 @@ security add-generic-password -U \
   -w "$GITHUB_TOKEN"
 unset GITHUB_TOKEN
 
-# Use for one command without leaving the token in your long-lived shell environment.
-GITHUB_TOKEN="$(security find-generic-password \
-  -a "$USER" \
-  -s GITHUB_TOKEN \
-  -w)" \
-  aart install code-review --repo your-org/private-ai-catalog --profile claude
-
-# Or export for the current terminal session, then unset it when finished.
+# Add this to ~/.zshrc so new terminals set GITHUB_TOKEN from Keychain.
 export GITHUB_TOKEN="$(security find-generic-password \
   -a "$USER" \
   -s GITHUB_TOKEN \
-  -w)"
-# Run aart commands here.
-unset GITHUB_TOKEN
+  -w 2>/dev/null)"
 ```
 
-For a permanent convenience setup, add the Keychain lookup (not the raw token) to a trusted
-shell config such as `~/.zshrc` or `~/.zprofile`:
-
-```sh
-# ~/.zshrc
-export GITHUB_TOKEN="$(security find-generic-password \
-  -a "$USER" \
-  -s GITHUB_TOKEN \
-  -w 2>/dev/null || true)"
-```
-
-That makes new terminal sessions ready for `aart` without repeating the export command. The
-tradeoff is that every process started from that shell can inherit `GITHUB_TOKEN`, so avoid
-`export GITHUB_TOKEN=ghp_...` with the raw secret and prefer the one-command form above when
-you want narrower exposure.
+Do not put the raw token itself in `~/.zshrc`; keep only the Keychain lookup there.
 
 For GitHub Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` field shown
 in the maintainer section below.
