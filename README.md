@@ -21,6 +21,21 @@ From this catalog repo, install the CLI:
 pip install -e .
 ```
 
+If `pip` or `pip3` is unavailable in your environment, try an editable `pipx` install:
+
+```sh
+pipx install -e .
+```
+
+If you changed this repo and need to rebuild the installed `aart` tool, prefer:
+
+```sh
+aart upgrade
+```
+
+You can force a reinstall with your package manager, but `aart upgrade` is the intended refresh
+path for an already installed local tool.
+
 Then install the onboarding skill into your project harness:
 
 ```sh
