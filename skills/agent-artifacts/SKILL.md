@@ -335,9 +335,20 @@ Then wait. Do not execute mutating commands before confirmation.
 
 ## Failure Handling
 
-- `2 usage`: ask for corrected artifact, bundle, profile, or flag combination.
-- `3 network`: explain token/API/repo access issues; suggest `GITHUB_TOKEN` or retry.
-- `4 conflict`: summarize local drift or changed symlink state; ask before `--force`.
-- `5 corrupt manifest`: stop and ask whether to inspect/repair `.agent-artifacts/manifest.json`.
-- Non-JSON output from a command that should support `--json`: treat as suspicious and inspect
-  stderr/exit code before continuing.
+These exit codes are implemented by the CLI. Recovery is the agent's job: stop, explain the
+message, and ask before trying a riskier command.
+
+- `2 usage`: bad invocation, unknown artifact/bundle/profile, unsupported profile/type
+  combination, or incompatible flags. Ask for corrected inputs.
+- `3 network`: remote source/check/import failure. Explain repo/API/token access, mention
+  `GITHUB_TOKEN` when private GitHub access is plausible, and suggest retry only when the
+  failure looks transient.
+- `4 conflict`: local drift, merge collision, replace-over-existing-file, import destination
+  conflict, or changed symlink path. Summarize what would be overwritten or removed and ask
+  before using `--force`.
+- `5 corrupt manifest`: `.agent-artifacts/manifest.json` could not be parsed. Stop and ask
+  whether to inspect, back up, edit, restore, or remove that manifest; there is no automatic
+  repair command.
+- Some error paths print plain text even when `--json` was passed. If parsing JSON fails,
+  fall back to the exit code plus stdout/stderr, then explain the failure instead of retrying
+  blindly.
