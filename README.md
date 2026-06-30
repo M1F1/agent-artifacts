@@ -107,14 +107,20 @@ Use `--link` when you want artifacts installed into your project to stay connect
 catalog checkout instead of being copied as a snapshot.
 
 ```sh
-aart install code-review --source /Users/me/code/agent-artifacts --profile claude --link
+aart install code-review --profile claude --link
 ```
 
-`--link` is opt-in and local-only. It creates symlinks for directory artifacts such as skills
-and hook payloads, while copy remains the default. Changes propagate only when that local
-checkout changes, for example after local edits, `git pull`, branch switches, or
+`--link` is opt-in and local-only. By default, `aart` uses the artifact catalog located beside
+the installed tool itself. Under the hood, the install source resolves to that local package
+root, and linkable directory artifacts are symlinked from there into your project. If `aart` was
+installed in editable mode from a local `agent-artifacts` checkout, those symlinks point back to
+that checkout.
+
+Copy remains the default install mode. With `--link`, changes propagate only when the local
+source path changes, for example after local edits, `git pull`, branch switches, or
 `aart upstream update` in the catalog. Use `aart status --json` to see whether an installed
-artifact is `copy` or `symlink` and where a link points.
+artifact is `copy` or `symlink` and where a link points. Pass `--source DIR` only when you want
+to link from a different local catalog checkout than the one used by the installed `aart`.
 
 ### Check, Update, And Uninstall
 
