@@ -269,7 +269,9 @@ aart upstream add skill/domain-modeling \
   https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling
 ```
 
-This copies the artifact into the catalog and writes a tracked origin to `upstreams.json`:
+This fetches the artifact, copies the whole tree or file into the catalog, and writes a
+tracked origin to `upstreams.json`. The `TYPE/NAME` key must match the upstream artifact's own
+declared name.
 
 ```json
 {
