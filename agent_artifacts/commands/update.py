@@ -151,7 +151,7 @@ def _select_entries(
 
     No ``--bundle`` / ``--profile`` / ``NAME`` filter given -> every installed entry is selected.
     When multiple filters are present, they narrow the selection together. For example,
-    ``update NAME --profile claude`` selects only installed ``NAME`` entries for ``claude``.
+    ``update NAME --profile tabnine`` selects only installed ``NAME`` entries for ``tabnine``.
     """
     name_set = set(request.names)
     profile_set = set(request.profiles)

@@ -15,19 +15,19 @@ The default remains copy installs. Symlink mode is explicit, local-only, and vis
 Copy remains the default:
 
 ```sh
-aart install code-review --profile claude
+aart install code-review --profile tabnine
 ```
 
 Symlink mode is opt-in and links installed directory artifacts to the local catalog checkout:
 
 ```sh
-aart install code-review --profile claude --link --source /Users/mifi/code/agent-artifacts
+aart install code-review --profile tabnine --link --source /Users/mifi/code/agent-artifacts
 ```
 
 Example filesystem result:
 
 ```text
-<project>/.claude/skills/code-review
+<project>/.tabnine/agent/skills/code-review
   -> /Users/mifi/code/agent-artifacts/skills/code-review
 ```
 

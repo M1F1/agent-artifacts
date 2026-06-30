@@ -23,6 +23,8 @@ the tradeoffs visible, and execute only after the user confirms the proposed pla
   manifest.
 - Treat `.agent-artifacts/manifest.json` as the installed-state source of truth. Do not infer
   install mode only from files on disk.
+- Present example commands in fenced `sh` code blocks that users can copy directly.
+- When the user has not already chosen a harness, use `tabnine` as the first profile example.
 - If the user asks for an action that may edit their project or catalog, first gather enough
   requirements, present options, recommend a plan, and ask for confirmation.
 
@@ -40,7 +42,7 @@ Follow this sequence before executing anything that changes files.
 2. **Gather requirements**
    Ask only the missing questions that materially affect the command:
    - target project directory, if not cwd;
-   - harness profile: `claude`, `opencode`, `tabnine`, or `vibe`;
+   - harness profile: `tabnine`, `claude`, `opencode`, or `vibe`;
    - artifact name, bundle name, type filter, or "all";
    - desired mode: copy install, live-link install, update, check, uninstall, maintainer import;
    - source expectation: installed catalog, local catalog checkout, remote catalog, upstream URL;
@@ -88,11 +90,11 @@ Summarize artifact names, types, descriptions when present, and bundle contents.
 Use for ordinary installs:
 
 ```sh
-aart install code-review --profile claude --dry-run --json
-aart install code-review --profile claude --yes --json
+aart install code-review --profile tabnine --dry-run --json
+aart install code-review --profile tabnine --yes --json
 
-aart install --bundle backend --profile claude,tabnine --dry-run --json
-aart install --bundle backend --profile claude,tabnine --yes --json
+aart install --bundle backend --profile tabnine,claude --dry-run --json
+aart install --bundle backend --profile tabnine,claude --yes --json
 ```
 
 Decision notes:
@@ -109,8 +111,8 @@ Use `--link` when the user wants local/live propagation instead of a copied snap
 Default command:
 
 ```sh
-aart install code-review --profile claude --link --dry-run --json
-aart install code-review --profile claude --link --yes --json
+aart install code-review --profile tabnine --link --dry-run --json
+aart install code-review --profile tabnine --link --yes --json
 ```
 
 Explain the mechanics:
@@ -118,10 +120,12 @@ Explain the mechanics:
 - Without `--source`, `aart` uses the catalog located beside the installed tool itself.
 - If `aart` was installed editable from a local `agent-artifacts` checkout, symlinks point back
   to that checkout.
-- Pass `--source DIR` only when the user wants a different local catalog checkout:
-  ```sh
-  aart install code-review --source /path/to/agent-artifacts --profile claude --link --dry-run --json
-  ```
+- Pass `--source DIR` only when the user wants a different local catalog checkout.
+
+```sh
+aart install code-review --source /path/to/agent-artifacts --profile tabnine --link --dry-run --json
+```
+
 - Changes propagate only when the local source path changes: local edits, `git pull`, branch
   switch, or `aart upstream update` in the catalog.
 - Use `aart status --json` to show `install.mode`, link targets, and broken/retargeted links.
@@ -154,8 +158,8 @@ aart update --prune --dry-run --json
 For uninstall:
 
 ```sh
-aart uninstall code-review --profile claude --dry-run --json
-aart uninstall code-review --profile claude --yes --json
+aart uninstall code-review --profile tabnine --dry-run --json
+aart uninstall code-review --profile tabnine --yes --json
 ```
 
 Handle conflicts:
@@ -221,7 +225,7 @@ Catalog layout:
 After edits:
 
 ```sh
-aart install <name> --source . --profile claude --dry-run --json
+aart install <name> --source . --profile tabnine --dry-run --json
 make validate
 ```
 
@@ -237,7 +241,7 @@ Validate bundle changes:
 
 ```sh
 aart list --source . --bundle backend --json
-aart install --bundle backend --source . --profile claude,tabnine --dry-run --json
+aart install --bundle backend --source . --profile tabnine,claude --dry-run --json
 make validate
 ```
 
