@@ -13,7 +13,7 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 
 ---
 
-## Quick start
+## Quick Start
 
 ```sh
 pip install -e .          # editable install: run `aart` from any project folder
@@ -23,15 +23,21 @@ aart                      # bare invocation -> profile-first TUI (install / upda
 Prefer the command line?
 
 ```sh
-aart list                                   # see the catalog
-aart install code-review --profile claude   # install one artifact for Claude Code
-aart install --bundle backend --profile claude,tabnine   # install a whole team set
-aart status                                 # what's installed here + has it drifted?
+aart list
+aart install code-review --profile claude
+aart install --bundle backend --profile claude,tabnine
+aart status
 ```
 
 ---
 
-## What you can install
+## User Mode: Install Artifacts Into A Project
+
+User mode is for developers working inside an application repo. You consume a reviewed catalog
+and install its artifacts into the harness profile you use: `claude`, `opencode`, `tabnine`,
+or `vibe`.
+
+### What You Can Install
 
 | Type | What it is | Lands as (Claude example) |
 |------|------------|---------------------------|
@@ -42,15 +48,13 @@ aart status                                 # what's installed here + has it dri
 | **memory** | The top-level instruction file | `CLAUDE.md` (or `AGENTS.md`, `TABNINE.md`) |
 
 Each harness has a **profile** that knows where every type belongs, so the same artifact
-installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/` — you never have to
-remember the paths.
+installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/`.
 
 MCP artifacts can be a single `mcp/<name>.json` file, or a directory like
 `mcp/<name>/mcp.json` with supporting docs such as `SETUP.md`. Harness installs merge only the
 JSON server definition; setup docs stay in the catalog for humans.
 
-Artifacts can also declare that they are only aligned with specific profiles. JSON descriptors
-use an explicit compatibility object:
+Artifacts can declare that they only fit specific profiles. JSON descriptors use:
 
 ```json
 {
@@ -65,7 +69,7 @@ use an explicit compatibility object:
 }
 ```
 
-Markdown/frontmatter artifacts use the same field as a flat dotted key:
+Markdown/frontmatter artifacts use the same field as a dotted key:
 
 ```markdown
 ---
@@ -76,34 +80,19 @@ compatibility.profiles: claude, tabnine
 
 An explicit incompatible install is a usage error. Bundle and `--all` installs skip
 incompatible targets with a warning and include machine-readable skip reasons in JSON output.
+The TUI uses the same compatibility rules, so profile selection hides artifacts that do not
+apply.
 
-The interactive TUI uses the same rules. It asks for profile(s) first, then action, then shows
-only artifacts and bundles that make sense for that profile selection. For example, choosing
-`vibe` hides MCP and hook artifacts; choosing `tabnine` can show Tabnine-only artifacts. Bundle
-rows remain selectable, with partial bundles labelled when some contents are hidden for the
-selected profile(s).
+### Choose A Catalog Source
 
----
-
-## The features that matter
-
-### 📦 Bundles — ship a curated set, not one file at a time
-A bundle is a named group of artifacts. Bundles **`extend`** other bundles (composition with
-cycle detection) and can **`pin`** specific artifacts to a commit, so "the backend team's
-setup" is one install command and stays reproducible.
+Use the bundled catalog, a remote GitHub catalog, or a local checkout. The installed result is
+the same shape either way.
 
 ```sh
-aart install --bundle backend --profile claude
-```
-
-### 🌐 Local *or* remote source — same result either way
-Pull from a GitHub repo, or from a local checkout for offline / air-gapped work. Both produce
-an identical catalog; nothing downstream cares which you used.
-
-```sh
-aart install code-review --repo your-org/ai-catalog          # remote (GitHub)
-aart install code-review --version v2.1 --repo your-org/...   # pin a branch/tag/SHA
-aart install code-review --source ./catalog-checkout         # local, no network
+aart install code-review --profile claude
+aart install code-review --repo your-org/ai-catalog --profile claude
+aart install code-review --version v2.1 --repo your-org/ai-catalog --profile claude
+aart install code-review --source ./catalog-checkout --profile claude
 ```
 
 Private repos, GitHub Enterprise repos, and higher-rate-limit remote installs use
@@ -128,10 +117,24 @@ export GITHUB_TOKEN="$(security find-generic-password \
   -w 2>/dev/null)"
 ```
 
-Do not put the raw token itself in `~/.zshrc`; keep only the Keychain lookup there.
+Do not put the raw token itself in `~/.zshrc`; keep only the Keychain lookup there. For GitHub
+Enterprise, also set `GITHUB_API_URL` or use the maintainer-side `api_url` metadata shown
+below.
 
-For GitHub Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` field shown
-in the maintainer section below.
+### Install Individual Artifacts Or Bundles
+
+Bundles are curated sets such as "base" or "backend". They can include multiple artifact types
+and can extend other bundles, so team setup is one command instead of a pile of paths.
+
+```sh
+aart list
+aart list --type skill
+aart list --bundle backend
+
+aart install code-review --profile claude
+aart install --bundle backend --profile claude,tabnine
+aart install --all --profile claude --dry-run
+```
 
 For shared local development, directory artifacts can be live-linked from a local checkout:
 
@@ -141,68 +144,143 @@ aart install code-review --source /Users/me/code/agent-artifacts --profile claud
 
 `--link` is opt-in and local-only. It creates symlinks for directory artifacts such as skills
 and hook payloads, while copy remains the default. Changes propagate only when that local
-checkout changes (local edits, `git pull`, branch switches, or `aart upstream update` in the
-catalog). Use `aart status --json` to see whether an installed artifact is `copy` or `symlink`
-and where a link points.
+checkout changes, for example after local edits, `git pull`, branch switches, or
+`aart upstream update` in the catalog. Use `aart status --json` to see whether an installed
+artifact is `copy` or `symlink` and where a link points.
 
-### 🔄 Drift detection & re-sync — know when you're behind, fix it on demand
-Every install is recorded in a manifest (files, hashes, source commit). That unlocks a clean
-sync workflow — and freshness checks are **always opt-in, never ambient**:
+### Check, Update, And Uninstall
 
-- **`aart status`** — *local, no network.* Lists what's installed and flags each file as
-  `ok` / `drift` / `missing`, so you see local edits at a glance.
-- **`aart check`** — *remote, opt-in.* Compares your installed commit against the source's
-  `main` and tells you exactly which artifacts (and whether the CLI itself) fell behind,
-  then suggests the next command.
-- **`aart update`** — re-pulls and re-applies. Local edits are respected: a true conflict is
-  written to a `.agent-artifacts-new` sidecar instead of clobbering your work (override with
-  `--force`). `--prune` drops entries no longer in the set.
-
-### 🧭 Maintainer upstream tracking — adopt by URL, then review changes
-Catalog maintainers vendor artifacts from other repos and track where they came from in
-`upstreams.json`. **Adopt one by pasting its GitHub URL** — the browser link to the folder, no
-hand-editing:
+Every install is recorded in `.agent-artifacts/manifest.json` with files, hashes, source
+commit, install mode, and link targets. Freshness checks are opt-in, never ambient.
 
 ```sh
-# A /tree/ link to a skill folder; aart decomposes repo, ref, and path for you:
+aart status
+aart status --json
+
+aart check --repo your-org/ai-catalog
+aart update --repo your-org/ai-catalog
+aart update --source ./catalog-checkout --prune
+
+aart uninstall code-review --profile claude
+aart uninstall --all --profile claude --dry-run
+```
+
+`aart status` is local and uses no network. `aart check` compares installed commits against a
+remote source. `aart update` re-pulls and reapplies while respecting local edits; true
+conflicts are written to `.agent-artifacts-new` sidecars unless you use `--force`.
+
+Memory artifacts wrap installed content in invisible HTML-comment sentinels, so updates and
+uninstalls do not touch your hand-written notes in the same instruction file. Use
+`--memory-mode replace --force` only when you want a clean overwrite.
+
+---
+
+## Maintainer Mode: Curate The Catalog
+
+Maintainer mode is for people editing the source-of-truth catalog repo itself. In this repo,
+you add or edit artifacts under `skills/`, `guidelines/`, `mcp/`, `hooks/`, and `memory/`,
+compose them into `bundles/`, and optionally track third-party origins in `upstreams.json`.
+
+Consumer `aart update` never talks directly to third-party upstream repos. Maintainers import
+or update artifacts here, review the diff, and merge the catalog change. Users then install or
+update from the reviewed catalog.
+
+### Validate The Catalog
+
+Run these from the catalog repo root:
+
+```sh
+aart list --source .
+aart list --source . --json
+make validate
+```
+
+Use `--source .` when you want the CLI to read the working tree you are editing, not the
+catalog bundled inside the installed package.
+
+### Create Or Edit Artifacts Manually
+
+Artifacts live in predictable locations:
+
+| Type | Catalog path | Required entry point |
+|------|--------------|----------------------|
+| **skill** | `skills/<name>/` | `SKILL.md` with `name: <name>` frontmatter |
+| **guideline** | `guidelines/<name>.md` | optional frontmatter |
+| **mcp** | `mcp/<name>.json` or `mcp/<name>/` | JSON with `name` and `server` |
+| **hook** | `hooks/<name>/` | `hook.json` with `name`, `events`, and `command` |
+| **memory** | `memory/<name>.md` | optional frontmatter and optional `mode` |
+
+After editing, validate and smoke-test the install plan:
+
+```sh
+aart list --source . --type skill
+aart install code-review --source . --profile claude --dry-run
+aart install --bundle backend --source . --profile claude --dry-run
+make validate
+```
+
+### Create Or Edit Bundles
+
+Bundles live in `bundles/<name>.json`. A bundle can include artifacts, extend other bundles,
+and pin selected artifacts to a ref for reproducible installs.
+
+```json
+{
+  "name": "backend",
+  "description": "Backend team set: extends base with database tooling.",
+  "extends": ["base"],
+  "includes": {
+    "skills": ["code-review"],
+    "guidelines": ["python-style"],
+    "mcp": ["postgres"],
+    "hooks": ["block-secrets"],
+    "memory": ["house"]
+  },
+  "pins": {
+    "code-review": "a1b2c3d"
+  }
+}
+```
+
+To create a bundle, add a new `bundles/<name>.json`. To edit one, change `includes`,
+`extends`, or `pins`, then validate and dry-run the bundle against the profiles your team uses:
+
+```sh
+aart list --source . --bundle backend
+aart install --bundle backend --source . --profile claude,tabnine --dry-run
+make validate
+```
+
+`includes` supports `skills`, `guidelines`, `mcp`, `hooks`, and `memory`. `extends` composes
+other bundles with cycle detection. `pins` maps artifact names to a branch, tag, or SHA.
+
+### Adopt And Track One External Artifact
+
+Use `aart upstream add` when you already know the GitHub URL of one artifact. A `/tree/` URL
+vendors a directory artifact such as a skill, hook, or directory-shaped MCP. A `/blob/` URL
+vendors a single-file artifact such as a guideline, flat MCP, or memory file.
+
+```sh
+aart upstream add skill/domain-modeling \
+  https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling \
+  --dry-run
+
 aart upstream add skill/domain-modeling \
   https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling
 ```
 
-This fetches the directory, copies the **whole tree** into `skills/domain-modeling/`, and writes
-the tracking entry below. MCP can also be adopted from a `/tree/` link when the directory has
-`mcp.json` or `<name>.json` plus docs like `SETUP.md`; installing it into a harness still
-merges only the config. A `/blob/` link adopts a single-file artifact (guideline/mcp/memory).
-The key's name must match the upstream's own `name:`. Use `--ref`/`--path` to override when a
-branch name contains slashes, `--force` to overwrite an existing copy, and `--dry-run` to preview.
-
-Then check or import upstream changes into this repo as ordinary working-tree diffs:
-
-```sh
-aart upstream scan https://github.com/org/superpowers/tree/main --json
-aart upstream import https://github.com/org/superpowers/tree/main --bundle superpowers --dry-run
-aart upstream import https://github.com/org/superpowers/tree/main --bundle superpowers
-aart upstream check --all --json
-aart upstream update skill/code-review --dry-run
-aart upstream update --bundle backend
-```
-
-Maintainer commands that read GitHub (`upstream add`, `scan`, `import`, `check`, and `update`)
-use the same `GITHUB_TOKEN` environment variable. That lets maintainers vendor artifacts from
-private upstream repos without embedding credentials in `upstreams.json` or command history.
-
-`aart upstream add` writes a fully-formed entry — identical to a hand-authored one:
+This copies the artifact into the catalog and writes a tracked origin to `upstreams.json`:
 
 ```json
 {
   "version": 1,
   "artifacts": {
-    "skill/code-review": {
+    "skill/domain-modeling": {
       "source": {
         "kind": "github",
-        "repo": "example/review-skills",
+        "repo": "mattpocock/skills",
         "ref": "main",
-        "path": "skills/code-review"
+        "path": "skills/engineering/domain-modeling"
       },
       "last_synced": {
         "sha": "abc123",
@@ -214,7 +292,10 @@ private upstream repos without embedding credentials in `upstreams.json` or comm
 }
 ```
 
-For GitHub Enterprise or mixed-host catalogs, add a per-source API URL:
+Use `--ref` or `--path` when a branch name contains slashes or the URL needs overriding. Use
+`--force` to replace an existing catalog destination, and `--dry-run` to preview before writing.
+
+For GitHub Enterprise or mixed-host catalogs, add per-source API metadata:
 
 ```json
 {
@@ -228,54 +309,102 @@ For GitHub Enterprise or mixed-host catalogs, add a per-source API URL:
 }
 ```
 
-Consumer `aart update` still updates from this reviewed catalog, not directly from third-party
-upstream repos.
+Maintainer commands that read GitHub (`upstream add`, `scan`, `import`, `check`, and `update`)
+use `GITHUB_TOKEN` when it is present. That lets maintainers vendor private upstream repos
+without embedding credentials in `upstreams.json` or command history.
 
-### 🧠 Memory files without the clobber
-Installing a memory artifact wraps it in invisible HTML-comment sentinels (`prepend` by
-default) so it can be updated or removed later **without touching your hand-written notes** in
-the same file. Want a clean overwrite instead? `--memory-mode replace --force`.
+### Scan And Import From An External GitHub Repo
 
-### 🛟 Safe and scriptable by default
-`--dry-run` prints the plan and touches nothing. `--json` emits machine-readable output for
-agents and CI. Every command returns a **structured exit code** (`0` ok · `2` usage · `3`
-network · `4` conflict · `5` corrupt manifest) so automation can branch on the result.
+Use `scan` when you do not know which artifacts a repo contains yet. Use `import` to vendor
+the selected candidates into this catalog, optionally creating or extending a bundle.
 
-### ⬆️ Self-update, offline
-`aart upgrade` reinstalls the CLI itself from the source via `pip install --no-index` — from a
-prebuilt local wheel when one is present, no package index required.
+```sh
+aart upstream scan https://github.com/org/superpowers/tree/main --json
+
+aart upstream import https://github.com/org/superpowers/tree/main --dry-run
+aart upstream import https://github.com/org/superpowers/tree/main \
+  --select skill/code-review \
+  --select memory/house \
+  --bundle superpowers \
+  --bundle-mode append
+```
+
+Useful import flags:
+
+- `--select TYPE/NAME` imports specific candidates; repeat it for multiple artifacts.
+- `--bundle NAME` creates or updates a bundle with imported artifacts.
+- `--bundle-description TEXT` sets the description for a created/replaced bundle.
+- `--bundle-mode append|replace|fail` controls what happens when the bundle already exists.
+- `--mode auto|manifest|heuristic` controls candidate discovery.
+- `--interactive` prompts for candidate selection.
+
+### Check And Update Tracked Upstreams
+
+Once artifacts are tracked in `upstreams.json`, maintainers can check for upstream changes and
+stage reviewed updates into the catalog working tree.
+
+```sh
+aart upstream check --all --json
+aart upstream check --bundle backend
+
+aart upstream update skill/code-review --dry-run
+aart upstream update --bundle backend
+aart upstream update --all --force
+```
+
+`upstream check` reports whether tracked origins are up to date, changed, missing upstream, or
+locally drifted. `upstream update` writes ordinary working-tree diffs and updates
+`upstreams.json` sync metadata. Review those diffs like any other catalog change before merge.
 
 ---
 
-## Command reference
+## Command Reference
+
+### User Commands
 
 | Command | Network | Does |
 |---------|:------:|------|
 | `aart list` | source-dependent | List catalog artifacts (`--type`, `--bundle`, `--json`) |
 | `aart install` | source-dependent | Install artifacts/bundles into one or more profiles; `--link` for local live-linked directory artifacts |
-| `aart status` | no | Show installed artifacts + local drift |
+| `aart status` | no | Show installed artifacts, install mode, link state, and local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |
-| `aart upstream add` | yes | Adopt an upstream artifact from a GitHub URL (vendor + track) |
-| `aart upstream scan` | yes | Scan a GitHub repo/path for batch-importable artifacts |
-| `aart upstream import` | yes | Batch-vendor selected GitHub artifacts and optionally create a bundle |
-| `aart upstream check` | yes | Maintainer check for tracked vendored artifact origins |
-| `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 | `aart uninstall` | no | Reverse installed files and merge entries |
 | `aart upgrade` | offline-capable | Reinstall the CLI itself |
+
+### Maintainer Commands
+
+| Command | Network | Does |
+|---------|:------:|------|
+| `aart upstream add` | yes | Adopt one upstream artifact from a GitHub URL and track it |
+| `aart upstream scan` | yes | Scan a GitHub repo/path for importable artifacts |
+| `aart upstream import` | yes | Batch-vendor selected GitHub artifacts and optionally create/update a bundle |
+| `aart upstream check` | yes | Check tracked vendored artifact origins |
+| `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
 
 `source-dependent` means no network for the bundled catalog or `--source DIR`, and network when
 using a GitHub `--repo`.
 
-**Context-Dependent Options:** Instead of exposing every option globally, `agent-artifacts` strictly attaches options only to the commands that consume them:
+**Context-dependent options:** Instead of exposing every option globally, `agent-artifacts`
+strictly attaches options only to the commands that consume them.
 
-**Catalog source** — Commands like `list`, `install`, and `update` accept `--repo OWNER/NAME` (remote) or `--source DIR` (local checkout). These are mutually exclusive. (`--source` cannot be combined with `--version` since a local checkout has no ref to resolve). Remote-only commands like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
+**Catalog source** — Commands like `list`, `install`, and `update` accept `--repo OWNER/NAME`
+(remote) or `--source DIR` (local checkout). These are mutually exclusive. `--source` cannot
+be combined with `--version` since a local checkout has no ref to resolve. Remote-only commands
+like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
 
-**Consumer project** — Commands that modify or inspect the consumer project (`install`, `update`, `uninstall`, `status`, `check`) accept `--project DIR` (default: cwd). Catalog-only commands (`list`) or self-updaters (`upgrade`) do not.
+**Consumer project** — Commands that modify or inspect the consumer project (`install`,
+`update`, `uninstall`, `status`, `check`) accept `--project DIR` (default: cwd). Catalog-only
+commands (`list`) and self-updaters (`upgrade`) do not.
 
-**Maintainer upstream** — `aart upstream …` operates on the *catalog repo* (using `--source DIR` to mean the catalog directory to maintain, defaulting to cwd), never a consumer project. It intentionally does not accept `--repo` or `--project`.
+**Maintainer upstream** — `aart upstream ...` operates on the catalog repo, using `--source DIR`
+to mean the catalog directory to maintain and defaulting to cwd. It never targets a consumer
+project and intentionally does not accept `--repo` or `--project`.
 
-Supplying an unrecognized option is a usage error (exit `2`). Likewise, `--all` cannot be combined with named artifacts or `--bundle`.
+`--dry-run` prints the plan and touches nothing. `--json` emits machine-readable output for
+agents and CI. Every command returns a structured exit code (`0` ok, `2` usage, `3` network,
+`4` conflict, `5` corrupt manifest). Supplying an unrecognized option is a usage error, and
+`--all` cannot be combined with named artifacts or `--bundle`.
 
 > **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
 > teaching an agent to drive this CLI (always `--json`, never the TUI).
