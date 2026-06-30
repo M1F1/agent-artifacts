@@ -13,6 +13,17 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 
 ---
 
+## Requirements
+
+- Python 3.10 or newer.
+- `pip`, `pip3`, or `pipx` to install the CLI.
+- Nothing else is required to run `aart`: no extra Python packages, Node packages, services, or
+  network access.
+
+The CLI uses only the Python standard library after installation.
+
+---
+
 ## Quick Start
 
 From this catalog repo, install the CLI:
