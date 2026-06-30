@@ -8,6 +8,7 @@ checked against its standard ``SystemExit`` codes.
 Run: ``python -m unittest discover -s tests -p "cli_test.py" -v``
 """
 
+import argparse
 import contextlib
 import io
 import sys
@@ -123,6 +124,7 @@ class TestRequestMapping(unittest.TestCase):
             "--dry-run",
             "--yes",
             "--force",
+            "--link",
             "--json",
         ]
         req = cli._to_request(cli.build_parser().parse_args(argv))
@@ -136,6 +138,7 @@ class TestRequestMapping(unittest.TestCase):
         self.assertEqual(req.repo, "o/r")
         self.assertEqual(req.project, "/proj")
         self.assertTrue(req.dry_run and req.yes and req.force and req.json)
+        self.assertEqual(req.install_mode, "symlink")
 
     def test_install_defaults(self):
         rc, req = _dispatch(["install", "--profile", "claude"], command="install")
@@ -144,6 +147,7 @@ class TestRequestMapping(unittest.TestCase):
         self.assertEqual(req.bundles, ())
         self.assertEqual(req.profiles, ("claude",))
         self.assertFalse(req.all or req.dry_run or req.yes or req.force or req.json)
+        self.assertEqual(req.install_mode, "copy")
         self.assertIsNone(req.version)
         self.assertIsNone(req.source_dir)
         self.assertIsNone(req.type_filter)
@@ -307,11 +311,44 @@ class TestFlagCombinationRules(unittest.TestCase):
 
 
 class TestHelpAndVersion(unittest.TestCase):
-    def test_help_exits_zero(self):
-        with contextlib.redirect_stdout(io.StringIO()):
+    def _help_text(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
             with self.assertRaises(SystemExit) as ctx:
-                cli.main(["--help"])
+                cli.main(argv)
         self.assertEqual(ctx.exception.code, 0)
+        return buf.getvalue()
+
+    def test_help_exits_zero(self):
+        self._help_text(["--help"])
+
+    def test_top_level_help_mentions_local_live_link_install(self):
+        out = self._help_text(["--help"])
+        self.assertIn("--link for local live links", out)
+
+    def test_install_help_documents_symlink_context(self):
+        out = self._help_text(["install", "--help"])
+        self.assertIn("--link", out)
+        self.assertIn("--link is local-only", out)
+        self.assertIn("Changes propagate only when that local checkout changes", out)
+        self.assertIn("install.mode, requested_mode, and link targets", out)
+
+    def test_lifecycle_help_mentions_symlink_state(self):
+        status_help = self._help_text(["status", "--help"])
+        self.assertIn("install.links[].target", status_help)
+        self.assertIn("retargeted symlink", status_help)
+
+        update_help = self._help_text(["update", "--help"])
+        self.assertIn("reported as live-linked", update_help)
+        self.assertIn("require --force", update_help)
+
+        uninstall_help = self._help_text(["uninstall", "--help"])
+        self.assertIn("removes the symlink path", uninstall_help)
+        self.assertIn("not the", uninstall_help)
+
+        check_help = self._help_text(["check", "--help"])
+        self.assertIn("live-linked entries", check_help)
+        self.assertIn("local checkout target changes", check_help)
 
     def test_version_exits_zero(self):
         buf = io.StringIO()
@@ -320,6 +357,48 @@ class TestHelpAndVersion(unittest.TestCase):
                 cli.main(["--version"])
         self.assertEqual(ctx.exception.code, 0)
         self.assertIn("agent-artifacts", buf.getvalue())
+
+
+class TestHelpCoverage(unittest.TestCase):
+    """Regression guard: every visible CLI surface should explain itself in --help."""
+
+    def _walk_parsers(self, parser, path=()):
+        yield path, parser
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for name, child in action.choices.items():
+                    yield from self._walk_parsers(child, (*path, name))
+
+    def test_every_visible_option_has_help_text(self):
+        missing = []
+        for path, parser in self._walk_parsers(cli.build_parser()):
+            command = " ".join(("agent-artifacts", *path))
+            for action in parser._actions:
+                if not action.option_strings:
+                    continue
+                if action.help in (None, "", argparse.SUPPRESS):
+                    missing.append(f"{command}: {', '.join(action.option_strings)}")
+        self.assertEqual(missing, [])
+
+    def test_every_subcommand_has_parent_help_summary(self):
+        missing = []
+        for path, parser in self._walk_parsers(cli.build_parser()):
+            command = " ".join(("agent-artifacts", *path))
+            for action in parser._actions:
+                if not isinstance(action, argparse._SubParsersAction):
+                    continue
+                for choice in action._choices_actions:
+                    if choice.help in (None, "", argparse.SUPPRESS):
+                        missing.append(f"{command}: {choice.dest}")
+        self.assertEqual(missing, [])
+
+    def test_every_help_surface_renders(self):
+        for path, _parser in self._walk_parsers(cli.build_parser()):
+            argv = [*path, "--help"] if path else ["--help"]
+            with self.subTest(argv=argv), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(list(argv))
+            self.assertEqual(ctx.exception.code, 0)
 
 
 class TestBareInvocation(unittest.TestCase):

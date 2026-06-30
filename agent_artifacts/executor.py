@@ -17,6 +17,7 @@ from .model import (
     MergeJson,
     Plan,
     RemovePath,
+    SymlinkTree,
     Warn,
     WriteFile,
     WriteManifest,
@@ -75,6 +76,18 @@ def _manifest_entry_to_dict(entry: ManifestEntry) -> dict:
         "type": entry.type,
         "profile": entry.profile,
         "source": entry.source,
+        "install": {
+            "mode": entry.install.mode,
+            "requested_mode": entry.install.requested_mode,
+            "links": [
+                {
+                    "path": link.path,
+                    "target": link.target,
+                    "target_kind": link.target_kind,
+                }
+                for link in entry.install.links
+            ],
+        },
         "bundle": entry.bundle,
         "files": dict(entry.files),
         "installed_at": entry.installed_at,
@@ -101,6 +114,11 @@ def _manifest_entry_to_dict(entry: ManifestEntry) -> dict:
 def _do_copy_tree(a: CopyTree, ctx: _Ctx) -> None:
     ctx.fs.copy_tree(a.src, a.dst)
     ctx.performed.append(f"copy_tree {a.src} -> {a.dst}")
+
+
+def _do_symlink_tree(a: SymlinkTree, ctx: _Ctx) -> None:
+    ctx.fs.symlink_tree(a.src, a.dst)
+    ctx.performed.append(f"symlink_tree {a.src} -> {a.dst}")
 
 
 def _do_write_file(a: WriteFile, ctx: _Ctx) -> None:
@@ -171,6 +189,7 @@ def _deep_equal(x: Any, y: Any) -> bool:
 # Dispatch table: Action type -> performer. No if/elif chain.
 _DISPATCH: Dict[Type[Action], Callable[[Any, _Ctx], None]] = {
     CopyTree: _do_copy_tree,
+    SymlinkTree: _do_symlink_tree,
     WriteFile: _do_write_file,
     MergeJson: _do_merge_json,
     RemovePath: _do_remove_path,
@@ -204,6 +223,8 @@ def execute(plan: Plan, fs=None) -> Report:
 def _render_action(a: Action) -> str:
     if isinstance(a, CopyTree):
         return f"copy-tree   {a.src} -> {a.dst}"
+    if isinstance(a, SymlinkTree):
+        return f"symlink-tree {a.src} -> {a.dst}"
     if isinstance(a, WriteFile):
         return f"write-file  {a.path} ({len(a.content)} bytes)"
     if isinstance(a, MergeJson):
@@ -225,6 +246,8 @@ def render_plan(plan: Plan) -> str:
 def _action_to_obj(a: Action) -> dict:
     if isinstance(a, CopyTree):
         return {"action": "copy-tree", "src": a.src, "dst": a.dst}
+    if isinstance(a, SymlinkTree):
+        return {"action": "symlink-tree", "src": a.src, "dst": a.dst}
     if isinstance(a, WriteFile):
         return {"action": "write-file", "path": a.path, "size": len(a.content)}
     if isinstance(a, MergeJson):

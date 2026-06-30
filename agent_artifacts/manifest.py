@@ -11,6 +11,8 @@ from typing import Any, Tuple
 
 from .fp import Err, Ok
 from .model import (
+    InstallLink,
+    InstallProof,
     Manifest,
     ManifestEntry,
     MergeProof,
@@ -45,6 +47,22 @@ def _merge_to_dict(p: MergeProof) -> dict:
     return out
 
 
+def _install_to_dict(p: InstallProof) -> dict:
+    """`InstallProof` -> plain dict with stable field order."""
+    return {
+        "mode": p.mode,
+        "requested_mode": p.requested_mode,
+        "links": [
+            {
+                "path": link.path,
+                "target": link.target,
+                "target_kind": link.target_kind,
+            }
+            for link in p.links
+        ],
+    }
+
+
 def _entry_to_dict(e: ManifestEntry) -> dict:
     """`ManifestEntry` -> plain dict. Omits `bundle`/`merge` when None; `files` always present."""
     out: dict = {
@@ -52,6 +70,7 @@ def _entry_to_dict(e: ManifestEntry) -> dict:
         "type": e.type,
         "profile": e.profile,
         "source": e.source,
+        "install": _install_to_dict(e.install),
     }
     if e.bundle is not None:
         out["bundle"] = e.bundle
@@ -105,6 +124,34 @@ def _merge_from_dict(d: object) -> MergeProof:
     )
 
 
+def _install_from_dict(d: object) -> InstallProof:
+    """Parse optional install metadata; missing means a legacy copy install."""
+    if d is None:
+        return InstallProof()
+    if not isinstance(d, dict):
+        raise _Corrupt("entry.install must be an object")
+    mode = d.get("mode", "copy")
+    requested = d.get("requested_mode", mode)
+    if mode not in ("copy", "symlink"):
+        raise _Corrupt("entry.install.mode must be 'copy' or 'symlink'")
+    if requested not in ("copy", "symlink"):
+        raise _Corrupt("entry.install.requested_mode must be 'copy' or 'symlink'")
+    links_raw = d.get("links", [])
+    if not isinstance(links_raw, list):
+        raise _Corrupt("entry.install.links must be a list")
+    links = []
+    for link in links_raw:
+        if not isinstance(link, dict):
+            raise _Corrupt("entry.install.links entries must be objects")
+        path = _require(link, "path")
+        target = _require(link, "target")
+        target_kind = link.get("target_kind", "dir")
+        if target_kind != "dir":
+            raise _Corrupt("entry.install.links target_kind must be 'dir'")
+        links.append(InstallLink(path=path, target=target, target_kind=target_kind))
+    return InstallProof(mode=mode, requested_mode=requested, links=tuple(links))
+
+
 def _entry_from_dict(d: object) -> ManifestEntry:
     if not isinstance(d, dict):
         raise _Corrupt("installed entry must be an object")
@@ -121,6 +168,7 @@ def _entry_from_dict(d: object) -> ManifestEntry:
         files=dict(files),
         merge=_merge_from_dict(merge) if merge is not None else None,
         installed_at=d.get("installed_at", ""),
+        install=_install_from_dict(d.get("install")),
     )
 
 

@@ -58,10 +58,29 @@ def copy_tree(src: str, dst: str) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+def symlink_tree(src: str, dst: str) -> None:
+    """Create a directory symlink; idempotent when it already points at ``src``."""
+    src_abs = os.path.abspath(src)
+    dst_abs = os.path.abspath(dst)
+    dst_parent = os.path.dirname(dst_abs)
+    os.makedirs(dst_parent, exist_ok=True)
+    if os.path.islink(dst_abs):
+        current = os.readlink(dst_abs)
+        current_abs = current if os.path.isabs(current) else os.path.abspath(
+            os.path.join(dst_parent, current)
+        )
+        if os.path.normpath(current_abs) == os.path.normpath(src_abs):
+            return
+        raise FileExistsError(f"symlink destination already points elsewhere: {dst}")
+    if os.path.exists(dst_abs):
+        raise FileExistsError(f"symlink destination already exists: {dst}")
+    os.symlink(src_abs, dst_abs, target_is_directory=True)
+
+
 def remove_path(path: str) -> None:
     """Remove a file or directory tree; missing path is a no-op (idempotent)."""
     try:
-        if os.path.isdir(path):
+        if os.path.isdir(path) and not os.path.islink(path):
             shutil.rmtree(path)
         else:
             os.unlink(path)

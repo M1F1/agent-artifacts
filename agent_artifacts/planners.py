@@ -11,6 +11,7 @@ Everything here is **pure**: no filesystem or network access. Planners build imm
 
 from __future__ import annotations
 
+import os
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
 from . import fp, merge
@@ -23,6 +24,9 @@ from .model import (
     Err,
     GuidelineTarget,
     HookTarget,
+    InstallLink,
+    InstallMode,
+    InstallProof,
     ManifestEntry,
     MemoryTarget,
     MergeJson,
@@ -32,6 +36,7 @@ from .model import (
     Plan,
     Profile,
     Result,
+    SymlinkTree,
     Warn,
     WriteFile,
     WriteManifest,
@@ -137,6 +142,7 @@ def plan_skill(
     target_dir: str,
     *,
     force: bool = False,
+    install_mode: InstallMode = "copy",
 ) -> Result:
     """Plan installation of a skill: copy its whole tree into the profile's skills dir.
 
@@ -156,6 +162,8 @@ def plan_skill(
     else:
         dst = _join(target_dir, artifact.name)
     dst = dst.rstrip("/")
+    if install_mode == "symlink":
+        return Ok((SymlinkTree(src=artifact.root, dst=dst),))
     return Ok((CopyTree(src=artifact.root, dst=dst),))
 
 
@@ -312,6 +320,7 @@ def plan_hook(
     existing_config: Mapping = {},
     *,
     force: bool = False,
+    install_mode: InstallMode = "copy",
 ) -> Result:
     """Plan installation of a hook: copy scripts (skill mechanics) + merge registration.
 
@@ -334,7 +343,12 @@ def plan_hook(
         one `MergeJson`, or the `Err` propagated from `merge.plan_merge`.
     """
     scripts_dir = _substitute_name(hooks.scripts_dir, artifact.name).rstrip("/")
-    copy_actions: Tuple[Action, ...] = (CopyTree(src=artifact.root, dst=scripts_dir),)
+    tree_action: Action
+    if install_mode == "symlink":
+        tree_action = SymlinkTree(src=artifact.root, dst=scripts_dir)
+    else:
+        tree_action = CopyTree(src=artifact.root, dst=scripts_dir)
+    copy_actions: Tuple[Action, ...] = (tree_action,)
 
     rendered = merge.render(hooks.merge.entry_template, descriptor)
     merge_result = merge.plan_merge(
@@ -378,9 +392,28 @@ def _files_proof(plan: Plan) -> Mapping[str, str]:
                 # would make uninstall delete the backup before it could be restored.
                 continue
             proof[action.path] = sha256_bytes(action.content)
-        elif isinstance(action, CopyTree):
+        elif isinstance(action, (CopyTree, SymlinkTree)):
             proof[action.dst] = ""
     return proof
+
+
+def _install_proof(
+    plan: Plan,
+    *,
+    requested_mode: InstallMode,
+    source_root: str,
+) -> InstallProof:
+    """Build install-mode metadata from tree-link actions in `plan`."""
+    links = []
+    for action in plan:
+        if not isinstance(action, SymlinkTree):
+            continue
+        target = action.src
+        if source_root and not os.path.isabs(target):
+            target = os.path.normpath(os.path.join(source_root, target))
+        links.append(InstallLink(path=action.dst, target=target))
+    mode: InstallMode = "symlink" if links else "copy"
+    return InstallProof(mode=mode, requested_mode=requested_mode, links=tuple(links))
 
 
 def _merge_proof(plan: Plan) -> Optional[MergeProof]:
@@ -408,6 +441,8 @@ def _manifest_entry(
     source: str,
     bundle: Optional[str],
     installed_at: str,
+    requested_mode: InstallMode,
+    source_root: str,
 ) -> ManifestEntry:
     """Assemble a `ManifestEntry` (proof of install) for one artifact×profile Plan."""
     return ManifestEntry(
@@ -419,6 +454,11 @@ def _manifest_entry(
         files=_files_proof(plan),
         merge=_merge_proof(plan),
         installed_at=installed_at,
+        install=_install_proof(
+            plan,
+            requested_mode=requested_mode,
+            source_root=source_root,
+        ),
     )
 
 
@@ -474,11 +514,21 @@ def plan_install(
         unknown modes) — so the command reports all problems at once.
     """
     force = bool(getattr(request, "force", False))
+    requested_mode = _install_mode(getattr(request, "install_mode", "copy"))
     installed_at = str(files.get("__installed_at__", ""))
+    source_root = str(files.get("__source_root__", ""))
     targets: Sequence[Tuple[Artifact, str]] = files.get("__targets__", ())  # type: ignore[assignment]
 
     per_target_results = tuple(
-        _plan_one(artifact, profile_name, files, profiles, configs, force=force)
+        _plan_one(
+            artifact,
+            profile_name,
+            files,
+            profiles,
+            configs,
+            force=force,
+            default_install_mode=requested_mode,
+        )
         for artifact, profile_name in targets
     )
 
@@ -489,6 +539,12 @@ def plan_install(
     plan: Tuple[Action, ...] = ()
     entries: Tuple[ManifestEntry, ...] = ()
     for (artifact, profile_name), sub_plan in zip(targets, accumulated.value, strict=True):
+        target_requested_mode = _target_install_mode(
+            files,
+            profile_name,
+            artifact.name,
+            default=requested_mode,
+        )
         plan += sub_plan
         entries += (
             _manifest_entry(
@@ -498,6 +554,8 @@ def plan_install(
                 source=str(files.get(f"source:{artifact.name}", "main:?")),
                 bundle=files.get(f"bundle:{artifact.name}"),  # type: ignore[arg-type]
                 installed_at=installed_at,
+                requested_mode=target_requested_mode,
+                source_root=source_root,
             ),
         )
 
@@ -512,6 +570,7 @@ def _plan_one(
     configs: Mapping[str, Mapping],
     *,
     force: bool,
+    default_install_mode: InstallMode = "copy",
 ) -> Result:
     """Dispatch a single artifact×profile to its planner, gathering inputs from `files`."""
     profile = profiles.get(profile_name)
@@ -523,11 +582,22 @@ def _plan_one(
         return Err(f"no planner for artifact type: {artifact.type!r}")
 
     config = configs.get(profile_name, {})
+    install_mode = _target_install_mode(
+        files,
+        profile_name,
+        artifact.name,
+        default=default_install_mode,
+    )
 
     if artifact.type == "skill":
         if profile.skills is None:
             return Err(f"profile {profile_name!r} does not support skills")
-        return plan_skill(artifact, profile.skills.dir, force=force)
+        return plan_skill(
+            artifact,
+            profile.skills.dir,
+            force=force,
+            install_mode=install_mode,
+        )
 
     if artifact.type == "guideline":
         text = files.get(f"guideline:{artifact.name}")
@@ -551,7 +621,14 @@ def _plan_one(
             return Err(f"missing hook descriptor for {artifact.name!r}")
         if profile.hooks is None:
             return Err(f"profile {profile_name!r} does not support hooks")
-        return plan_hook(artifact, descriptor, profile.hooks, config, force=force)
+        return plan_hook(
+            artifact,
+            descriptor,
+            profile.hooks,
+            config,
+            force=force,
+            install_mode=install_mode,
+        )
 
     if artifact.type == "memory":
         if profile.memory is None:
@@ -574,3 +651,18 @@ def _plan_one(
         )
 
     return Err(f"unhandled artifact type: {artifact.type!r}")  # pragma: no cover
+
+
+def _install_mode(value: object) -> InstallMode:
+    return "symlink" if value == "symlink" else "copy"
+
+
+def _target_install_mode(
+    files: Mapping[str, object],
+    profile_name: str,
+    artifact_name: str,
+    *,
+    default: InstallMode,
+) -> InstallMode:
+    key = f"install-mode:{profile_name}:{artifact_name}"
+    return _install_mode(files.get(key, default))

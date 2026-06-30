@@ -68,20 +68,77 @@ def _file_state(project: str, rel_path: str, base_hash: str) -> str:
     return "drift"
 
 
+def _resolve_link_target(link_path: str, raw_target: str) -> str:
+    if os.path.isabs(raw_target):
+        return os.path.normpath(raw_target)
+    return os.path.normpath(os.path.join(os.path.dirname(link_path), raw_target))
+
+
+def _symlink_file_report(project: str, rel_path: str, expected_target: str) -> dict:
+    """Build status data for a symlink-managed path."""
+    abs_path = os.path.join(project, rel_path)
+    expected = os.path.normpath(expected_target)
+    report = {
+        "path": rel_path,
+        "kind": "symlink",
+        "target": expected_target,
+        "target_exists": os.path.exists(expected),
+    }
+    if not os.path.lexists(abs_path):
+        report["state"] = "missing"
+        return report
+    if not os.path.islink(abs_path):
+        report["state"] = "replaced"
+        return report
+    raw = os.readlink(abs_path)
+    actual = _resolve_link_target(abs_path, raw)
+    report["actual_target"] = actual
+    if os.path.normpath(actual) != expected:
+        report["state"] = "retargeted symlink"
+        return report
+    if not os.path.exists(actual):
+        report["state"] = "broken symlink"
+        return report
+    report["state"] = "ok (symlink)"
+    return report
+
+
+def _install_json(entry: ManifestEntry) -> dict:
+    return {
+        "mode": entry.install.mode,
+        "requested_mode": entry.install.requested_mode,
+        "links": [
+            {
+                "path": link.path,
+                "target": link.target,
+                "target_kind": link.target_kind,
+                "target_exists": os.path.exists(link.target),
+            }
+            for link in entry.install.links
+        ],
+    }
+
+
 # -- JSON output shape ------------------------------------------------------ #
 
 
 def _entry_json(project: str, entry: ManifestEntry) -> dict:
     """Build the stable JSON dict for one installed entry."""
     files_report: List[dict] = []
+    links = {link.path: link for link in entry.install.links}
     for path, base_hash in entry.files.items():
-        state = _file_state(project, path, base_hash)
-        files_report.append({"path": path, "state": state})
+        link = links.get(path)
+        if link is not None:
+            files_report.append(_symlink_file_report(project, path, link.target))
+        else:
+            state = _file_state(project, path, base_hash)
+            files_report.append({"path": path, "state": state, "kind": "file"})
     return {
         "artifact": entry.artifact,
         "type": entry.type,
         "profile": entry.profile,
         "source": entry.source,
+        "install": _install_json(entry),
         "files": files_report,
     }
 
@@ -99,10 +156,20 @@ def _print_human(project: str, repo: str, entries: tuple) -> None:
     print(f"{len(entries)} installed artifact(s):\n")
 
     for entry in entries:
-        print(f"  {entry.type}/{entry.artifact}  profile={entry.profile}  source={entry.source}")
+        print(
+            f"  {entry.type}/{entry.artifact}  profile={entry.profile}  "
+            f"source={entry.source}  install={entry.install.mode}"
+        )
+        links = {link.path: link for link in entry.install.links}
         for path, base_hash in entry.files.items():
-            state = _file_state(project, path, base_hash)
-            print(f"    {path}: {state}")
+            link = links.get(path)
+            if link is not None:
+                report = _symlink_file_report(project, path, link.target)
+                detail = f" -> {report.get('actual_target', link.target)}"
+                print(f"    {path}: {report['state']}{detail}")
+            else:
+                state = _file_state(project, path, base_hash)
+                print(f"    {path}: {state}")
         print()
 
 

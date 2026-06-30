@@ -44,8 +44,11 @@ from ..model import (
     Ok,
     Plan,
     Profile,
+    RemovePath,
     Request,
     SkippedTarget,
+    SymlinkTree,
+    Warn,
     WriteFile,
 )
 from ..policy import classify, decision_action
@@ -92,7 +95,13 @@ def run(request: Request) -> int:
         return _common.exit_code(desired_result)
     desired_plan, new_entries, skipped = desired_result.value
 
-    update_plan, conflict = _apply_policy(desired_plan, selected, project, force=request.force)
+    update_plan, conflict = _apply_policy(
+        desired_plan,
+        selected,
+        project,
+        force=request.force,
+        source_root=src.root,
+    )
 
     # 4. --prune: append removals for entries dropped from the selection.
     pruned_manifest = manifest
@@ -181,7 +190,11 @@ def _build_desired_plan(
     with the refreshed source label (see `_merge_entries`).
     """
     targets: List[Tuple[Artifact, str]] = []
-    files: Dict[str, object] = {"__targets__": targets, "__installed_at__": ""}
+    files: Dict[str, object] = {
+        "__targets__": targets,
+        "__installed_at__": "",
+        "__source_root__": src.root,
+    }
     configs: Dict[str, Mapping] = {}
     skipped: List[SkippedTarget] = []
     explicit_errors: List[str] = []
@@ -211,6 +224,7 @@ def _build_desired_plan(
             continue
         targets.append((artifact, profile_name))
         files[f"bundle:{entry.artifact}"] = entry.bundle
+        files[f"install-mode:{profile_name}:{artifact.name}"] = entry.install.requested_mode
         _gather_inputs(
             artifact,
             profile_name,
@@ -371,10 +385,11 @@ def _apply_policy(
     project: str,
     *,
     force: bool,
+    source_root: str = "",
 ) -> Tuple[Plan, bool]:
     """Rewrite each desired ``WriteFile`` through the §9 decision table.
 
-    ``CopyTree`` (skills, hook scripts) and ``MergeJson`` (mcp/hook registration) are kept
+    ``CopyTree``/``SymlinkTree`` (skills, hook scripts) and ``MergeJson`` (mcp/hook registration) are kept
     verbatim: re-copy / re-merge of *our own* entry is idempotent, so an MVP update doesn't
     diff their per-file content (a deliberate simplification — docs/design/DESIGN.md §9 covers WriteFiles).
 
@@ -385,6 +400,16 @@ def _apply_policy(
     conflict = False
 
     for action in desired_plan:
+        if isinstance(action, SymlinkTree):
+            rewritten, symlink_conflict = _symlink_update_actions(
+                action,
+                project,
+                source_root=source_root,
+                force=force,
+            )
+            out.extend(rewritten)
+            conflict = conflict or symlink_conflict
+            continue
         if isinstance(action, (CopyTree, MergeJson)):
             out.append(action)
             continue
@@ -404,6 +429,54 @@ def _apply_policy(
         out.extend(decision_action(decision, path, action.content, force=force))
 
     return tuple(out), conflict
+
+
+def _expected_symlink_target(action: SymlinkTree, source_root: str) -> str:
+    if os.path.isabs(action.src):
+        return os.path.normpath(action.src)
+    return os.path.normpath(os.path.join(source_root, action.src))
+
+
+def _actual_symlink_target(abs_path: str) -> Optional[str]:
+    if not os.path.islink(abs_path):
+        return None
+    raw = os.readlink(abs_path)
+    if os.path.isabs(raw):
+        return os.path.normpath(raw)
+    return os.path.normpath(os.path.join(os.path.dirname(abs_path), raw))
+
+
+def _symlink_update_actions(
+    action: SymlinkTree,
+    project: str,
+    *,
+    source_root: str,
+    force: bool,
+) -> Tuple[Plan, bool]:
+    """Update policy for live-linked directory artifacts.
+
+    Correct existing links are already live, so update reports them instead of re-linking.
+    Missing links are recreated. Replaced/retargeted paths require ``--force`` before relinking.
+    """
+    abs_path = os.path.join(project, action.dst)
+    expected = _expected_symlink_target(action, source_root)
+    if not os.path.lexists(abs_path):
+        return (action,), False
+    actual = _actual_symlink_target(abs_path)
+    if actual == expected and os.path.exists(actual):
+        return (
+            Warn(message=f"live-linked: {action.dst} -> {expected}; no copy needed"),
+        ), False
+    if not force:
+        return (
+            Warn(
+                message=(
+                    f"symlink {action.dst} changed or broken; use --force to relink "
+                    f"to {expected}"
+                )
+            ),
+        ), True
+    return (RemovePath(path=action.dst), action), False
 
 
 def _base_hash_index(selected: Tuple[ManifestEntry, ...]) -> Dict[str, Optional[str]]:
@@ -460,6 +533,7 @@ def _merge_entries(
             files=entry.files,
             merge=entry.merge,
             installed_at=entry.installed_at,
+            install=entry.install,
         )
         out = upsert(out, refreshed)
     return out

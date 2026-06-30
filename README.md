@@ -106,6 +106,45 @@ aart install code-review --version v2.1 --repo your-org/...   # pin a branch/tag
 aart install code-review --source ./catalog-checkout         # local, no network
 ```
 
+Private repos, GitHub Enterprise repos, and higher-rate-limit remote installs use
+`GITHUB_TOKEN` when it is present in the environment. Prefer a fine-grained, read-only token
+with access only to the catalog/upstream repos the command needs. On macOS, store the token in
+Keychain, then export `GITHUB_TOKEN` from that secret in your shell config:
+
+```sh
+# Store once in macOS Keychain. The prompt input is hidden; -U updates an existing item.
+printf "GitHub token: "
+IFS= read -r -s GITHUB_TOKEN; echo
+security add-generic-password -U \
+  -a "$USER" \
+  -s GITHUB_TOKEN \
+  -w "$GITHUB_TOKEN"
+unset GITHUB_TOKEN
+
+# Add this to ~/.zshrc so new terminals set GITHUB_TOKEN from Keychain.
+export GITHUB_TOKEN="$(security find-generic-password \
+  -a "$USER" \
+  -s GITHUB_TOKEN \
+  -w 2>/dev/null)"
+```
+
+Do not put the raw token itself in `~/.zshrc`; keep only the Keychain lookup there.
+
+For GitHub Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` field shown
+in the maintainer section below.
+
+For shared local development, directory artifacts can be live-linked from a local checkout:
+
+```sh
+aart install code-review --source /Users/me/code/agent-artifacts --profile claude --link
+```
+
+`--link` is opt-in and local-only. It creates symlinks for directory artifacts such as skills
+and hook payloads, while copy remains the default. Changes propagate only when that local
+checkout changes (local edits, `git pull`, branch switches, or `aart upstream update` in the
+catalog). Use `aart status --json` to see whether an installed artifact is `copy` or `symlink`
+and where a link points.
+
 ### 🔄 Drift detection & re-sync — know when you're behind, fix it on demand
 Every install is recorded in a manifest (files, hashes, source commit). That unlocks a clean
 sync workflow — and freshness checks are **always opt-in, never ambient**:
@@ -147,6 +186,10 @@ aart upstream check --all --json
 aart upstream update skill/code-review --dry-run
 aart upstream update --bundle backend
 ```
+
+Maintainer commands that read GitHub (`upstream add`, `scan`, `import`, `check`, and `update`)
+use the same `GITHUB_TOKEN` environment variable. That lets maintainers vendor artifacts from
+private upstream repos without embedding credentials in `upstreams.json` or command history.
 
 `aart upstream add` writes a fully-formed entry — identical to a hand-authored one:
 
@@ -209,7 +252,7 @@ prebuilt local wheel when one is present, no package index required.
 | Command | Network | Does |
 |---------|:------:|------|
 | `aart list` | source-dependent | List catalog artifacts (`--type`, `--bundle`, `--json`) |
-| `aart install` | source-dependent | Install artifacts/bundles into one or more profiles |
+| `aart install` | source-dependent | Install artifacts/bundles into one or more profiles; `--link` for local live-linked directory artifacts |
 | `aart status` | no | Show installed artifacts + local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | source-dependent | Re-pull and re-apply; `--prune`, `--force` |

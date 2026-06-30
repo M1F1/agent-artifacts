@@ -50,6 +50,7 @@ def _check(request: Request, opener=None) -> int:
     manifest = manifest_res.value
 
     installed_shas = _installed_shas(manifest)
+    live_linked = _live_linked(manifest)
     base = _pick_base(installed_shas)
 
     artifacts_changed: List[str] = []
@@ -74,6 +75,7 @@ def _check(request: Request, opener=None) -> int:
                 "repo": repo,
                 "head": head_sha,
                 "artifacts_changed": artifacts_changed,
+                "live_linked": live_linked,
                 "cli_changed": cli_changed,
                 "suggestion": suggestion,
             }
@@ -86,6 +88,7 @@ def _check(request: Request, opener=None) -> int:
             cli_changed,
             suggestion,
             has_remote_artifacts=bool(base),
+            live_linked=live_linked,
         )
 
     return _common.OK
@@ -111,6 +114,15 @@ def _installed_shas(manifest: Manifest) -> List[str]:
         if sha:
             out.append(sha)
     return out
+
+
+def _live_linked(manifest: Manifest) -> List[str]:
+    """Installed entries whose artifact content is live-linked to a local source tree."""
+    return sorted(
+        f"{entry.type}/{entry.artifact}"
+        for entry in manifest.installed
+        if entry.install.mode == "symlink"
+    )
 
 
 def _pick_base(shas: List[str]) -> Optional[str]:
@@ -196,6 +208,7 @@ def _print_summary(
     cli_changed: bool,
     suggestion: Optional[str],
     has_remote_artifacts: bool = True,
+    live_linked: Optional[List[str]] = None,
 ) -> None:
     print(f"check: {repo} main is at {head}")
     if artifacts_changed:
@@ -204,6 +217,8 @@ def _print_summary(
         print("  artifacts: skipped (installed locally)")
     else:
         print("  artifacts: up to date")
+    if live_linked:
+        print(f"  live-linked: {', '.join(live_linked)}")
     print(f"  cli: {'behind main' if cli_changed else 'up to date'}")
     if suggestion:
         print(f"  next: {suggestion}")

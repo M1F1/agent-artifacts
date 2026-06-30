@@ -246,6 +246,29 @@ def _project_path(project: str, rel: str) -> str:
     return rel if os.path.isabs(rel) else os.path.normpath(os.path.join(project, rel))
 
 
+def _resolve_link_target(link_path: str, raw_target: str) -> str:
+    if os.path.isabs(raw_target):
+        return os.path.normpath(raw_target)
+    return os.path.normpath(os.path.join(os.path.dirname(link_path), raw_target))
+
+
+def _link_conflicts(project: str, entries: Tuple[ManifestEntry, ...]) -> Tuple[str, ...]:
+    """Symlink-managed paths that were replaced or retargeted and need ``--force``."""
+    conflicts: List[str] = []
+    for entry in entries:
+        for link in entry.install.links:
+            abs_path = _project_path(project, link.path)
+            if not os.path.lexists(abs_path):
+                continue
+            if not os.path.islink(abs_path):
+                conflicts.append(f"{link.path}: replaced")
+                continue
+            actual = _resolve_link_target(abs_path, os.readlink(abs_path))
+            if os.path.normpath(actual) != os.path.normpath(link.target):
+                conflicts.append(f"{link.path}: retargeted to {actual}")
+    return tuple(conflicts)
+
+
 def _file_actions(
     project: str, entry: ManifestEntry
 ) -> Tuple[Tuple[RemovePath, ...], List[str], List[str]]:
@@ -373,6 +396,17 @@ def run(request) -> int:
         else:
             print(msg)
         return OK
+
+    conflicts = _link_conflicts(project, selected)
+    if conflicts and not request.force:
+        msg = "refusing to remove changed symlink install(s) without --force: " + "; ".join(
+            conflicts
+        )
+        if request.json:
+            _common.print_json({"ok": False, "error": msg, "code": _common.CONFLICT})
+        else:
+            print(msg)
+        return _common.CONFLICT
 
     # Build the reversal plan (files + sentinel rewrites + .bak restores + merge undos).
     plan_removes: List[RemovePath] = []

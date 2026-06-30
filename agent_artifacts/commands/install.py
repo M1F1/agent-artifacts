@@ -52,6 +52,7 @@ _TYPE_ATTR = {
     "memory": "memory",
 }
 UNSUPPORTED_TYPE = "unsupported-type"
+_LINKABLE_TYPES = {"skill", "hook"}
 
 
 def _err(message: str) -> None:
@@ -91,6 +92,10 @@ def _compat_error(a: Artifact, profile_name: str, allowed: Tuple[str, ...]) -> s
     )
 
 
+def _link_error(a: Artifact) -> str:
+    return f"{a.type} {a.name!r} cannot be symlink-installed (supported types: skill, hook)"
+
+
 def _resolve_memory_mode(request: Request, body: str) -> str:
     """Resolve the effective install mode for one ``memory`` artifact (DESIGN-memory §3.4).
 
@@ -126,12 +131,20 @@ def run(request: Request) -> int:
     for a remote-source failure; ``CONFLICT`` (4) for a merge collision needing ``--force``;
     ``CORRUPT_MANIFEST`` (5) for an unreadable manifest; ``ERROR`` (1) otherwise.
     """
+    link_requested = request.install_mode == "symlink"
+    if link_requested and request.repo is not None:
+        _err("--link requires a local source (use --source DIR or the editable local catalog)")
+        return _common.USAGE
+
     # 1. Resolve the source (local dir or remote snapshot).
     src_res = open_source(request)
     if isinstance(src_res, _common.Err):
         _err(src_res.reason)
         return _common.exit_code(src_res)
     src: Source = src_res.value
+    if link_requested and not src.label().startswith("local:"):
+        _err("--link requires a local source (use --source DIR or the editable local catalog)")
+        return _common.USAGE
 
     # 2. Build the catalog from the source.
     cat_res = src.catalog()
@@ -161,6 +174,8 @@ def run(request: Request) -> int:
     kept_targets: List[Tuple[Artifact, str]] = []
     support_errors: List[str] = []
     compatibility_errors: List[str] = []
+    link_errors: List[str] = []
+    link_warnings: List[str] = []
     skipped_targets: List[SkippedTarget] = []
     for a in arts:
         for pname, prof in profs:
@@ -193,10 +208,19 @@ def run(request: Request) -> int:
                     skipped_targets.append(skipped)
                 continue
 
+            if link_requested and a.type not in _LINKABLE_TYPES:
+                if explicit:
+                    link_errors.append(_link_error(a))
+                    continue
+                link_warnings.append(
+                    f"{a.type} {a.name!r} for profile {pname!r}: copied normally; "
+                    "--link only applies to skill and hook directory artifacts"
+                )
+
             kept_targets.append((a, pname))
 
-    if support_errors or compatibility_errors:
-        for msg in support_errors + compatibility_errors:
+    if support_errors or compatibility_errors or link_errors:
+        for msg in support_errors + compatibility_errors + link_errors:
             _err(msg)
         return _common.USAGE
 
@@ -205,6 +229,7 @@ def run(request: Request) -> int:
     files: Dict[str, object] = {
         "__targets__": tuple(kept_targets),
         "__installed_at__": installed_at,
+        "__source_root__": src.root,
     }
     kept_artifacts = {a.name: a for (a, _pname) in kept_targets}
 
@@ -292,9 +317,9 @@ def run(request: Request) -> int:
 
     # 8. Dry-run: print the plan and return without touching disk.
     if request.dry_run:
-        warnings = [_skip_message(s) for s in skipped_targets]
+        warnings = [_skip_message(s) for s in skipped_targets] + link_warnings
         if request.json:
-            if skipped_targets:
+            if warnings:
                 _common.print_json(
                     {
                         "actions": json.loads(executor.plan_to_json(rebased)),
@@ -322,12 +347,20 @@ def run(request: Request) -> int:
     _common.save_manifest(project, m)
 
     # 11. Report (include the unsupported-type skip warnings from the §5 partition).
-    all_warnings = [_skip_message(s) for s in skipped_targets] + list(report.warnings)
+    all_warnings = (
+        [_skip_message(s) for s in skipped_targets] + link_warnings + list(report.warnings)
+    )
     if request.json:
         _common.print_json(
             {
                 "installed": [
-                    {"artifact": e.artifact, "type": e.type, "profile": e.profile} for e in entries
+                    {
+                        "artifact": e.artifact,
+                        "type": e.type,
+                        "profile": e.profile,
+                        "install": _install_to_dict(e),
+                    }
+                    for e in entries
                 ],
                 "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
                 "performed": list(report.performed),
@@ -345,6 +378,21 @@ def _print_summary(entries, warnings) -> None:
     n = len(entries)
     print(f"Installed {n} artifact{'s' if n != 1 else ''}:")
     for e in entries:
-        print(f"  - {e.type:<9} {e.artifact} -> {e.profile}")
+        print(f"  - {e.type:<9} {e.artifact} -> {e.profile}  install={e.install.mode}")
     for w in warnings:
         print(f"warning: {w}")
+
+
+def _install_to_dict(entry) -> dict:
+    return {
+        "mode": entry.install.mode,
+        "requested_mode": entry.install.requested_mode,
+        "links": [
+            {
+                "path": link.path,
+                "target": link.target,
+                "target_kind": link.target_kind,
+            }
+            for link in entry.install.links
+        ],
+    }

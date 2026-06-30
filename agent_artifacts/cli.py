@@ -49,6 +49,7 @@ _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
 _MEMORY_MODES = ("replace", "prepend", "append", "skip")
 _IMPORT_MODES = ("auto", "manifest", "heuristic")
 _BUNDLE_MODES = ("append", "replace", "fail")
+_HELP_FORMATTER = argparse.RawDescriptionHelpFormatter
 
 
 # --------------------------------------------------------------------------- #
@@ -88,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the full argparse parser mirroring docs/design/DESIGN.md §13."""
     parser = argparse.ArgumentParser(
         prog="agent-artifacts",
+        formatter_class=_HELP_FORMATTER,
         description="Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) "
         "into agentic harnesses.",
     )
@@ -116,7 +118,27 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p)
 
     # install ----------------------------------------------------------------- #
-    p = sub.add_parser("install", help="install artifacts into profiles")
+    p = sub.add_parser(
+        "install",
+        formatter_class=_HELP_FORMATTER,
+        help="install artifacts (copy by default; --link for local live links)",
+        description=(
+            "Install artifacts into a consumer project.\n\n"
+            "Default mode copies artifacts. Use --link with --source DIR when you want "
+            "supported directory artifacts to stay live-linked to that local checkout."
+        ),
+        epilog=(
+            "Symlink install:\n"
+            "  agent-artifacts install code-review --profile claude --source ~/code/agent-artifacts --link\n\n"
+            "  --link is local-only: it links to the checkout passed with --source.\n"
+            "  Changes propagate only when that local checkout changes, for example after you edit it\n"
+            "  or pull upstream updates into it.\n"
+            "  Supported directory artifacts are linked; unsupported explicit selections fail.\n"
+            "  Unsupported entries selected by --all or --bundle are copied and reported.\n"
+            "  Manifest metadata records install.mode, requested_mode, and link targets so agents\n"
+            "  can inspect status/update/uninstall behavior without guessing."
+        ),
+    )
     _add_repo(p)
     _add_project(p)
     _add_source(p, "install from a local checkout (offline / air-gapped)")
@@ -135,12 +157,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--force", action="store_true", help="authorize overwrites and merge-entry collisions"
     )
+    p.add_argument(
+        "--link",
+        action="store_true",
+        help=(
+            "symlink supported directory artifacts from --source instead of copying; "
+            "local-only live link"
+        ),
+    )
     _add_json(p)
 
     # status ------------------------------------------------------------------ #
     p = sub.add_parser(
         "status",
-        help="show installed artifacts and on-disk drift (local, no network)",
+        formatter_class=_HELP_FORMATTER,
+        help="show installed artifacts, drift, and symlink link state",
+        description="Show installed artifacts and on-disk drift. This command is local-only and uses no network.",
+        epilog=(
+            "For symlink installs, status reports install.mode plus each link target and state.\n"
+            "Use --json to inspect install.links[].target, target_exists, and file states such as\n"
+            "ok (symlink), broken symlink, retargeted symlink, replaced, or missing."
+        ),
     )
     _add_repo(p)
     _add_project(p)
@@ -148,7 +185,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     # check ------------------------------------------------------------------- #
     p = sub.add_parser(
-        "check", help="compare installed/CLI commit against the source (remote)"
+        "check",
+        formatter_class=_HELP_FORMATTER,
+        help="compare installed/CLI commit against source and report live links",
+        description="Compare installed artifacts and the CLI commit against the selected remote source.",
+        epilog=(
+            "Symlink installs are reported separately as live-linked entries.\n"
+            "Remote upstream changes do not flow through a symlink by themselves; linked installs\n"
+            "change when the local checkout target changes."
+        ),
     )
     _add_repo(p)
     _add_project(p)
@@ -156,7 +201,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p)
 
     # update ------------------------------------------------------------------ #
-    p = sub.add_parser("update", help="re-pull and re-apply installed artifacts")
+    p = sub.add_parser(
+        "update",
+        formatter_class=_HELP_FORMATTER,
+        help="re-pull and re-apply installed artifacts; linked entries stay live",
+        description="Update installed artifacts while preserving each entry's recorded install mode.",
+        epilog=(
+            "For symlink installs, update keeps the recorded link mode.\n"
+            "A correct existing link is reported as live-linked and does not need a copy.\n"
+            "Missing links are recreated. Replaced, retargeted, or broken links require --force\n"
+            "before they are relinked."
+        ),
+    )
     _add_repo(p)
     _add_project(p)
     _add_source(p, "update from a local checkout (offline / air-gapped)")
@@ -172,14 +228,26 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(p)
 
     # uninstall --------------------------------------------------------------- #
-    p = sub.add_parser("uninstall", help="reverse installed files and merges")
+    p = sub.add_parser(
+        "uninstall",
+        formatter_class=_HELP_FORMATTER,
+        help="reverse installed files, merges, and symlink paths",
+        description="Uninstall selected manifest entries from a consumer project.",
+        epilog=(
+            "For symlink installs, uninstall removes the symlink path in the project, not the\n"
+            "target directory in the local source checkout. If a managed link was replaced or\n"
+            "retargeted, use --force to confirm removal."
+        ),
+    )
     _add_project(p)
     _add_selection(p)
     _add_profile(p)
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
     p.add_argument(
-        "--force", action="store_true", help="remove merge entries even if locally modified"
+        "--force",
+        action="store_true",
+        help="remove merge entries or changed symlink paths even if locally modified",
     )
     _add_json(p)
 
@@ -338,6 +406,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
+        install_mode="symlink" if bool(getattr(args, "link", False)) else "copy",
         memory_mode=getattr(args, "memory_mode", None),
         upstream_action=getattr(args, "upstream_action", None),
         url=getattr(args, "url", None),
