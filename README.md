@@ -416,9 +416,9 @@ to mean the catalog directory to maintain and defaulting to cwd. It never target
 project and intentionally does not accept `--repo` or `--project`.
 
 `--dry-run` prints the plan and touches nothing. `--json` emits machine-readable output for
-agents and CI. Every command returns a structured exit code (`0` ok, `2` usage, `3` network,
-`4` conflict, `5` corrupt manifest). Supplying an unrecognized option is a usage error, and
-`--all` cannot be combined with named artifacts or `--bundle`.
+agents and CI. Every command returns a structured exit code (`0` ok, `1` generic error,
+`2` usage, `3` network, `4` conflict, `5` corrupt manifest). Supplying an unrecognized option
+is a usage error, and `--all` cannot be combined with named artifacts or `--bundle`.
 
 > **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
 > teaching an agent to drive this CLI (always `--json`, never the TUI).

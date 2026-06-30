@@ -338,6 +338,9 @@ Then wait. Do not execute mutating commands before confirmation.
 These exit codes are implemented by the CLI. Recovery is the agent's job: stop, explain the
 message, and ask before trying a riskier command.
 
+- `1 error`: generic failure or unexpected local IO/planning problem, such as "cannot read",
+  "could not hash", or an internal invalid mode. Do not retry blindly; inspect stdout/stderr,
+  identify the file or operation that failed, and ask before repairing local files.
 - `2 usage`: bad invocation, unknown artifact/bundle/profile, unsupported profile/type
   combination, or incompatible flags. Ask for corrected inputs.
 - `3 network`: remote source/check/import failure. Explain repo/API/token access, mention
