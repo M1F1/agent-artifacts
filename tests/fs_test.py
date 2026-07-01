@@ -45,6 +45,11 @@ class TestWriteAtomic(unittest.TestCase):
             entries = os.listdir(td)
             self.assertEqual(entries, ["file.txt"])
 
+    @unittest.skipIf(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        "root bypasses directory permission bits, so a read-only dir does not fail the write "
+        "(e.g. tests run as root inside a CI container)",
+    )
     def test_no_partial_temp_files_on_error(self):
         """If write_atomic fails, no temp files should be left behind."""
         with tempfile.TemporaryDirectory() as td:

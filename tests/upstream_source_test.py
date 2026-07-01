@@ -20,6 +20,23 @@ CANNED_SHA = "1234567890abcdef1234567890abcdef12345678"
 REPO = "acme/widgets"
 TARBALL_TOP = f"acme-widgets-{CANNED_SHA}"
 
+# A GitHub Enterprise runner (GitHub Actions on GHE) exports GITHUB_API_URL /
+# GITHUB_SERVER_URL pointing at the enterprise host, which the resolver folds into the
+# snapshot cache namespace — flipping the expected "github.com" host to the enterprise one.
+# Neutralize the ambient GitHub vars for this module's tests and restore them afterwards.
+_SAVED_GITHUB_ENV = {}
+
+
+def setUpModule() -> None:
+    for name in ("GITHUB_API_URL", "GITHUB_SERVER_URL", "GITHUB_TOKEN"):
+        if name in os.environ:
+            _SAVED_GITHUB_ENV[name] = os.environ.pop(name)
+
+
+def tearDownModule() -> None:
+    os.environ.update(_SAVED_GITHUB_ENV)
+    _SAVED_GITHUB_ENV.clear()
+
 
 def _entry(
     path: str = "skills/demo",

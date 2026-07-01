@@ -9,6 +9,7 @@ Run: ``python -m unittest discover -s tests -p "net_test.py" -v``
 
 import io
 import json
+import os
 import tarfile
 import tempfile
 import threading
@@ -24,6 +25,24 @@ from agent_artifacts.model import Err, Ok
 CANNED_SHA = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
 REPO = "acme/widgets"
 TARBALL_TOP = f"acme-widgets-{CANNED_SHA}"
+
+# A GitHub Enterprise runner (GitHub Actions on GHE) exports GITHUB_API_URL /
+# GITHUB_SERVER_URL pointing at the enterprise host. These tests assume the public
+# github.com defaults and drive a canned local server, so a leaked enterprise URL would
+# send real requests off-box (401) and skew cache-namespace assertions. Neutralize the
+# ambient GitHub vars for this module's tests and restore them afterwards.
+_SAVED_GITHUB_ENV = {}
+
+
+def setUpModule() -> None:
+    for name in ("GITHUB_API_URL", "GITHUB_SERVER_URL", "GITHUB_TOKEN"):
+        if name in os.environ:
+            _SAVED_GITHUB_ENV[name] = os.environ.pop(name)
+
+
+def tearDownModule() -> None:
+    os.environ.update(_SAVED_GITHUB_ENV)
+    _SAVED_GITHUB_ENV.clear()
 
 
 def _build_tarball() -> bytes:

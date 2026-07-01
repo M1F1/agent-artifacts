@@ -33,6 +33,24 @@ CANNED_SHA = "f00dcafe1234567890abcdef0987654321fedcba"
 REPO = "acme/widgets"
 TARBALL_TOP = f"acme-widgets-{CANNED_SHA}"
 
+# A GitHub Enterprise runner (GitHub Actions on GHE) exports GITHUB_API_URL /
+# GITHUB_SERVER_URL pointing at the enterprise host. These tests assume the public
+# github.com defaults and drive a canned local server, so a leaked enterprise URL would
+# send real requests off-box (401) and skew cache-namespace assertions. Neutralize the
+# ambient GitHub vars for this module's tests and restore them afterwards.
+_SAVED_GITHUB_ENV = {}
+
+
+def setUpModule() -> None:
+    for name in ("GITHUB_API_URL", "GITHUB_SERVER_URL", "GITHUB_TOKEN"):
+        if name in os.environ:
+            _SAVED_GITHUB_ENV[name] = os.environ.pop(name)
+
+
+def tearDownModule() -> None:
+    os.environ.update(_SAVED_GITHUB_ENV)
+    _SAVED_GITHUB_ENV.clear()
+
 
 def _fixture_files() -> dict:
     """Map of repo-relative path -> bytes, read straight from ``tests/fixtures/``.
