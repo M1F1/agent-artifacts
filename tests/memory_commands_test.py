@@ -1,11 +1,13 @@
 """WP-29 — commands wiring for the ``memory`` artifact type (install/uninstall/status/list).
 
-Drives the real command ``run`` functions against the repo root as a local ``--source`` (it
-ships ``memory/house.md`` plus the ``base``/``backend`` bundles), into a fresh temp project,
-asserting on-disk effects + manifest entries. Covers:
+Drives the real command ``run`` functions against a synthetic source tree seeded into a
+temp dir (a ``memory/house.md`` plus minimal ``base``/``backend`` bundles, a skill and an
+mcp), into a fresh temp project, asserting on-disk effects + manifest entries. The tests
+deliberately do NOT read the repo's shipped catalog content, so editing or deleting seed
+artifacts cannot break them. Covers:
 
 - install ``house`` into ``claude`` (file kind) in every mode (prepend/append/replace/skip);
-- install into ``tabnine`` (dir kind) -> ``.tabnine/guidelines/house.md``;
+- install into a dir-kind profile -> ``somedir/house.md``;
 - the unsupported-type policy (docs/design/DESIGN-memory.md §5): by-name -> USAGE; by-bundle -> warn+skip;
 - uninstall: prepend strips the block (foreign content preserved); replace restores the .bak;
 - status / ``list --type memory`` smoke.
@@ -25,27 +27,73 @@ from agent_artifacts.commands import install, status, uninstall
 from agent_artifacts.commands import list as list_cmd
 from agent_artifacts.model import Request
 
-REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
-
 # The HTML-comment markers plan_memory wraps our block in (docs/design/DESIGN-memory.md §3.3).
 BEGIN = "<!-- >>> agent-artifacts memory:house >>> -->"
 END = "<!-- <<< agent-artifacts memory:house <<< -->"
-# A line we know is in memory/house.md (the seeded body).
+# A line we know is in the seeded memory/house.md body (written by _seed_source below).
 BODY_MARK = "Engineering house rules"
 BAK_SUFFIX = ".agent-artifacts-bak"
 
+_HOUSE_MD = """\
+---
+description: Synthetic house rules for these tests.
+mode: prepend
+---
+# Engineering house rules
+- Run the tests before proposing a change.
+"""
 
-def _install(project, **kw) -> Request:
-    return Request(command="install", source_dir=REPO_ROOT, project=project, **kw)
+_SKILL_MD = """\
+---
+name: code-review
+description: Synthetic skill for these tests.
+---
+# Code review
+Checklist body.
+"""
+
+_MCP_POSTGRES = {"name": "postgres", "server": {"command": "docker", "args": ["postgres-mcp"]}}
+_BUNDLE_BASE = {
+    "name": "base",
+    "description": "Synthetic base bundle.",
+    "includes": {"skills": ["code-review"], "memory": ["house"]},
+}
+_BUNDLE_BACKEND = {
+    "name": "backend",
+    "description": "Synthetic backend bundle.",
+    "extends": ["base"],
+    "includes": {"mcp": ["postgres"]},
+}
+
+
+def _seed_source(root: pathlib.Path) -> None:
+    """Write a minimal, self-contained artifact source tree under ``root``."""
+
+    def put(rel: str, text: str) -> None:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    put("memory/house.md", _HOUSE_MD)
+    put("skills/code-review/SKILL.md", _SKILL_MD)
+    put("mcp/postgres.json", json.dumps(_MCP_POSTGRES))
+    put("bundles/base.json", json.dumps(_BUNDLE_BASE))
+    put("bundles/backend.json", json.dumps(_BUNDLE_BACKEND))
 
 
 class _Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.project = self._tmp.name
+        self.project = os.path.join(self._tmp.name, "project")
+        self.source = os.path.join(self._tmp.name, "source")
+        os.makedirs(self.project)
+        _seed_source(pathlib.Path(self.source))
 
     def tearDown(self):
         self._tmp.cleanup()
+
+    def _install(self, **kw) -> Request:
+        return Request(command="install", source_dir=self.source, project=self.project, **kw)
 
     def path(self, *parts) -> str:
         return os.path.join(self.project, *parts)
@@ -66,7 +114,7 @@ class _Base(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class InstallFileModes(_Base):
     def test_prepend_creates_sentinel_block_in_claude_md(self):
-        code = self.run_quiet(_install(self.project, names=("house",), profiles=("claude",)))
+        code = self.run_quiet(self._install(names=("house",), profiles=("claude",)))
         self.assertEqual(code, 0)
         text = self.read("CLAUDE.md")
         self.assertIn(BEGIN, text)
@@ -81,12 +129,9 @@ class InstallFileModes(_Base):
 
     def test_prepend_puts_our_block_above_foreign_content(self):
         # Pre-seed CLAUDE.md with foreign content; prepend must land ABOVE it, foreign kept.
-        os.makedirs(self.project, exist_ok=True)
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
-        import agent_artifacts.commands.install as install
-
-        code = install.run(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="prepend")
+        code = self.run_quiet(
+            self._install(names=("house",), profiles=("claude",), memory_mode="prepend")
         )
         self.assertEqual(code, 0)
         text = self.read("CLAUDE.md")
@@ -96,7 +141,7 @@ class InstallFileModes(_Base):
     def test_append_puts_our_block_below_foreign_content(self):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
         code = self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="append")
+            self._install(names=("house",), profiles=("claude",), memory_mode="append")
         )
         self.assertEqual(code, 0)
         text = self.read("CLAUDE.md")
@@ -105,7 +150,7 @@ class InstallFileModes(_Base):
 
     def test_replace_into_empty_file_writes_whole_body_no_sentinel(self):
         code = self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="replace")
+            self._install(names=("house",), profiles=("claude",), memory_mode="replace")
         )
         self.assertEqual(code, 0)
         text = self.read("CLAUDE.md")
@@ -116,14 +161,13 @@ class InstallFileModes(_Base):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Foreign rules\n")
         # Without --force: CONFLICT (4), nothing written.
         code = self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="replace")
+            self._install(names=("house",), profiles=("claude",), memory_mode="replace")
         )
         self.assertEqual(code, 4)
         self.assertEqual(self.read("CLAUDE.md"), "# Foreign rules\n")  # untouched
         # With --force: body replaces the file and the prior content is backed up.
         code = self.run_quiet(
-            _install(
-                self.project,
+            self._install(
                 names=("house",),
                 profiles=("claude",),
                 memory_mode="replace",
@@ -137,20 +181,20 @@ class InstallFileModes(_Base):
     def test_skip_with_existing_file_leaves_it_untouched(self):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Hand-authored\n")
         code = self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="skip")
+            self._install(names=("house",), profiles=("claude",), memory_mode="skip")
         )
         self.assertEqual(code, 0)
         self.assertEqual(self.read("CLAUDE.md"), "# Hand-authored\n")  # seed-if-missing: skipped
 
     def test_skip_when_absent_creates_the_file(self):
         code = self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="skip")
+            self._install(names=("house",), profiles=("claude",), memory_mode="skip")
         )
         self.assertEqual(code, 0)
         self.assertIn(BODY_MARK, self.read("CLAUDE.md"))
 
     def test_prepend_reinstall_is_idempotent(self):
-        req = _install(self.project, names=("house",), profiles=("claude",), memory_mode="prepend")
+        req = self._install(names=("house",), profiles=("claude",), memory_mode="prepend")
         self.run_quiet(req)
         first = self.read("CLAUDE.md")
         self.run_quiet(req)
@@ -171,7 +215,7 @@ class InstallDirKind(_Base):
         )
 
     def test_dir_kind_writes_named_file_in_dest_dir(self):
-        code = self.run_quiet(_install(self.project, names=("house",), profiles=("dirprof",)))
+        code = self.run_quiet(self._install(names=("house",), profiles=("dirprof",)))
         self.assertEqual(code, 0)
         dest = self.path("somedir", "house.md")
         self.assertTrue(os.path.isfile(dest))
@@ -189,18 +233,18 @@ class UnsupportedTypePolicy(_Base):
         # postgres is an mcp; vibe.mcp is None -> explicit by-name request must fail USAGE.
         err = io.StringIO()
         with redirect_stdout(io.StringIO()), redirect_stderr(err):
-            code = install.run(_install(self.project, names=("postgres",), profiles=("vibe",)))
+            code = install.run(self._install(names=("postgres",), profiles=("vibe",)))
         self.assertEqual(code, 2)  # _common.USAGE
         self.assertIn("vibe", err.getvalue())
         # Nothing installed: no manifest written.
         self.assertFalse(os.path.exists(self.path(".agent-artifacts", "manifest.json")))
 
     def test_by_bundle_warns_and_skips_unsupported_but_installs_supported(self):
-        # backend = base (skill/guideline/memory) + mcp:postgres. Into vibe (mcp=None) the
+        # backend = base (skill/memory) + mcp:postgres. Into vibe (mcp=None) the
         # mcp must warn+skip while the supported types install and the run exits OK.
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(io.StringIO()):
-            code = install.run(_install(self.project, bundles=("backend",), profiles=("vibe",)))
+            code = install.run(self._install(bundles=("backend",), profiles=("vibe",)))
         self.assertEqual(code, 0)
         # memory (house) installed into AGENTS.md via prepend (vibe memory kind=file).
         self.assertIn(BEGIN, self.read("AGENTS.md"))
@@ -220,7 +264,7 @@ class UninstallReversal(_Base):
     def test_prepend_uninstall_strips_block_keeps_foreign(self):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
         self.run_quiet(
-            _install(self.project, names=("house",), profiles=("claude",), memory_mode="prepend")
+            self._install(names=("house",), profiles=("claude",), memory_mode="prepend")
         )
         self.assertIn(BEGIN, self.read("CLAUDE.md"))
         # uninstall by name from the claude profile.
@@ -240,8 +284,7 @@ class UninstallReversal(_Base):
     def test_replace_uninstall_restores_backup(self):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Foreign rules\n- precious\n")
         self.run_quiet(
-            _install(
-                self.project,
+            self._install(
                 names=("house",),
                 profiles=("claude",),
                 memory_mode="replace",
@@ -267,7 +310,7 @@ class UninstallReversal(_Base):
 # --------------------------------------------------------------------------- #
 class StatusAndList(_Base):
     def test_status_reports_installed_memory_entry(self):
-        self.run_quiet(_install(self.project, names=("house",), profiles=("claude",)))
+        self.run_quiet(self._install(names=("house",), profiles=("claude",)))
         out = io.StringIO()
         with redirect_stdout(out):
             code = status.run(Request(command="status", project=self.project, json=True))
@@ -285,7 +328,7 @@ class StatusAndList(_Base):
         out = io.StringIO()
         with redirect_stdout(out):
             code = list_cmd.run(
-                Request(command="list", source_dir=REPO_ROOT, type_filter="memory", json=True)
+                Request(command="list", source_dir=self.source, type_filter="memory", json=True)
             )
         self.assertEqual(code, 0)
         obj = json.loads(out.getvalue())
