@@ -12,7 +12,7 @@ import tarfile
 from dataclasses import dataclass
 from typing import Optional
 
-from .github_source import resolve_github_location
+from .github_source import PUBLIC_API_URL, resolve_github_location
 from .hashing import sha256_file
 from .io import cache, net
 from .model import Err, Ok, Result
@@ -42,6 +42,12 @@ def resolve_upstream_source(entry: UpstreamEntry, *, opener=None, token=None) ->
     location = resolve_github_location(source)
     if isinstance(location, Err):
         return location
+
+    if location.value.api_url == PUBLIC_API_URL:
+        # Public github.com is reachable anonymously, while $GITHUB_TOKEN in the ambient
+        # environment is often issued for a GitHub Enterprise host — api.github.com
+        # rejects such a token outright (401), blocking upstream add/check/update.
+        token = None
 
     rel = _normalise_snapshot_path(source.path)
     if rel is None:

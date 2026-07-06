@@ -68,9 +68,11 @@ class FakeGithub:
     def __init__(self, files: dict[str, bytes]):
         self.tarball = _tarball(files)
         self.urls: list[str] = []
+        self.auth_headers: list[str | None] = []
 
     def opener(self, request):
         self.urls.append(request.full_url)
+        self.auth_headers.append(request.get_header("Authorization"))
         if "/commits/" in request.full_url:
             return io.BytesIO(json.dumps({"sha": CANNED_SHA}).encode("utf-8"))
         if "/tarball/" in request.full_url:
@@ -190,6 +192,25 @@ class ResolveUpstreamSourceTests(TempCacheTestCase):
             result.value.root,
             cache.cache_dir("github.my-company.com/acme/widgets", CANNED_SHA),
         )
+
+    def test_public_github_requests_never_carry_the_token(self):
+        # An ambient $GITHUB_TOKEN is often an Enterprise credential; api.github.com
+        # rejects it with 401 even for public repos, so it must not be attached.
+        fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
+
+        result = resolve_upstream_source(_entry(), opener=fake.opener, token="ghe-secret")
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(fake.auth_headers, [None, None])
+
+    def test_enterprise_github_requests_carry_the_token(self):
+        fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
+        entry = _entry(repo=REPO, api_url="https://github.my-company.com/api/v3")
+
+        result = resolve_upstream_source(entry, opener=fake.opener, token="ghe-secret")
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(fake.auth_headers, ["Bearer ghe-secret"] * 2)
 
     def test_full_repo_url_is_normalized_for_network_and_cache(self):
         fake = FakeGithub({"skills/demo/SKILL.md": b"---\nname: demo\n---\nbody\n"})
