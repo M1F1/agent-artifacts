@@ -16,7 +16,7 @@ FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 def _source_with_restricted_mcp(tmp: str) -> str:
     source = os.path.join(tmp, "source")
     shutil.copytree(FIXTURES, source)
-    path = os.path.join(source, "mcp", "tabnine-postgres.json")
+    path = os.path.join(source, "mcp", "tabnine-postgres", "mcp.json")
     pathlib.Path(path).write_text(
         json.dumps(
             {

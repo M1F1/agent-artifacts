@@ -31,18 +31,30 @@ def _load_json(path: pathlib.Path) -> dict:
 
 
 class TestMcpJsonFiles(unittest.TestCase):
-    """Every mcp/*.json must be valid JSON with 'name' and 'server' keys."""
+    """Every MCP artifact must be directory-shaped: mcp/<name>/mcp.json (no flat files)."""
 
-    def test_all_mcp_files_valid(self) -> None:
-        mcp_files = list(MCP_DIR.glob("*.json"))
-        self.assertGreater(len(mcp_files), 0, "No MCP JSON files found")
-        for path in mcp_files:
-            with self.subTest(file=path.name):
-                data = _load_json(path)
-                self.assertIn("name", data, f"{path.name} missing 'name'")
-                self.assertIn("server", data, f"{path.name} missing 'server'")
+    def test_no_flat_mcp_descriptors(self) -> None:
+        flat = [p.name for p in MCP_DIR.glob("*.json")]
+        self.assertEqual(flat, [], f"Flat mcp/<name>.json descriptors found: {flat}; "
+                                   "MCP artifacts must live at mcp/<name>/mcp.json")
+
+    def test_all_mcp_dirs_have_valid_descriptor(self) -> None:
+        mcp_dirs = [p for p in MCP_DIR.iterdir() if p.is_dir()]
+        self.assertGreater(len(mcp_dirs), 0, "No MCP artifact directories found")
+        for mcp_dir in mcp_dirs:
+            with self.subTest(dir=mcp_dir.name):
+                descriptor = mcp_dir / "mcp.json"
+                self.assertTrue(descriptor.is_file(), f"{mcp_dir.name}/ missing mcp.json")
+                data = _load_json(descriptor)
+                self.assertIn("name", data, f"{mcp_dir.name}/mcp.json missing 'name'")
+                self.assertEqual(
+                    data["name"], mcp_dir.name, f"{mcp_dir.name}/mcp.json name mismatch"
+                )
+                self.assertIn("server", data, f"{mcp_dir.name}/mcp.json missing 'server'")
                 # server must have at least 'command'
-                self.assertIn("command", data["server"], f"{path.name} server missing 'command'")
+                self.assertIn(
+                    "command", data["server"], f"{mcp_dir.name}/mcp.json server missing 'command'"
+                )
 
 
 class TestHookJsonFiles(unittest.TestCase):
@@ -138,7 +150,7 @@ class TestBackendBundleReferences(unittest.TestCase):
                     elif art_type == "guidelines":
                         target = base_dir / f"{name}.md"
                     elif art_type == "mcp":
-                        target = base_dir / f"{name}.json"
+                        target = base_dir / name / "mcp.json"
                     elif art_type == "hooks":
                         target = base_dir / name / "hook.json"
                     elif art_type == "memory":
@@ -170,7 +182,7 @@ class TestBackendBundleReferences(unittest.TestCase):
                         elif art_type == "guidelines":
                             target = base_dir / f"{name}.md"
                         elif art_type == "mcp":
-                            target = base_dir / f"{name}.json"
+                            target = base_dir / name / "mcp.json"
                         elif art_type == "hooks":
                             target = base_dir / name / "hook.json"
                         elif art_type == "memory":
@@ -201,14 +213,14 @@ class TestFixturesMirror(unittest.TestCase):
         self.assertTrue(path.exists())
 
     def test_fixture_mcp_exists(self) -> None:
-        path = self.FIXTURES / "mcp" / "postgres.json"
+        path = self.FIXTURES / "mcp" / "postgres" / "mcp.json"
         self.assertTrue(path.exists())
         data = _load_json(path)
         self.assertIn("name", data)
         self.assertIn("server", data)
 
     def test_fixture_profile_specific_mcp_exists(self) -> None:
-        path = self.FIXTURES / "mcp" / "tabnine-postgres.json"
+        path = self.FIXTURES / "mcp" / "tabnine-postgres" / "mcp.json"
         self.assertTrue(path.exists())
         data = _load_json(path)
         self.assertEqual(data["name"], "tabnine-postgres")

@@ -76,7 +76,7 @@ def _seed_source(root: pathlib.Path) -> None:
 
     put("memory/house.md", _HOUSE_MD)
     put("skills/code-review/SKILL.md", _SKILL_MD)
-    put("mcp/postgres.json", json.dumps(_MCP_POSTGRES))
+    put("mcp/postgres/mcp.json", json.dumps(_MCP_POSTGRES))
     put("bundles/base.json", json.dumps(_BUNDLE_BASE))
     put("bundles/backend.json", json.dumps(_BUNDLE_BACKEND))
 

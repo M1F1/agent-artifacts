@@ -79,7 +79,7 @@ class CompatibilityDecisionTests(unittest.TestCase):
         artifact = Artifact(
             "mcp",
             "postgres",
-            "mcp/postgres.json",
+            "mcp/postgres/mcp.json",
             Compatibility(("tabnine",)),
         )
         decision = check_profile_compatibility(artifact, "tabnine")
@@ -90,7 +90,7 @@ class CompatibilityDecisionTests(unittest.TestCase):
         artifact = Artifact(
             "mcp",
             "postgres",
-            "mcp/postgres.json",
+            "mcp/postgres/mcp.json",
             Compatibility(("tabnine",)),
         )
         decision = check_profile_compatibility(artifact, "claude")

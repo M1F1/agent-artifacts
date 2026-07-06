@@ -20,7 +20,7 @@ def _artifact(artifact_type, name):
     roots = {
         "skill": f"skills/{name}",
         "guideline": f"guidelines/{name}.md",
-        "mcp": f"mcp/{name}.json",
+        "mcp": f"mcp/{name}/mcp.json",
         "hook": f"hooks/{name}",
         "memory": f"memory/{name}.md",
     }

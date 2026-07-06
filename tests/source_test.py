@@ -153,9 +153,9 @@ class LocalSourceTest(unittest.TestCase):
         self.assertEqual(
             cat.artifacts[("guideline", "python-style")].root, "guidelines/python-style.md"
         )
-        self.assertEqual(cat.artifacts[("mcp", "postgres")].root, "mcp/postgres.json")
+        self.assertEqual(cat.artifacts[("mcp", "postgres")].root, "mcp/postgres/mcp.json")
         self.assertEqual(
-            cat.artifacts[("mcp", "tabnine-postgres")].root, "mcp/tabnine-postgres.json"
+            cat.artifacts[("mcp", "tabnine-postgres")].root, "mcp/tabnine-postgres/mcp.json"
         )
         self.assertEqual(cat.artifacts[("hook", "block-secrets")].root, "hooks/block-secrets")
         self.assertEqual(cat.artifacts[("memory", "house")].root, "memory/house.md")

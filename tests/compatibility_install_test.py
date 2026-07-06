@@ -22,7 +22,7 @@ def _copy_source(tmp: str) -> str:
         "compatibility": {"profiles": ["tabnine"]},
         "server": {"command": "npx", "args": ["-y", "postgres"]},
     }
-    path = os.path.join(source, "mcp", "tabnine-postgres.json")
+    path = os.path.join(source, "mcp", "tabnine-postgres", "mcp.json")
     pathlib.Path(path).write_text(json.dumps(restricted), encoding="utf-8")
     bundle_path = os.path.join(source, "bundles", "backend.json")
     bundle = json.loads(pathlib.Path(bundle_path).read_text(encoding="utf-8"))

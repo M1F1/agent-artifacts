@@ -85,8 +85,8 @@ class GuidelineParsingTests(unittest.TestCase):
 class McpParsingTests(unittest.TestCase):
     def test_happy(self):
         text = json.dumps({"name": "postgres", "description": "PG", "server": {"command": "npx"}})
-        res = catalog.parse_mcp(text, "postgres")
-        self.assertEqual(res, Ok(Artifact("mcp", "postgres", "mcp/postgres.json")))
+        res = catalog.parse_mcp(text, "postgres", root="mcp/postgres/mcp.json")
+        self.assertEqual(res, Ok(Artifact("mcp", "postgres", "mcp/postgres/mcp.json")))
 
     def test_bad_json_is_err(self):
         res = catalog.parse_mcp("{not valid json", "postgres")
@@ -176,7 +176,7 @@ class ResolveExtendsUnionTests(unittest.TestCase):
             Artifact("skill", "code-review", "skills/code-review"),
             Artifact("skill", "db-migrations", "skills/db-migrations"),
             Artifact("guideline", "python-style", "guidelines/python-style.md"),
-            Artifact("mcp", "postgres", "mcp/postgres.json"),
+            Artifact("mcp", "postgres", "mcp/postgres/mcp.json"),
         ]
         base = _bundle(
             "base",

@@ -105,7 +105,7 @@ class GuidelinePlannerTests(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 class McpPlannerTests(unittest.TestCase):
     def setUp(self):
-        self.art = Artifact(type="mcp", name="postgres", root="mcp/postgres.json")
+        self.art = Artifact(type="mcp", name="postgres", root="mcp/postgres/mcp.json")
         self.descriptor = {
             "name": "postgres",
             "description": "MCP server for PostgreSQL",
@@ -214,7 +214,7 @@ class PlanInstallTests(unittest.TestCase):
 
     def test_aggregates_multiple_artifacts_and_appends_manifest(self):
         skill = Artifact(type="skill", name="code-review", root="skills/code-review")
-        mcp = Artifact(type="mcp", name="postgres", root="mcp/postgres.json")
+        mcp = Artifact(type="mcp", name="postgres", root="mcp/postgres/mcp.json")
         request = Request(
             command="install", names=("code-review", "postgres"), profiles=("claude",)
         )
@@ -242,7 +242,7 @@ class PlanInstallTests(unittest.TestCase):
 
     def test_accumulates_multiple_errors_at_once(self):
         # Two failing targets: an mcp collision AND a missing-descriptor hook.
-        mcp = Artifact(type="mcp", name="postgres", root="mcp/postgres.json")
+        mcp = Artifact(type="mcp", name="postgres", root="mcp/postgres/mcp.json")
         hook = Artifact(type="hook", name="block-secrets", root="hooks/block-secrets")
         request = Request(command="install", profiles=("claude",))  # no force
         files = {
