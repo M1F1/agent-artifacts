@@ -263,9 +263,7 @@ class UnsupportedTypePolicy(_Base):
 class UninstallReversal(_Base):
     def test_prepend_uninstall_strips_block_keeps_foreign(self):
         pathlib.Path(self.path("CLAUDE.md")).write_text("# Pre-existing\n- keep me\n")
-        self.run_quiet(
-            self._install(names=("house",), profiles=("claude",), memory_mode="prepend")
-        )
+        self.run_quiet(self._install(names=("house",), profiles=("claude",), memory_mode="prepend"))
         self.assertIn(BEGIN, self.read("CLAUDE.md"))
         # uninstall by name from the claude profile.
         code = self.run_quiet(

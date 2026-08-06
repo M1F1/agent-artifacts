@@ -92,7 +92,9 @@ def _manifest_candidates(root: str, source: UpstreamSource, artifacts) -> Result
             errors.append(f"{item.type}/{item.name}: {problem}")
             continue
         tree = os.path.isdir(abs_path)
-        descriptor = _descriptor_source_path(root, item.type, item.name, abs_path, source, item.path)
+        descriptor = _descriptor_source_path(
+            root, item.type, item.name, abs_path, source, item.path
+        )
         out.append(
             ImportCandidate(
                 key=UpstreamKey(item.type, item.name),
@@ -247,9 +249,7 @@ def _mcp_candidate(
     )
 
 
-def _markdown_candidate(
-    root: str, source: UpstreamSource, path: str
-) -> Optional[ImportCandidate]:
+def _markdown_candidate(root: str, source: UpstreamSource, path: str) -> Optional[ImportCandidate]:
     rel = _rel(root, path)
     parts = rel.split("/")
     stem = os.path.splitext(os.path.basename(path))[0]
@@ -294,9 +294,13 @@ def _markdown_candidate(
 def _validate_artifact_path(artifact_type: ArtifactType, name: str, path: str) -> Optional[str]:
     try:
         if artifact_type == "skill":
-            return _parser_problem(catalog_mod.parse_skill(_read_text(os.path.join(path, "SKILL.md")), name))
+            return _parser_problem(
+                catalog_mod.parse_skill(_read_text(os.path.join(path, "SKILL.md")), name)
+            )
         if artifact_type == "hook":
-            return _parser_problem(catalog_mod.parse_hook(_read_text(os.path.join(path, "hook.json")), name))
+            return _parser_problem(
+                catalog_mod.parse_hook(_read_text(os.path.join(path, "hook.json")), name)
+            )
         if artifact_type == "guideline":
             return _parser_problem(catalog_mod.parse_guideline(_read_text(path), name))
         if artifact_type == "memory":

@@ -5,14 +5,14 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#15 — TUI: add User/Maintainer entry paths and maintainer workflows](https://github.com/M1F1/agent-artifacts/issues/15)
 
-- [ ] Make User/Maintainer selection the first screen in both curses and text TUI modes.
-- [ ] Explain each path in one line:
+- [x] Make User/Maintainer selection the first screen in both curses and text TUI modes.
+- [x] Explain each path in one line:
   - User installs, updates, and removes artifacts from subscribed/recorded catalog sources.
   - Maintainer can do the same and also curate the catalog and its upstreams.
-- [ ] Keep the existing profile-aware install/update/uninstall flow in User mode.
-- [ ] Record enough source/subscription identity for updates without asking for the repository
+- [x] Keep the existing profile-aware install/update/uninstall flow in User mode.
+- [x] Record enough source/subscription identity for updates without asking for the repository
       again.
-- [ ] Add guided Maintainer workflows for:
+- [x] Add guided Maintainer workflows for:
   - adding one upstream from a GitHub URL;
   - scanning a repository/path and selecting detected artifacts to import;
   - optionally adding imported artifacts to a bundle;
@@ -21,12 +21,12 @@ the source of truth for discussion and status; keep this file aligned with them.
   - validating the catalog before and after mutations;
   - showing artifact counts, tracked/untracked state, validation failures, and upstreams needing
     attention.
-- [ ] Make the active catalog checkout/source explicit and reject ambiguous catalog mutations.
-- [ ] End maintainer mutations with next steps such as reviewing the diff and running validation;
+- [x] Make the active catalog checkout/source explicit and reject ambiguous catalog mutations.
+- [x] End maintainer mutations with next steps such as reviewing the diff and running validation;
       never commit automatically.
-- [ ] Reuse Request objects and existing command/core logic instead of duplicating it in the TUI.
-- [ ] Cover role selection, clean quit, invalid catalog context, and upstream workflows in tests.
-- [ ] Document the distinction between reviewed consumer updates and maintainer catalog updates.
+- [x] Reuse Request objects and existing command/core logic instead of duplicating it in the TUI.
+- [x] Cover role selection, clean quit, invalid catalog context, and upstream workflows in tests.
+- [x] Document the distinction between reviewed consumer updates and maintainer catalog updates.
 
 ## [#16 — TUI: show a one-line description for every installable artifact](https://github.com/M1F1/agent-artifacts/issues/16)
 

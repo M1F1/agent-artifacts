@@ -66,8 +66,10 @@ def symlink_tree(src: str, dst: str) -> None:
     os.makedirs(dst_parent, exist_ok=True)
     if os.path.islink(dst_abs):
         current = os.readlink(dst_abs)
-        current_abs = current if os.path.isabs(current) else os.path.abspath(
-            os.path.join(dst_parent, current)
+        current_abs = (
+            current
+            if os.path.isabs(current)
+            else os.path.abspath(os.path.join(dst_parent, current))
         )
         if os.path.normpath(current_abs) == os.path.normpath(src_abs):
             return

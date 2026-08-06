@@ -40,6 +40,7 @@ from ..compatibility import (
 from ..io import fs
 from ..model import Artifact, Profile, Request, SkippedTarget
 from ..source import Source, open_source
+from ..subscriptions import subscription_from_request
 from . import _common
 
 # Type -> the `Profile` attribute that targets it. A `None` value on that attribute means the
@@ -232,11 +233,13 @@ def run(request: Request) -> int:
         "__source_root__": src.root,
     }
     kept_artifacts = {a.name: a for (a, _pname) in kept_targets}
+    subscription = subscription_from_request(request, src.root)
 
     for a in arts:
         if a.name not in kept_artifacts:
             continue  # every target for this artifact was dropped (unsupported, by-bundle)
         files[f"source:{a.name}"] = src.label()
+        files[f"subscription:{a.name}"] = subscription
         if a.type == "guideline":
             # A guideline is copied verbatim as a standalone reference doc — no shared-file
             # merge, so nothing to pre-read from the destination.

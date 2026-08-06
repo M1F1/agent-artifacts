@@ -99,7 +99,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
 
     def _add_project(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--project", metavar="DIR", help="consumer project directory (default: current dir)")
+        p.add_argument(
+            "--project", metavar="DIR", help="consumer project directory (default: current dir)"
+        )
 
     def _add_source(p: argparse.ArgumentParser, help_text: str) -> None:
         p.add_argument("--source", dest="source_dir", metavar="DIR", help=help_text)
@@ -268,6 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
     up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
 
+    p_validate = up.add_parser("validate", help="validate a local catalog and upstream metadata")
+    _add_source(p_validate, "catalog repository directory to validate (default: current dir)")
+    _add_json(p_validate)
+
+    p_health = up.add_parser("health", help="show local catalog and upstream health")
+    _add_source(p_health, "catalog repository directory to inspect (default: current dir)")
+    _add_json(p_health)
+
     p_check = up.add_parser("check", help="check tracked upstream artifacts")
     _add_source(p_check, "catalog repository directory to maintain (default: current dir)")
     _add_selection(p_check)
@@ -286,9 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--force", action="store_true", help="overwrite local catalog drift")
     _add_json(p_update)
 
-    p_add = up.add_parser(
-        "add", help="adopt an upstream artifact from a GitHub URL"
-    )
+    p_add = up.add_parser("add", help="adopt an upstream artifact from a GitHub URL")
     _add_source(p_add, "catalog repository directory to maintain (default: current dir)")
     p_add.add_argument(
         "names", nargs=1, metavar="TYPE/NAME", help="artifact key, e.g. skill/grill-me"
@@ -361,7 +369,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument(
         "--path", dest="path", metavar="PATH", help="override the in-repo path to import"
     )
-    p_import.add_argument("--interactive", action="store_true", help="prompt for candidate selection")
+    p_import.add_argument(
+        "--interactive", action="store_true", help="prompt for candidate selection"
+    )
     p_import.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
     p_import.add_argument("--force", action="store_true", help="replace existing catalog entries")
     _add_json(p_import)
@@ -394,7 +404,9 @@ def _to_request(args: argparse.Namespace) -> Request:
     select = getattr(args, "select", None)
     return Request(
         command=args.command,
-        names=_split_csv(select) if select is not None else tuple(getattr(args, "names", None) or ()),
+        names=_split_csv(select)
+        if select is not None
+        else tuple(getattr(args, "names", None) or ()),
         bundles=tuple(getattr(args, "bundle", None) or ()),
         profiles=_split_csv(getattr(args, "profile", None)),
         all=bool(getattr(args, "all", False)),

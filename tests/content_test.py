@@ -35,8 +35,12 @@ class TestMcpJsonFiles(unittest.TestCase):
 
     def test_no_flat_mcp_descriptors(self) -> None:
         flat = [p.name for p in MCP_DIR.glob("*.json")]
-        self.assertEqual(flat, [], f"Flat mcp/<name>.json descriptors found: {flat}; "
-                                   "MCP artifacts must live at mcp/<name>/mcp.json")
+        self.assertEqual(
+            flat,
+            [],
+            f"Flat mcp/<name>.json descriptors found: {flat}; "
+            "MCP artifacts must live at mcp/<name>/mcp.json",
+        )
 
     def test_all_mcp_dirs_have_valid_descriptor(self) -> None:
         mcp_dirs = [p for p in MCP_DIR.iterdir() if p.is_dir()]

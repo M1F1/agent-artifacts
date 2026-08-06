@@ -64,7 +64,13 @@ Prefer the interactive flow?
 aart
 ```
 
-The bare `aart` command opens a profile-first TUI for install, update, and remove flows.
+The bare `aart` command first asks which path you need:
+
+- **User** installs, updates, or removes harness artifacts from reviewed catalog subscriptions.
+- **Maintainer** can enter the same User workflows or curate a local catalog and its tracked
+  third-party upstreams through guided, preview-first operations.
+
+Both paths are available in the full-screen TUI and its plain-text fallback.
 
 Prefer more command line examples?
 
@@ -190,9 +196,15 @@ aart uninstall --all --profile tabnine --dry-run
 ```
 
 `aart status` is local and uses no network. `aart check` tells you whether the installed tool
-or installed artifacts are behind the reviewed source. `aart update` reapplies reviewed
-artifacts while respecting local edits; true conflicts are written to `.agent-artifacts-new`
-sidecars unless you use `--force`.
+or installed artifacts are behind the reviewed source. Each installed manifest entry records its
+catalog subscription (the packaged catalog, a local checkout, or a GitHub repo/ref), so a later
+`aart update` reopens the correct reviewed source without asking you to enter the repository
+again. One project may update entries from several recorded subscriptions in one safely planned
+operation. An explicit `--source` or `--repo` overrides and replaces the recorded subscription for
+the selected entries.
+
+`aart update` respects local edits; true conflicts are written to `.agent-artifacts-new` sidecars
+unless you use `--force`.
 
 Memory artifacts wrap installed content in invisible HTML-comment sentinels, so updates and
 uninstalls do not touch your hand-written notes in the same instruction file. Use
@@ -209,6 +221,11 @@ compose them into `bundles/`, and optionally track third-party origins in `upstr
 Consumer `aart update` never talks directly to third-party upstream repos. Maintainers import
 or update artifacts here, review the diff, and merge the catalog change. Users then install or
 update from the reviewed catalog.
+
+In the interactive Maintainer path, the absolute active catalog checkout is always shown. Every
+add, import, or upstream update runs catalog validation, shows a dry-run preview, asks for explicit
+confirmation, applies through the same command core, validates again, and leaves the Git working
+tree for you to review. `aart` never commits catalog mutations automatically.
 
 ### Configure GitHub Access
 
@@ -242,10 +259,16 @@ Enterprise, also set `GITHUB_API_URL` or use the per-source `api_url` metadata s
 Run these from the catalog repo root:
 
 ```sh
+aart upstream validate --source .
+aart upstream health --source .
 aart list --source .
 aart list --source . --json
 make validate
 ```
+
+`upstream health` summarizes artifact counts by type, tracked and untracked artifacts, validation
+errors, and tracked origins requiring attention. A missing `upstreams.json` is valid and means the
+catalog currently has no tracked third-party origins.
 
 Use `--source .` when you want the CLI to read the working tree you are editing, not the
 catalog bundled inside the installed package.
@@ -442,6 +465,8 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 |---------|:------:|------|
 | `aart list/install/update --source DIR` | no | Test a local catalog checkout |
 | `aart list/install --repo OWNER/NAME` | yes | Test a published remote catalog |
+| `aart upstream validate` | no | Validate a local catalog and its upstream metadata |
+| `aart upstream health` | if origins are tracked | Summarize catalog coverage and upstream attention |
 | `aart upstream add` | yes | Adopt one upstream artifact from a GitHub URL and track it |
 | `aart upstream scan` | yes | Scan a GitHub repo/path for importable artifacts |
 | `aart upstream import` | yes | Batch-vendor selected GitHub artifacts and optionally create/update a bundle |

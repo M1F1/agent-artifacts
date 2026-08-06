@@ -243,6 +243,19 @@ class InstallProof:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogSubscription:
+    """Stable identity of the catalog to reopen for a consumer update.
+
+    ``ManifestEntry.source`` records the resolved content version.  This value records the
+    unresolved subscription: packaged/local catalog root, or GitHub repository and ref.
+    """
+
+    kind: Literal["package", "local", "github"]
+    location: str
+    ref: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
 class ManifestEntry:
     artifact: str
     type: ArtifactType
@@ -253,6 +266,7 @@ class ManifestEntry:
     merge: Optional[MergeProof] = None  # hooks carry both files and merge
     installed_at: str = ""
     install: InstallProof = field(default_factory=InstallProof)
+    subscription: Optional[CatalogSubscription] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,8 +305,12 @@ class Request:
     json: bool = False
     prune: bool = False
     install_mode: InstallMode = "copy"
-    memory_mode: Optional[str] = None  # docs/design/DESIGN-memory.md §3.4; None → planner applies "prepend"
-    upstream_action: Optional[str] = None  # "check" | "update" | "add" (maintainer-side upstreams)
+    memory_mode: Optional[str] = (
+        None  # docs/design/DESIGN-memory.md §3.4; None → planner applies "prepend"
+    )
+    upstream_action: Optional[str] = (
+        None  # maintainer action: validate/health/add/scan/import/check/update
+    )
     url: Optional[str] = None  # GitHub URL for `upstream add`
     ref: Optional[str] = None  # explicit ref override for `upstream add`
     path: Optional[str] = None  # explicit in-repo path override for `upstream add`

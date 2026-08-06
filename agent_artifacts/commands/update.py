@@ -36,6 +36,7 @@ from ..io import fs
 from ..manifest import prune_plan
 from ..model import (
     Artifact,
+    CatalogSubscription,
     CopyTree,
     Err,
     Manifest,
@@ -54,6 +55,12 @@ from ..model import (
 from ..policy import classify, decision_action
 from ..profiles.loader import load_profiles
 from ..source import open_source
+from ..subscriptions import (
+    group_entries_by_subscription,
+    has_source_override,
+    request_for_subscription,
+    subscription_from_request,
+)
 from . import _common
 
 
@@ -62,20 +69,8 @@ from . import _common
 # --------------------------------------------------------------------------- #
 def run(request: Request) -> int:
     """Re-pull installed artifacts and apply the §9 per-file update policy."""
-    # 1. Re-pull the source (Err -> print + NETWORK).
-    src_result = open_source(request)
-    if isinstance(src_result, Err):
-        print(src_result.reason)
-        return _common.NETWORK
-    src = src_result.value
-
-    cat_result = src.catalog()
-    if isinstance(cat_result, Err):
-        print(cat_result.reason)
-        return _common.exit_code(cat_result)
-    catalog = cat_result.value
-
-    # 2. Load the current manifest (corrupt -> CORRUPT_MANIFEST).
+    # 1. Load and select manifest entries before resolving sources.  The selected entries carry
+    #    the subscriptions that decide which catalog(s) must be reopened.
     man_result = _common.load_manifest(request)
     if isinstance(man_result, Err):
         print(man_result.reason)
@@ -85,41 +80,88 @@ def run(request: Request) -> int:
     project = _common.project_root(request)
     profiles = load_profiles(project)
 
-    # 2b. Select which installed entries to update.
     selected, others = _select_entries(manifest, request)
 
-    # 3. Recompute the desired install plan for each selected entry, then apply §9.
-    desired_result = _build_desired_plan(request, catalog, profiles, src, selected)
-    if isinstance(desired_result, Err):
-        print(desired_result.reason)
-        return _common.exit_code(desired_result)
-    desired_plan, new_entries, skipped = desired_result.value
+    # 2. Resolve and plan every subscription group before executing anything.  This preserves
+    #    all-or-nothing planning safety when one project contains entries from several catalogs.
+    source_groups: Tuple[Tuple[Request, Tuple[ManifestEntry, ...]], ...]
+    if has_source_override(request):
+        source_groups = ((request, selected),) if selected else ()
+    else:
+        source_groups = tuple(
+            (
+                request
+                if group.subscription is None
+                else request_for_subscription(request, group.subscription),
+                group.entries,
+            )
+            for group in group_entries_by_subscription(selected)
+        )
 
-    update_plan, conflict = _apply_policy(
-        desired_plan,
-        selected,
-        project,
-        force=request.force,
-        source_root=src.root,
-    )
+    update_plan: Plan = ()
+    new_entries: Tuple[ManifestEntry, ...] = ()
+    skipped: Tuple[SkippedTarget, ...] = ()
+    conflict = False
+    for source_request, group_entries in source_groups:
+        src_result = open_source(source_request)
+        if isinstance(src_result, Err):
+            print(src_result.reason)
+            return _common.NETWORK
+        src = src_result.value
 
-    # 4. --prune: append removals for entries dropped from the selection.
+        cat_result = src.catalog()
+        if isinstance(cat_result, Err):
+            print(cat_result.reason)
+            return _common.exit_code(cat_result)
+
+        subscription = subscription_from_request(source_request, src.root)
+        desired_result = _build_desired_plan(
+            source_request,
+            cat_result.value,
+            profiles,
+            src,
+            group_entries,
+            source_label=src.label(),
+            subscription=subscription,
+        )
+        if isinstance(desired_result, Err):
+            print(desired_result.reason)
+            return _common.exit_code(desired_result)
+        desired_plan, group_new_entries, group_skipped = desired_result.value
+        group_plan, group_conflict = _apply_policy(
+            desired_plan,
+            group_entries,
+            project,
+            force=request.force,
+            source_root=src.root,
+        )
+        update_plan += _common.rebase_plan(
+            group_plan,
+            source_root=src.root,
+            project_root=project,
+        )
+        new_entries += group_new_entries
+        skipped += group_skipped
+        conflict = conflict or group_conflict
+
+    # 3. --prune: append removals for entries dropped from the selection.
     pruned_manifest = manifest
     if request.prune and others:
         prune_actions, pruned_manifest = _prune(manifest, selected)
-        update_plan = update_plan + prune_actions
+        update_plan += _common.rebase_plan(
+            prune_actions,
+            source_root="",
+            project_root=project,
+        )
 
-    # 5. Rebase onto the real source/project roots.
-    rebased = _common.rebase_plan(update_plan, source_root=src.root, project_root=project)
-
-    # 5b. --dry-run: present the plan, touch nothing.
+    # 4. --dry-run: present the fully planned multi-source operation, touch nothing.
     if request.dry_run:
-        _emit(rebased, json_mode=request.json, skipped=skipped)
+        _emit(update_plan, json_mode=request.json, skipped=skipped)
         return _common.CONFLICT if conflict and not request.force else _common.OK
 
-    # 5c. Execute and persist the refreshed manifest.
-    report = execute(rebased)
-    final_manifest = _merge_entries(pruned_manifest, new_entries, src.label())
+    # 5. Execute once after every source group planned successfully, then persist subscriptions.
+    report = execute(update_plan)
+    final_manifest = _merge_entries(pruned_manifest, new_entries)
     _common.save_manifest(project, final_manifest)
 
     # 6. Output + exit code.
@@ -182,6 +224,9 @@ def _build_desired_plan(
     profiles: Mapping[str, Profile],
     src,
     selected: Tuple[ManifestEntry, ...],
+    *,
+    source_label: str,
+    subscription: CatalogSubscription,
 ):
     """Re-derive each selected entry's desired install Plan from the *current* source.
 
@@ -223,6 +268,8 @@ def _build_desired_plan(
                 skipped.append(skipped_target)
             continue
         targets.append((artifact, profile_name))
+        files[f"source:{entry.artifact}"] = source_label
+        files[f"subscription:{entry.artifact}"] = subscription
         files[f"bundle:{entry.artifact}"] = entry.bundle
         files[f"install-mode:{profile_name}:{artifact.name}"] = entry.install.requested_mode
         _gather_inputs(
@@ -464,15 +511,12 @@ def _symlink_update_actions(
         return (action,), False
     actual = _actual_symlink_target(abs_path)
     if actual == expected and os.path.exists(actual):
-        return (
-            Warn(message=f"live-linked: {action.dst} -> {expected}; no copy needed"),
-        ), False
+        return (Warn(message=f"live-linked: {action.dst} -> {expected}; no copy needed"),), False
     if not force:
         return (
             Warn(
                 message=(
-                    f"symlink {action.dst} changed or broken; use --force to relink "
-                    f"to {expected}"
+                    f"symlink {action.dst} changed or broken; use --force to relink to {expected}"
                 )
             ),
         ), True
@@ -512,30 +556,17 @@ def _prune(manifest: Manifest, selected: Tuple[ManifestEntry, ...]) -> Tuple[Pla
 # --------------------------------------------------------------------------- #
 # Manifest refresh                                                              #
 # --------------------------------------------------------------------------- #
-def _merge_entries(
-    manifest: Manifest, new_entries: Tuple[ManifestEntry, ...], source_label: str
-) -> Manifest:
-    """Upsert the freshly-planned entries (with the new source label) into `manifest`.
+def _merge_entries(manifest: Manifest, new_entries: Tuple[ManifestEntry, ...]) -> Manifest:
+    """Upsert freshly-planned entries with their per-source proof and subscription.
 
-    Each refreshed entry carries the re-derived file hashes from `plan_install` and the
-    current source label, so a subsequent update sees the just-applied content as its base.
+    Each refreshed entry carries re-derived file hashes, the resolved source label, and the
+    subscription needed to reopen its catalog on the next update.
     """
     from ..manifest import upsert
 
     out = manifest
     for entry in new_entries:
-        refreshed = ManifestEntry(
-            artifact=entry.artifact,
-            type=entry.type,
-            profile=entry.profile,
-            source=source_label,
-            bundle=entry.bundle,
-            files=entry.files,
-            merge=entry.merge,
-            installed_at=entry.installed_at,
-            install=entry.install,
-        )
-        out = upsert(out, refreshed)
+        out = upsert(out, entry)
     return out
 
 

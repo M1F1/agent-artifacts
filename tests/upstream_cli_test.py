@@ -28,6 +28,15 @@ def _dispatch(argv, code=0):
 
 
 class UpstreamCliTests(unittest.TestCase):
+    def test_upstream_validate_and_health_map_local_catalog_requests(self):
+        for action in ("validate", "health"):
+            with self.subTest(action=action):
+                code, request = _dispatch(["upstream", action, "--source", "/catalog"])
+                self.assertEqual(code, 0)
+                self.assertEqual(request.command, "upstream")
+                self.assertEqual(request.upstream_action, action)
+                self.assertEqual(request.source_dir, "/catalog")
+
     def test_upstream_check_maps_request(self):
         # Pure namespace->Request mapping (maps via _to_request, bypassing cli.main's validator):
         # --all + --bundle is a now-invalid combination, exercised here only to cover field

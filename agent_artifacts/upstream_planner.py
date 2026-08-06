@@ -278,10 +278,7 @@ def _sidecar_actions(
     catalog_root: str,
 ) -> Result:
     tree = _is_tree_artifact(entry)
-    dst = (
-        _catalog_destination(entry.key, catalog_root, tree=tree)
-        + ".agent-artifacts-upstream-new"
-    )
+    dst = _catalog_destination(entry.key, catalog_root, tree=tree) + ".agent-artifacts-upstream-new"
     src = _staged_path(resolved)
 
     if tree:
