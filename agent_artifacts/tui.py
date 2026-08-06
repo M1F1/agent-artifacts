@@ -40,18 +40,21 @@ from .model import (
     Catalog,
     Err,
     InstallMode,
+    InstallScope,
     Manifest,
     Profile,
     Request,
     Result,
 )
 from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
+from .planners import install_target_paths
 from .profiles.loader import load_profiles
+from .profiles.scope import profile_for_scope
 from .source import open_source
 
 # The three write actions the selector can drive; these are the verbs that build and dispatch a
 # Request.
-ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall")
+ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall", "status")
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +130,29 @@ INSTALL_MODE_CHOICES: Tuple[InstallModeChoice, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class InstallScopeChoice:
+    """One explicit consumer configuration/state boundary."""
+
+    scope: InstallScope
+    label: str
+    description: str
+
+
+INSTALL_SCOPE_CHOICES: Tuple[InstallScopeChoice, ...] = (
+    InstallScopeChoice(
+        "project",
+        "Project (recommended)",
+        "Configure only the current repository.",
+    ),
+    InstallScopeChoice(
+        "user",
+        "User",
+        "Configure the selected harnesses for the current user across projects.",
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
 class InstallModeCounts:
     """Projected artifact/profile targets by actual installation mode."""
 
@@ -145,6 +171,8 @@ class InstallConfirmation:
     requested_mode: InstallMode
     selected: Tuple[str, ...]
     modes: InstallModeCounts
+    scope: InstallScope = "project"
+    destinations: Tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------- #
@@ -237,13 +265,15 @@ def build_install_choices(
     profiles: Mapping[str, Profile],
     *,
     install_mode: InstallMode = "copy",
+    scope: InstallScope = "project",
 ) -> Tuple[_Choice, ...]:
     """Build installable artifact/bundle choices for selected profiles."""
     out: List[_Choice] = []
     arts: List[Artifact] = list(catalog.artifacts.values())
     arts.sort(key=lambda a: (_type_rank(a.type), a.name))
     for artifact in arts:
-        if artifact_visible_for_profiles(artifact, profile_names, profiles):
+        visible = artifact_visible_for_profiles(artifact, profile_names, profiles)
+        if visible:
             linkable = _linkable(artifact)
             enabled = install_mode == "copy" or linkable
             reason = (
@@ -275,6 +305,39 @@ def build_install_choices(
                     copied_count=(
                         len(profile_names) if install_mode == "copy" or not linkable else 0
                     ),
+                )
+            )
+        elif scope == "user":
+            reasons = []
+            for profile_name in profile_names:
+                profile = profiles.get(profile_name)
+                if profile is None:
+                    continue
+                if not _profile_supports(profile, artifact.type):
+                    reasons.append(
+                        profile.unsupported.get(
+                            artifact.type,
+                            f"{profile_name} does not support {artifact.type} in user scope",
+                        )
+                    )
+                elif not check_profile_compatibility(artifact, profile_name).ok:
+                    reasons.append(f"not compatible with {profile_name}")
+            reason = "; ".join(dict.fromkeys(reasons)) or "unavailable in user scope"
+            out.append(
+                _Choice(
+                    "artifact",
+                    artifact.name,
+                    artifact.type,
+                    _choice_label(
+                        "artifact",
+                        artifact.name,
+                        artifact.type,
+                        artifact.description,
+                        reason,
+                    ),
+                    description=artifact.description,
+                    enabled=False,
+                    reason=reason,
                 )
             )
 
@@ -338,6 +401,7 @@ def build_action_choices(
     profiles: Mapping[str, Profile],
     *,
     install_mode: InstallMode = "copy",
+    scope: InstallScope = "project",
 ) -> Tuple[_Choice, ...]:
     """Build the selectable rows for an action after profile selection."""
     if action == "install":
@@ -346,6 +410,7 @@ def build_action_choices(
             profile_names,
             profiles,
             install_mode=install_mode,
+            scope=scope,
         )
     if action in ("update", "uninstall"):
         if manifest is None:
@@ -415,13 +480,35 @@ def build_install_confirmation(
     catalog: Catalog,
     choices: Sequence[_Choice],
     profiles_map: Mapping[str, Profile],
+    scope: InstallScope = "project",
+    user_home: Optional[str] = None,
 ) -> InstallConfirmation:
     """Build the shared immutable confirmation model for an Install selection."""
 
+    destination_root = (
+        os.path.abspath(user_home or os.path.expanduser("~"))
+        if scope == "user"
+        else os.path.abspath(project or ".")
+    )
+    destinations: List[str] = []
+    seen_destinations = set()
+    for artifact in _selected_install_artifacts(catalog, choices, profiles, profiles_map):
+        for profile_name in profiles:
+            profile = profiles_map.get(profile_name)
+            if profile is None:
+                continue
+            for target in install_target_paths(artifact, profile):
+                absolute = (
+                    target if os.path.isabs(target) else os.path.join(destination_root, target)
+                )
+                absolute = os.path.normpath(absolute)
+                if absolute not in seen_destinations:
+                    seen_destinations.add(absolute)
+                    destinations.append(absolute)
     return InstallConfirmation(
         source_label=source_label,
         source_root=os.path.abspath(source_root),
-        destination_root=os.path.abspath(project or "."),
+        destination_root=destination_root,
         profiles=tuple(profiles),
         requested_mode=requested_mode,
         selected=tuple(choice.name for choice in choices),
@@ -432,6 +519,8 @@ def build_install_confirmation(
             profiles_map,
             requested_mode,
         ),
+        scope=scope,
+        destinations=tuple(destinations),
     )
 
 
@@ -439,10 +528,11 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
     """Pure text projection shared by text and curses Install confirmation."""
 
     mode_label = "Symlink" if confirmation.requested_mode == "symlink" else "Copy"
-    return (
+    scope_label = "User" if confirmation.scope == "user" else "Project"
+    lines: Tuple[str, ...] = (
         "Confirm installation",
         f"  Source: {confirmation.source_label} ({confirmation.source_root})",
-        f"  Destination: Project — {confirmation.destination_root}",
+        f"  Destination: {scope_label} — {confirmation.destination_root}",
         f"  Harnesses: {', '.join(confirmation.profiles)}",
         f"  Requested mode: {mode_label}",
         (
@@ -451,6 +541,11 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
         ),
         f"  Selected: {', '.join(confirmation.selected)}",
     )
+    if confirmation.scope == "user" and confirmation.destinations:
+        lines += ("  Resolved destinations:",) + tuple(
+            f"    - {path}" for path in confirmation.destinations
+        )
+    return lines
 
 
 def _build_manifest_choices(
@@ -517,6 +612,8 @@ def _build_request(
     repo: Optional[str],
     project: Optional[str],
     install_mode: InstallMode = "copy",
+    scope: InstallScope = "project",
+    user_home: Optional[str] = None,
 ) -> Request:
     """Assemble the `Request` for *action* from the picked rows + profiles.
 
@@ -534,7 +631,9 @@ def _build_request(
         profiles=tuple(profiles),
         source_dir=source_dir,
         repo=repo,
-        project=project,
+        project=project if scope == "project" else None,
+        scope=scope,
+        user_home=user_home,
         yes=True,
         install_mode=install_mode,
     )
@@ -650,6 +749,7 @@ def _run_user_text(
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
+    user_home: Optional[str] = None,
 ) -> int:
     """Plain prompt-driven selector. Returns a process exit code.
 
@@ -666,8 +766,8 @@ def _run_user_text(
     * ``source_dir`` / ``repo`` / ``project`` — threaded into every `Request` so the catalog
       shown and the command dispatched resolve against the **same** source (offline-friendly).
     """
-    profiles_map = load_profiles(project)
-    profile_names = sorted(profiles_map)
+    base_profiles = load_profiles(project)
+    profile_names = sorted(base_profiles)
     if not profile_names:  # pragma: no cover - built-ins always present
         write("No profiles available.")
         return _cancel(write, "No profiles available; no changes were made.")
@@ -682,6 +782,8 @@ def _run_user_text(
     profiles = [profile_names[idx] for idx in picked_profiles]
 
     install_mode: InstallMode = "copy"
+    scope: InstallScope = "project"
+    profiles_map: Mapping[str, Profile] = base_profiles
     install_source = None
     while True:
         write("Action:")
@@ -691,9 +793,40 @@ def _run_user_text(
         if action is None:
             return _cancel(write)
 
+        selected_scope = _prompt_install_scope(read, write)
+        if selected_scope is None:
+            return _cancel(write)
+        scope = selected_scope
+        resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
+        profiles_map = (
+            base_profiles
+            if scope == "project"
+            else {
+                name: profile_for_scope(profile, scope, resolved_home)
+                for name, profile in base_profiles.items()
+            }
+        )
+        request_project = project if scope == "project" else None
+
+        if action == "status":
+            request = Request(
+                command="status",
+                project=request_project,
+                scope=scope,
+                user_home=user_home,
+            )
+            return _render_result(_dispatch_result(request), write)
+
         catalog = Catalog(artifacts={}, bundles={})
         if action in ("install", "update"):
-            base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            base = Request(
+                command=action,
+                source_dir=source_dir,
+                repo=repo,
+                project=request_project,
+                scope=scope,
+                user_home=user_home,
+            )
             src_res = source_factory(base)
             if isinstance(src_res, Err):
                 write(f"error: {src_res.reason}")
@@ -729,7 +862,14 @@ def _run_user_text(
         elif action == "uninstall":
             # Descriptions improve the manifest-driven uninstall menu when its source is available,
             # but source/network failure must never make removal unavailable.
-            base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            base = Request(
+                command=action,
+                source_dir=source_dir,
+                repo=repo,
+                project=request_project,
+                scope=scope,
+                user_home=user_home,
+            )
             src_res = source_factory(base)
             if not isinstance(src_res, Err):
                 cat_res = src_res.value.catalog()
@@ -743,7 +883,9 @@ def _run_user_text(
             action,
             source_dir=source_dir,
             repo=repo,
-            project=project,
+            project=project if scope == "project" else None,
+            scope=scope,
+            user_home=user_home,
         )
         if isinstance(manifest_res, Err):
             write(f"error: {manifest_res.reason}")
@@ -757,6 +899,7 @@ def _run_user_text(
         profiles,
         profiles_map,
         install_mode=install_mode,
+        scope=scope,
     )
     if not choices:
         write(_empty_choices_message(action, profiles))
@@ -781,6 +924,8 @@ def _run_user_text(
         repo=repo,
         project=project,
         install_mode=install_mode,
+        scope=scope,
+        user_home=user_home,
     )
     if action == "install":
         assert install_source is not None
@@ -793,6 +938,8 @@ def _run_user_text(
             catalog=catalog,
             choices=chosen,
             profiles_map=profiles_map,
+            scope=scope,
+            user_home=user_home,
         )
         for line in render_install_confirmation(confirmation):
             write(line)
@@ -809,6 +956,7 @@ def _run_text(
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
+    user_home: Optional[str] = None,
 ) -> int:
     """Role-first text frontend shared by real fallback mode and headless tests."""
     role = _prompt_role(read, write)
@@ -822,6 +970,7 @@ def _run_text(
             source_dir=source_dir,
             repo=repo,
             project=project,
+            user_home=user_home,
         )
     return _run_maintainer_text(
         read,
@@ -1137,12 +1286,21 @@ def _load_manifest_for_action(
     source_dir: Optional[str],
     repo: Optional[str],
     project: Optional[str],
+    scope: InstallScope = "project",
+    user_home: Optional[str] = None,
 ) -> Result:
     """Load the consumer manifest for update/uninstall choice building."""
     from .commands import _common
 
     return _common.load_manifest(
-        Request(command=action, source_dir=source_dir, repo=repo, project=project)
+        Request(
+            command=action,
+            source_dir=source_dir,
+            repo=repo,
+            project=project if scope == "project" else None,
+            scope=scope,
+            user_home=user_home,
+        )
     )
 
 
@@ -1232,6 +1390,26 @@ def _text_choice_line(index: int, choice: _Choice, width: int) -> str:
     return prefix + _ellipsize(choice.label, max(width - len(prefix), 0))
 
 
+def _prompt_install_scope(read: ReadFn, write: WriteFn) -> Optional[InstallScope]:
+    """Select the state/destination boundary; blank keeps the project default."""
+
+    write("Installation scope:")
+    for index, choice in enumerate(INSTALL_SCOPE_CHOICES, start=1):
+        write(f"  {index:>2}. {choice.label:<23} {choice.description}")
+    while True:
+        line = _read_line(read, "Installation scope [1] (q=quit): ")
+        if line is None:
+            return None
+        answer = line.strip().lower()
+        if answer in ("q", "quit"):
+            return None
+        if answer in ("", "1", "project"):
+            return "project"
+        if answer in ("2", "user", "global"):
+            return "user"
+        write("Please enter 1 (Project), 2 (User), or 'q' to quit.")
+
+
 def _prompt_install_mode(
     read: ReadFn,
     write: WriteFn,
@@ -1291,6 +1469,7 @@ def _run_curses(
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
+    user_home: Optional[str] = None,
 ) -> int:
     """Full-screen selector via stdlib ``curses``; falls back to text on any failure.
 
@@ -1301,8 +1480,8 @@ def _run_curses(
     """
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
 
-    profiles_map = load_profiles(project)
-    profile_names = sorted(profiles_map)
+    base_profiles = load_profiles(project)
+    profile_names = sorted(base_profiles)
     if not profile_names:  # pragma: no cover - built-ins always present
         print("No profiles available.")
         return 0
@@ -1361,7 +1540,10 @@ def _run_curses(
         )
         if picked_profs is None:
             return
+        selected_profiles = [profile_names[i] for i in picked_profs]
         install_mode: InstallMode = "copy"
+        scope: InstallScope = "project"
+        profiles_map: Mapping[str, Profile] = base_profiles
         install_source = None
         while True:
             action_idx = _curses_singleselect(
@@ -1370,10 +1552,36 @@ def _run_curses(
             if action_idx is None:
                 return
             action = ACTIONS[action_idx]
+            selected_scope = _curses_install_scope(curses, stdscr)
+            if selected_scope is None:
+                return
+            scope = selected_scope
+            resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
+            profiles_map = (
+                base_profiles
+                if scope == "project"
+                else {
+                    name: profile_for_scope(profile, scope, resolved_home)
+                    for name, profile in base_profiles.items()
+                }
+            )
+            request_project = project if scope == "project" else None
+            if action == "status":
+                selection["status"] = True
+                selection["profs"] = picked_profs
+                selection["scope"] = scope
+                return
             catalog = Catalog(artifacts={}, bundles={})
             if action in ("install", "update"):
                 src_res = open_source(
-                    Request(command=action, source_dir=source_dir, repo=repo, project=project)
+                    Request(
+                        command=action,
+                        source_dir=source_dir,
+                        repo=repo,
+                        project=request_project,
+                        scope=scope,
+                        user_home=user_home,
+                    )
                 )
                 if isinstance(src_res, Err):
                     selection["error"] = (src_res.reason, getattr(src_res, "code", 1))
@@ -1404,7 +1612,14 @@ def _run_curses(
             elif action == "uninstall":
                 # Uninstall remains manifest-driven; catalog lookup only enriches display metadata.
                 src_res = open_source(
-                    Request(command=action, source_dir=source_dir, repo=repo, project=project)
+                    Request(
+                        command=action,
+                        source_dir=source_dir,
+                        repo=repo,
+                        project=request_project,
+                        scope=scope,
+                        user_home=user_home,
+                    )
                 )
                 if not isinstance(src_res, Err):
                     cat_res = src_res.value.catalog()
@@ -1418,14 +1633,15 @@ def _run_curses(
                 action,
                 source_dir=source_dir,
                 repo=repo,
-                project=project,
+                project=request_project,
+                scope=scope,
+                user_home=user_home,
             )
             if isinstance(manifest_res, Err):
                 selection["error"] = (manifest_res.reason, getattr(manifest_res, "code", 1))
                 return
             manifest = manifest_res.value
 
-        selected_profiles = [profile_names[i] for i in picked_profs]
         choices = build_action_choices(
             action,
             catalog,
@@ -1433,6 +1649,7 @@ def _run_curses(
             selected_profiles,
             profiles_map,
             install_mode=install_mode,
+            scope=scope,
         )
         if not choices:
             selection["empty"] = (action, selected_profiles)
@@ -1468,6 +1685,8 @@ def _run_curses(
                 catalog=catalog,
                 choices=chosen,
                 profiles_map=profiles_map,
+                scope=scope,
+                user_home=user_home,
             )
             if not _curses_confirm_install(curses, stdscr, confirmation):
                 selection["cancelled"] = True
@@ -1477,12 +1696,18 @@ def _run_curses(
         selection["action"] = action_idx
         selection["choices"] = choices
         selection["install_mode"] = install_mode
+        selection["scope"] = scope
 
     try:
         curses.wrapper(_ui)
     except Exception:
         # Terminal too small, no color, init failure, etc. — degrade gracefully.
-        return _run_text(source_dir=source_dir, repo=repo, project=project)
+        return _run_text(
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+            user_home=user_home,
+        )
 
     if "error" in selection:
         reason, code = selection["error"]
@@ -1502,6 +1727,19 @@ def _run_curses(
             repo=repo,
             project=project,
         )
+    if "status" in selection:
+        scope = selection.get("scope", "project")
+        return _render_result(
+            _dispatch_result(
+                Request(
+                    command="status",
+                    project=project if scope == "project" else None,
+                    scope=scope,
+                    user_home=user_home,
+                )
+            ),
+            print,
+        )
     if "empty_selection" in selection:
         return _cancel(print, "No artifacts selected; no changes were made.")
     if "action" not in selection:
@@ -1520,6 +1758,8 @@ def _run_curses(
         repo=repo,
         project=project,
         install_mode=selection.get("install_mode", "copy"),
+        scope=selection.get("scope", "project"),
+        user_home=user_home,
     )
     return _render_result(_dispatch_result(request), print)
 
@@ -1598,6 +1838,21 @@ def _draw_list(
         if row < _height(stdscr):
             stdscr.addstr(row, 0, _ellipsize(line, available))
     stdscr.refresh()
+
+
+def _curses_install_scope(curses, stdscr) -> Optional[InstallScope]:
+    """Scope selector with Project under the initial cursor."""
+
+    labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_SCOPE_CHOICES]
+    selected = _curses_singleselect(
+        curses,
+        stdscr,
+        "Installation scope  (enter=confirm, q=quit)",
+        labels,
+    )
+    if selected is None:
+        return None
+    return INSTALL_SCOPE_CHOICES[selected].scope
 
 
 def _curses_install_mode(
@@ -1728,6 +1983,7 @@ def run(
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
+    user_home: Optional[str] = None,
 ) -> int:
     """Launch the interactive selector; return a process exit code.
 
@@ -1743,9 +1999,24 @@ def run(
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             raise RuntimeError("not a tty")
     except Exception:
-        return _run_text(source_dir=source_dir, repo=repo, project=project)
+        return _run_text(
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+            user_home=user_home,
+        )
 
     try:
-        return _run_curses(source_dir=source_dir, repo=repo, project=project)
+        return _run_curses(
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+            user_home=user_home,
+        )
     except Exception:  # pragma: no cover - last-resort guard around the curses path
-        return _run_text(source_dir=source_dir, repo=repo, project=project)
+        return _run_text(
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+            user_home=user_home,
+        )

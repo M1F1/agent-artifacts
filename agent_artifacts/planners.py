@@ -70,6 +70,30 @@ def _join(*parts: str) -> str:
     return "/".join(cleaned)
 
 
+def install_target_paths(artifact: Artifact, profile: Profile) -> Tuple[str, ...]:
+    """Pure destination projection shared by planning previews and the TUI confirmation."""
+
+    if artifact.type == "skill" and profile.skills is not None:
+        target = profile.skills.dir
+        if _NAME_PLACEHOLDER in target:
+            return (_substitute_name(target, artifact.name).rstrip("/"),)
+        return (_join(target, artifact.name).rstrip("/"),)
+    if artifact.type == "guideline" and profile.guidelines is not None:
+        return (_join(profile.guidelines.dest, f"{artifact.name}.md"),)
+    if artifact.type == "mcp" and profile.mcp is not None:
+        return (profile.mcp.file,)
+    if artifact.type == "hook" and profile.hooks is not None:
+        return (
+            _substitute_name(profile.hooks.scripts_dir, artifact.name).rstrip("/"),
+            profile.hooks.merge.file,
+        )
+    if artifact.type == "memory" and profile.memory is not None:
+        if profile.memory.kind == "dir":
+            return (_join(profile.memory.dest, f"{artifact.name}.md"),)
+        return (profile.memory.dest,)
+    return ()
+
+
 def memory_sentinel_markers(name: str) -> Tuple[str, str]:
     """Return the ``(begin, end)`` HTML-comment markers wrapping our ``memory`` block.
 
@@ -351,7 +375,11 @@ def plan_hook(
         tree_action = CopyTree(src=artifact.root, dst=scripts_dir)
     copy_actions: Tuple[Action, ...] = (tree_action,)
 
-    rendered = merge.render(hooks.merge.entry_template, descriptor)
+    render_values = dict(descriptor)
+    command = render_values.get("command")
+    if isinstance(command, str):
+        render_values["command"] = command.replace("${SCRIPT_DIR}", scripts_dir)
+    rendered = merge.render(hooks.merge.entry_template, render_values)
     merge_result = merge.plan_merge(
         hooks.merge,
         rendered,
@@ -417,6 +445,38 @@ def _install_proof(
     return InstallProof(mode=mode, requested_mode=requested_mode, links=tuple(links))
 
 
+def _identity_field(node: object, field: str) -> Tuple[bool, object]:
+    """Find one reviewed list-merge identity field in a rendered nested value."""
+
+    if isinstance(node, Mapping):
+        if field in node:
+            return True, node[field]
+        for value in node.values():
+            found, identity = _identity_field(value, field)
+            if found:
+                return True, identity
+    elif isinstance(node, (list, tuple)):
+        for value in node:
+            found, identity = _identity_field(value, field)
+            if found:
+                return True, identity
+    return False, None
+
+
+def _merge_identity(action: MergeJson) -> Mapping[str, object]:
+    """Materialize list identity values so uninstall can remove only the managed element."""
+
+    if action.mode != "list" or not action.identity:
+        return {}
+    identity = {}
+    for field in action.identity:
+        found, value = _identity_field(action.value, field)
+        if not found:
+            return {}
+        identity[field] = value
+    return identity
+
+
 def _merge_proof(plan: Plan) -> Optional[MergeProof]:
     """Build a `MergeProof` from the (last) `MergeJson` in `plan`, if any."""
     for action in reversed(plan):
@@ -428,7 +488,7 @@ def _merge_proof(plan: Plan) -> Optional[MergeProof]:
                 file=action.file,
                 json_path=json_path,
                 mode=action.mode,
-                identity={k: None for k in action.identity},
+                identity=_merge_identity(action),
                 value_hash=sha256_bytes(repr(action.value).encode("utf-8")),
             )
     return None

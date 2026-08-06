@@ -63,7 +63,6 @@ from ..outcomes import (
     render_outcome,
 )
 from ..policy import classify, decision_action
-from ..profiles.loader import load_profiles
 from ..source import open_source
 from ..subscriptions import (
     group_entries_by_subscription,
@@ -116,6 +115,10 @@ def _prune_targets(entry: ManifestEntry, project: str) -> set[str]:
 
 def execute(request: Request) -> CommandOutcome:
     """Re-pull installed artifacts and apply the §9 per-file update policy."""
+    scope_error = _common.validate_scope(request)
+    if scope_error is not None:
+        return _failure(request, scope_error.reason, scope_error.code)
+
     # 1. Load and select manifest entries before resolving sources.  The selected entries carry
     #    the subscriptions that decide which catalog(s) must be reopened.
     man_result = _common.load_manifest(request)
@@ -124,7 +127,7 @@ def execute(request: Request) -> CommandOutcome:
     manifest: Manifest = man_result.value
 
     project = _common.project_root(request)
-    profiles = load_profiles(project)
+    profiles = _common.profiles_for_scope(request)
 
     selected, others = _select_entries(manifest, request)
 
@@ -307,7 +310,7 @@ def execute(request: Request) -> CommandOutcome:
     final_manifest = _merge_entries(manifest_base, successful_entries)
     manifest_error: Optional[str] = None
     try:
-        _common.save_manifest(project, final_manifest)
+        _common.save_manifest(request, final_manifest)
     except OSError as exc:
         manifest_error = f"could not save consumer manifest: {exc}"
         failed_keys = set(new_by_key)

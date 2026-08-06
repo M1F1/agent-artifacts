@@ -93,6 +93,7 @@ class ListMergeTests(unittest.TestCase):
         self.assertEqual(res.value.mode, "list")
         self.assertEqual(res.value.value, value)
         self.assertEqual(res.value.json_path, "hooks.PreToolUse")
+        self.assertEqual(res.value.identity, ("matcher", "command"))
 
 
 if __name__ == "__main__":

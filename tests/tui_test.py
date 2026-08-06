@@ -222,7 +222,7 @@ class TextFlowInstallTests(unittest.TestCase):
 
     def test_install_code_review_to_claude(self):
         # Profile 1 = claude ; action install ; row 1 = [skill] code-review.
-        read = _scripted_reader(["1", "1", "install", "", "1", "y"])
+        read = _scripted_reader(["1", "1", "install", "1", "", "1", "y"])
         write, _ = _collector()
         with redirect_stdout(io.StringIO()):
             rc = tui._run_text(
@@ -246,7 +246,7 @@ class TextFlowInstallTests(unittest.TestCase):
 
     def test_action_by_name_or_number_equivalent(self):
         # Selecting the action by its number works like the name.
-        read = _scripted_reader(["1", "1", "1", "", "1", "y"])
+        read = _scripted_reader(["1", "1", "1", "1", "", "1", "y"])
         write, _ = _collector()
         with redirect_stdout(io.StringIO()):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -254,7 +254,7 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(self._path(".claude", "skills", "code-review", "SKILL.md")))
 
     def test_vibe_flow_hides_incompatible_artifacts_before_selection(self):
-        read = _scripted_reader(["1", "4", "install", "", "q"])  # Copy, then quit
+        read = _scripted_reader(["1", "4", "install", "1", "", "q"])  # project, Copy, quit
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -268,7 +268,7 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertNotIn("[hook] block-secrets", menu)
 
     def test_text_selector_prints_full_descriptions(self):
-        read = _scripted_reader(["1", "1", "install", "", "q"])
+        read = _scripted_reader(["1", "1", "install", "1", "", "q"])
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -281,7 +281,7 @@ class TextFlowInstallTests(unittest.TestCase):
         )
 
     def test_tabnine_flow_shows_tabnine_only_mcp(self):
-        read = _scripted_reader(["1", "3", "install", "", "q"])  # Copy, then quit
+        read = _scripted_reader(["1", "3", "install", "1", "", "q"])  # project, Copy, quit
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -290,7 +290,7 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertIn("[mcp] tabnine-postgres", "\n".join(lines))
 
     def test_claude_flow_hides_tabnine_only_mcp(self):
-        read = _scripted_reader(["1", "1", "install", "", "q"])  # Copy, then quit
+        read = _scripted_reader(["1", "1", "install", "1", "", "q"])  # project, Copy, quit
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -299,7 +299,7 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertNotIn("[mcp] tabnine-postgres", "\n".join(lines))
 
     def test_multi_profile_flow_uses_intersection_filtering(self):
-        read = _scripted_reader(["1", "1,4", "install", "", "q"])  # Copy, then quit
+        read = _scripted_reader(["1", "1,4", "install", "1", "", "q"])  # project, Copy, quit
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -312,7 +312,7 @@ class TextFlowInstallTests(unittest.TestCase):
 
     def test_partial_bundle_can_be_selected_via_tui(self):
         # For vibe, choices are skill, guideline, memory, backend bundle, base bundle.
-        read = _scripted_reader(["1", "4", "install", "", "4", "y"])
+        read = _scripted_reader(["1", "4", "install", "1", "", "4", "y"])
         captured = {}
 
         def _recorder(request):
@@ -346,7 +346,7 @@ class TextFlowInstallTests(unittest.TestCase):
                 ),
             ),
         )
-        read = _scripted_reader(["1", "4", "uninstall", "q"])  # User, vibe
+        read = _scripted_reader(["1", "4", "uninstall", "1", "q"])  # User, vibe, project
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -369,7 +369,7 @@ class TextFlowInstallTests(unittest.TestCase):
                 ),
             ),
         )
-        read = _scripted_reader(["1", "1", "update", "q"])  # User, claude
+        read = _scripted_reader(["1", "1", "update", "1", "q"])  # User, claude, project
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -378,7 +378,7 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertIn("[skill] code-review", "\n".join(lines))
 
     def test_no_matching_installed_entries_returns_without_dispatch(self):
-        read = _scripted_reader(["1", "1", "uninstall"])  # User, no manifest entries
+        read = _scripted_reader(["1", "1", "uninstall", "1"])  # User, project, no entries
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
@@ -423,7 +423,7 @@ class TextFlowQuitTests(unittest.TestCase):
         disp.assert_not_called()
 
     def test_quit_at_selection_prompt(self):
-        read = _scripted_reader(["1", "1", "1", "", "q"])  # Copy, then quit
+        read = _scripted_reader(["1", "1", "1", "1", "", "q"])  # project, Copy, quit
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=None)
@@ -449,7 +449,7 @@ class RequestAssemblyTests(unittest.TestCase):
             captured["req"] = request
             return 0
 
-        read = _scripted_reader(["1", "1", "install", "", "1", "y"])
+        read = _scripted_reader(["1", "1", "install", "1", "", "1", "y"])
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project="/tmp/example-proj")
@@ -474,7 +474,7 @@ class RequestAssemblyTests(unittest.TestCase):
             captured["req"] = request
             return 0
 
-        read = _scripted_reader(["1", "1", "install", "", "6", "y"])
+        read = _scripted_reader(["1", "1", "install", "1", "", "6", "y"])
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=None)
@@ -490,7 +490,7 @@ class RequestAssemblyTests(unittest.TestCase):
             captured["req"] = request
             return 0
 
-        read = _scripted_reader(["1", "1", "install", "", "1,3", "y"])
+        read = _scripted_reader(["1", "1", "install", "1", "", "1,3", "y"])
         write, _ = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=None)
@@ -517,7 +517,7 @@ class RequestAssemblyTests(unittest.TestCase):
                     ),
                 ),
             )
-            read = _scripted_reader(["1", "1", "uninstall", "1"])
+            read = _scripted_reader(["1", "1", "uninstall", "1", "1"])
             write, _ = _collector()
             with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
                 rc = tui._run_text(read, write, source_dir=FIXTURES, project=project)
@@ -592,7 +592,7 @@ class StructuredOutcomeFrontendTests(unittest.TestCase):
             return_value=self.make_command_outcome(),
         ) as dispatch:
             code = tui._run_text(
-                _scripted_reader(["1", "1", "install", "", "1", "y"]),
+                _scripted_reader(["1", "1", "install", "1", "", "1", "y"]),
                 write,
                 source_dir=FIXTURES,
             )
@@ -622,7 +622,7 @@ class StructuredOutcomeFrontendTests(unittest.TestCase):
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch_result", return_value=result):
             code = tui._run_text(
-                _scripted_reader(["1", "1", "install", "", "1", "y"]),
+                _scripted_reader(["1", "1", "install", "1", "", "1", "y"]),
                 write,
                 source_dir=FIXTURES,
             )
@@ -656,6 +656,7 @@ class StructuredOutcomeFrontendTests(unittest.TestCase):
                 side_effect=lambda *_args, **_kwargs: next(singles),
             ),
             mock.patch.object(tui, "_curses_multiselect", side_effect=((0,), (0,))),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
             mock.patch.object(tui, "_curses_confirm_install", return_value=True),
             mock.patch.object(tui, "_dispatch_result", side_effect=dispatch),
@@ -705,6 +706,7 @@ class StructuredOutcomeFrontendTests(unittest.TestCase):
                 side_effect=lambda *_args, **_kwargs: next(singles),
             ),
             mock.patch.object(tui, "_curses_multiselect", side_effect=((0,), (0,))),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
             mock.patch.object(tui, "_curses_confirm_install", return_value=True),
             mock.patch.object(tui, "_dispatch_result", side_effect=dispatch),
@@ -753,6 +755,7 @@ class CursesFlowTests(unittest.TestCase):
             mock.patch.object(curses, "curs_set", return_value=None),
             mock.patch.object(tui, "_curses_multiselect", side_effect=_fake_multiselect),
             mock.patch.object(tui, "_curses_singleselect", side_effect=_fake_singleselect),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
             mock.patch.object(tui, "_dispatch") as disp,
         ):
@@ -777,7 +780,7 @@ class InputValidationTests(unittest.TestCase):
             return 0
 
         # Profile + action are valid; "99" and "abc" are bad choice inputs before "1".
-        read = _scripted_reader(["1", "1", "1", "", "99", "abc", "1", "y"])
+        read = _scripted_reader(["1", "1", "1", "1", "", "99", "abc", "1", "y"])
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
             rc = tui._run_text(read, write, source_dir=FIXTURES, project=None)
@@ -894,7 +897,7 @@ class SourceErrorTests(unittest.TestCase):
         def _bad_source(_request):
             return Err("boom", code=3)
 
-        read = _scripted_reader(["1", "1", "install", ""])
+        read = _scripted_reader(["1", "1", "install", "1", ""])
         write, lines = _collector()
         rc = tui._run_text(read, write, source_factory=_bad_source, source_dir=FIXTURES)
         self.assertEqual(rc, 3)
@@ -925,7 +928,7 @@ class SourceErrorTests(unittest.TestCase):
                 captured["req"] = request
                 return 0
 
-            read = _scripted_reader(["1", "1", "uninstall", "1"])
+            read = _scripted_reader(["1", "1", "uninstall", "1", "1"])
             write, _ = _collector()
             with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
                 rc = tui._run_text(
@@ -950,7 +953,7 @@ class SourceErrorTests(unittest.TestCase):
 
                 return Ok(Catalog(artifacts={}, bundles={}))
 
-        read = _scripted_reader(["1", "1", "install", ""])
+        read = _scripted_reader(["1", "1", "install", "1", ""])
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
             rc = tui._run_text(read, write, source_factory=lambda _r: Ok(_EmptySource()))

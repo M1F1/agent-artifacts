@@ -85,24 +85,24 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#19 — Support project-scoped and user-global installs per harness](https://github.com/M1F1/agent-artifacts/issues/19)
 
-- [ ] Add a core/CLI scope option such as `--scope project|user`; keep Project as the default.
-- [ ] Let the TUI select scope before loading install/status/update/uninstall choices.
-- [ ] Explain the choices:
+- [x] Add a core/CLI scope option such as `--scope project|user`; keep Project as the default.
+- [x] Let the TUI select scope before loading install/status/update/uninstall choices.
+- [x] Explain the choices:
   - Project configures only the current repository;
   - User configures the selected harness for the current user.
-- [ ] Model explicit project and user destinations per harness and artifact type; do not derive
+- [x] Model explicit project and user destinations per harness and artifact type; do not derive
       global paths by blindly prepending the home directory.
-- [ ] Verify supported user-global paths against current official harness documentation.
-- [ ] Explicitly mark unsupported harness/type/scope combinations and explain them in the TUI.
-- [ ] Keep separate project and user manifests/state so update and uninstall never cross scopes.
-- [ ] Store resolved destinations, harness, source/subscription, install mode, and managed effects,
+- [x] Verify supported user-global paths against current official harness documentation.
+- [x] Explicitly mark unsupported harness/type/scope combinations and explain them in the TUI.
+- [x] Keep separate project and user manifests/state so update and uninstall never cross scopes.
+- [x] Store resolved destinations, harness, source/subscription, install mode, and managed effects,
       but never secrets.
-- [ ] Reject ambiguous combinations such as `--scope user` with `--project` before mutation.
-- [ ] Show resolved absolute destinations and ask for confirmation before user-global writes.
-- [ ] Prevent multi-harness operations from overwriting another harness's state.
-- [ ] Test with a temporary fake home/state directory; never touch real global harness config.
-- [ ] Preserve existing project behavior when scope is omitted.
-- [ ] Document project/user precedence and scoped install/update/uninstall examples.
+- [x] Reject ambiguous combinations such as `--scope user` with `--project` before mutation.
+- [x] Show resolved absolute destinations and ask for confirmation before user-global writes.
+- [x] Prevent multi-harness operations from overwriting another harness's state.
+- [x] Test with a temporary fake home/state directory; never touch real global harness config.
+- [x] Preserve existing project behavior when scope is omitted.
+- [x] Document project/user precedence and scoped install/update/uninstall examples.
 
 ## [#20 — Support queued per-artifact interactive setup installers on macOS](https://github.com/M1F1/agent-artifacts/issues/20)
 

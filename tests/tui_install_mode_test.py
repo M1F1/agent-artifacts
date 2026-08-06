@@ -203,7 +203,7 @@ class TextInstallModeFlowTests(unittest.TestCase):
         return code, captured, lines
 
     def test_blank_mode_selects_copy_and_confirmation_dispatches_once(self):
-        code, captured, lines = self._run(["1", "1", "1", "", "1", "y"])
+        code, captured, lines = self._run(["1", "1", "1", "1", "", "1", "y"])
 
         self.assertEqual(code, 0)
         self.assertEqual(len(captured), 1)
@@ -212,7 +212,7 @@ class TextInstallModeFlowTests(unittest.TestCase):
         self.assertIn("Requested mode: Copy", "\n".join(lines))
 
     def test_explicit_symlink_reaches_request_and_completion_mode(self):
-        code, captured, lines = self._run(["1", "1", "install", "2", "1", "yes"])
+        code, captured, lines = self._run(["1", "1", "install", "1", "2", "1", "yes"])
 
         self.assertEqual(code, 0)
         self.assertEqual(len(captured), 1)
@@ -221,7 +221,9 @@ class TextInstallModeFlowTests(unittest.TestCase):
         self.assertTrue(any("mode=symlink" in line for line in lines))
 
     def test_mode_back_returns_to_action_without_losing_profile(self):
-        code, captured, _lines = self._run(["1", "1", "install", "back", "install", "1", "1", "y"])
+        code, captured, _lines = self._run(
+            ["1", "1", "install", "1", "back", "install", "1", "1", "1", "y"]
+        )
 
         self.assertEqual(code, 0)
         self.assertEqual(len(captured), 1)
@@ -229,7 +231,7 @@ class TextInstallModeFlowTests(unittest.TestCase):
         self.assertEqual(captured[0].install_mode, "copy")
 
     def test_declining_confirmation_does_not_dispatch(self):
-        code, captured, lines = self._run(["1", "1", "install", "2", "1", "n"])
+        code, captured, lines = self._run(["1", "1", "install", "1", "2", "1", "n"])
 
         self.assertEqual(code, 0)
         self.assertEqual(captured, [])
@@ -241,7 +243,7 @@ class TextInstallModeFlowTests(unittest.TestCase):
         source_factory = mock.Mock(return_value=Ok(remote))
 
         code, captured, lines = self._run(
-            ["1", "1", "install", "2"],
+            ["1", "1", "install", "1", "2"],
             source_factory=source_factory,
             repo="owner/catalog",
         )
@@ -361,6 +363,7 @@ class CursesInstallModeTests(unittest.TestCase):
                 "_curses_multiselect",
                 side_effect=lambda *_args, **_kwargs: next(multis),
             ),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="symlink"),
             mock.patch.object(tui, "_curses_confirm_install", return_value=True) as confirm,
             mock.patch.object(tui, "_dispatch_result", side_effect=dispatch) as dispatch_mock,
@@ -395,6 +398,7 @@ class CursesInstallModeTests(unittest.TestCase):
                 "_curses_multiselect",
                 side_effect=lambda *_args, **_kwargs: next(multis),
             ),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
             mock.patch.object(tui, "_curses_confirm_install", return_value=False),
             mock.patch.object(tui, "_dispatch_result") as dispatch,
@@ -428,6 +432,7 @@ class CursesInstallModeTests(unittest.TestCase):
                 "_curses_multiselect",
                 side_effect=lambda *_args, **_kwargs: next(multis),
             ),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", side_effect=("back", "copy")),
             mock.patch.object(tui, "_curses_confirm_install", return_value=False),
             mock.patch.object(tui, "_dispatch_result") as dispatch,
@@ -457,6 +462,7 @@ class CursesInstallModeTests(unittest.TestCase):
             ),
             mock.patch.object(tui, "open_source", return_value=Ok(remote)),
             mock.patch.object(tui, "_curses_multiselect", return_value=(0,)) as multiselect,
+            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
             mock.patch.object(tui, "_curses_install_mode", return_value="symlink"),
             mock.patch.object(tui, "_dispatch_result") as dispatch,
         ):
@@ -507,7 +513,7 @@ class TextInstallModeLifecycleTests(unittest.TestCase):
         return code, lines
 
     def test_symlink_install_update_and_uninstall_preserve_source_target(self):
-        code, install_lines = self._run(["1", "1", "install", "2", "1", "y"])
+        code, install_lines = self._run(["1", "1", "install", "1", "2", "1", "y"])
         destination = self.project / ".claude" / "skills" / "code-review"
         source_target = self.source / "skills" / "code-review"
 
@@ -523,20 +529,20 @@ class TextInstallModeLifecycleTests(unittest.TestCase):
         self.assertEqual(entry["install"]["links"][0]["target"], str(source_target))
         self.assertTrue(any("mode=symlink" in line for line in install_lines))
 
-        update_code, update_lines = self._run(["1", "1", "update", "1"])
+        update_code, update_lines = self._run(["1", "1", "update", "1", "1"])
 
         self.assertEqual(update_code, 0)
         self.assertTrue(destination.is_symlink())
         self.assertTrue(any("live-linked" in line for line in update_lines))
 
-        uninstall_code, _uninstall_lines = self._run(["1", "1", "uninstall", "1"])
+        uninstall_code, _uninstall_lines = self._run(["1", "1", "uninstall", "1", "1"])
 
         self.assertEqual(uninstall_code, 0)
         self.assertFalse(os.path.lexists(destination))
         self.assertTrue((source_target / "SKILL.md").exists())
 
     def test_mixed_bundle_confirmation_matches_actual_completion_modes(self):
-        code, lines = self._run(["1", "1", "install", "2", "6", "y"])
+        code, lines = self._run(["1", "1", "install", "1", "2", "6", "y"])
         rendered = "\n".join(lines)
 
         self.assertEqual(code, 0)

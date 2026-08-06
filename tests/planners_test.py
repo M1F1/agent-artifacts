@@ -198,7 +198,7 @@ class HookPlannerTests(unittest.TestCase):
                                 }
                             ],
                         },
-                        identity=(),
+                        identity=("matcher", "command"),
                     ),
                 )
             ),

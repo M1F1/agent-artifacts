@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Tuple
+from types import MappingProxyType
+from typing import List, Mapping, Optional, Tuple, Union
 
 from ..catalog import resolve_bundle
 from ..io import fs
@@ -35,6 +36,7 @@ from ..model import (
     WriteManifest,
 )
 from ..profiles.loader import load_profiles
+from ..profiles.scope import profile_for_scope
 
 # --- exit codes (docs/plan/PLAN.md §7) ------------------------------------------------ #
 OK = 0
@@ -56,6 +58,30 @@ def project_root(request: Request) -> str:
     return request.project or "."
 
 
+def user_root(request: Request) -> str:
+    """Resolved user-home boundary, injectable without mutating process-global ``HOME``."""
+
+    return os.path.abspath(request.user_home or os.path.expanduser("~"))
+
+
+def manifest_root(request: Request) -> str:
+    """Root owning state for the selected scope (effects may use other absolute paths)."""
+
+    return user_root(request) if request.scope == "user" else project_root(request)
+
+
+def validate_scope(request: Request) -> Optional[Err]:
+    """Reject an ambiguous user-scope project override at every command boundary."""
+
+    if request.scope == "user" and request.project is not None:
+        return Err(
+            "--scope user cannot be combined with --project "
+            "(user targets and state are resolved from the current user's home)",
+            code=USAGE,
+        )
+    return None
+
+
 def repo_of(request: Request) -> str:
     return request.repo or DEFAULT_REPO
 
@@ -66,8 +92,8 @@ def manifest_path(project: str) -> str:
 
 def load_manifest(request: Request) -> Result:
     """Load the consumer manifest -> Ok[Manifest]; missing file -> Ok[empty]; corrupt -> Err(5)."""
-    project = project_root(request)
-    path = manifest_path(project)
+    root = manifest_root(request)
+    path = manifest_path(root)
     if not fs.exists(path):
         return Ok(empty_manifest(repo_of(request)))
     try:
@@ -151,7 +177,7 @@ def resolve_profiles(request: Request) -> Result:
 
     Empty selection is a usage error for write commands (the caller decides whether to default).
     """
-    available = load_profiles(project_root(request))
+    available = profiles_for_scope(request)
     if not request.profiles:
         return Err("no profile selected (use --profile NAME[,NAME])", code=USAGE)
     out: List[Tuple[str, Profile]] = []
@@ -163,6 +189,18 @@ def resolve_profiles(request: Request) -> Result:
             )
         out.append((pname, prof))
     return Ok(tuple(out))
+
+
+def profiles_for_scope(request: Request) -> Mapping[str, Profile]:
+    """Load profiles and project each one onto the request's explicit scope."""
+
+    loaded = load_profiles(project_root(request))
+    if request.scope == "project":
+        return loaded
+    home = user_root(request)
+    return MappingProxyType(
+        {name: profile_for_scope(profile, request.scope, home) for name, profile in loaded.items()}
+    )
 
 
 # --- plan rebasing & manifest persistence (shell glue, docs/design/DESIGN.md §14) ------- #
@@ -224,6 +262,8 @@ def split_manifest(plan: Plan) -> Tuple[Plan, Tuple]:
     return file_actions, entries
 
 
-def save_manifest(project: str, manifest: Manifest) -> None:
-    """Write the consumer manifest to ``<project>/.agent-artifacts/manifest.json`` atomically."""
-    fs.write_atomic(manifest_path(project), dump_manifest(manifest).encode("utf-8"))
+def save_manifest(target: Union[str, Request], manifest: Manifest) -> None:
+    """Persist state under a legacy explicit root or a request's selected scope root."""
+
+    root = manifest_root(target) if isinstance(target, Request) else target
+    fs.write_atomic(manifest_path(root), dump_manifest(manifest).encode("utf-8"))

@@ -300,7 +300,7 @@ Claude-only hook package:
   },
   "events": ["PreToolUse"],
   "matcher": "Edit|Write|MultiEdit",
-  "command": "python3 ${SCRIPT_DIR}/guard.py",
+  "command": "python3 ${SCRIPT_DIR}/scripts/guard.py",
   "files": ["scripts/guard.py"]
 }
 ```

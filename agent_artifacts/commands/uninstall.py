@@ -384,6 +384,10 @@ def _failure(request, reason: str, code: int) -> CommandOutcome:
 
 
 def execute(request) -> CommandOutcome:
+    scope_error = _common.validate_scope(request)
+    if scope_error is not None:
+        return _failure(request, scope_error.reason, scope_error.code)
+
     project = _common.project_root(request)
 
     loaded = _common.load_manifest(request)
@@ -595,7 +599,7 @@ def execute(request) -> CommandOutcome:
             new_manifest = remove_entry(new_manifest, entry.artifact, entry.profile)
     manifest_error: Optional[str] = None
     try:
-        _common.save_manifest(project, new_manifest)
+        _common.save_manifest(request, new_manifest)
     except OSError as exc:
         manifest_error = f"could not save consumer manifest: {exc}"
         for entry in selected:

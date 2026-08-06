@@ -58,6 +58,7 @@ _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
 _MEMORY_MODES = ("replace", "prepend", "append", "skip")
 _IMPORT_MODES = ("auto", "manifest", "heuristic")
 _BUNDLE_MODES = ("append", "replace", "fail")
+_INSTALL_SCOPES = ("project", "user")
 _HELP_FORMATTER = argparse.RawDescriptionHelpFormatter
 
 
@@ -109,7 +110,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     def _add_project(p: argparse.ArgumentParser) -> None:
         p.add_argument(
-            "--project", metavar="DIR", help="consumer project directory (default: current dir)"
+            "--project",
+            metavar="DIR",
+            help="project-scope consumer directory (default: current dir)",
+        )
+
+    def _add_scope(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--scope",
+            choices=_INSTALL_SCOPES,
+            default="project",
+            help="target Project or User configuration/state (default: project)",
         )
 
     def _add_source(p: argparse.ArgumentParser, help_text: str) -> None:
@@ -134,7 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=_HELP_FORMATTER,
         help="install artifacts (Copy by default; --link enables local Symlink mode)",
         description=(
-            "Install artifacts into a consumer project.\n\n"
+            "Install artifacts into Project or User harness configuration.\n\n"
+            "Scopes:\n"
+            "  Project (recommended) configures only the current repository.\n"
+            "  User configures the selected harness for the current user.\n\n"
             "Installation modes:\n"
             "  Copy (recommended) installs an independent snapshot.\n"
             "  Symlink (--link) keeps supported directory artifacts live-linked to a local "
@@ -156,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_repo(p)
     _add_project(p)
+    _add_scope(p)
     _add_source(p, "install from a local checkout (offline / air-gapped)")
     _add_selection(p)
     _add_profile(p)
@@ -187,7 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
         "status",
         formatter_class=_HELP_FORMATTER,
         help="show installed artifacts, drift, and symlink link state",
-        description="Show installed artifacts and on-disk drift. This command is local-only and uses no network.",
+        description="Show installed artifacts and on-disk drift in the selected scope. This command is local-only and uses no network.",
         epilog=(
             "For symlink installs, status reports install.mode plus each link target and state.\n"
             "Use --json to inspect install.links[].target, target_exists, and file states such as\n"
@@ -196,6 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_repo(p)
     _add_project(p)
+    _add_scope(p)
     _add_json(p)
 
     # check ------------------------------------------------------------------- #
@@ -203,7 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
         "check",
         formatter_class=_HELP_FORMATTER,
         help="compare installed/CLI commit against source and report live links",
-        description="Compare installed artifacts and the CLI commit against the selected remote source.",
+        description="Compare artifacts installed in the selected scope and the CLI commit against the selected remote source.",
         epilog=(
             "Symlink installs are reported separately as live-linked entries.\n"
             "Remote upstream changes do not flow through a symlink by themselves; linked installs\n"
@@ -212,6 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_repo(p)
     _add_project(p)
+    _add_scope(p)
     _add_version(p)
     _add_json(p)
 
@@ -220,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
         "update",
         formatter_class=_HELP_FORMATTER,
         help="re-pull and re-apply installed artifacts; linked entries stay live",
-        description="Update installed artifacts while preserving each entry's recorded install mode.",
+        description="Update artifacts in the selected scope while preserving each entry's recorded install mode.",
         epilog=(
             "For symlink installs, update keeps the recorded link mode.\n"
             "A correct existing link is reported as live-linked and does not need a copy.\n"
@@ -230,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_repo(p)
     _add_project(p)
+    _add_scope(p)
     _add_source(p, "update from a local checkout (offline / air-gapped)")
     p.add_argument("names", nargs="*", metavar="NAME", help="restrict to artifact name(s)")
     p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
@@ -247,7 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
         "uninstall",
         formatter_class=_HELP_FORMATTER,
         help="reverse installed files, merges, and symlink paths",
-        description="Uninstall selected manifest entries from a consumer project.",
+        description="Uninstall selected manifest entries from the selected Project or User scope.",
         epilog=(
             "For symlink installs, uninstall removes the symlink path in the project, not the\n"
             "target directory in the local source checkout. If a managed link was replaced or\n"
@@ -255,6 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_project(p)
+    _add_scope(p)
     _add_selection(p)
     _add_profile(p)
     p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
@@ -425,6 +444,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_dir=getattr(args, "source_dir", None),
         repo=getattr(args, "repo", None),
         project=getattr(args, "project", None),
+        scope=getattr(args, "scope", "project"),
         type_filter=getattr(args, "type_filter", None),
         yes=bool(getattr(args, "yes", False)),
         force=bool(getattr(args, "force", False)),

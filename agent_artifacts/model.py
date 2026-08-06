@@ -13,6 +13,10 @@ from typing import Generic, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
 ArtifactType = Literal["skill", "guideline", "mcp", "hook", "memory"]
 
+# Consumer destination/state boundary. Project remains the backward-compatible default;
+# user scope resolves explicit harness targets under the current user's home directory.
+InstallScope = Literal["project", "user"]
+
 # Install mode for directory tree artifacts. Copy is the stable default; symlink is an
 # explicit local/live-linked mode.
 InstallMode = Literal["copy", "symlink"]
@@ -147,6 +151,18 @@ class MemoryTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileTargets:
+    """One scope's explicit targets plus reasons for intentionally unsupported types."""
+
+    skills: Optional[CopyTarget] = None
+    guidelines: Optional[GuidelineTarget] = None
+    mcp: Optional[MergeSpec] = None
+    hooks: Optional[HookTarget] = None
+    memory: Optional[MemoryTarget] = None
+    unsupported: Mapping[ArtifactType, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class Profile:
     name: str
     # Every artifact-type target is optional: ``None`` means this harness does not support
@@ -157,6 +173,10 @@ class Profile:
     mcp: Optional[MergeSpec] = None
     hooks: Optional[HookTarget] = None
     memory: Optional[MemoryTarget] = None
+    # Reasons apply to the currently projected target set. Built-in project profiles retain
+    # their historical generic behavior; user projection fills this from ``user.unsupported``.
+    unsupported: Mapping[ArtifactType, str] = field(default_factory=dict)
+    user: Optional[ProfileTargets] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -301,6 +321,10 @@ class Request:
     source_dir: Optional[str] = None
     repo: Optional[str] = None
     project: Optional[str] = None
+    scope: InstallScope = "project"
+    # Adapter/test injection only; not exposed as a public CLI flag. ``None`` resolves via
+    # ``expanduser('~')`` at the command boundary.
+    user_home: Optional[str] = None
     type_filter: Optional[ArtifactType] = None
     yes: bool = False
     force: bool = False

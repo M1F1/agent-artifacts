@@ -32,6 +32,11 @@ def run(request: Request) -> int:
 
 def _check(request: Request, opener=None) -> int:
     """Remote freshness check. Returns OK (0) on a successful check, NETWORK (3) on failure."""
+    scope_error = _common.validate_scope(request)
+    if scope_error is not None:
+        print(scope_error.reason, file=sys.stderr)
+        return scope_error.code
+
     token = os.environ.get("GITHUB_TOKEN")
     repo = _common.repo_of(request)
     ref = request.version or "main"

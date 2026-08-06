@@ -20,6 +20,7 @@ Behaviour:
 from __future__ import annotations
 
 import os
+import sys
 from typing import List, Optional
 
 from .. import policy
@@ -202,6 +203,11 @@ def run(request: Request) -> int:
     manifest file exists but cannot be parsed. Drift is informational, not
     an error exit.
     """
+    scope_error = _common.validate_scope(request)
+    if scope_error is not None:
+        print(scope_error.reason, file=sys.stderr)
+        return scope_error.code
+
     result = _common.load_manifest(request)
 
     if isinstance(result, Err):

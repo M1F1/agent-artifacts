@@ -12,6 +12,7 @@ from ..model import (
     MemoryTarget,
     MergeSpec,
     Profile,
+    ProfileTargets,
 )
 
 # --------------------------------------------------------------------------- #
@@ -47,6 +48,34 @@ _CLAUDE = Profile(
         ),
     ),
     memory=MemoryTarget(kind="file", dest="CLAUDE.md"),
+    user=ProfileTargets(
+        skills=CopyTarget(dir="~/.claude/skills/<name>/"),
+        guidelines=GuidelineTarget(dest="~/.claude/rules/"),
+        mcp=MergeSpec(file="~/.claude.json", json_path="mcpServers", mode="key"),
+        hooks=HookTarget(
+            scripts_dir="~/.claude/hooks/<name>/",
+            events=MappingProxyType(
+                {
+                    "PreToolUse": "hooks.PreToolUse",
+                    "PostToolUse": "hooks.PostToolUse",
+                    "Stop": "hooks.Stop",
+                }
+            ),
+            merge=MergeSpec(
+                file="~/.claude/settings.json",
+                json_path="hooks.PreToolUse",
+                mode="list",
+                identity=("matcher", "command"),
+                entry_template=MappingProxyType(
+                    {
+                        "matcher": "${matcher}",
+                        "hooks": [{"type": "command", "command": "${command}"}],
+                    }
+                ),
+            ),
+        ),
+        memory=MemoryTarget(kind="file", dest="~/.claude/CLAUDE.md"),
+    ),
 )
 
 # --------------------------------------------------------------------------- #
@@ -84,6 +113,21 @@ _OPENCODE = Profile(
         ),
     ),
     memory=MemoryTarget(kind="file", dest="AGENTS.md"),
+    user=ProfileTargets(
+        skills=CopyTarget(dir="~/.config/opencode/skills/<name>/"),
+        mcp=MergeSpec(
+            file="~/.config/opencode/opencode.json",
+            json_path="mcp",
+            mode="key",
+        ),
+        memory=MemoryTarget(kind="file", dest="~/.config/opencode/AGENTS.md"),
+        unsupported=MappingProxyType(
+            {
+                "guideline": "OpenCode has no standalone user-global guideline discovery target; use global AGENTS.md",
+                "hook": "catalog hook descriptors are not OpenCode plugin modules",
+            }
+        ),
+    ),
 )
 
 # --------------------------------------------------------------------------- #
@@ -132,6 +176,21 @@ _TABNINE = Profile(
         ),
     ),
     memory=MemoryTarget(kind="file", dest="TABNINE.md"),
+    user=ProfileTargets(
+        guidelines=GuidelineTarget(dest="~/.tabnine/guidelines/"),
+        mcp=MergeSpec(
+            file="~/.tabnine/mcp_servers.json",
+            json_path="mcpServers",
+            mode="key",
+        ),
+        unsupported=MappingProxyType(
+            {
+                "skill": "Tabnine does not document an Agent Skills discovery location",
+                "hook": "Tabnine CLI does not document a user-global hook discovery target",
+                "memory": "Tabnine CLI documents project-root TABNINE.md, not a global memory file",
+            }
+        ),
+    ),
 )
 
 # --------------------------------------------------------------------------- #
@@ -149,6 +208,17 @@ _VIBE = Profile(
     mcp=None,
     hooks=None,
     memory=MemoryTarget(kind="file", dest="AGENTS.md"),
+    user=ProfileTargets(
+        skills=CopyTarget(dir="~/.vibe/skills/<name>/"),
+        unsupported=MappingProxyType(
+            {
+                "guideline": "Vibe does not document a user-global standalone guideline target",
+                "mcp": "Vibe user MCP configuration is TOML; the zero-dependency merge core is JSON-only",
+                "hook": "Vibe user hooks are TOML; the zero-dependency merge core is JSON-only",
+                "memory": "Vibe has no documented always-loaded global instruction file",
+            }
+        ),
+    ),
 )
 
 # --------------------------------------------------------------------------- #

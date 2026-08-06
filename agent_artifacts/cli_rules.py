@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .commands import _common
 from .commands._common import USAGE
 from .model import Err, Request
 
@@ -52,5 +53,4 @@ def validate_flags(request: Request) -> Optional[Err]:
             "--all cannot be combined with named artifacts or --bundle",
             code=USAGE,
         )
-
-    return None
+    return _common.validate_scope(request)

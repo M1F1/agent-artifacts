@@ -75,17 +75,23 @@ Artifact and bundle selectors explain every choice in one line. In the full-scre
 press `?` to open the complete description for the highlighted row. In the plain-text fallback,
 enter `?N` (for example `?3`) to repeat the complete description for item N.
 
-For Install, both frontends ask for an installation mode before artifact selection:
+For every consumer action, both frontends ask for an installation scope before loading
+scope-specific state or choices:
+
+- **Project (recommended)** configures only the current repository and remains the default.
+- **User** configures the selected harness for the current user.
+
+For Install, both frontends then ask for an installation mode before artifact selection:
 
 - **Copy (recommended)** installs an independent snapshot and remains the default.
 - **Symlink** live-links supported skill and hook directories to a local catalog. Copy-only
   individual rows are disabled with a reason; mixed bundles disclose projected linked/copied
   counts and keep file/merge artifacts in Copy mode.
 
-Before applying an Install, the confirmation view shows the catalog source, Project destination
-root, harnesses, requested mode, selected rows, and projected mode counts. Symlink is rejected for
-a remote source before artifact selection; use flag mode with `--source DIR --link` to choose a
-durable local checkout.
+Before applying an Install, the confirmation view shows the catalog source, selected scope,
+resolved destination paths, harnesses, requested mode, selected rows, and projected mode counts.
+User destinations are absolute. Symlink is rejected for a remote source before artifact selection;
+use flag mode with `--source DIR --link` to choose a durable local checkout.
 
 Every completed action ends with an explicit outcome summary in command mode and both TUI
 frontends. A successful no-op is not silent and is distinct from an empty selection:
@@ -118,11 +124,11 @@ confirmation, and then run the right commands.
 
 ---
 
-## User Mode: Install Artifacts Into A Project
+## User Mode: Install Artifacts Into A Project Or User Profile
 
-User mode is for developers working inside an application repo. You install the `aart` tool,
-then use the reviewed artifact catalog shipped inside that tool. You should not need to know
-where the catalog repo lives or pass catalog source flags for normal use.
+User mode is for developers configuring an application repo or their harness-wide user profile.
+You install the `aart` tool, then use the reviewed artifact catalog shipped inside that tool. You
+should not need to know where the catalog repo lives or pass catalog source flags for normal use.
 
 ### What You Can Install
 
@@ -136,6 +142,38 @@ where the catalog repo lives or pass catalog source flags for normal use.
 
 Each harness has a **profile** that knows where every type belongs, so the same artifact
 installs correctly into `.claude/`, `.opencode/`, `.tabnine/`, or `.vibe/`.
+
+### Project And User Scopes
+
+Project scope is the default and preserves the existing repository-local behavior. User scope
+uses explicit destinations verified for each harness and stores separate state in
+`~/.agent-artifacts/manifest.json`. Project state stays in
+`<project>/.agent-artifacts/manifest.json`; status, update, and uninstall read only the selected
+scope and never cross between them.
+
+```sh
+aart install code-review --profile claude --scope user
+aart status --scope user
+aart update --scope user
+aart uninstall code-review --profile claude --scope user
+```
+
+`--scope user` cannot be combined with `--project`. If both project and user configuration exist,
+the harness's own precedence rules decide which configuration it applies; `aart` does not merge
+the two manifests. An unsupported user-global artifact type is rejected with a reason when
+selected directly and skipped with a warning in broad `--all` or bundle selections.
+
+| Harness | Supported user-global artifact types |
+|---|---|
+| Claude Code | skill, guideline, MCP, hook, memory |
+| OpenCode | skill, MCP, memory |
+| Tabnine | guideline, MCP |
+| Mistral Vibe | skill |
+
+User-global destinations include Claude's `~/.claude/` files and `~/.claude.json`, OpenCode's
+`~/.config/opencode/` tree, Tabnine's `~/.tabnine/` configuration, and Vibe's
+`~/.vibe/skills/`. The exact target matrix and official references are recorded in
+`docs/design/DESIGN-install-scope.md`.
 
 MCP artifacts can be a single `mcp/<name>.json` file, or a directory like
 `mcp/<name>/mcp.json` with supporting docs such as `SETUP.md`. Harness installs merge only the
@@ -535,9 +573,12 @@ when testing or maintaining a catalog. These are mutually exclusive. `--source` 
 combined with `--version` since a local checkout has no ref to resolve. Remote-only commands
 like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
 
-**Consumer project** — Commands that modify or inspect the consumer project (`install`,
-`update`, `uninstall`, `status`, `check`) accept `--project DIR` (default: cwd). Catalog-only
-commands (`list`) and self-updaters (`upgrade`) do not.
+**Consumer scope** — Commands that modify or inspect harness configuration (`install`, `update`,
+`uninstall`, `status`, `check`) accept `--scope project|user`; Project is the default. In Project
+scope, `--project DIR` selects the consumer directory (default: cwd). User scope uses explicit
+harness-global destinations and separate state under the user's home, so `--scope user` and
+`--project` are mutually exclusive. Catalog-only commands (`list`) and self-updaters (`upgrade`)
+do not accept either option.
 
 **Maintainer upstream** — `aart upstream ...` operates on the catalog repo, using `--source DIR`
 to mean the catalog directory to maintain and defaulting to cwd. It never targets a consumer

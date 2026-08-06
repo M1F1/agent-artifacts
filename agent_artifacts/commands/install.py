@@ -170,6 +170,10 @@ def execute(request: Request) -> CommandOutcome:
     for a remote-source failure; ``CONFLICT`` (4) for a merge collision needing ``--force``;
     ``CORRUPT_MANIFEST`` (5) for an unreadable manifest; ``ERROR`` (1) otherwise.
     """
+    scope_error = _common.validate_scope(request)
+    if scope_error is not None:
+        return _failure(request, (scope_error.reason,), scope_error.code)
+
     link_requested = request.install_mode == "symlink"
     if link_requested and request.repo is not None:
         return _failure(
@@ -222,14 +226,20 @@ def execute(request: Request) -> CommandOutcome:
         for pname, prof in profs:
             explicit = a.name in by_name
             if not _supports(prof, a.type):
+                unsupported_reason = prof.unsupported.get(a.type, UNSUPPORTED_TYPE)
                 skipped = SkippedTarget(
                     artifact=a.name,
                     type=a.type,
                     profile=pname,
-                    reason=UNSUPPORTED_TYPE,
+                    reason=unsupported_reason,
                 )
                 if explicit:
-                    support_errors.append(f"profile {pname!r} does not support {a.type} {a.name!r}")
+                    detail = (
+                        f": {unsupported_reason}" if unsupported_reason != UNSUPPORTED_TYPE else ""
+                    )
+                    support_errors.append(
+                        f"profile {pname!r} does not support {a.type} {a.name!r}{detail}"
+                    )
                 else:
                     skipped_targets.append(skipped)
                 continue
@@ -431,7 +441,7 @@ def execute(request: Request) -> CommandOutcome:
             m = manifest.upsert(m, entry)
     manifest_error: Optional[str] = None
     try:
-        _common.save_manifest(project, m)
+        _common.save_manifest(request, m)
     except OSError as exc:
         manifest_error = f"could not save consumer manifest: {exc}"
         failed_entries = {(entry.artifact, entry.profile) for entry in entries}
@@ -496,7 +506,7 @@ def execute(request: Request) -> CommandOutcome:
             "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
             "performed": list(report.performed),
             "warnings": all_warnings,
-            "manifest": _common.manifest_path(project),
+            "manifest": _common.manifest_path(_common.manifest_root(request)),
         },
     )
 

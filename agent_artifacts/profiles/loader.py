@@ -5,17 +5,41 @@ from __future__ import annotations
 import json
 import os
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
 
 from ..model import (
+    ArtifactType,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
     MemoryTarget,
     MergeSpec,
     Profile,
+    ProfileTargets,
 )
 from .builtin import builtin
+
+_ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
+
+
+def _unsupported_from_dict(value: object, label: str) -> Mapping[ArtifactType, str]:
+    """Validate stable user-facing reasons from a custom profile record."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    parsed: dict[ArtifactType, str] = {}
+    for raw_type, raw_reason in value.items():
+        if raw_type not in _ARTIFACT_TYPES:
+            raise ValueError(f"{label} has unknown artifact type {raw_type!r}")
+        if (
+            not isinstance(raw_reason, str)
+            or not raw_reason.strip()
+            or "\n" in raw_reason
+            or "\r" in raw_reason
+        ):
+            raise ValueError(f"{label}.{raw_type} must be a non-empty single-line string")
+        parsed[cast(ArtifactType, raw_type)] = raw_reason.strip()
+    return MappingProxyType(parsed)
 
 
 def _merge_spec_from_dict(d: Mapping[str, Any]) -> MergeSpec:
@@ -62,6 +86,7 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
     mcp_d = record.get("mcp")
     hooks_d = record.get("hooks")
     memory_d = record.get("memory")
+    user_d = record.get("user")
 
     return Profile(
         name=record["name"],
@@ -74,6 +99,31 @@ def _profile_from_dict(record: Mapping[str, Any]) -> Profile:
             if memory_d is not None
             else None
         ),
+        unsupported=_unsupported_from_dict(record.get("unsupported", {}), "profile.unsupported"),
+        user=_targets_from_dict(user_d) if user_d is not None else None,
+    )
+
+
+def _targets_from_dict(record: Mapping[str, Any]) -> ProfileTargets:
+    """Parse an explicit nested scope target record using the normal profile target schema."""
+
+    skills_d = record.get("skills")
+    guide_d = record.get("guidelines")
+    mcp_d = record.get("mcp")
+    hooks_d = record.get("hooks")
+    memory_d = record.get("memory")
+    unsupported = _unsupported_from_dict(record.get("unsupported", {}), "profile user.unsupported")
+    return ProfileTargets(
+        skills=CopyTarget(dir=skills_d["dir"]) if skills_d is not None else None,
+        guidelines=(GuidelineTarget(dest=guide_d["dest"]) if guide_d is not None else None),
+        mcp=_merge_spec_from_dict(mcp_d) if mcp_d is not None else None,
+        hooks=_hook_target_from_dict(hooks_d) if hooks_d is not None else None,
+        memory=(
+            MemoryTarget(kind=memory_d["kind"], dest=memory_d["dest"])
+            if memory_d is not None
+            else None
+        ),
+        unsupported=unsupported,
     )
 
 

@@ -74,5 +74,11 @@ def plan_merge(
         )
     # list-mode: coexist with foreign entries; executor dedups by deep equality.
     return Ok(
-        MergeJson(file=spec.file, json_path=spec.json_path, mode="list", value=value, identity=())
+        MergeJson(
+            file=spec.file,
+            json_path=spec.json_path,
+            mode="list",
+            value=value,
+            identity=spec.identity,
+        )
     )
