@@ -100,6 +100,7 @@ class UpstreamImportCommandTests(unittest.TestCase):
             [item["key"] for item in payload["candidates"]],
             ["skill/debugging", "memory/superpowers"],
         )
+        self.assertEqual(payload["summary"]["counts"]["scanned"], 2)
 
     def test_scan_forwards_github_token_to_resolver(self):
         self._seed_manifest_repo()
@@ -144,6 +145,7 @@ class UpstreamImportCommandTests(unittest.TestCase):
         self.assertEqual(payload["action"], "import")
         self.assertTrue(payload["dry_run"])
         self.assertEqual(len(payload["selected"]), 2)
+        self.assertEqual(payload["summary"]["counts"]["imported"], 2)
         self.assertFalse(os.path.exists(os.path.join(self.catalog_root, "upstreams.json")))
         self.assertTrue(any(a["action"] == "write-file" for a in payload["plan"]))
 
@@ -182,6 +184,7 @@ class UpstreamImportCommandTests(unittest.TestCase):
         payload = json.loads(output)
         self.assertEqual(payload["selected"], [])
         self.assertEqual(payload["skipped"][0]["confidence"], "ambiguous")
+        self.assertEqual(payload["summary"]["counts"]["skipped"], 1)
         self.assertFalse(os.path.exists(os.path.join(self.catalog_root, "upstreams.json")))
 
     def _read(self, rel: str) -> str:

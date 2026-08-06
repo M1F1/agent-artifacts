@@ -28,7 +28,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from .. import catalog as catalog_mod
 from .. import executor, manifest, planners
@@ -39,6 +39,15 @@ from ..compatibility import (
 )
 from ..io import fs
 from ..model import Artifact, Profile, Request, SkippedTarget
+from ..outcomes import (
+    ActionSummary,
+    CommandOutcome,
+    OutcomeItem,
+    OutcomeStatus,
+    outcome_key,
+    outcome_payload,
+    render_outcome,
+)
 from ..source import Source, open_source
 from ..subscriptions import subscription_from_request
 from . import _common
@@ -124,7 +133,36 @@ def _memory_dest(profile: Profile, project: str, name: str) -> str:
     return os.path.normpath(os.path.join(project, target.dest))
 
 
-def run(request: Request) -> int:
+def _failure(request: Request, messages: Tuple[str, ...], code: int) -> CommandOutcome:
+    status: OutcomeStatus = "conflict" if code == _common.CONFLICT else "failed"
+    items = tuple(OutcomeItem("install-request", status, detail=message) for message in messages)
+    return CommandOutcome(
+        exit_code=code,
+        summary=ActionSummary(
+            action="install",
+            selected=len(request.names) + len(request.bundles),
+            items=items,
+        ),
+        payload={"ok": False, "error": "; ".join(messages), "code": code},
+    )
+
+
+def _entry_targets(entry, project: str) -> set[str]:
+    targets = {
+        path if os.path.isabs(path) else os.path.normpath(os.path.join(project, path))
+        for path in entry.files
+    }
+    if entry.merge is not None:
+        merge_file = (
+            entry.merge.file
+            if os.path.isabs(entry.merge.file)
+            else os.path.normpath(os.path.join(project, entry.merge.file))
+        )
+        targets.add(f"{merge_file}#{entry.merge.json_path}")
+    return targets
+
+
+def execute(request: Request) -> CommandOutcome:
     """Install the requested artifacts into the selected profiles.
 
     Returns a process exit code (docs/plan/PLAN.md §7): ``OK`` (0) on success or dry-run; ``USAGE``
@@ -134,35 +172,37 @@ def run(request: Request) -> int:
     """
     link_requested = request.install_mode == "symlink"
     if link_requested and request.repo is not None:
-        _err("--link requires a local source (use --source DIR or the editable local catalog)")
-        return _common.USAGE
+        return _failure(
+            request,
+            ("--link requires a local source (use --source DIR or the editable local catalog)",),
+            _common.USAGE,
+        )
 
     # 1. Resolve the source (local dir or remote snapshot).
     src_res = open_source(request)
     if isinstance(src_res, _common.Err):
-        _err(src_res.reason)
-        return _common.exit_code(src_res)
+        return _failure(request, (src_res.reason,), _common.exit_code(src_res))
     src: Source = src_res.value
     if link_requested and not src.label().startswith("local:"):
-        _err("--link requires a local source (use --source DIR or the editable local catalog)")
-        return _common.USAGE
+        return _failure(
+            request,
+            ("--link requires a local source (use --source DIR or the editable local catalog)",),
+            _common.USAGE,
+        )
 
     # 2. Build the catalog from the source.
     cat_res = src.catalog()
     if isinstance(cat_res, _common.Err):
-        _err(cat_res.reason)
-        return _common.exit_code(cat_res)
+        return _failure(request, (cat_res.reason,), _common.exit_code(cat_res))
     catalog = cat_res.value
 
     # 3. Resolve the requested artifacts and profiles.
     arts_res = _common.resolve_artifacts(request, catalog)
     if isinstance(arts_res, _common.Err):
-        _err(arts_res.reason)
-        return _common.USAGE
+        return _failure(request, (arts_res.reason,), _common.USAGE)
     profs_res = _common.resolve_profiles(request)
     if isinstance(profs_res, _common.Err):
-        _err(profs_res.reason)
-        return _common.USAGE
+        return _failure(request, (profs_res.reason,), _common.USAGE)
 
     arts: Tuple[Artifact, ...] = arts_res.value
     profs: Tuple[Tuple[str, Profile], ...] = profs_res.value
@@ -221,9 +261,11 @@ def run(request: Request) -> int:
             kept_targets.append((a, pname))
 
     if support_errors or compatibility_errors or link_errors:
-        for msg in support_errors + compatibility_errors + link_errors:
-            _err(msg)
-        return _common.USAGE
+        return _failure(
+            request,
+            tuple(support_errors + compatibility_errors + link_errors),
+            _common.USAGE,
+        )
 
     # 5. Assemble the `files` mapping that plan_install consumes (kept targets only).
     installed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -303,87 +345,173 @@ def run(request: Request) -> int:
     # 6. Build the full plan (pure). Accumulates every target's failure.
     manifest_res = _common.load_manifest(request)
     if isinstance(manifest_res, _common.Err):
-        _err(manifest_res.reason)
-        return _common.exit_code(manifest_res)
+        return _failure(request, (manifest_res.reason,), _common.exit_code(manifest_res))
 
     plan_res = planners.plan_install(
         request, catalog, files, profiles_map, manifest_res.value, configs
     )
     if isinstance(plan_res, _common.Err):
-        _err(plan_res.reason)
-        return _common.exit_code(plan_res)
+        return _failure(request, (plan_res.reason,), _common.exit_code(plan_res))
     plan = plan_res.value
 
     # 7. Split off the manifest entries; rebase the executable actions onto real roots.
     file_actions, entries = _common.split_manifest(plan)
     rebased = _common.rebase_plan(file_actions, source_root=src.root, project_root=project)
 
-    # 8. Dry-run: print the plan and return without touching disk.
+    previous_keys = {(entry.artifact, entry.profile) for entry in manifest_res.value.installed}
+    skipped_items = tuple(
+        OutcomeItem(
+            outcome_key(skipped.type, skipped.artifact, skipped.profile),
+            "skipped",
+            artifact=skipped.artifact,
+            artifact_type=skipped.type,
+            profile=skipped.profile,
+            detail=skipped.reason,
+        )
+        for skipped in skipped_targets
+    )
+
+    # 8. Dry-run: return the plan without touching disk.
     if request.dry_run:
         warnings = [_skip_message(s) for s in skipped_targets] + link_warnings
-        if request.json:
-            if warnings:
-                _common.print_json(
-                    {
-                        "actions": json.loads(executor.plan_to_json(rebased)),
-                        "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
-                        "warnings": warnings,
-                    }
+        items = (
+            tuple(
+                OutcomeItem(
+                    outcome_key(entry.type, entry.artifact, entry.profile),
+                    "reinstalled"
+                    if (entry.artifact, entry.profile) in previous_keys
+                    else "installed",
+                    artifact=entry.artifact,
+                    artifact_type=entry.type,
+                    profile=entry.profile,
+                    mode=entry.install.mode,
+                    detail="would apply",
                 )
-            else:
-                print(executor.plan_to_json(rebased))
-        else:
-            rendered = executor.render_plan(rebased)
-            warn_lines = [f"warn        {w}" for w in warnings]
-            lines = warn_lines + ([rendered] if rendered else [])
-            print("\n".join(lines))
-        return _common.OK
+                for entry in entries
+            )
+            + skipped_items
+        )
+        rendered = executor.render_plan(rebased)
+        return CommandOutcome(
+            exit_code=_common.OK,
+            summary=ActionSummary(
+                action="install",
+                selected=len(entries) + len(skipped_targets),
+                items=items,
+                warnings=tuple(warnings),
+                dry_run=True,
+            ),
+            details=tuple(rendered.splitlines()) if rendered else (),
+            payload={
+                "actions": json.loads(executor.plan_to_json(rebased)),
+                "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
+                "warnings": warnings,
+            },
+        )
 
     # 9. Execute the rebased plan (the only disk-touching step).
     report = executor.execute(rebased)
+
+    failed_targets = {
+        observation.target for observation in report.observations if observation.state == "failed"
+    }
+    failed_entries = {
+        (entry.artifact, entry.profile)
+        for entry in entries
+        if _entry_targets(entry, project) & failed_targets
+    }
+    if failed_targets and not failed_entries:
+        failed_entries = {(entry.artifact, entry.profile) for entry in entries}
 
     # 10. Persist the consumer manifest (the command owns this — rebase_plan passes the
     #     WriteManifest through untouched because the executor writes it relative to CWD).
     m = manifest_res.value
     for entry in entries:
-        m = manifest.upsert(m, entry)
-    _common.save_manifest(project, m)
+        if (entry.artifact, entry.profile) not in failed_entries:
+            m = manifest.upsert(m, entry)
+    manifest_error: Optional[str] = None
+    try:
+        _common.save_manifest(project, m)
+    except OSError as exc:
+        manifest_error = f"could not save consumer manifest: {exc}"
+        failed_entries = {(entry.artifact, entry.profile) for entry in entries}
 
     # 11. Report (include the unsupported-type skip warnings from the §5 partition).
     all_warnings = (
         [_skip_message(s) for s in skipped_targets] + link_warnings + list(report.warnings)
     )
-    if request.json:
-        _common.print_json(
-            {
-                "installed": [
-                    {
-                        "artifact": e.artifact,
-                        "type": e.type,
-                        "profile": e.profile,
-                        "install": _install_to_dict(e),
-                    }
-                    for e in entries
-                ],
-                "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
-                "performed": list(report.performed),
-                "warnings": all_warnings,
-                "manifest": _common.manifest_path(project),
-            }
+    if manifest_error is not None:
+        all_warnings.append(manifest_error)
+    installed_entries = tuple(
+        entry for entry in entries if (entry.artifact, entry.profile) not in failed_entries
+    )
+    items = (
+        tuple(
+            OutcomeItem(
+                outcome_key(entry.type, entry.artifact, entry.profile),
+                "failed"
+                if (entry.artifact, entry.profile) in failed_entries
+                else (
+                    "reinstalled"
+                    if (entry.artifact, entry.profile) in previous_keys
+                    else "installed"
+                ),
+                artifact=entry.artifact,
+                artifact_type=entry.type,
+                profile=entry.profile,
+                mode=entry.install.mode,
+                detail="one or more managed effects failed"
+                if (entry.artifact, entry.profile) in failed_entries
+                else None,
+            )
+            for entry in entries
         )
+        + skipped_items
+    )
+    recovery = (
+        ("Fix the reported filesystem errors and rerun the install for failed artifacts.",)
+        if failed_entries
+        else ()
+    )
+    exit_code = _common.ERROR if failed_entries or manifest_error else _common.OK
+    return CommandOutcome(
+        exit_code=exit_code,
+        summary=ActionSummary(
+            action="install",
+            selected=len(entries) + len(skipped_targets),
+            items=items,
+            warnings=tuple(all_warnings),
+            recovery=recovery,
+        ),
+        payload={
+            "installed": [
+                {
+                    "artifact": entry.artifact,
+                    "type": entry.type,
+                    "profile": entry.profile,
+                    "install": _install_to_dict(entry),
+                }
+                for entry in installed_entries
+            ],
+            "skipped": [skipped_target_to_dict(s) for s in skipped_targets],
+            "performed": list(report.performed),
+            "warnings": all_warnings,
+            "manifest": _common.manifest_path(project),
+        },
+    )
+
+
+def run(request: Request) -> int:
+    """Execute and render one install while retaining the established integer CLI contract."""
+
+    result = execute(request)
+    if request.json:
+        _common.print_json(outcome_payload(result))
     else:
-        _print_summary(entries, all_warnings)
-    return _common.OK
-
-
-def _print_summary(entries, warnings) -> None:
-    """Print a concise human-readable install summary."""
-    n = len(entries)
-    print(f"Installed {n} artifact{'s' if n != 1 else ''}:")
-    for e in entries:
-        print(f"  - {e.type:<9} {e.artifact} -> {e.profile}  install={e.install.mode}")
-    for w in warnings:
-        print(f"warning: {w}")
+        stream = sys.stderr if result.exit_code != _common.OK else sys.stdout
+        for line in render_outcome(result):
+            print(line, file=stream)
+    return result.exit_code
 
 
 def _install_to_dict(entry) -> dict:

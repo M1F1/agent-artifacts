@@ -30,7 +30,8 @@ from ..compatibility import (
     check_profile_compatibility,
     skipped_target_to_dict,
 )
-from ..executor import execute, plan_to_json, render_plan
+from ..executor import execute as execute_plan
+from ..executor import plan_to_json, render_plan
 from ..hashing import sha256_bytes, sha256_file
 from ..io import fs
 from ..manifest import prune_plan
@@ -52,6 +53,15 @@ from ..model import (
     Warn,
     WriteFile,
 )
+from ..outcomes import (
+    ActionSummary,
+    CommandOutcome,
+    OutcomeItem,
+    OutcomeStatus,
+    outcome_key,
+    outcome_payload,
+    render_outcome,
+)
 from ..policy import classify, decision_action
 from ..profiles.loader import load_profiles
 from ..source import open_source
@@ -67,14 +77,50 @@ from . import _common
 # --------------------------------------------------------------------------- #
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
-def run(request: Request) -> int:
+def _failure(request: Request, reason: str, code: int) -> CommandOutcome:
+    status: OutcomeStatus = "conflict" if code == _common.CONFLICT else "failed"
+    return CommandOutcome(
+        exit_code=code,
+        summary=ActionSummary(
+            action="update",
+            selected=0,
+            items=(OutcomeItem("update-request", status, detail=reason),),
+        ),
+        payload={"ok": False, "error": reason, "code": code},
+    )
+
+
+def _entry_targets(entry: ManifestEntry, project: str) -> set[str]:
+    targets = {
+        path if os.path.isabs(path) else os.path.normpath(os.path.join(project, path))
+        for path in entry.files
+    }
+    if entry.merge is not None:
+        merge_file = (
+            entry.merge.file
+            if os.path.isabs(entry.merge.file)
+            else os.path.normpath(os.path.join(project, entry.merge.file))
+        )
+        targets.add(f"{merge_file}#{entry.merge.json_path}")
+    return targets
+
+
+def _prune_targets(entry: ManifestEntry, project: str) -> set[str]:
+    """Targets the current prune planner actually removes for one entry."""
+
+    return {
+        path if os.path.isabs(path) else os.path.normpath(os.path.join(project, path))
+        for path in entry.files
+    }
+
+
+def execute(request: Request) -> CommandOutcome:
     """Re-pull installed artifacts and apply the §9 per-file update policy."""
     # 1. Load and select manifest entries before resolving sources.  The selected entries carry
     #    the subscriptions that decide which catalog(s) must be reopened.
     man_result = _common.load_manifest(request)
     if isinstance(man_result, Err):
-        print(man_result.reason)
-        return _common.exit_code(man_result)
+        return _failure(request, man_result.reason, _common.exit_code(man_result))
     manifest: Manifest = man_result.value
 
     project = _common.project_root(request)
@@ -102,17 +148,16 @@ def run(request: Request) -> int:
     new_entries: Tuple[ManifestEntry, ...] = ()
     skipped: Tuple[SkippedTarget, ...] = ()
     conflict = False
+    conflict_targets: set[str] = set()
     for source_request, group_entries in source_groups:
         src_result = open_source(source_request)
         if isinstance(src_result, Err):
-            print(src_result.reason)
-            return _common.NETWORK
+            return _failure(request, src_result.reason, _common.NETWORK)
         src = src_result.value
 
         cat_result = src.catalog()
         if isinstance(cat_result, Err):
-            print(cat_result.reason)
-            return _common.exit_code(cat_result)
+            return _failure(request, cat_result.reason, _common.exit_code(cat_result))
 
         subscription = subscription_from_request(source_request, src.root)
         desired_result = _build_desired_plan(
@@ -125,10 +170,9 @@ def run(request: Request) -> int:
             subscription=subscription,
         )
         if isinstance(desired_result, Err):
-            print(desired_result.reason)
-            return _common.exit_code(desired_result)
+            return _failure(request, desired_result.reason, _common.exit_code(desired_result))
         desired_plan, group_new_entries, group_skipped = desired_result.value
-        group_plan, group_conflict = _apply_policy(
+        group_plan, group_conflict, group_conflict_targets = _apply_policy(
             desired_plan,
             group_entries,
             project,
@@ -143,6 +187,10 @@ def run(request: Request) -> int:
         new_entries += group_new_entries
         skipped += group_skipped
         conflict = conflict or group_conflict
+        conflict_targets.update(
+            path if os.path.isabs(path) else os.path.normpath(os.path.join(project, path))
+            for path in group_conflict_targets
+        )
 
     # 3. --prune: append removals for entries dropped from the selection.
     pruned_manifest = manifest
@@ -156,31 +204,231 @@ def run(request: Request) -> int:
 
     # 4. --dry-run: present the fully planned multi-source operation, touch nothing.
     if request.dry_run:
-        _emit(update_plan, json_mode=request.json, skipped=skipped)
-        return _common.CONFLICT if conflict and not request.force else _common.OK
+        skipped_by_key = {(item.artifact, item.profile): item for item in skipped}
+        new_by_key = {(entry.artifact, entry.profile): entry for entry in new_entries}
+        items = []
+        for entry in selected:
+            key = (entry.artifact, entry.profile)
+            skipped_target = skipped_by_key.get(key)
+            if skipped_target is not None:
+                items.append(
+                    OutcomeItem(
+                        outcome_key(entry.type, entry.artifact, entry.profile),
+                        "skipped",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        mode=entry.install.mode,
+                        detail=skipped_target.reason,
+                    )
+                )
+            elif key not in new_by_key:
+                items.append(
+                    OutcomeItem(
+                        outcome_key(entry.type, entry.artifact, entry.profile),
+                        "skipped",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        mode=entry.install.mode,
+                        detail="missing from current catalog",
+                    )
+                )
+            else:
+                targets = _entry_targets(new_by_key[key], project)
+                item_status: OutcomeStatus = "conflict" if targets & conflict_targets else "changed"
+                items.append(
+                    OutcomeItem(
+                        outcome_key(entry.type, entry.artifact, entry.profile),
+                        item_status,
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        mode=new_by_key[key].install.mode,
+                        detail="would apply",
+                    )
+                )
+        for entry in others if request.prune else ():
+            items.append(
+                OutcomeItem(
+                    outcome_key(entry.type, entry.artifact, entry.profile),
+                    "removed",
+                    artifact=entry.artifact,
+                    artifact_type=entry.type,
+                    profile=entry.profile,
+                    mode=entry.install.mode,
+                    detail="would prune",
+                )
+            )
+        rendered = render_plan(update_plan)
+        exit_code = _common.CONFLICT if conflict and not request.force else _common.OK
+        return CommandOutcome(
+            exit_code=exit_code,
+            summary=ActionSummary(
+                action="update",
+                selected=len(selected) + (len(others) if request.prune else 0),
+                items=tuple(items),
+                warnings=tuple(_skip_message(item) for item in skipped),
+                dry_run=True,
+            ),
+            details=tuple(rendered.splitlines()) if rendered else (),
+            payload={
+                "actions": json.loads(plan_to_json(update_plan)),
+                "skipped": [skipped_target_to_dict(item) for item in skipped],
+                "warnings": [_skip_message(item) for item in skipped],
+                "conflict": conflict,
+            },
+        )
 
     # 5. Execute once after every source group planned successfully, then persist subscriptions.
-    report = execute(update_plan)
-    final_manifest = _merge_entries(pruned_manifest, new_entries)
-    _common.save_manifest(project, final_manifest)
+    report = execute_plan(update_plan)
+    failed_targets = {
+        observation.target for observation in report.observations if observation.state == "failed"
+    }
+    changed_targets = {
+        observation.target for observation in report.observations if observation.state == "changed"
+    }
+    new_by_key = {(entry.artifact, entry.profile): entry for entry in new_entries}
+    failed_keys = {
+        key for key, entry in new_by_key.items() if _entry_targets(entry, project) & failed_targets
+    }
+    prune_targets = {
+        target
+        for entry in (others if request.prune else ())
+        for target in _prune_targets(entry, project)
+    }
+    if failed_targets - prune_targets and not failed_keys:
+        failed_keys = set(new_by_key)
 
-    # 6. Output + exit code.
-    if request.json:
-        _common.print_json(
-            {
-                "performed": list(report.performed),
-                "warnings": list(report.warnings),
-                "skipped": [skipped_target_to_dict(s) for s in skipped],
-                "conflict": conflict,
-            }
+    manifest_base = manifest if report.failed else pruned_manifest
+    successful_entries = tuple(
+        entry for entry in new_entries if (entry.artifact, entry.profile) not in failed_keys
+    )
+    final_manifest = _merge_entries(manifest_base, successful_entries)
+    manifest_error: Optional[str] = None
+    try:
+        _common.save_manifest(project, final_manifest)
+    except OSError as exc:
+        manifest_error = f"could not save consumer manifest: {exc}"
+        failed_keys = set(new_by_key)
+
+    # 6. Build the shared result contract.
+    skipped_by_key = {(item.artifact, item.profile): item for item in skipped}
+    items = []
+    for entry in selected:
+        key = (entry.artifact, entry.profile)
+        desired = new_by_key.get(key)
+        targets = _entry_targets(desired, project) if desired is not None else set()
+        drift_warning = next(
+            (
+                warning
+                for warning in report.warnings
+                if warning.startswith("drift:") and any(path in warning for path in entry.files)
+            ),
+            None,
         )
-    else:
-        for s in skipped:
-            print(_skip_message(s))
-        for w in report.warnings:
-            print(w)
+        skipped_target = skipped_by_key.get(key)
+        status: OutcomeStatus
+        if skipped_target is not None:
+            status = "skipped"
+            detail = skipped_target.reason
+        elif desired is None:
+            status = "skipped"
+            detail = "missing from current catalog"
+        elif key in failed_keys:
+            status = "failed"
+            detail = "one or more managed effects failed"
+        elif targets & conflict_targets and not request.force:
+            status = "conflict"
+            detail = "local and upstream changes require resolution"
+        elif drift_warning is not None:
+            status = "skipped"
+            detail = drift_warning
+        elif targets & changed_targets:
+            status = "changed"
+            detail = None
+        else:
+            status = "up_to_date"
+            detail = None
+        items.append(
+            OutcomeItem(
+                outcome_key(entry.type, entry.artifact, entry.profile),
+                status,
+                artifact=entry.artifact,
+                artifact_type=entry.type,
+                profile=entry.profile,
+                mode=(desired.install.mode if desired is not None else entry.install.mode),
+                detail=detail,
+            )
+        )
 
-    return _common.CONFLICT if conflict and not request.force else _common.OK
+    prune_failed = report.failed or manifest_error is not None
+    for entry in others if request.prune else ():
+        items.append(
+            OutcomeItem(
+                outcome_key(entry.type, entry.artifact, entry.profile),
+                "failed" if prune_failed else "removed",
+                artifact=entry.artifact,
+                artifact_type=entry.type,
+                profile=entry.profile,
+                mode=entry.install.mode,
+                detail=(
+                    "prune effects or manifest persistence failed; entry retained"
+                    if prune_failed
+                    else "pruned"
+                ),
+            )
+        )
+
+    warnings = tuple(_skip_message(item) for item in skipped) + tuple(report.warnings)
+    if manifest_error is not None:
+        warnings += (manifest_error,)
+    recovery = (
+        (
+            ("Resolve conflicts, review .agent-artifacts-new files, and rerun update.",)
+            if conflict and not request.force
+            else ()
+        )
+        + (
+            ("Fix the reported filesystem errors and rerun update for failed artifacts.",)
+            if report.failed
+            else ()
+        )
+        + (("Fix manifest permissions and rerun update.",) if manifest_error else ())
+    )
+    exit_code = (
+        _common.ERROR
+        if report.failed or manifest_error
+        else (_common.CONFLICT if conflict and not request.force else _common.OK)
+    )
+    return CommandOutcome(
+        exit_code=exit_code,
+        summary=ActionSummary(
+            action="update",
+            selected=len(selected) + (len(others) if request.prune else 0),
+            items=tuple(items),
+            warnings=warnings,
+            recovery=recovery,
+        ),
+        payload={
+            "performed": list(report.performed),
+            "warnings": list(warnings),
+            "skipped": [skipped_target_to_dict(item) for item in skipped],
+            "conflict": conflict,
+        },
+    )
+
+
+def run(request: Request) -> int:
+    """Execute and render an update while retaining the integer CLI contract."""
+
+    result = execute(request)
+    if request.json:
+        _common.print_json(outcome_payload(result))
+    else:
+        for line in render_outcome(result):
+            print(line)
+    return result.exit_code
 
 
 # --------------------------------------------------------------------------- #
@@ -433,7 +681,7 @@ def _apply_policy(
     *,
     force: bool,
     source_root: str = "",
-) -> Tuple[Plan, bool]:
+) -> Tuple[Plan, bool, Tuple[str, ...]]:
     """Rewrite each desired ``WriteFile`` through the §9 decision table.
 
     ``CopyTree``/``SymlinkTree`` (skills, hook scripts) and ``MergeJson`` (mcp/hook registration) are kept
@@ -445,6 +693,7 @@ def _apply_policy(
     base_for = _base_hash_index(selected)
     out: List = []
     conflict = False
+    conflict_targets: List[str] = []
 
     for action in desired_plan:
         if isinstance(action, SymlinkTree):
@@ -456,6 +705,8 @@ def _apply_policy(
             )
             out.extend(rewritten)
             conflict = conflict or symlink_conflict
+            if symlink_conflict:
+                conflict_targets.append(action.dst)
             continue
         if isinstance(action, (CopyTree, MergeJson)):
             out.append(action)
@@ -473,9 +724,10 @@ def _apply_policy(
         decision = classify(disk, base, new)
         if decision == "conflict" and not force:
             conflict = True
+            conflict_targets.append(path)
         out.extend(decision_action(decision, path, action.content, force=force))
 
-    return tuple(out), conflict
+    return tuple(out), conflict, tuple(conflict_targets)
 
 
 def _expected_symlink_target(action: SymlinkTree, source_root: str) -> str:

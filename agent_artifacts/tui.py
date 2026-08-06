@@ -34,6 +34,7 @@ from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 from .catalog import resolve_bundle
 from .compatibility import check_profile_compatibility
 from .model import Artifact, ArtifactType, Catalog, Err, Manifest, Profile, Request, Result
+from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
 from .profiles.loader import load_profiles
 from .source import open_source
 
@@ -349,6 +350,80 @@ def _dispatch(request: Request) -> int:
     return int(module.run(request))
 
 
+_ORIGINAL_DISPATCH = _dispatch
+
+
+def _dispatch_result(request: Request) -> CommandOutcome:
+    """Dispatch a command through its structured result contract."""
+
+    # Preserve the long-standing injectable dispatch seam used by headless frontend tests and
+    # embedders. Production keeps the original function and takes the structured path below.
+    if _dispatch is not _ORIGINAL_DISPATCH:
+        code = int(_dispatch(request))
+        item = (
+            OutcomeItem(f"{request.command}-request", "up_to_date")
+            if code == 0
+            else OutcomeItem(f"{request.command}-request", "failed")
+        )
+        return CommandOutcome(
+            exit_code=code,
+            summary=ActionSummary(action=request.command, items=(item,)),
+        )
+
+    try:
+        from . import cli
+
+        dispatch = getattr(cli, "RESULT_DISPATCH", None)
+    except Exception:  # pragma: no cover - cli import is trivial
+        dispatch = None
+
+    if isinstance(dispatch, Mapping) and request.command in dispatch:
+        return dispatch[request.command](request)
+
+    from importlib import import_module
+
+    module = import_module(f".commands.{request.command}", package=__package__)
+    execute = getattr(module, "execute", None)
+    if callable(execute):
+        return execute(request)
+
+    code = _dispatch(request)
+    item = (
+        OutcomeItem(f"{request.command}-request", "up_to_date")
+        if code == 0
+        else OutcomeItem(f"{request.command}-request", "failed")
+    )
+    return CommandOutcome(
+        exit_code=code,
+        summary=ActionSummary(
+            action=request.command,
+            items=(item,),
+        ),
+    )
+
+
+def _render_result(result: CommandOutcome, write: WriteFn) -> int:
+    for line in render_outcome(result):
+        write(line)
+    return result.exit_code
+
+
+def _cancel(write: WriteFn, message: str = "Cancelled; no changes were made.") -> int:
+    if message != "Cancelled; no changes were made.":
+        write(message)
+        return 0
+    return _render_result(
+        CommandOutcome(
+            0,
+            ActionSummary(
+                action="cancelled",
+                items=(OutcomeItem("selection", "cancelled"),),
+            ),
+        ),
+        write,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Text / fallback flow — fully injectable, headless-testable.                   #
 # --------------------------------------------------------------------------- #
@@ -380,7 +455,7 @@ def _run_user_text(
     profile_names = sorted(profiles_map)
     if not profile_names:  # pragma: no cover - built-ins always present
         write("No profiles available.")
-        return 0
+        return _cancel(write, "No profiles available; no changes were made.")
 
     write("Select profile(s):")
     for i, pname in enumerate(profile_names, start=1):
@@ -388,7 +463,7 @@ def _run_user_text(
     prof_choices = tuple(_Choice("profile", p, None, p) for p in profile_names)
     picked_profiles = _prompt_indices(read, write, "Profile (e.g. 1): ", prof_choices)
     if not picked_profiles:
-        return 0
+        return _cancel(write)
     profiles = [profile_names[idx] for idx in picked_profiles]
 
     write("Action:")
@@ -396,7 +471,7 @@ def _run_user_text(
         write(f"  {i:>2}. {act}")
     action = _prompt_action(read, write)
     if action is None:
-        return 0
+        return _cancel(write)
 
     catalog = Catalog(artifacts={}, bundles={})
     if action in ("install", "update"):
@@ -442,7 +517,7 @@ def _run_user_text(
     choices = build_action_choices(action, catalog, manifest, profiles, profiles_map)
     if not choices:
         write(_empty_choices_message(action, profiles))
-        return 0
+        return _render_result(CommandOutcome(0, ActionSummary(action=action)), write)
 
     write(f"Select artifact(s)/bundle(s) for {_profiles_label(profiles)}:")
     terminal_width = shutil.get_terminal_size(fallback=(200, 24)).columns
@@ -452,7 +527,7 @@ def _run_user_text(
 
     picked = _prompt_indices(read, write, "Selection (e.g. 1,3): ", choices)
     if not picked:
-        return 0  # clean quit / empty selection
+        return _cancel(write, "No artifacts selected; no changes were made.")
 
     request = _build_request(
         action,
@@ -462,7 +537,7 @@ def _run_user_text(
         repo=repo,
         project=project,
     )
-    return _dispatch(request)
+    return _render_result(_dispatch_result(request), write)
 
 
 def _run_text(
@@ -477,7 +552,7 @@ def _run_text(
     """Role-first text frontend shared by real fallback mode and headless tests."""
     role = _prompt_role(read, write)
     if role is None:
-        return 0
+        return _cancel(write)
     if role == "user":
         return _run_user_text(
             read,
@@ -547,7 +622,7 @@ def _run_maintainer_text(
         write(f"  {index:>2}. {label}")
     action = _prompt_maintainer_action(read, write)
     if action is None:
-        return 0
+        return _cancel(write)
     return _run_maintainer_action_text(
         action,
         context,
@@ -585,17 +660,17 @@ def _run_maintainer_action_text(
     if action == "add":
         request = _prompt_upstream_add(read, write, context.root)
         if request is None:
-            return 0
+            return _cancel(write)
         return _run_maintainer_mutation(request, read, write)
     if action == "import":
         request, prompt_code = _prompt_upstream_import(read, write, context.root)
         if request is None:
-            return prompt_code
+            return prompt_code if prompt_code != 0 else _cancel(write)
         return _run_maintainer_mutation(request, read, write)
     if action in ("check", "update"):
         selection = _prompt_tracked_upstreams(read, write, context)
         if selection is None:
-            return 0
+            return _cancel(write)
         names, all_selected = selection
         request = Request(
             command="upstream",
@@ -1062,7 +1137,7 @@ def _run_curses(
     if "empty" in selection:
         action, profiles = selection["empty"]
         print(_empty_choices_message(action, profiles))
-        return 0
+        return _render_result(CommandOutcome(0, ActionSummary(action=action)), print)
     if "maintainer_action" in selection:
         return _run_maintainer_action_text(
             selection["maintainer_action"],
@@ -1074,13 +1149,13 @@ def _run_curses(
             project=project,
         )
     if "action" not in selection:
-        return 0  # user quit before completing the flow
+        return _cancel(print)
 
     choices = selection["choices"]
     chosen = [choices[i] for i in selection["arts"]]
     profiles = [profile_names[i] for i in selection["profs"]]
     if not chosen or not profiles:
-        return 0
+        return _cancel(print, "No artifacts selected; no changes were made.")
     request = _build_request(
         ACTIONS[selection["action"]],
         chosen,
@@ -1089,7 +1164,7 @@ def _run_curses(
         repo=repo,
         project=project,
     )
-    return _dispatch(request)
+    return _render_result(_dispatch_result(request), print)
 
 
 def _curses_multiselect(

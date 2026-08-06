@@ -222,13 +222,15 @@ class TestDryRunIsPure(_ProjectCase):
     def test_dry_run_json_is_a_plan(self):
         rc, out, _err = self.install("code-review", "--profile", "claude", "--dry-run", "--json")
         self.assertEqual(rc, 0)
-        plan = json.loads(out)  # a JSON array of actions
-        self.assertIsInstance(plan, list)
-        copies = [a for a in plan if a.get("action") == "copy-tree"]
+        payload = json.loads(out)
+        self.assertIsInstance(payload, dict)
+        copies = [a for a in payload["actions"] if a.get("action") == "copy-tree"]
         self.assertTrue(
             any(a["dst"].endswith(".claude/skills/code-review") for a in copies),
-            f"expected a copy-tree into .claude/skills/code-review, got {plan}",
+            f"expected a copy-tree into .claude/skills/code-review, got {payload}",
         )
+        self.assertEqual(payload["summary"]["selected"], 1)
+        self.assertTrue(payload["summary"]["dry_run"])
 
 
 class TestForceReinstall(_ProjectCase):

@@ -43,6 +43,7 @@ class MaintainerCommandTests(unittest.TestCase):
 
         self.assertEqual(code, _common.OK)
         self.assertIn(f"Catalog valid: {self.root}", output)
+        self.assertIn("Validated 6 artifacts; catalog is valid.", output)
 
     def test_health_reports_counts_and_untracked_artifacts_without_network(self):
         code, output = self._run("health", json_mode=True)
@@ -54,6 +55,8 @@ class MaintainerCommandTests(unittest.TestCase):
         self.assertEqual(payload["tracked"], [])
         self.assertIn("skill/code-review", payload["untracked"])
         self.assertEqual(payload["needs_attention"], [])
+        self.assertEqual(payload["summary"]["selected"], 6)
+        self.assertEqual(payload["summary"]["changed"], 0)
 
     def test_non_catalog_directory_is_rejected_with_absolute_path(self):
         self.root = pathlib.Path(self._tmp.name) / "not-a-catalog"
@@ -126,6 +129,7 @@ class MaintainerCommandTests(unittest.TestCase):
         payload = json.loads(output)
         self.assertEqual(payload["needs_attention"], ["skill/code-review"])
         self.assertEqual(payload["statuses"][0]["state"], "changed")
+        self.assertEqual(payload["summary"]["counts"]["changed"], 1)
 
 
 if __name__ == "__main__":

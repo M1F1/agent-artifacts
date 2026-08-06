@@ -7,8 +7,9 @@ present a Plan for ``--dry-run`` / ``--json`` without performing any effect.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple, Type
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type
 
 from .model import (
     Action,
@@ -29,24 +30,43 @@ MANIFEST_PATH = ".agent-artifacts/manifest.json"
 # --------------------------------------------------------------------------- #
 # Report — what ran (returned by execute).                                     #
 # --------------------------------------------------------------------------- #
-@dataclass(frozen=True)
+EffectState = Literal["changed", "unchanged", "skipped", "failed"]
+
+
+@dataclass(frozen=True, slots=True)
+class EffectObservation:
+    """Structured fact about one attempted effect."""
+
+    operation: str
+    target: str
+    state: EffectState
+    detail: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
 class Report:
     performed: Tuple[str, ...]
     warnings: Tuple[str, ...]
     manifest_written: bool
+    observations: Tuple[EffectObservation, ...] = ()
+
+    @property
+    def failed(self) -> bool:
+        return any(item.state == "failed" for item in self.observations)
 
 
 # --------------------------------------------------------------------------- #
 # Internal mutable execution context (collects results as performers run).      #
 # --------------------------------------------------------------------------- #
 class _Ctx:
-    __slots__ = ("fs", "performed", "warnings", "manifest_written")
+    __slots__ = ("fs", "performed", "warnings", "manifest_written", "observations")
 
     def __init__(self, fs):
         self.fs = fs
         self.performed: List[str] = []
         self.warnings: List[str] = []
         self.manifest_written = False
+        self.observations: List[EffectObservation] = []
 
 
 # --------------------------------------------------------------------------- #
@@ -186,6 +206,136 @@ def _deep_equal(x: Any, y: Any) -> bool:
     return x == y
 
 
+def _tree_files(root: str) -> Optional[Tuple[str, ...]]:
+    """Return the deterministic relative file set for a real directory tree."""
+
+    if not os.path.isdir(root) or os.path.islink(root):
+        return None
+    files = []
+    for directory, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        for filename in sorted(filenames):
+            absolute = os.path.join(directory, filename)
+            files.append(os.path.relpath(absolute, root))
+    return tuple(files)
+
+
+def _trees_equal(src: str, dst: str) -> bool:
+    """Return whether copying ``src`` over ``dst`` would change managed bytes.
+
+    ``copytree(..., dirs_exist_ok=True)`` preserves destination-only content, so extra files in
+    the destination do not make the copy effect non-idempotent.
+    """
+
+    src_files = _tree_files(src)
+    dst_files = _tree_files(dst)
+    if src_files is None or dst_files is None or not set(src_files).issubset(dst_files):
+        return False
+    for relative in src_files:
+        with open(os.path.join(src, relative), "rb") as src_file:
+            with open(os.path.join(dst, relative), "rb") as dst_file:
+                if src_file.read() != dst_file.read():
+                    return False
+    return True
+
+
+def _symlink_matches(src: str, dst: str) -> bool:
+    if not os.path.islink(dst):
+        return False
+    raw_target = os.readlink(dst)
+    actual = (
+        raw_target
+        if os.path.isabs(raw_target)
+        else os.path.abspath(os.path.join(os.path.dirname(dst), raw_target))
+    )
+    return os.path.normpath(actual) == os.path.normpath(os.path.abspath(src))
+
+
+def _lookup(root: object, json_path: str) -> object:
+    node = root
+    if not json_path:
+        return node
+    for part in json_path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node
+
+
+def _merge_is_current(action: MergeJson, fs) -> bool:
+    if not fs.exists(action.file):
+        return False
+    root = fs.read_json(action.file)
+    if action.mode == "key":
+        if not action.identity:
+            return False
+        parent = _lookup(root, action.json_path)
+        return (
+            isinstance(parent, dict)
+            and action.identity[0] in parent
+            and _deep_equal(parent[action.identity[0]], action.value)
+        )
+    current = _lookup(root, action.json_path)
+    return isinstance(current, list) and any(
+        _deep_equal(existing, action.value) for existing in current
+    )
+
+
+def _manifest_bytes(action: WriteManifest) -> bytes:
+    payload = {"installed": [_manifest_entry_to_dict(entry) for entry in action.entries]}
+    return json.dumps(payload, indent=2).encode()
+
+
+def _path_exists(path: str, fs) -> bool:
+    lexists = getattr(fs, "lexists", None)
+    if callable(lexists):
+        return bool(lexists(path))
+    if getattr(fs, "__name__", "") == "agent_artifacts.io.fs":
+        return os.path.lexists(path)
+    return bool(fs.exists(path))
+
+
+def _would_change(action: Action, fs) -> bool:
+    """Read-only equivalence check for a supported action."""
+
+    if isinstance(action, CopyTree):
+        return not _trees_equal(action.src, action.dst)
+    if isinstance(action, SymlinkTree):
+        return not _symlink_matches(action.src, action.dst)
+    if isinstance(action, WriteFile):
+        return not fs.exists(action.path) or fs.read_bytes(action.path) != action.content
+    if isinstance(action, MergeJson):
+        return not _merge_is_current(action, fs)
+    if isinstance(action, RemovePath):
+        return _path_exists(action.path, fs)
+    if isinstance(action, WriteManifest):
+        desired = _manifest_bytes(action)
+        return not fs.exists(MANIFEST_PATH) or fs.read_bytes(MANIFEST_PATH) != desired
+    if isinstance(action, Warn):
+        return False
+    raise TypeError(f"cannot classify action: {type(action).__name__}")
+
+
+def _operation_target(action: Action) -> Tuple[str, str]:
+    if isinstance(action, CopyTree):
+        return "copy-tree", action.dst
+    if isinstance(action, SymlinkTree):
+        return "symlink-tree", action.dst
+    if isinstance(action, WriteFile):
+        return "write-file", action.path
+    if isinstance(action, MergeJson):
+        identity = action.identity[0] if action.mode == "key" and action.identity else ""
+        suffix = f".{identity}" if identity else ""
+        return "merge-json", f"{action.file}#{action.json_path}{suffix}"
+    if isinstance(action, RemovePath):
+        return "remove-path", action.path
+    if isinstance(action, WriteManifest):
+        return "write-manifest", MANIFEST_PATH
+    if isinstance(action, Warn):
+        return "warn", action.message
+    raise TypeError(f"cannot describe action: {type(action).__name__}")
+
+
 # Dispatch table: Action type -> performer. No if/elif chain.
 _DISPATCH: Dict[Type[Action], Callable[[Any, _Ctx], None]] = {
     CopyTree: _do_copy_tree,
@@ -208,12 +358,40 @@ def execute(plan: Plan, fs=None) -> Report:
         performer = _DISPATCH.get(type(action))
         if performer is None:
             raise TypeError(f"no performer for action: {type(action).__name__}")
-        performer(action, ctx)
+        operation, target = _operation_target(action)
+        if isinstance(action, Warn):
+            performer(action, ctx)
+            ctx.observations.append(
+                EffectObservation(operation=operation, target=target, state="skipped")
+            )
+            continue
+        try:
+            if not _would_change(action, fs):
+                ctx.observations.append(
+                    EffectObservation(operation=operation, target=target, state="unchanged")
+                )
+                continue
+            performer(action, ctx)
+            ctx.observations.append(
+                EffectObservation(operation=operation, target=target, state="changed")
+            )
+        except Exception as exc:
+            detail = str(exc) or type(exc).__name__
+            ctx.warnings.append(f"{operation} {target} failed: {detail}")
+            ctx.observations.append(
+                EffectObservation(
+                    operation=operation,
+                    target=target,
+                    state="failed",
+                    detail=detail,
+                )
+            )
 
     return Report(
         performed=tuple(ctx.performed),
         warnings=tuple(ctx.warnings),
         manifest_written=ctx.manifest_written,
+        observations=tuple(ctx.observations),
     )
 
 

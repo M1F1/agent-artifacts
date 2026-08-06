@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
+import tempfile
 import unittest
 
 from agent_artifacts.executor import (
@@ -39,6 +41,9 @@ class FakeFs:
     def read_json(self, path: str):
         return json.loads(self.files[path].decode())
 
+    def read_bytes(self, path: str) -> bytes:
+        return self.files[path]
+
     def write_atomic(self, path: str, content: bytes) -> None:
         assert isinstance(content, (bytes, bytearray)), "write_atomic expects bytes"
         self.files[path] = bytes(content)
@@ -68,6 +73,7 @@ def _entry() -> ManifestEntry:
 class ExecuteOrderTest(unittest.TestCase):
     def test_every_action_kind_executes_in_order(self):
         fs = FakeFs()
+        fs.files["dst/old-skill"] = b"old"
         plan = (
             CopyTree(src="src/skills/code-review", dst="dst/skills/code-review"),
             WriteFile(path="dst/AGENTS.md", content=b"hello"),
@@ -191,6 +197,95 @@ class MergeJsonListModeTest(unittest.TestCase):
         execute((self._action({"id": "h2"}),), fs=fs)
         data = json.loads(fs.files["dst/settings.json"].decode())
         self.assertEqual(data["hooks"]["PreToolUse"], [{"id": "h1"}, {"id": "h2"}])
+
+
+class EffectObservationsTest(unittest.TestCase):
+    def test_equal_write_merge_and_absent_remove_are_unchanged(self):
+        fs = FakeFs()
+        fs.files["same.txt"] = b"same"
+        fs.files["settings.json"] = json.dumps({"tools": {"demo": {"command": "x"}}}).encode()
+        plan = (
+            WriteFile("same.txt", b"same"),
+            MergeJson(
+                file="settings.json",
+                json_path="tools",
+                mode="key",
+                value={"command": "x"},
+                identity=("demo",),
+            ),
+            RemovePath("already-absent"),
+        )
+
+        report = execute(plan, fs=fs)
+
+        self.assertEqual(
+            [(item.operation, item.target, item.state) for item in report.observations],
+            [
+                ("write-file", "same.txt", "unchanged"),
+                ("merge-json", "settings.json#tools.demo", "unchanged"),
+                ("remove-path", "already-absent", "unchanged"),
+            ],
+        )
+        self.assertEqual(report.performed, ())
+
+    def test_tree_comparison_skips_equal_copy_and_detects_changed_source(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            src = root / "src"
+            dst = root / "dst"
+            src.mkdir()
+            dst.mkdir()
+            (src / "nested").mkdir()
+            (dst / "nested").mkdir()
+            (src / "nested/data.txt").write_text("one", encoding="utf-8")
+            (dst / "nested/data.txt").write_text("one", encoding="utf-8")
+            (dst / "user-only.txt").write_text("preserve", encoding="utf-8")
+
+            first = execute((CopyTree(str(src), str(dst)),))
+            (src / "nested/data.txt").write_text("two", encoding="utf-8")
+            second = execute((CopyTree(str(src), str(dst)),))
+
+        self.assertEqual(first.observations[0].state, "unchanged")
+        self.assertEqual(first.performed, ())
+        self.assertEqual(second.observations[0].state, "changed")
+        self.assertEqual(len(second.performed), 1)
+
+    def test_missing_merge_key_with_none_value_is_still_a_change(self):
+        fs = FakeFs()
+        fs.files["settings.json"] = b'{"tools": {}}'
+
+        report = execute(
+            (
+                MergeJson(
+                    file="settings.json",
+                    json_path="tools",
+                    mode="key",
+                    value=None,
+                    identity=("demo",),
+                ),
+            ),
+            fs=fs,
+        )
+
+        self.assertEqual(report.observations[0].state, "changed")
+        self.assertIn("demo", json.loads(fs.files["settings.json"])["tools"])
+
+    def test_effect_failure_is_a_value_and_later_actions_continue(self):
+        class FailingFs(FakeFs):
+            def write_atomic(self, path: str, content: bytes) -> None:
+                if path == "blocked":
+                    raise PermissionError("denied")
+                super().write_atomic(path, content)
+
+        report = execute(
+            (WriteFile("blocked", b"x"), WriteFile("ok", b"y")),
+            fs=FailingFs(),
+        )
+
+        self.assertEqual(report.observations[0].state, "failed")
+        self.assertIn("denied", report.observations[0].detail or "")
+        self.assertEqual(report.observations[1].state, "changed")
+        self.assertTrue(report.failed)
 
 
 class RenderersTest(unittest.TestCase):

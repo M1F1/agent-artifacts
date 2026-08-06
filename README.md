@@ -75,6 +75,22 @@ Artifact and bundle selectors explain every choice in one line. In the full-scre
 press `?` to open the complete description for the highlighted row. In the plain-text fallback,
 enter `?N` (for example `?3`) to repeat the complete description for item N.
 
+Every completed action ends with an explicit outcome summary in command mode and both TUI
+frontends. A successful no-op is not silent and is distinct from an empty selection:
+
+```text
+Updated 0 artifacts; all 5 selected artifacts are already up to date.
+No installed artifacts matched the selected harness and filters.
+Removed 0 artifacts; no files were changed.
+Cancelled; no changes were made.
+```
+
+Install summaries list the actual `copy` or `symlink` mode per artifact, including copy fallback
+inside a mixed bundle. Update and uninstall summaries keep skipped, conflicted, failed,
+already-absent, and preserved-user-content items visible. Warnings appear with the outcome, and
+recoverable failures end with a `next:` instruction while retaining their established non-zero
+exit code.
+
 Prefer more command line examples?
 
 ```sh
@@ -518,6 +534,48 @@ project and intentionally does not accept `--repo` or `--project`.
 agents and CI. Every command returns a structured exit code (`0` ok, `1` generic error,
 `2` usage, `3` network, `4` conflict, `5` corrupt manifest). Supplying an unrecognized option
 is a usage error, and `--all` cannot be combined with named artifacts or `--bundle`.
+
+Mutating command JSON includes a canonical `summary` object. Human output is rendered from the
+same immutable result, so counts and item identities cannot diverge between frontends:
+
+```json
+{
+  "summary": {
+    "action": "update",
+    "selected": 2,
+    "changed": 1,
+    "no_changes": false,
+    "counts": {"changed": 1, "up_to_date": 1},
+    "modes": {"copy": 2},
+    "items": [
+      {
+        "key": "skill/code-review@claude",
+        "status": "changed",
+        "artifact": "code-review",
+        "type": "skill",
+        "profile": "claude",
+        "mode": "copy",
+        "detail": null
+      },
+      {
+        "key": "skill/testing@claude",
+        "status": "up_to_date",
+        "artifact": "testing",
+        "type": "skill",
+        "profile": "claude",
+        "mode": "copy",
+        "detail": null
+      }
+    ],
+    "warnings": [],
+    "recovery": [],
+    "dry_run": false
+  }
+}
+```
+
+Existing command-specific JSON fields remain available. Consumers should use `summary` for final
+selected/changed counts, status item lists, actual modes, warnings, and safe recovery guidance.
 
 > **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
 > teaching an agent to drive this CLI (always `--json`, never the TUI).

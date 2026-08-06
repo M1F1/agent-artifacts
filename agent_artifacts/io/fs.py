@@ -94,6 +94,12 @@ def exists(path: str) -> bool:
     return os.path.exists(path)
 
 
+def lexists(path: str) -> bool:
+    """True for files, directories, and broken symlinks."""
+
+    return os.path.lexists(path)
+
+
 def listdir(path: str) -> Tuple[str, ...]:
     """Sorted tuple of entry names; missing dir -> empty tuple."""
     try:

@@ -17,6 +17,14 @@ from ..import_scanner import ImportMode, scan_import_root
 from ..io import fs
 from ..maintainer import MaintainerContext, build_catalog_health, empty_upstreams
 from ..model import Err, Ok, Request
+from ..outcomes import (
+    ActionSummary,
+    OutcomeItem,
+    OutcomeStatus,
+    outcome_key,
+    render_summary,
+    summary_to_dict,
+)
 from ..source import open_source
 from ..upstream_planner import (
     UpstreamStatus,
@@ -41,6 +49,51 @@ from ..upstreams import (
 from . import _common
 
 UPSTREAMS_FILE = "upstreams.json"
+
+
+def _print_summary(summary: ActionSummary) -> None:
+    for line in render_summary(summary):
+        print(line)
+
+
+def _status_outcome_item(status: UpstreamStatus, *, updated: bool = False) -> OutcomeItem:
+    outcome_status: OutcomeStatus
+    if status.state == "up_to_date":
+        outcome_status = "up_to_date"
+    elif status.state == "changed":
+        outcome_status = "updated" if updated else "changed"
+    elif status.state in {"conflict", "invalid"}:
+        outcome_status = "conflict"
+    else:
+        outcome_status = "skipped"
+    return OutcomeItem(
+        outcome_key(status.key.type, status.key.name),
+        outcome_status,
+        artifact=status.key.name,
+        artifact_type=status.key.type,
+        detail=status.message or status.state,
+    )
+
+
+def _emit_failure(request: Request, action: str, reason: str, code: int) -> int:
+    summary = ActionSummary(
+        action=f"upstream.{action}",
+        items=(OutcomeItem(f"upstream.{action}-request", "failed", detail=reason),),
+        recovery=("Correct the reported error and retry the maintainer action.",),
+    )
+    if request.json:
+        _common.print_json(
+            {
+                "ok": False,
+                "error": reason,
+                "code": code,
+                "summary": summary_to_dict(summary),
+            }
+        )
+    else:
+        print(reason)
+        _print_summary(summary)
+    return code
 
 
 def _catalog_root(request: Request) -> str:
@@ -71,35 +124,64 @@ def run(request: Request) -> int:
     if request.upstream_action == "import":
         return _run_import(request)
     if request.upstream_action not in {"check", "update"}:
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            request.upstream_action or "unknown",
+            "unknown upstream action",
+            _common.USAGE,
+        )
     if request.upstream_action == "update" and not _has_selector(request):
-        print("upstream update requires a selector (NAME, --bundle, --type, or --all)")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "update",
+            "upstream update requires a selector (NAME, --bundle, --type, or --all)",
+            _common.USAGE,
+        )
     catalog_root = os.path.abspath(_catalog_root(request))
     tracking_path = os.path.join(catalog_root, UPSTREAMS_FILE)
     if not os.path.exists(tracking_path):
-        print(f"missing {UPSTREAMS_FILE} in {catalog_root}")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            request.upstream_action,
+            f"missing {UPSTREAMS_FILE} in {catalog_root}",
+            _common.USAGE,
+        )
 
     loaded = _load_catalog_and_upstreams(catalog_root, tracking_path)
     if isinstance(loaded, Err):
-        print(loaded.reason)
-        return _common.exit_code(loaded)
+        return _emit_failure(
+            request,
+            request.upstream_action,
+            loaded.reason,
+            _common.exit_code(loaded),
+        )
     catalog, upstreams = loaded.value
     metadata_errors = validate_upstreams(upstreams, catalog)
     if metadata_errors:
-        print("; ".join(err.reason for err in metadata_errors))
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            request.upstream_action,
+            "; ".join(err.reason for err in metadata_errors),
+            _common.USAGE,
+        )
 
     selection = select_upstreams(request, catalog, upstreams)
     if isinstance(selection, Err):
-        print(selection.reason)
-        return _common.exit_code(selection)
+        return _emit_failure(
+            request,
+            request.upstream_action,
+            selection.reason,
+            _common.exit_code(selection),
+        )
 
     resolved = _resolve_all(selection.value.entries)
     if isinstance(resolved, Err):
-        print(resolved.reason)
-        return _common.exit_code(resolved)
+        return _emit_failure(
+            request,
+            request.upstream_action,
+            resolved.reason,
+            _common.exit_code(resolved),
+        )
 
     local_hashes = _local_hashes(selection.value.entries, catalog_root)
     staged_validation_errors = _validation_errors(resolved.value)
@@ -112,8 +194,12 @@ def run(request: Request) -> int:
             validation_errors=staged_validation_errors,
         )
         if isinstance(planned, Err):
-            print(planned.reason)
-            return _common.exit_code(planned)
+            return _emit_failure(
+                request,
+                "check",
+                planned.reason,
+                _common.exit_code(planned),
+            )
         _emit_check(
             request,
             catalog_root=catalog_root,
@@ -132,8 +218,12 @@ def run(request: Request) -> int:
         catalog_root=catalog_root,
     )
     if isinstance(planned_update, Err):
-        print(planned_update.reason)
-        return _common.exit_code(planned_update)
+        return _emit_failure(
+            request,
+            "update",
+            planned_update.reason,
+            _common.exit_code(planned_update),
+        )
 
     update_plan: UpstreamUpdatePlan = planned_update.value
     if request.dry_run:
@@ -146,7 +236,7 @@ def run(request: Request) -> int:
         return _common.CONFLICT
 
     report = executor.execute(update_plan.plan)
-    updated = _statuses_to_persist(update_plan.statuses)
+    updated = {} if report.failed else _statuses_to_persist(update_plan.statuses)
     if updated:
         fs.write_atomic(
             tracking_path,
@@ -161,8 +251,9 @@ def run(request: Request) -> int:
         warnings=selection.value.warnings + report.warnings,
         performed=report.performed,
         updated_count=len(updated),
+        failed=report.failed,
     )
-    return _common.OK
+    return _common.ERROR if report.failed else _common.OK
 
 
 def load_maintainer_context(request: Request):
@@ -218,9 +309,18 @@ def scan_import_candidates(request: Request):
 def _run_validate(request: Request) -> int:
     loaded = load_maintainer_context(request)
     if isinstance(loaded, Err):
-        print(loaded.reason)
-        return _common.exit_code(loaded)
+        return _emit_failure(request, "validate", loaded.reason, _common.exit_code(loaded))
     context = loaded.value
+    artifact_count = len(context.catalog.artifacts)
+    summary = ActionSummary(
+        action="upstream.validate",
+        selected=artifact_count,
+        items=tuple(
+            OutcomeItem(f"validation/{index + 1}", "failed", detail=error)
+            for index, error in enumerate(context.validation_errors)
+        )
+        or (OutcomeItem("catalog", "checked", detail="valid"),),
+    )
     if request.json:
         _common.print_json(
             {
@@ -228,6 +328,7 @@ def _run_validate(request: Request) -> int:
                 "catalog_root": context.root,
                 "valid": not context.validation_errors,
                 "errors": list(context.validation_errors),
+                "summary": summary_to_dict(summary),
             }
         )
     elif context.validation_errors:
@@ -236,14 +337,15 @@ def _run_validate(request: Request) -> int:
             print(f"  - {error}")
     else:
         print(f"Catalog valid: {context.root}")
+    if not request.json:
+        _print_summary(summary)
     return _common.OK if not context.validation_errors else _common.USAGE
 
 
 def _run_health(request: Request) -> int:
     loaded = load_maintainer_context(request)
     if isinstance(loaded, Err):
-        print(loaded.reason)
-        return _common.exit_code(loaded)
+        return _emit_failure(request, "health", loaded.reason, _common.exit_code(loaded))
     context = loaded.value
     statuses: Tuple[UpstreamStatus, ...] = ()
     if not context.validation_errors and context.upstreams.entries:
@@ -253,8 +355,12 @@ def _run_health(request: Request) -> int:
         )
         resolved = _resolve_all(entries)
         if isinstance(resolved, Err):
-            print(f"catalog {context.root}: {resolved.reason}")
-            return _common.exit_code(resolved)
+            return _emit_failure(
+                request,
+                "health",
+                f"catalog {context.root}: {resolved.reason}",
+                _common.exit_code(resolved),
+            )
         planned = plan_upstream_check(
             entries,
             resolved.value,
@@ -262,11 +368,20 @@ def _run_health(request: Request) -> int:
             validation_errors=_validation_errors(resolved.value),
         )
         if isinstance(planned, Err):
-            print(planned.reason)
-            return _common.exit_code(planned)
+            return _emit_failure(request, "health", planned.reason, _common.exit_code(planned))
         statuses = planned.value
 
     health = build_catalog_health(context, statuses)
+    status_items = tuple(_status_outcome_item(status) for status in health.statuses)
+    validation_items = tuple(
+        OutcomeItem(f"validation/{index + 1}", "failed", detail=error)
+        for index, error in enumerate(health.validation_errors)
+    )
+    summary = ActionSummary(
+        action="upstream.health",
+        selected=sum(count for _type, count in health.counts_by_type),
+        items=status_items + validation_items,
+    )
     if request.json:
         _common.print_json(
             {
@@ -283,6 +398,7 @@ def _run_health(request: Request) -> int:
                 "needs_attention": [
                     format_upstream_key(status.key) for status in health.needs_attention
                 ],
+                "summary": summary_to_dict(summary),
             }
         )
     else:
@@ -296,14 +412,14 @@ def _run_health(request: Request) -> int:
         print(f"Upstreams requiring attention: {len(health.needs_attention)}")
         for status in health.needs_attention:
             print(f"  - {format_upstream_key(status.key)}: {status.state}")
+        _print_summary(summary)
     return _common.OK if not health.validation_errors else _common.USAGE
 
 
 def _run_scan(request: Request) -> int:
     scan_res = _resolve_import_scan(request)
     if isinstance(scan_res, Err):
-        print(scan_res.reason)
-        return _common.exit_code(scan_res)
+        return _emit_failure(request, "scan", scan_res.reason, _common.exit_code(scan_res))
     _emit_scan(request, scan_res.value)
     return _common.OK
 
@@ -311,8 +427,7 @@ def _run_scan(request: Request) -> int:
 def _run_import(request: Request) -> int:
     scan_res = _resolve_import_scan(request)
     if isinstance(scan_res, Err):
-        print(scan_res.reason)
-        return _common.exit_code(scan_res)
+        return _emit_failure(request, "import", scan_res.reason, _common.exit_code(scan_res))
     scan = scan_res.value
 
     names = request.names
@@ -320,8 +435,12 @@ def _run_import(request: Request) -> int:
         names = _interactive_selection(scan)
 
     if len(request.bundles) > 1:
-        print("upstream import accepts at most one --bundle")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "import",
+            "upstream import accepts at most one --bundle",
+            _common.USAGE,
+        )
     bundle_name = request.bundles[0] if request.bundles else None
     bundle_mode = cast(BundleMode, request.bundle_mode or "append")
     catalog_root = os.path.abspath(_catalog_root(request))
@@ -336,8 +455,7 @@ def _run_import(request: Request) -> int:
         force=request.force,
     )
     if isinstance(planned, Err):
-        print(planned.reason)
-        return _common.exit_code(planned)
+        return _emit_failure(request, "import", planned.reason, _common.exit_code(planned))
     import_plan: ImportPlan = planned.value
 
     if request.dry_run:
@@ -349,8 +467,15 @@ def _run_import(request: Request) -> int:
         return _common.CONFLICT
 
     report = executor.execute(import_plan.plan)
-    _emit_import_result(request, scan, import_plan, performed=report.performed)
-    return _common.OK
+    _emit_import_result(
+        request,
+        scan,
+        import_plan,
+        performed=report.performed,
+        failed=report.failed,
+        execution_warnings=report.warnings,
+    )
+    return _common.ERROR if report.failed else _common.OK
 
 
 def _resolve_import_scan(request: Request):
@@ -407,10 +532,27 @@ def _interactive_selection(scan) -> Tuple[str, ...]:
 
 
 def _emit_scan(request: Request, scan) -> None:
+    summary = ActionSummary(
+        action="upstream.scan",
+        selected=len(scan.candidates),
+        items=tuple(
+            OutcomeItem(
+                outcome_key(candidate.key.type, candidate.key.name),
+                "scanned",
+                artifact=candidate.key.name,
+                artifact_type=candidate.key.type,
+                detail=candidate.confidence,
+            )
+            for candidate in scan.candidates
+        ),
+    )
     if request.json:
-        _common.print_json({"action": "scan", **scan_to_dict(scan)})
+        _common.print_json(
+            {"action": "scan", **scan_to_dict(scan), "summary": summary_to_dict(summary)}
+        )
         return
     print(render_scan(scan))
+    _print_summary(summary)
 
 
 def _emit_import_dry_run(request: Request, scan, import_plan: ImportPlan) -> None:
@@ -421,6 +563,7 @@ def _emit_import_dry_run(request: Request, scan, import_plan: ImportPlan) -> Non
     rendered = executor.render_plan(import_plan.plan)
     if rendered:
         print(rendered)
+    _print_summary(_import_summary(import_plan, dry_run=True))
 
 
 def _emit_import_conflict(request: Request, scan, import_plan: ImportPlan) -> None:
@@ -428,6 +571,7 @@ def _emit_import_conflict(request: Request, scan, import_plan: ImportPlan) -> No
         _common.print_json(_import_payload("import", request, scan, import_plan, dry_run=False))
         return
     _print_import_summary(import_plan, dry_run=False)
+    _print_summary(_import_summary(import_plan, dry_run=False))
 
 
 def _emit_import_result(
@@ -436,10 +580,23 @@ def _emit_import_result(
     import_plan: ImportPlan,
     *,
     performed: Tuple[str, ...],
+    failed: bool = False,
+    execution_warnings: Tuple[str, ...] = (),
 ) -> None:
+    summary = _import_summary(import_plan, dry_run=False, failed=failed)
+    if execution_warnings:
+        summary = ActionSummary(
+            action=summary.action,
+            selected=summary.selected,
+            items=summary.items,
+            warnings=summary.warnings + execution_warnings,
+            recovery=summary.recovery,
+            dry_run=summary.dry_run,
+        )
     if request.json:
         payload = _import_payload("import", request, scan, import_plan, dry_run=False)
         payload["performed"] = list(performed)
+        payload["summary"] = summary_to_dict(summary)
         _common.print_json(payload)
         return
     print(
@@ -452,6 +609,7 @@ def _emit_import_result(
         print(f"Tracked: {import_plan.tracking_path}")
     for warning in import_plan.selection.warnings:
         print(f"warning: {warning}")
+    _print_summary(summary)
 
 
 def _import_payload(action: str, request: Request, scan, import_plan: ImportPlan, *, dry_run: bool):
@@ -471,7 +629,63 @@ def _import_payload(action: str, request: Request, scan, import_plan: ImportPlan
         "warnings": list(import_plan.selection.warnings),
         "bundle": request.bundles[0] if request.bundles else None,
         "plan": json.loads(executor.plan_to_json(import_plan.plan)),
+        "summary": summary_to_dict(_import_summary(import_plan, dry_run=dry_run)),
     }
+
+
+def _import_summary(
+    import_plan: ImportPlan, *, dry_run: bool, failed: bool = False
+) -> ActionSummary:
+    selected_items = tuple(
+        OutcomeItem(
+            outcome_key(candidate.key.type, candidate.key.name),
+            "failed" if failed else "imported",
+            artifact=candidate.key.name,
+            artifact_type=candidate.key.type,
+            detail=(
+                "one or more import effects failed"
+                if failed
+                else ("would import" if dry_run else None)
+            ),
+        )
+        for candidate in import_plan.selection.selected
+    )
+    skipped_items = tuple(
+        OutcomeItem(
+            outcome_key(candidate.key.type, candidate.key.name),
+            "skipped",
+            artifact=candidate.key.name,
+            artifact_type=candidate.key.type,
+            detail=candidate.confidence,
+        )
+        for candidate in import_plan.selection.skipped
+    )
+    conflict_items = tuple(
+        OutcomeItem(
+            outcome_key(conflict.key.type, conflict.key.name),
+            "conflict",
+            artifact=conflict.key.name,
+            artifact_type=conflict.key.type,
+            detail=conflict.reason,
+        )
+        for conflict in import_plan.selection.conflicts
+    )
+    return ActionSummary(
+        action="upstream.import",
+        selected=len(selected_items) + len(skipped_items) + len(conflict_items),
+        items=selected_items + skipped_items + conflict_items,
+        warnings=tuple(import_plan.selection.warnings),
+        recovery=(
+            (
+                "Fix the reported filesystem errors and rerun import for failed artifacts."
+                if failed
+                else "Resolve import conflicts or rerun with the appropriate overwrite policy."
+            ),
+        )
+        if (conflict_items or failed)
+        else (),
+        dry_run=dry_run,
+    )
 
 
 def _print_import_summary(import_plan: ImportPlan, *, dry_run: bool) -> None:
@@ -494,31 +708,40 @@ def _print_import_summary(import_plan: ImportPlan, *, dry_run: bool) -> None:
 def _run_add(request: Request) -> int:
     """Adopt one upstream artifact from a GitHub URL: resolve, vendor, and track it."""
     if not request.names:
-        print("upstream add requires <type/name> and a URL")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            "upstream add requires <type/name> and a URL",
+            _common.USAGE,
+        )
     key_res = parse_upstream_key(request.names[0])
     if isinstance(key_res, Err):
-        print(key_res.reason)
-        return _common.USAGE
+        return _emit_failure(request, "add", key_res.reason, _common.USAGE)
     key = key_res.value
 
     if not request.url:
-        print("upstream add requires a GitHub URL")
-        return _common.USAGE
+        return _emit_failure(request, "add", "upstream add requires a GitHub URL", _common.USAGE)
     url_res = parse_github_url(request.url)
     if isinstance(url_res, Err):
-        print(f"invalid URL: {url_res.reason}")
-        return _common.USAGE
+        return _emit_failure(request, "add", f"invalid URL: {url_res.reason}", _common.USAGE)
     parts = url_res.value
 
     ref = request.ref or parts.ref
     path = request.path or parts.path
     if not ref:
-        print("could not determine a ref from the URL; pass --ref")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            "could not determine a ref from the URL; pass --ref",
+            _common.USAGE,
+        )
     if not path:
-        print("could not determine an in-repo path from the URL; pass --path")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            "could not determine an in-repo path from the URL; pass --path",
+            _common.USAGE,
+        )
 
     # When the URL declares a shape, it must match the artifact type. Skills/hooks are
     # directories; guidelines/memory are single files. MCP accepts either the legacy single
@@ -526,11 +749,19 @@ def _run_add(request: Request) -> int:
     wants_dir = key.type in {"skill", "hook"}
     wants_file = key.type in {"guideline", "memory"}
     if parts.is_file is True and wants_dir:
-        print(f"{key.type} {key.name!r} is a directory artifact; use a /tree/ URL, not /blob/")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            f"{key.type} {key.name!r} is a directory artifact; use a /tree/ URL, not /blob/",
+            _common.USAGE,
+        )
     if parts.is_file is False and wants_file:
-        print(f"{key.type} {key.name!r} is a single-file artifact; use a /blob/ URL, not /tree/")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            f"{key.type} {key.name!r} is a single-file artifact; use a /blob/ URL, not /tree/",
+            _common.USAGE,
+        )
 
     catalog_root = os.path.abspath(_catalog_root(request))
     tracking_path = os.path.join(catalog_root, UPSTREAMS_FILE)
@@ -540,18 +771,20 @@ def _run_add(request: Request) -> int:
         try:
             loaded = parse_upstreams(fs.read_text(tracking_path))
         except OSError as exc:
-            print(f"cannot read {tracking_path}: {exc}")
-            return _common.ERROR
+            return _emit_failure(
+                request, "add", f"cannot read {tracking_path}: {exc}", _common.ERROR
+            )
         if isinstance(loaded, Err):
-            print(loaded.reason)
-            return _common.exit_code(loaded)
+            return _emit_failure(request, "add", loaded.reason, _common.exit_code(loaded))
         existing_catalog = loaded.value
         if key in existing_catalog.entries and not request.force:
-            print(
+            return _emit_failure(
+                request,
+                "add",
                 f"{format_upstream_key(key)} is already tracked; "
-                "use 'aart upstream update' (or --force to re-adopt)"
+                "use 'aart upstream update' (or --force to re-adopt)",
+                _common.USAGE,
             )
-            return _common.USAGE
 
     # Public github.com stays compact (no host metadata); enterprise hosts carry api_url/web_url.
     web_url = parts.web_url if parts.api_url is not None else None
@@ -564,20 +797,27 @@ def _run_add(request: Request) -> int:
         token=_github_token(),
     )
     if isinstance(resolved, Err):
-        print(resolved.reason)
-        return _common.exit_code(resolved)
+        return _emit_failure(request, "add", resolved.reason, _common.exit_code(resolved))
     materialised = resolved.value
 
     problem = _validate_resolved(materialised)
     if problem is not None:
-        print(f"resolved content is not a valid {key.type}: {problem}")
-        return _common.USAGE
+        return _emit_failure(
+            request,
+            "add",
+            f"resolved content is not a valid {key.type}: {problem}",
+            _common.USAGE,
+        )
 
     dest = _catalog_destination(key, catalog_root, tree=os.path.isdir(materialised.path))
     dest_exists = os.path.exists(dest)
     if dest_exists and not request.force:
-        print(f"{os.path.relpath(dest, catalog_root)} already exists; pass --force to overwrite")
-        return _common.CONFLICT
+        return _emit_failure(
+            request,
+            "add",
+            f"{os.path.relpath(dest, catalog_root)} already exists; pass --force to overwrite",
+            _common.CONFLICT,
+        )
 
     synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     new_entry = UpstreamEntry(
@@ -603,13 +843,21 @@ def _run_add(request: Request) -> int:
 
     # Vendor the content, then write the tracking file last so a failure never leaves a
     # vendored-but-untracked artifact behind.
-    if os.path.isdir(materialised.path):
-        if dest_exists:
-            fs.remove_path(dest)
-        fs.copy_tree(materialised.path, dest)
-    else:
-        fs.write_atomic(dest, fs.read_bytes(materialised.path))
-    fs.write_atomic(tracking_path, dump_upstreams(updated_catalog).encode("utf-8"))
+    try:
+        if os.path.isdir(materialised.path):
+            if dest_exists:
+                fs.remove_path(dest)
+            fs.copy_tree(materialised.path, dest)
+        else:
+            fs.write_atomic(dest, fs.read_bytes(materialised.path))
+        fs.write_atomic(tracking_path, dump_upstreams(updated_catalog).encode("utf-8"))
+    except OSError as exc:
+        return _emit_failure(
+            request,
+            "add",
+            f"could not vendor and track {format_upstream_key(key)}: {exc}",
+            _common.ERROR,
+        )
 
     _emit_add(
         request,
@@ -641,6 +889,20 @@ def _emit_add(
     dry_run: bool,
 ) -> None:
     rel_dest = os.path.relpath(dest, catalog_root)
+    summary = ActionSummary(
+        action="upstream.add",
+        selected=1,
+        items=(
+            OutcomeItem(
+                outcome_key(key.type, key.name),
+                "imported",
+                artifact=key.name,
+                artifact_type=key.type,
+                detail="would add" if dry_run else rel_dest,
+            ),
+        ),
+        dry_run=dry_run,
+    )
     if request.json:
         _common.print_json(
             {
@@ -654,6 +916,7 @@ def _emit_add(
                 "path": source.path,
                 "sha": sha,
                 "destination": rel_dest,
+                "summary": summary_to_dict(summary),
             }
         )
         return
@@ -661,6 +924,7 @@ def _emit_add(
     print(f"{'Would vendor' if dry_run else 'Vendored'} {rel_dest}")
     if not dry_run:
         print(f"Tracked  {format_upstream_key(key)} -> {UPSTREAMS_FILE}")
+    _print_summary(summary)
 
 
 def _load_catalog_and_upstreams(catalog_root: str, tracking_path: str):
@@ -782,6 +1046,12 @@ def _emit_check(
     statuses: Tuple[UpstreamStatus, ...],
     warnings: Tuple[str, ...],
 ) -> None:
+    summary = ActionSummary(
+        action="upstream.check",
+        selected=len(selected),
+        items=tuple(_status_outcome_item(status) for status in statuses),
+        warnings=warnings,
+    )
     if request.json:
         _common.print_json(
             {
@@ -791,6 +1061,7 @@ def _emit_check(
                 "warnings": list(warnings),
                 "checked": _automation_statuses(statuses, selected),
                 "statuses": _status_dicts(statuses, selected),
+                "summary": summary_to_dict(summary),
             }
         )
         return
@@ -799,6 +1070,7 @@ def _emit_check(
         print(f"warning: {warning}")
     for status in statuses:
         print(_human_status_line(status))
+    _print_summary(summary)
 
 
 def _emit_update_dry_run(
@@ -806,6 +1078,18 @@ def _emit_update_dry_run(
     update_plan: UpstreamUpdatePlan,
     warnings: Tuple[str, ...],
 ) -> None:
+    summary = ActionSummary(
+        action="upstream.update",
+        selected=len(update_plan.entries),
+        items=tuple(_status_outcome_item(status, updated=True) for status in update_plan.statuses),
+        warnings=warnings,
+        recovery=(
+            ("Resolve upstream conflicts before applying the update.",)
+            if update_plan.conflict
+            else ()
+        ),
+        dry_run=True,
+    )
     if request.json:
         _common.print_json(
             {
@@ -816,6 +1100,7 @@ def _emit_update_dry_run(
                 "updates": _automation_statuses(update_plan.statuses, update_plan.entries),
                 "statuses": _status_dicts(update_plan.statuses, update_plan.entries),
                 "plan": json.loads(executor.plan_to_json(update_plan.plan)),
+                "summary": summary_to_dict(summary),
             }
         )
         return
@@ -824,6 +1109,7 @@ def _emit_update_dry_run(
         print(f"warning: {warning}")
     rendered = executor.render_plan(update_plan.plan)
     print(rendered if rendered else "No upstream changes.")
+    _print_summary(summary)
 
 
 def _emit_update_conflict(
@@ -831,6 +1117,13 @@ def _emit_update_conflict(
     update_plan: UpstreamUpdatePlan,
     warnings: Tuple[str, ...],
 ) -> None:
+    summary = ActionSummary(
+        action="upstream.update",
+        selected=len(update_plan.entries),
+        items=tuple(_status_outcome_item(status, updated=True) for status in update_plan.statuses),
+        warnings=warnings,
+        recovery=("Resolve upstream conflicts and rerun the update.",),
+    )
     if request.json:
         _common.print_json(
             {
@@ -840,6 +1133,7 @@ def _emit_update_conflict(
                 "updates": _automation_statuses(update_plan.statuses, update_plan.entries),
                 "statuses": _status_dicts(update_plan.statuses, update_plan.entries),
                 "plan": json.loads(executor.plan_to_json(update_plan.plan)),
+                "summary": summary_to_dict(summary),
             }
         )
         return
@@ -849,6 +1143,7 @@ def _emit_update_conflict(
     for action in update_plan.plan:
         if hasattr(action, "message"):
             print(action.message)
+    _print_summary(summary)
 
 
 def _emit_update_result(
@@ -860,7 +1155,29 @@ def _emit_update_result(
     warnings: Tuple[str, ...],
     performed: Tuple[str, ...],
     updated_count: int,
+    failed: bool = False,
 ) -> None:
+    items = tuple(
+        OutcomeItem(
+            outcome_key(status.key.type, status.key.name),
+            "failed",
+            artifact=status.key.name,
+            artifact_type=status.key.type,
+            detail="one or more upstream update effects failed",
+        )
+        if failed and status.state == "changed"
+        else _status_outcome_item(status, updated=True)
+        for status in update_plan.statuses
+    )
+    summary = ActionSummary(
+        action="upstream.update",
+        selected=len(selected),
+        items=items,
+        warnings=warnings,
+        recovery=(
+            ("Fix the reported filesystem errors and rerun the upstream update.",) if failed else ()
+        ),
+    )
     if request.json:
         _common.print_json(
             {
@@ -874,6 +1191,7 @@ def _emit_update_result(
                 "performed": list(performed),
                 "updated": updated_count,
                 "updated_count": updated_count,
+                "summary": summary_to_dict(summary),
             }
         )
         return
@@ -881,6 +1199,7 @@ def _emit_update_result(
     print(f"Updated {updated_count} upstream artifact{'s' if updated_count != 1 else ''}.")
     for warning in warnings:
         print(f"warning: {warning}")
+    _print_summary(summary)
 
 
 def _status_dicts(

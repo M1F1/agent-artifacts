@@ -48,22 +48,22 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#17 — TUI: provide explicit outcome summaries for every action](https://github.com/M1F1/agent-artifacts/issues/17)
 
-- [ ] Introduce a shared structured action-result/summary contract; do not parse command stdout in
+- [x] Introduce a shared structured action-result/summary contract; do not parse command stdout in
       the TUI.
-- [ ] Always leave a visible final summary after curses exits and in the text fallback.
-- [ ] Report, at minimum:
+- [x] Always leave a visible final summary after curses exits and in the text fallback.
+- [x] Report, at minimum:
   - install: installed/reinstalled, copied, symlinked, skipped, and failed targets;
   - update: selected, changed, already current, skipped, conflicted, and failed targets;
   - uninstall: removed, already absent/not matched, preserved user content, and failures;
   - maintainer actions: scanned/imported/checked/updated upstream counts;
   - cancellation or empty selection: explicitly state that no changes were made.
-- [ ] Make a successful no-op explicit, for example: “Updated 0 artifacts; all 5 selected
+- [x] Make a successful no-op explicit, for example: “Updated 0 artifacts; all 5 selected
       artifacts are already up to date.”
-- [ ] Distinguish an empty selection from an already-up-to-date selection.
-- [ ] Preserve appropriate non-zero exit codes for conflicts, partial failures, and errors.
-- [ ] Keep warnings and recovery instructions visible alongside the summary.
-- [ ] Provide equivalent counts and item lists in human and JSON output.
-- [ ] Test successful, no-op, empty, conflict, partial-success, and failure paths in both TUI modes.
+- [x] Distinguish an empty selection from an already-up-to-date selection.
+- [x] Preserve appropriate non-zero exit codes for conflicts, partial failures, and errors.
+- [x] Keep warnings and recovery instructions visible alongside the summary.
+- [x] Provide equivalent counts and item lists in human and JSON output.
+- [x] Test successful, no-op, empty, conflict, partial-success, and failure paths in both TUI modes.
 
 ## [#18 — TUI: let users choose copy or symlink install mode](https://github.com/M1F1/agent-artifacts/issues/18)
 

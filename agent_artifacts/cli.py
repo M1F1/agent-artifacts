@@ -25,6 +25,7 @@ from .commands import check, install, status, uninstall, update, upgrade
 from .commands import list as list_cmd
 from .commands._common import OK
 from .model import Request
+from .outcomes import CommandOutcome
 
 
 def _run_upstream(request: Request) -> int:
@@ -43,6 +44,14 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "uninstall": uninstall.run,
     "upgrade": upgrade.run,
     "upstream": _run_upstream,
+}
+
+# Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
+# integer contract; both paths execute the same command application service exactly once.
+RESULT_DISPATCH: dict[str, Callable[[Request], CommandOutcome]] = {
+    "install": install.execute,
+    "update": update.execute,
+    "uninstall": uninstall.execute,
 }
 
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")

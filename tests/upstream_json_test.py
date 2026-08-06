@@ -46,10 +46,12 @@ class UpstreamJsonContractTests(unittest.TestCase):
         payload = json.loads(output)
         self.assertEqual(
             list(payload.keys()),
-            ["action", "catalog", "selected", "warnings", "checked", "statuses"],
+            ["action", "catalog", "selected", "warnings", "checked", "statuses", "summary"],
         )
         self.assertEqual(payload["action"], "check")
         self.assertEqual(payload["selected"], ["skill/demo"])
+        self.assertEqual(payload["summary"]["selected"], 1)
+        self.assertEqual(payload["summary"]["items"][0]["status"], "changed")
         self.assertEqual(
             payload["checked"],
             [
@@ -127,11 +129,14 @@ class UpstreamJsonContractTests(unittest.TestCase):
                 "updates",
                 "statuses",
                 "plan",
+                "summary",
             ],
         )
         self.assertEqual(payload["action"], "update")
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["conflict"])
+        self.assertEqual(payload["summary"]["selected"], 1)
+        self.assertEqual(payload["summary"]["items"][0]["status"], "updated")
         self.assertEqual(payload["updates"][0]["artifact"], "skill/demo")
         self.assertEqual(payload["updates"][0]["repo"], "acme/demo-skills")
         self.assertEqual(payload["updates"][0]["state"], "changed")

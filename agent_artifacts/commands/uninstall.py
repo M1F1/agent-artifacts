@@ -38,6 +38,15 @@ from ..model import (
     MergeProof,
     RemovePath,
 )
+from ..outcomes import (
+    ActionSummary,
+    CommandOutcome,
+    OutcomeItem,
+    OutcomeStatus,
+    outcome_key,
+    outcome_payload,
+    render_outcome,
+)
 from ..planners import memory_sentinel_markers
 from . import _common
 
@@ -361,16 +370,25 @@ def _apply_merge(project: str, proof: MergeProof) -> str:
 # --------------------------------------------------------------------------- #
 # Entry point.                                                                  #
 # --------------------------------------------------------------------------- #
-def run(request) -> int:
+def _failure(request, reason: str, code: int) -> CommandOutcome:
+    status: OutcomeStatus = "conflict" if code == _common.CONFLICT else "failed"
+    return CommandOutcome(
+        exit_code=code,
+        summary=ActionSummary(
+            action="uninstall",
+            selected=0,
+            items=(OutcomeItem("uninstall-request", status, detail=reason),),
+        ),
+        payload={"ok": False, "error": reason, "code": code},
+    )
+
+
+def execute(request) -> CommandOutcome:
     project = _common.project_root(request)
 
     loaded = _common.load_manifest(request)
     if isinstance(loaded, Err):
-        if request.json:
-            _common.print_json({"ok": False, "error": loaded.reason, "code": loaded.code})
-        else:
-            print(loaded.reason)
-        return loaded.code
+        return _failure(request, loaded.reason, loaded.code)
     manifest: Manifest = loaded.value
 
     selected, unknown = _select(
@@ -383,44 +401,56 @@ def run(request) -> int:
 
     if unknown:
         msg = f"unknown installed artifact(s): {', '.join(sorted(unknown))}"
-        if request.json:
-            _common.print_json({"ok": False, "error": msg, "code": USAGE})
-        else:
-            print(msg)
-        return USAGE
+        return _failure(request, msg, USAGE)
 
     if not selected:
         msg = "nothing to uninstall (no matching installed entries)"
-        if request.json:
-            _common.print_json({"ok": True, "removed": [], "message": msg})
-        else:
-            print(msg)
-        return OK
+        return CommandOutcome(
+            exit_code=OK,
+            summary=ActionSummary(action="uninstall", selected=0),
+            payload={"ok": True, "removed": [], "message": msg},
+        )
 
     conflicts = _link_conflicts(project, selected)
     if conflicts and not request.force:
         msg = "refusing to remove changed symlink install(s) without --force: " + "; ".join(
             conflicts
         )
-        if request.json:
-            _common.print_json({"ok": False, "error": msg, "code": _common.CONFLICT})
-        else:
-            print(msg)
-        return _common.CONFLICT
+        return CommandOutcome(
+            exit_code=_common.CONFLICT,
+            summary=ActionSummary(
+                action="uninstall",
+                selected=len(selected),
+                items=tuple(
+                    OutcomeItem(
+                        outcome_key(entry.type, entry.artifact, entry.profile),
+                        "conflict",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        mode=entry.install.mode,
+                        detail=msg,
+                    )
+                    for entry in selected
+                ),
+                recovery=("Rerun with --force after reviewing the changed symlink paths.",),
+            ),
+            payload={"ok": False, "error": msg, "code": _common.CONFLICT},
+        )
 
     # Build the reversal plan (files + sentinel rewrites + .bak restores + merge undos).
-    plan_removes: List[RemovePath] = []
+    plan_removes: List[Tuple[ManifestEntry, RemovePath]] = []
     sentinel_jobs: List[Tuple[ManifestEntry, str]] = []
-    restore_paths: List[str] = []
+    restore_paths: List[Tuple[ManifestEntry, str]] = []
     merge_descs: List[str] = []
     file_render: List[RemovePath] = []
     for entry in selected:
         removes, sentinels, restores = _file_actions(project, entry)
-        plan_removes.extend(removes)
+        plan_removes.extend((entry, action) for action in removes)
         file_render.extend(removes)
         for path in sentinels:
             sentinel_jobs.append((entry, path))
-        restore_paths.extend(restores)
+        restore_paths.extend((entry, path) for path in restores)
         if entry.merge is not None:
             merge_descs.append(_describe_merge_reversal(entry.merge))
 
@@ -430,61 +460,196 @@ def run(request) -> int:
             lines.append(render_plan(tuple(file_render)))
         for _, path in sentinel_jobs:
             lines.append(f"sentinel    {path} (strip our block)")
-        for path in restore_paths:
+        for _, path in restore_paths:
             if fs.exists(path + _BAK_SUFFIX):
                 lines.append(f"restore     {path} (from {os.path.basename(path)}{_BAK_SUFFIX})")
         lines.extend(merge_descs)
         text = "\n".join(line for line in lines if line)
-        if request.json:
-            _common.print_json(
-                {
-                    "ok": True,
-                    "dry_run": True,
-                    "removed_entries": [
-                        {"artifact": e.artifact, "profile": e.profile, "type": e.type}
-                        for e in selected
-                    ],
-                    "actions": text.splitlines(),
-                }
-            )
-        else:
-            print(text or "nothing to do")
-        return OK
+        return CommandOutcome(
+            exit_code=OK,
+            summary=ActionSummary(
+                action="uninstall",
+                selected=len(selected),
+                items=tuple(
+                    OutcomeItem(
+                        outcome_key(entry.type, entry.artifact, entry.profile),
+                        "removed",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        mode=entry.install.mode,
+                        detail="would remove",
+                    )
+                    for entry in selected
+                ),
+                dry_run=True,
+            ),
+            details=tuple(text.splitlines()) if text else ("nothing to do",),
+            payload={
+                "ok": True,
+                "dry_run": True,
+                "removed_entries": [
+                    {"artifact": e.artifact, "profile": e.profile, "type": e.type} for e in selected
+                ],
+                "actions": text.splitlines(),
+            },
+        )
 
     # --- execute (imperative shell) --- #
     performed: List[str] = []
-    for action in plan_removes:
-        fs.remove_path(action.path)
-        performed.append(f"remove-path {action.path}")
+    outcome_details: List[OutcomeItem] = []
+    failures: dict[Tuple[str, str], str] = {}
+
+    def record_failure(entry: ManifestEntry, operation: str, exc: Exception) -> None:
+        failures[(entry.artifact, entry.profile)] = f"{operation}: {exc}"
+
+    for entry, action in plan_removes:
+        existed = os.path.lexists(action.path)
+        try:
+            fs.remove_path(action.path)
+            performed.append(f"remove-path {action.path}")
+            if not existed:
+                outcome_details.append(
+                    OutcomeItem(
+                        action.path,
+                        "already_absent",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        detail="managed path was already missing",
+                    )
+                )
+        except Exception as exc:
+            record_failure(entry, f"remove {action.path}", exc)
     # After removing a replaced memory file, restore its backup so the replace is undone.
-    for path in restore_paths:
-        line = _restore_bak(path)
-        if line is not None:
-            performed.append(line)
+    for entry, path in restore_paths:
+        try:
+            line = _restore_bak(path)
+            if line is not None:
+                performed.append(line)
+                outcome_details.append(
+                    OutcomeItem(
+                        path,
+                        "preserved",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        detail="restored pre-install backup",
+                    )
+                )
+        except Exception as exc:
+            record_failure(entry, f"restore {path}", exc)
     for entry, path in sentinel_jobs:
-        performed.append(_apply_sentinel(project, entry, path))
+        try:
+            line = _apply_sentinel(project, entry, path)
+            performed.append(line)
+            if "already removed" in line:
+                outcome_details.append(
+                    OutcomeItem(
+                        path,
+                        "already_absent",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        detail="managed block file was already missing",
+                    )
+                )
+            elif "file emptied & removed" not in line:
+                outcome_details.append(
+                    OutcomeItem(
+                        path,
+                        "preserved",
+                        artifact=entry.artifact,
+                        artifact_type=entry.type,
+                        profile=entry.profile,
+                        detail="user content preserved after managed block removal",
+                    )
+                )
+        except Exception as exc:
+            record_failure(entry, f"strip managed block from {path}", exc)
     for entry in selected:
         if entry.merge is not None:
-            performed.append(_apply_merge(project, entry.merge))
+            try:
+                line = _apply_merge(project, entry.merge)
+                performed.append(line)
+                if "unreadable" in line or "not an object" in line:
+                    failures[(entry.artifact, entry.profile)] = line
+                elif "not present" in line or "absent, nothing to do" in line:
+                    outcome_details.append(
+                        OutcomeItem(
+                            entry.merge.file,
+                            "already_absent",
+                            artifact=entry.artifact,
+                            artifact_type=entry.type,
+                            profile=entry.profile,
+                            detail="managed config entry was already missing",
+                        )
+                    )
+            except Exception as exc:
+                record_failure(entry, f"reverse merge in {entry.merge.file}", exc)
 
     # Update the manifest: drop each removed (artifact, profile) entry.
     new_manifest = manifest
     for entry in selected:
-        new_manifest = remove_entry(new_manifest, entry.artifact, entry.profile)
-    _common.save_manifest(project, new_manifest)
+        if (entry.artifact, entry.profile) not in failures:
+            new_manifest = remove_entry(new_manifest, entry.artifact, entry.profile)
+    manifest_error: Optional[str] = None
+    try:
+        _common.save_manifest(project, new_manifest)
+    except OSError as exc:
+        manifest_error = f"could not save consumer manifest: {exc}"
+        for entry in selected:
+            failures[(entry.artifact, entry.profile)] = manifest_error
 
-    if request.json:
-        _common.print_json(
-            {
-                "ok": True,
-                "removed_entries": [
-                    {"artifact": e.artifact, "profile": e.profile, "type": e.type} for e in selected
-                ],
-                "actions": performed,
-            }
+    items = tuple(
+        OutcomeItem(
+            outcome_key(entry.type, entry.artifact, entry.profile),
+            "failed" if (entry.artifact, entry.profile) in failures else "removed",
+            artifact=entry.artifact,
+            artifact_type=entry.type,
+            profile=entry.profile,
+            mode=entry.install.mode,
+            detail=failures.get((entry.artifact, entry.profile)),
         )
+        for entry in selected
+    ) + tuple(outcome_details)
+    warnings = tuple(dict.fromkeys(failures.values()))
+    successful = tuple(
+        entry for entry in selected if (entry.artifact, entry.profile) not in failures
+    )
+    exit_code = _common.ERROR if failures or manifest_error else OK
+    return CommandOutcome(
+        exit_code=exit_code,
+        summary=ActionSummary(
+            action="uninstall",
+            selected=len(selected),
+            items=items,
+            warnings=warnings,
+            recovery=(
+                ("Fix the reported filesystem errors and rerun uninstall for failed artifacts.",)
+                if failures
+                else ()
+            ),
+        ),
+        details=tuple(performed),
+        payload={
+            "ok": not failures,
+            "removed_entries": [
+                {"artifact": e.artifact, "profile": e.profile, "type": e.type} for e in successful
+            ],
+            "actions": performed,
+            "warnings": list(warnings),
+        },
+    )
+
+
+def run(request) -> int:
+    """Execute and render uninstall while retaining the integer CLI contract."""
+
+    result = execute(request)
+    if request.json:
+        _common.print_json(outcome_payload(result))
     else:
-        for line in performed:
+        for line in render_outcome(result):
             print(line)
-        print(f"uninstalled {len(selected)} artifact(s)")
-    return OK
+    return result.exit_code

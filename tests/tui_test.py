@@ -22,6 +22,7 @@ from unittest import mock
 
 from agent_artifacts import tui
 from agent_artifacts.model import Manifest, ManifestEntry, Ok, Request
+from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
 from agent_artifacts.profiles.loader import load_profiles
 from agent_artifacts.source import open_source
 
@@ -561,6 +562,154 @@ class DispatchRoutingTests(unittest.TestCase):
                 rc = tui._dispatch(Request(command="install", names=("code-review",)))
         self.assertEqual(rc, 0)
         self.assertEqual(recorded["req"].names, ("code-review",))
+
+
+class StructuredOutcomeFrontendTests(unittest.TestCase):
+    def make_command_outcome(self):
+        return CommandOutcome(
+            0,
+            ActionSummary(
+                action="install",
+                selected=1,
+                items=(
+                    OutcomeItem(
+                        "skill/code-review@claude",
+                        "installed",
+                        artifact="code-review",
+                        artifact_type="skill",
+                        profile="claude",
+                        mode="copy",
+                    ),
+                ),
+            ),
+        )
+
+    def test_text_frontend_writes_structured_summary_through_injected_writer(self):
+        write, lines = _collector()
+        with mock.patch.object(
+            tui,
+            "_dispatch_result",
+            return_value=self.make_command_outcome(),
+        ) as dispatch:
+            code = tui._run_text(
+                _scripted_reader(["1", "1", "install", "1"]),
+                write,
+                source_dir=FIXTURES,
+            )
+
+        self.assertEqual(code, 0)
+        dispatch.assert_called_once()
+        self.assertIn("Installed 1 artifact; 1 selected.", lines)
+        self.assertTrue(any("mode=copy" in line for line in lines))
+
+    def test_text_frontend_keeps_conflict_warning_and_recovery(self):
+        result = CommandOutcome(
+            4,
+            ActionSummary(
+                action="update",
+                selected=1,
+                items=(
+                    OutcomeItem(
+                        "skill/code-review@claude",
+                        "conflict",
+                        detail="local and upstream changes differ",
+                    ),
+                ),
+                warnings=("candidate written beside the managed file",),
+                recovery=("Review the candidate and rerun with --force.",),
+            ),
+        )
+        write, lines = _collector()
+        with mock.patch.object(tui, "_dispatch_result", return_value=result):
+            code = tui._run_text(
+                _scripted_reader(["1", "1", "install", "1"]),
+                write,
+                source_dir=FIXTURES,
+            )
+
+        self.assertEqual(code, 4)
+        self.assertIn("warning: candidate written beside the managed file", lines)
+        self.assertIn("next: Review the candidate and rerun with --force.", lines)
+
+    def test_curses_dispatches_after_teardown_and_leaves_summary_visible(self):
+        inside_wrapper = {"value": False}
+
+        def wrapper(callback):
+            inside_wrapper["value"] = True
+            callback(object())
+            inside_wrapper["value"] = False
+
+        singles = iter((0, 0))  # User, Install
+
+        def dispatch(_request):
+            self.assertFalse(inside_wrapper["value"])
+            return self.make_command_outcome()
+
+        output = io.StringIO()
+        with (
+            redirect_stdout(output),
+            mock.patch.object(curses, "wrapper", side_effect=wrapper),
+            mock.patch.object(curses, "curs_set", return_value=None),
+            mock.patch.object(
+                tui,
+                "_curses_singleselect",
+                side_effect=lambda *_args, **_kwargs: next(singles),
+            ),
+            mock.patch.object(tui, "_curses_multiselect", side_effect=((0,), (0,))),
+            mock.patch.object(tui, "_dispatch_result", side_effect=dispatch),
+        ):
+            code = tui._run_curses(source_dir=FIXTURES)
+
+        self.assertEqual(code, 0)
+        self.assertIn("Installed 1 artifact; 1 selected.", output.getvalue())
+
+    def test_curses_failure_summary_and_recovery_remain_after_teardown(self):
+        inside_wrapper = {"value": False}
+
+        def wrapper(callback):
+            inside_wrapper["value"] = True
+            callback(object())
+            inside_wrapper["value"] = False
+
+        singles = iter((0, 0))
+        result = CommandOutcome(
+            1,
+            ActionSummary(
+                action="install",
+                selected=1,
+                items=(
+                    OutcomeItem(
+                        "skill/code-review@claude",
+                        "failed",
+                        detail="permission denied",
+                    ),
+                ),
+                recovery=("Fix permissions and retry.",),
+            ),
+        )
+
+        def dispatch(_request):
+            self.assertFalse(inside_wrapper["value"])
+            return result
+
+        output = io.StringIO()
+        with (
+            redirect_stdout(output),
+            mock.patch.object(curses, "wrapper", side_effect=wrapper),
+            mock.patch.object(curses, "curs_set", return_value=None),
+            mock.patch.object(
+                tui,
+                "_curses_singleselect",
+                side_effect=lambda *_args, **_kwargs: next(singles),
+            ),
+            mock.patch.object(tui, "_curses_multiselect", side_effect=((0,), (0,))),
+            mock.patch.object(tui, "_dispatch_result", side_effect=dispatch),
+        ):
+            code = tui._run_curses(source_dir=FIXTURES)
+
+        self.assertEqual(code, 1)
+        self.assertIn("failed: skill/code-review@claude", output.getvalue())
+        self.assertIn("next: Fix permissions and retry.", output.getvalue())
 
 
 class CursesFlowTests(unittest.TestCase):
