@@ -80,7 +80,8 @@ class MaintainerCommandTests(unittest.TestCase):
         staged_skill = staged_root / "skills/code-review"
         shutil.copytree(local_skill, staged_skill)
         (staged_skill / "SKILL.md").write_text(
-            "---\nname: code-review\n---\n# changed\n", encoding="utf-8"
+            "---\nname: code-review\ndescription: Review changes for defects.\n---\n# changed\n",
+            encoding="utf-8",
         )
         local_hash = hash_upstream_path(str(local_skill))
         (self.root / "upstreams.json").write_text(

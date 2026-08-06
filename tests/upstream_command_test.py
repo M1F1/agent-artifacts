@@ -68,7 +68,7 @@ class UpstreamCommandValidationTests(unittest.TestCase):
             "w",
             encoding="utf-8",
         ) as fh:
-            fh.write("---\nname: demo\n---\nbody\n")
+            fh.write("---\nname: demo\ndescription: Demonstrate upstream tracking.\n---\nbody\n")
         with open(os.path.join(self.catalog_root, "upstreams.json"), "w", encoding="utf-8") as fh:
             json.dump(
                 {
@@ -131,7 +131,11 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         return path
 
     def _seed_skill(self, root: str, name: str, body: str) -> str:
-        return self._write(root, f"skills/{name}/SKILL.md", f"---\nname: {name}\n---\n{body}\n")
+        return self._write(
+            root,
+            f"skills/{name}/SKILL.md",
+            f"---\nname: {name}\ndescription: Demonstrate upstream tracking.\n---\n{body}\n",
+        )
 
     def _write_upstreams(
         self,
@@ -360,7 +364,7 @@ class UpstreamCommandWorkflowTests(unittest.TestCase):
         staged_skill = self._write(
             self.staged_root,
             "skills/demo/SKILL.md",
-            "---\nname: wrong-name\n---\ninvalid\n",
+            "---\nname: wrong-name\ndescription: Exercise invalid staged content.\n---\ninvalid\n",
         )
         base_hash = hash_upstream_path(os.path.dirname(local_skill))
         self._write_upstreams(base_sha="base-sha", base_hash=base_hash)

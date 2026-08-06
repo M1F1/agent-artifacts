@@ -37,10 +37,20 @@ class SkillParsingTests(unittest.TestCase):
     def test_happy(self):
         text = "---\nname: code-review\ndescription: Reviews code\n---\n# Body\n"
         res = catalog.parse_skill(text, "code-review")
-        self.assertEqual(res, Ok(Artifact("skill", "code-review", "skills/code-review")))
+        self.assertEqual(
+            res,
+            Ok(
+                Artifact(
+                    "skill",
+                    "code-review",
+                    "skills/code-review",
+                    description="Reviews code",
+                )
+            ),
+        )
 
     def test_quoted_name_matches(self):
-        text = '---\nname: "code-review"\n---\nbody'
+        text = '---\nname: "code-review"\ndescription: Review code\n---\nbody'
         self.assertIsInstance(catalog.parse_skill(text, "code-review"), Ok)
 
     def test_missing_frontmatter_is_err(self):
@@ -61,17 +71,16 @@ class SkillParsingTests(unittest.TestCase):
 
 
 class GuidelineParsingTests(unittest.TestCase):
-    def test_happy_no_frontmatter(self):
+    def test_missing_frontmatter_is_err(self):
         res = catalog.parse_guideline("# Python style\nUse black.\n", "python-style")
-        self.assertEqual(
-            res, Ok(Artifact("guideline", "python-style", "guidelines/python-style.md"))
-        )
+        self.assertIsInstance(res, Err)
 
     def test_happy_with_optional_frontmatter(self):
         text = "---\ndescription: Our Python rules\n---\nUse black.\n"
         res = catalog.parse_guideline(text, "python-style")
         self.assertIsInstance(res, Ok)
         self.assertEqual(res.value.root, "guidelines/python-style.md")
+        self.assertEqual(res.value.description, "Our Python rules")
 
     def test_unterminated_frontmatter_is_err(self):
         res = catalog.parse_guideline("---\ndescription: oops\nno close\n", "python-style")
@@ -86,7 +95,17 @@ class McpParsingTests(unittest.TestCase):
     def test_happy(self):
         text = json.dumps({"name": "postgres", "description": "PG", "server": {"command": "npx"}})
         res = catalog.parse_mcp(text, "postgres", root="mcp/postgres/mcp.json")
-        self.assertEqual(res, Ok(Artifact("mcp", "postgres", "mcp/postgres/mcp.json")))
+        self.assertEqual(
+            res,
+            Ok(
+                Artifact(
+                    "mcp",
+                    "postgres",
+                    "mcp/postgres/mcp.json",
+                    description="PG",
+                )
+            ),
+        )
 
     def test_bad_json_is_err(self):
         res = catalog.parse_mcp("{not valid json", "postgres")
@@ -112,7 +131,17 @@ class HookParsingTests(unittest.TestCase):
             }
         )
         res = catalog.parse_hook(text, "block-secrets")
-        self.assertEqual(res, Ok(Artifact("hook", "block-secrets", "hooks/block-secrets")))
+        self.assertEqual(
+            res,
+            Ok(
+                Artifact(
+                    "hook",
+                    "block-secrets",
+                    "hooks/block-secrets",
+                    description="Block secrets",
+                )
+            ),
+        )
 
     def test_bad_json_is_err(self):
         self.assertIsInstance(catalog.parse_hook("nope", "block-secrets"), Err)
@@ -153,7 +182,9 @@ class BundleParsingTests(unittest.TestCase):
         self.assertEqual(b.pins, {"code-review": "a1b2c3d"})
 
     def test_missing_optionals_default_empty(self):
-        res = catalog.parse_bundle(json.dumps({"name": "base"}), "base")
+        res = catalog.parse_bundle(
+            json.dumps({"name": "base", "description": "Team essentials"}), "base"
+        )
         self.assertIsInstance(res, Ok)
         self.assertEqual(res.value.extends, ())
         self.assertEqual(res.value.includes, {})

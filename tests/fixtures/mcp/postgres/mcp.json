@@ -1,6 +1,6 @@
 {
   "name": "postgres",
-  "description": "Fixture MCP server for testing.",
+  "description": "Let your agent inspect and query PostgreSQL databases.",
   "server": {
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-postgres"],

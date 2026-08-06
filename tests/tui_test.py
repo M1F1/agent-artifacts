@@ -116,15 +116,44 @@ class ChoiceModelTests(unittest.TestCase):
     def test_build_install_choices_filters_artifacts_for_vibe(self):
         choices = tui.build_install_choices(self.catalog, ("vibe",), self.profiles)
         labels = [choice.label for choice in choices]
-        self.assertIn("[skill] code-review", labels)
-        self.assertIn("[guideline] python-style", labels)
-        self.assertIn("[memory] house", labels)
+        self.assertTrue(any(label.startswith("[skill] code-review") for label in labels))
+        self.assertTrue(any(label.startswith("[guideline] python-style") for label in labels))
+        self.assertTrue(any(label.startswith("[memory] house") for label in labels))
         self.assertFalse(any("[mcp]" in label for label in labels))
         self.assertFalse(any("[hook]" in label for label in labels))
 
     def test_build_install_choices_shows_tabnine_only_mcp_for_tabnine(self):
         choices = tui.build_install_choices(self.catalog, ("tabnine",), self.profiles)
-        self.assertIn("[mcp] tabnine-postgres", [choice.label for choice in choices])
+        self.assertTrue(
+            any(choice.label.startswith("[mcp] tabnine-postgres") for choice in choices)
+        )
+
+    def test_install_choices_keep_description_as_structured_data(self):
+        choices = tui.build_install_choices(self.catalog, ("claude",), self.profiles)
+        code_review = next(choice for choice in choices if choice.name == "code-review")
+        backend = next(choice for choice in choices if choice.name == "backend")
+
+        self.assertEqual(
+            code_review.description,
+            "Review changes for bugs, risks, and maintainability problems.",
+        )
+        self.assertEqual(
+            code_review.label,
+            "[skill] code-review — Review changes for bugs, risks, and maintainability problems.",
+        )
+        self.assertEqual(
+            backend.description,
+            "Add database access to the team's essential agent setup.",
+        )
+
+    def test_compatibility_filtering_preserves_description(self):
+        choices = tui.build_install_choices(self.catalog, ("tabnine",), self.profiles)
+        postgres = next(choice for choice in choices if choice.name == "tabnine-postgres")
+
+        self.assertEqual(
+            postgres.description,
+            "Let Tabnine inspect and query PostgreSQL databases.",
+        )
 
     def test_build_install_choices_marks_partial_bundles(self):
         choices = tui.build_install_choices(self.catalog, ("vibe",), self.profiles)
@@ -157,6 +186,24 @@ class ChoiceModelTests(unittest.TestCase):
         choices = tui.build_action_choices("update", empty, manifest, ("claude",), self.profiles)
 
         self.assertEqual([choice.name for choice in choices], ["remote-only"])
+        self.assertEqual(choices[0].description, "")
+
+    def test_update_and_uninstall_use_catalog_description_when_available(self):
+        manifest = Manifest(
+            repo="r",
+            installed=(ManifestEntry("code-review", "skill", "claude", "main:1"),),
+        )
+
+        for action in ("update", "uninstall"):
+            with self.subTest(action=action):
+                choices = tui.build_action_choices(
+                    action, self.catalog, manifest, ("claude",), self.profiles
+                )
+                self.assertEqual(
+                    choices[0].description,
+                    "Review changes for bugs, risks, and maintainability problems.",
+                )
+                self.assertIn(" — Review changes", choices[0].label)
 
 
 class TextFlowInstallTests(unittest.TestCase):
@@ -218,6 +265,19 @@ class TextFlowInstallTests(unittest.TestCase):
         self.assertNotIn("[mcp] postgres", menu)
         self.assertNotIn("[mcp] tabnine-postgres", menu)
         self.assertNotIn("[hook] block-secrets", menu)
+
+    def test_text_selector_prints_full_descriptions(self):
+        read = _scripted_reader(["1", "1", "install", "q"])
+        write, lines = _collector()
+        with mock.patch.object(tui, "_dispatch") as disp:
+            rc = tui._run_text(read, write, source_dir=FIXTURES, project=self.project)
+
+        self.assertEqual(rc, 0)
+        disp.assert_not_called()
+        self.assertIn(
+            "[skill] code-review — Review changes for bugs, risks, and maintainability problems.",
+            "\n".join(lines),
+        )
 
     def test_tabnine_flow_shows_tabnine_only_mcp(self):
         read = _scripted_reader(["1", "3", "install", "q"])  # User, tabnine, install, quit
@@ -512,13 +572,15 @@ class CursesFlowTests(unittest.TestCase):
         def _fake_wrapper(ui):
             ui(object())
 
-        def _fake_multiselect(_curses, _stdscr, title, labels):
+        def _fake_multiselect(_curses, _stdscr, title, labels, details=None):
             calls.append((title, tuple(labels)))
             if title.startswith("Select profile"):
                 return (3,)  # vibe
             if title.startswith("Select artifact"):
                 joined = "\n".join(labels)
                 self.assertIn("[skill] code-review", joined)
+                self.assertIn("Review changes for bugs", joined)
+                self.assertIsNotNone(details)
                 self.assertNotIn("[mcp] postgres", joined)
                 self.assertNotIn("[hook] block-secrets", joined)
                 return None  # quit at choices
@@ -569,6 +631,104 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(captured["req"].names, ("code-review",))
         # A re-prompt message was emitted.
         self.assertTrue(any("between 1 and" in ln for ln in lines))
+
+    def test_text_question_mark_number_shows_full_description_without_selecting(self):
+        choices = (
+            tui._Choice(
+                "artifact",
+                "code-review",
+                "skill",
+                "[skill] code-review — Review changes safely.",
+                description="Review changes safely.",
+            ),
+        )
+        write, lines = _collector()
+
+        picked = tui._prompt_indices(_scripted_reader(["?1", "1"]), write, "Selection: ", choices)
+
+        self.assertEqual(picked, (0,))
+        self.assertIn("Review changes safely.", "\n".join(lines))
+
+
+class NarrowTerminalTests(unittest.TestCase):
+    class _Screen:
+        def __init__(self, keys=()):
+            self.keys = iter(keys)
+            self.lines = []
+            self.history = []
+
+        def clear(self):
+            self.lines.clear()
+
+        def addstr(self, row, column, value):
+            self.lines.append((row, column, value))
+            self.history.append((row, column, value))
+
+        def refresh(self):
+            pass
+
+        def getmaxyx(self):
+            return (8, 18)
+
+        def getch(self):
+            return next(self.keys)
+
+    def test_ellipsize_never_exceeds_width_and_marks_truncation(self):
+        self.assertEqual(tui._ellipsize("abc", 0), "")
+        self.assertEqual(tui._ellipsize("abc", 1), "…")
+        self.assertEqual(tui._ellipsize("abc", 3), "abc")
+        self.assertEqual(tui._ellipsize("abcdef", 4), "abc…")
+
+    def test_draw_list_keeps_each_row_to_one_visual_line(self):
+        screen = self._Screen()
+
+        tui._draw_list(
+            curses,
+            screen,
+            "A very long selector title",
+            ["[skill] code-review — A deliberately long description"],
+            0,
+            [False],
+        )
+
+        self.assertTrue(screen.lines)
+        self.assertTrue(all("\n" not in value for _row, _column, value in screen.lines))
+        self.assertTrue(all(len(value) <= 17 for _row, _column, value in screen.lines))
+        self.assertTrue(any(value.endswith("…") for _row, _column, value in screen.lines))
+
+    def test_text_choice_row_respects_terminal_width(self):
+        choice = tui._Choice(
+            "artifact",
+            "review",
+            "skill",
+            "[skill] review — A deliberately long description",
+            description="A deliberately long description",
+        )
+
+        line = tui._text_choice_line(1, choice, 24)
+
+        self.assertLessEqual(len(line), 24)
+        self.assertTrue(line.endswith("…"))
+        self.assertLessEqual(len(tui._text_choice_line(1, choice, 4)), 4)
+
+    def test_question_mark_opens_full_curses_detail_then_preserves_selection(self):
+        screen = self._Screen((ord("?"), curses.KEY_NPAGE, ord("x"), ord(" "), 10))
+        description = (
+            "Complete description shown in the detail view, including a final scroll target."
+        )
+
+        picked = tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            ["[skill] review — Short"],
+            details=(description,),
+        )
+
+        self.assertEqual(picked, (0,))
+        rendered = "\n".join(value for _row, _column, value in screen.history)
+        self.assertIn("Complete", rendered)
+        self.assertIn("target.", rendered)
 
 
 class SourceErrorTests(unittest.TestCase):

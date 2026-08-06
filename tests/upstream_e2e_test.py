@@ -141,7 +141,7 @@ class UpstreamE2ETests(unittest.TestCase):
         path = os.path.join(root, "skills", "demo", "SKILL.md")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(f"---\nname: demo\n---\n{body}\n")
+            fh.write(f"---\nname: demo\ndescription: Demonstrate upstream tracking.\n---\n{body}\n")
         return path
 
     def _read_file(self, path: str) -> str:

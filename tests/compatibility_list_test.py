@@ -21,6 +21,7 @@ def _source_with_restricted_mcp(tmp: str) -> str:
         json.dumps(
             {
                 "name": "tabnine-postgres",
+                "description": "Let Tabnine query PostgreSQL.",
                 "compatibility": {"profiles": ["tabnine"]},
                 "server": {"command": "npx"},
             }

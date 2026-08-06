@@ -1,6 +1,6 @@
 {
   "name": "block-secrets",
-  "description": "Fixture hook for testing.",
+  "description": "Prevent edits that appear to introduce secrets.",
   "events": ["PreToolUse"],
   "matcher": "Edit|Write|MultiEdit",
   "command": "python3 ${SCRIPT_DIR}/guard.py",

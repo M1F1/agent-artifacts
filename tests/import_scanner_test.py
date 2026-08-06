@@ -41,7 +41,10 @@ class ImportScannerTests(unittest.TestCase):
                 }
             ),
         )
-        self._write("skills/debugging/SKILL.md", "---\nname: debugging\n---\nbody\n")
+        self._write(
+            "skills/debugging/SKILL.md",
+            "---\nname: debugging\ndescription: Diagnose difficult failures.\n---\nbody\n",
+        )
 
         result = scan_import_root(self.root, source=self.source, sha="abc", mode="auto")
 
@@ -70,11 +73,23 @@ class ImportScannerTests(unittest.TestCase):
         self.assertIn("debugging", result.reason)
 
     def test_heuristic_mode_detects_high_confidence_artifacts(self):
-        self._write("skills/debugging/SKILL.md", "---\nname: debugging\n---\nbody\n")
-        self._write("memory/superpowers.md", "# Superpowers\n")
+        self._write(
+            "skills/debugging/SKILL.md",
+            "---\nname: debugging\ndescription: Diagnose difficult failures.\n---\nbody\n",
+        )
+        self._write(
+            "memory/superpowers.md",
+            "---\ndescription: Apply a disciplined engineering workflow.\n---\n# Superpowers\n",
+        )
         self._write(
             "mcp/github/mcp.json",
-            json.dumps({"name": "github", "server": {"command": "npx"}}),
+            json.dumps(
+                {
+                    "name": "github",
+                    "description": "Inspect GitHub repositories.",
+                    "server": {"command": "npx"},
+                }
+            ),
         )
         self._write("README.md", "# Not an artifact\n")
 
@@ -93,7 +108,10 @@ class ImportScannerTests(unittest.TestCase):
         self.assertTrue(all(c.selected_by_default for c in result.value.candidates))
 
     def test_heuristic_mode_reports_ambiguous_markdown_without_default_selection(self):
-        self._write("docs/prompting.md", "# Prompting\n")
+        self._write(
+            "docs/prompting.md",
+            "---\ndescription: Improve prompting practices.\n---\n# Prompting\n",
+        )
 
         result = scan_import_root(self.root, source=self.source, sha="abc", mode="heuristic")
 

@@ -52,7 +52,11 @@ description: Synthetic skill for these tests.
 Checklist body.
 """
 
-_MCP_POSTGRES = {"name": "postgres", "server": {"command": "docker", "args": ["postgres-mcp"]}}
+_MCP_POSTGRES = {
+    "name": "postgres",
+    "description": "Query PostgreSQL databases.",
+    "server": {"command": "docker", "args": ["postgres-mcp"]},
+}
 _BUNDLE_BASE = {
     "name": "base",
     "description": "Synthetic base bundle.",

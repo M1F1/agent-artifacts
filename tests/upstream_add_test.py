@@ -32,7 +32,11 @@ class UpstreamAddTests(unittest.TestCase):
         root = os.path.join(self.staged_root, name)
         os.makedirs(os.path.join(root, "references", "deep"))
         if with_skill_md:
-            self._write(os.path.join(root, "SKILL.md"), f"---\nname: {name}\n---\nbody\n")
+            self._write(
+                os.path.join(root, "SKILL.md"),
+                f"---\nname: {name}\ndescription: Challenge assumptions before implementation.\n"
+                "---\nbody\n",
+            )
         self._write(os.path.join(root, "references", "deep", "notes.md"), "nested\n")
         return root
 
@@ -43,7 +47,13 @@ class UpstreamAddTests(unittest.TestCase):
         if with_descriptor:
             self._write(
                 os.path.join(root, "mcp.json"),
-                json.dumps({"name": name, "server": {"command": "npx"}}),
+                json.dumps(
+                    {
+                        "name": name,
+                        "description": "Inspect Stripe account data.",
+                        "server": {"command": "npx"},
+                    }
+                ),
             )
         self._write(os.path.join(root, "SETUP.md"), "# Setup\n")
         return root

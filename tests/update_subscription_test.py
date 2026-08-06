@@ -119,7 +119,9 @@ class RecordedSubscriptionUpdateTests(unittest.TestCase):
                 "---\ndescription: Python style\n---\n\n# Catalog one\n", encoding="utf-8"
             )
             (skill_source / "skills/code-review/SKILL.md").write_text(
-                "---\nname: code-review\n---\n# Catalog two\n", encoding="utf-8"
+                "---\nname: code-review\ndescription: Review changes for defects.\n"
+                "---\n# Catalog two\n",
+                encoding="utf-8",
             )
 
             with redirect_stdout(io.StringIO()):

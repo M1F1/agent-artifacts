@@ -30,21 +30,21 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#16 — TUI: show a one-line description for every installable artifact](https://github.com/M1F1/agent-artifacts/issues/16)
 
-- [ ] Add a normalized description field to Artifact and populate it in every catalog parser.
-- [ ] Read descriptions from:
+- [x] Add a normalized description field to Artifact and populate it in every catalog parser.
+- [x] Read descriptions from:
   - Markdown frontmatter for skills, guidelines, and memory;
   - JSON descriptors for MCP servers and hooks;
   - the existing bundle description field.
-- [ ] Require a non-empty, single-line, user-facing description during catalog validation.
-- [ ] Add concise, value-oriented descriptions to every shipped artifact and fixture.
-- [ ] Show descriptions for artifact and bundle rows in both TUI frontends.
-- [ ] Keep each selector row to one visual line, truncate with an ellipsis on narrow terminals,
+- [x] Require a non-empty, single-line, user-facing description during catalog validation.
+- [x] Add concise, value-oriented descriptions to every shipped artifact and fixture.
+- [x] Show descriptions for artifact and bundle rows in both TUI frontends.
+- [x] Keep each selector row to one visual line, truncate with an ellipsis on narrow terminals,
       and provide a way to view the full text.
-- [ ] Expose the same description in human and JSON list output.
-- [ ] Retain descriptions after compatibility filtering and in update/uninstall views when source
+- [x] Expose the same description in human and JSON list output.
+- [x] Retain descriptions after compatibility filtering and in update/uninstall views when source
       metadata is available.
-- [ ] Test all artifact types, bundles, invalid descriptions, narrow terminals, and JSON output.
-- [ ] Document description authoring conventions for catalog maintainers.
+- [x] Test all artifact types, bundles, invalid descriptions, narrow terminals, and JSON output.
+- [x] Document description authoring conventions for catalog maintainers.
 
 ## [#17 — TUI: provide explicit outcome summaries for every action](https://github.com/M1F1/agent-artifacts/issues/17)
 

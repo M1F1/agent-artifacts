@@ -187,7 +187,9 @@ class UpstreamJsonContractTests(unittest.TestCase):
         path = os.path.join(root, "skills", name, "SKILL.md")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(f"---\nname: {name}\n---\n{body}\n")
+            fh.write(
+                f"---\nname: {name}\ndescription: Demonstrate upstream tracking.\n---\n{body}\n"
+            )
         return path
 
     def _write_upstreams(

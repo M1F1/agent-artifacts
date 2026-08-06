@@ -11,7 +11,7 @@
       },
       "last_synced": {
         "sha": "base-sha",
-        "content_hash": "sha256:817d666703baa4527f66b0e8094d47a7abe6983b195946faba702a9847d28129",
+        "content_hash": "sha256:ee844cfb1c41b23ce9ec7f8abad55c93f8699eda24f022c19ce78388c1c4c210",
         "synced_at": "2026-06-22T10:00:00Z"
       }
     },
@@ -24,7 +24,7 @@
       },
       "last_synced": {
         "sha": "base-sha",
-        "content_hash": "sha256:c369c861e4f2f9687f29cfe211fc338eae57e9b884c9d127d0782854c1a267bc",
+        "content_hash": "sha256:a3e9ddd828867ed233d91113974220326c9f77ccf0bd38a233fca13fac2a89f5",
         "synced_at": "2026-06-22T10:00:00Z"
       }
     }

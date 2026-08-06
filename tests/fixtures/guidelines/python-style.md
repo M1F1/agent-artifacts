@@ -1,5 +1,5 @@
 ---
-description: Fixture guideline for testing.
+description: Keep Python changes consistent with the team's coding conventions.
 ---
 
 # Python Style (fixture)

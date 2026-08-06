@@ -70,9 +70,10 @@ agent-artifacts/
 
 - **`name = key`** (parent §4): `memory/house.md` is referenced as `house` under a bundle's
   `includes.memory`.
-- **Optional frontmatter.** `description` (for `list`), and an optional **`mode:`** declaring
-  this artifact's *preferred* install mode (overridable per §3.4). Body below the frontmatter
-  is the instruction content, written verbatim into the destination file.
+- **Required description frontmatter.** `description` (for `list` and TUI choices) is mandatory
+  and single-line; **`mode:`** remains optional and declares this artifact's *preferred* install
+  mode (overridable per §3.4). Body below the frontmatter is the instruction content, written
+  verbatim into the destination file.
 
 ```markdown
 ---

@@ -131,7 +131,7 @@ optional `scripts/`, `references/`, `assets/`). Install = **copy** the whole tre
 profile's skills directory.
 
 ### 5.2 Guidelines / rules
-File `guidelines/<name>.md`. Optional frontmatter (`description`). Install = attach to the
+File `guidelines/<name>.md`. Required frontmatter (`description`). Install = attach to the
 profile's rules location. The *attach strategy* is per-profile data (copy as a separate file,
 or append into `CLAUDE.md`/`AGENTS.md` inside a sentinel-marked block for clean removal) —
 see §11.

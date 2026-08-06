@@ -1,6 +1,6 @@
 {
   "name": "base",
-  "description": "Fixture base bundle.",
+  "description": "Start with the team's essential review and safety tools.",
   "includes": {
     "skills": ["code-review"],
     "guidelines": ["python-style"],

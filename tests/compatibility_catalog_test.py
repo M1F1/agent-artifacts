@@ -7,20 +7,29 @@ from agent_artifacts.model import Compatibility, Err, Ok
 
 class CompatibilityCatalogParsingTests(unittest.TestCase):
     def test_skill_frontmatter_compatibility(self):
-        text = "---\nname: code-review\ncompatibility.profiles: claude, tabnine\n---\nbody\n"
+        text = (
+            "---\nname: code-review\ndescription: Review changes\n"
+            "compatibility.profiles: claude, tabnine\n---\nbody\n"
+        )
         result = catalog.parse_skill(text, "code-review")
         self.assertIsInstance(result, Ok)
         self.assertEqual(result.value.compatibility, Compatibility(("claude", "tabnine")))
         self.assertEqual(result.value.root, "skills/code-review")
 
     def test_guideline_frontmatter_compatibility(self):
-        text = "---\ncompatibility.profiles: [opencode]\n---\nbody\n"
+        text = (
+            "---\ndescription: Keep Python consistent\n"
+            "compatibility.profiles: [opencode]\n---\nbody\n"
+        )
         result = catalog.parse_guideline(text, "python-style")
         self.assertIsInstance(result, Ok)
         self.assertEqual(result.value.compatibility, Compatibility(("opencode",)))
 
     def test_memory_frontmatter_compatibility(self):
-        text = "---\nmode: prepend\ncompatibility.profiles: vibe\n---\nbody\n"
+        text = (
+            "---\ndescription: Apply house rules\nmode: prepend\n"
+            "compatibility.profiles: vibe\n---\nbody\n"
+        )
         result = catalog.parse_memory(text, "house")
         self.assertIsInstance(result, Ok)
         self.assertEqual(result.value.compatibility, Compatibility(("vibe",)))
@@ -29,6 +38,7 @@ class CompatibilityCatalogParsingTests(unittest.TestCase):
         text = json.dumps(
             {
                 "name": "postgres",
+                "description": "Query PostgreSQL",
                 "server": {"command": "npx"},
                 "compatibility": {"profiles": ["tabnine"]},
             }
@@ -41,6 +51,7 @@ class CompatibilityCatalogParsingTests(unittest.TestCase):
         text = json.dumps(
             {
                 "name": "block-secrets",
+                "description": "Prevent secret writes",
                 "events": ["PreToolUse"],
                 "command": "python guard.py",
                 "compatibility": {"profiles": ["claude"]},
@@ -55,6 +66,7 @@ class CompatibilityCatalogParsingTests(unittest.TestCase):
         text = json.dumps(
             {
                 "name": "postgres",
+                "description": "Query PostgreSQL",
                 "server": {"command": "npx"},
                 "compatibility": {"profiles": []},
             }

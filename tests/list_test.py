@@ -48,6 +48,16 @@ class TestListNoFilter(unittest.TestCase):
         for name in ALL_NAMES:
             self.assertIn(name, out)
 
+    def test_artifact_rows_explain_their_value(self):
+        req = Request(command="list", source_dir=FIXTURES)
+        rc, out = _capture(req)
+
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "code-review — Review changes for bugs, risks, and maintainability problems.", out
+        )
+        self.assertIn("postgres — Let your agent inspect and query PostgreSQL databases.", out)
+
     def test_bundles_appear(self):
         req = Request(command="list", source_dir=FIXTURES)
         rc, out = _capture(req)
@@ -143,6 +153,14 @@ class TestListJson(unittest.TestCase):
             self.assertIn("type", art)
             self.assertIn("name", art)
             self.assertIn("root", art)
+            self.assertIn("description", art)
+            self.assertTrue(art["description"])
+
+        descriptions = {a["name"]: a["description"] for a in data["artifacts"]}
+        self.assertEqual(
+            descriptions["block-secrets"],
+            "Prevent edits that appear to introduce secrets.",
+        )
         # Bundles have the right keys.
         bundle_names = {b["name"] for b in data["bundles"]}
         self.assertEqual(bundle_names, {"base", "backend"})

@@ -22,6 +22,9 @@ _INCLUDE_TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook",
 # Install modes a declared `memory` frontmatter `mode:` may name (docs/design/DESIGN-memory.md §3.2/§3.4).
 _MEMORY_MODES: Tuple[str, ...] = ("replace", "prepend", "append", "skip")
 
+_MISSING = object()
+_MULTILINE_SCALARS = ("|", "|-", "|+", ">", ">-", ">+")
+
 
 # --------------------------------------------------------------------------- #
 # Frontmatter — parse YAML-ish `key: value` block by hand (no pyyaml).         #
@@ -82,6 +85,59 @@ def _frontmatter_well_formed(text: str) -> bool:
     return any(lines[j].strip() == "---" for j in range(idx + 1, len(lines)))
 
 
+def _description(value: object, label: str) -> Result:
+    """Validate and normalize one description scalar without performing I/O."""
+    if value is _MISSING:
+        return Err(f"{label}: missing required 'description' key")
+    if not isinstance(value, str):
+        return Err(f"{label}: 'description' must be a string")
+    normalized = value.strip()
+    if not normalized:
+        return Err(f"{label}: 'description' must not be blank")
+    if "\n" in normalized or "\r" in normalized or normalized in _MULTILINE_SCALARS:
+        return Err(f"{label}: 'description' must be a single line")
+    return Ok(normalized)
+
+
+def _frontmatter_field_continues(text: str, key: str) -> bool:
+    """Whether a flat frontmatter field uses an indented continuation line.
+
+    The catalog intentionally supports scalar ``key: value`` frontmatter only. Detecting a
+    continuation here prevents a YAML multiline description from being silently shortened to its
+    first line by :func:`_split_frontmatter`.
+    """
+    lines = text.splitlines()
+    opening = next((i for i, line in enumerate(lines) if line.strip() == "---"), None)
+    if opening is None:
+        return False
+    found = False
+    for raw in lines[opening + 1 :]:
+        if raw.strip() == "---":
+            return False
+        if not found:
+            if ":" not in raw:
+                continue
+            field, _, _value = raw.partition(":")
+            found = field.strip() == key
+            continue
+        stripped = raw.strip()
+        if not stripped or raw.lstrip().startswith("#"):
+            continue
+        if raw[0].isspace():
+            return True
+        return False
+    return False
+
+
+def _frontmatter_description(text: str, fields: Dict[str, str], label: str) -> Result:
+    parsed = _description(fields.get("description", _MISSING), label)
+    if isinstance(parsed, Err):
+        return parsed
+    if _frontmatter_field_continues(text, "description"):
+        return Err(f"{label}: 'description' must be a single line")
+    return parsed
+
+
 # --------------------------------------------------------------------------- #
 # Artifact parsers (all pure, operate on already-read text).                   #
 # --------------------------------------------------------------------------- #
@@ -94,6 +150,10 @@ def parse_skill(text: str, name: str) -> Result:
         return Err(f"skill {name!r}: frontmatter missing required 'name' key")
     if fields["name"] != name:
         return Err(f"skill {name!r}: frontmatter name {fields['name']!r} does not match {name!r}")
+    label = f"skill {name!r} (skills/{name}/SKILL.md)"
+    description = _frontmatter_description(text, fields, label)
+    if isinstance(description, Err):
+        return description
     compat = compatibility.compatibility_from_frontmatter(fields, f"skill {name!r}")
     if isinstance(compat, Err):
         return compat
@@ -103,13 +163,13 @@ def parse_skill(text: str, name: str) -> Result:
             name=name,
             root=f"skills/{name}",
             compatibility=compat.value,
+            description=description.value,
         )
     )
 
 
 def parse_guideline(text: str, name: str) -> Result:
-    """Parse a guideline markdown file. Frontmatter is optional; if present it must
-    close and any ``name`` it declares must match."""
+    """Parse a guideline markdown file with description-bearing frontmatter."""
     found, fields, _ = _split_frontmatter(text)
     if found:
         if not _frontmatter_well_formed(text):
@@ -118,6 +178,10 @@ def parse_guideline(text: str, name: str) -> Result:
             return Err(
                 f"guideline {name!r}: frontmatter name {fields['name']!r} does not match {name!r}"
             )
+    label = f"guideline {name!r} (guidelines/{name}.md)"
+    description = _frontmatter_description(text, fields, label)
+    if isinstance(description, Err):
+        return description
     compat = compatibility.compatibility_from_frontmatter(fields, f"guideline {name!r}")
     if isinstance(compat, Err):
         return compat
@@ -127,6 +191,7 @@ def parse_guideline(text: str, name: str) -> Result:
             name=name,
             root=f"guidelines/{name}.md",
             compatibility=compat.value,
+            description=description.value,
         )
     )
 
@@ -134,8 +199,8 @@ def parse_guideline(text: str, name: str) -> Result:
 def parse_memory(text: str, name: str) -> Result:
     """Parse an ``memory/<name>.md`` instruction-file artifact (docs/design/DESIGN-memory.md §3.1).
 
-    Frontmatter is optional (like a guideline); if present it must close. A declared
-    ``name`` must match, and a declared ``mode`` must be one of
+    Description-bearing frontmatter is required. A declared ``name`` must match, and a declared
+    ``mode`` must be one of
     ``replace|prepend|append|skip`` (docs/design/DESIGN-memory.md §3.2). The body is the verbatim
     instruction content (not inspected here)."""
     found, fields, _ = _split_frontmatter(text)
@@ -151,6 +216,10 @@ def parse_memory(text: str, name: str) -> Result:
                 f"memory {name!r}: invalid mode {fields['mode']!r} "
                 f"(expected one of {', '.join(_MEMORY_MODES)})"
             )
+    label = f"memory {name!r} (memory/{name}.md)"
+    description = _frontmatter_description(text, fields, label)
+    if isinstance(description, Err):
+        return description
     compat = compatibility.compatibility_from_frontmatter(fields, f"memory {name!r}")
     if isinstance(compat, Err):
         return compat
@@ -160,6 +229,7 @@ def parse_memory(text: str, name: str) -> Result:
             name=name,
             root=f"memory/{name}.md",
             compatibility=compat.value,
+            description=description.value,
         )
     )
 
@@ -182,6 +252,11 @@ def parse_mcp(text: str, name: str, *, root: Optional[str] = None) -> Result:
         return Err(f"mcp {name!r}: missing required key(s) {', '.join(missing)}")
     if data["name"] != name:
         return Err(f"mcp {name!r}: declared name {data['name']!r} does not match {name!r}")
+    descriptor_root = root or f"mcp/{name}.json"
+    label = f"mcp {name!r} ({descriptor_root})"
+    description = _description(data.get("description", _MISSING), label)
+    if isinstance(description, Err):
+        return description
     compat = compatibility.compatibility_from_json(data, f"mcp {name!r}")
     if isinstance(compat, Err):
         return compat
@@ -189,8 +264,9 @@ def parse_mcp(text: str, name: str, *, root: Optional[str] = None) -> Result:
         Artifact(
             type="mcp",
             name=name,
-            root=root or f"mcp/{name}.json",
+            root=descriptor_root,
             compatibility=compat.value,
+            description=description.value,
         )
     )
 
@@ -208,6 +284,10 @@ def parse_hook(text: str, name: str) -> Result:
         return Err(f"hook {name!r}: missing required key(s) {', '.join(missing)}")
     if data["name"] != name:
         return Err(f"hook {name!r}: declared name {data['name']!r} does not match {name!r}")
+    label = f"hook {name!r} (hooks/{name}/hook.json)"
+    description = _description(data.get("description", _MISSING), label)
+    if isinstance(description, Err):
+        return description
     compat = compatibility.compatibility_from_json(data, f"hook {name!r}")
     if isinstance(compat, Err):
         return compat
@@ -217,6 +297,7 @@ def parse_hook(text: str, name: str) -> Result:
             name=name,
             root=f"hooks/{name}",
             compatibility=compat.value,
+            description=description.value,
         )
     )
 
@@ -234,9 +315,10 @@ def parse_bundle(text: str, name: str) -> Result:
     if not isinstance(data, dict):
         return Err(f"bundle {name!r}: expected a JSON object")
 
-    description = data.get("description", "")
-    if not isinstance(description, str):
-        return Err(f"bundle {name!r}: 'description' must be a string")
+    label = f"bundle {name!r} (bundles/{name}.json)"
+    description = _description(data.get("description", _MISSING), label)
+    if isinstance(description, Err):
+        return description
 
     extends_raw = data.get("extends", [])
     if not isinstance(extends_raw, list) or not all(isinstance(e, str) for e in extends_raw):
@@ -265,7 +347,7 @@ def parse_bundle(text: str, name: str) -> Result:
     return Ok(
         Bundle(
             name=name,
-            description=description,
+            description=description.value,
             extends=extends,
             includes=includes,
             pins=pins,

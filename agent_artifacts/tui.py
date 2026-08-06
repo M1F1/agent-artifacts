@@ -26,6 +26,8 @@ functions, so no command logic is ever duplicated here.
 from __future__ import annotations
 
 import os
+import shutil
+import textwrap
 from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
@@ -102,6 +104,7 @@ class _Choice:
     name: str
     type: Optional[ArtifactType]
     label: str
+    description: str = ""
     hidden_count: int = 0
     complete: bool = True
 
@@ -113,6 +116,27 @@ def _type_rank(t: ArtifactType) -> int:
 def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
     """True when a profile has a target for ``art_type``."""
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
+
+
+def _choice_label(
+    kind: Literal["artifact", "bundle", "profile"],
+    name: str,
+    art_type: Optional[ArtifactType],
+    description: str,
+    status: str = "",
+) -> str:
+    """Render a one-line choice label from structured choice data."""
+    if kind == "artifact" and art_type is not None:
+        label = f"[{art_type}] {name}"
+    elif kind == "bundle":
+        label = f"[bundle] {name}"
+    else:
+        label = name
+    if description:
+        label += f" — {description}"
+    if status:
+        label += f" · {status}"
+    return label
 
 
 def artifact_visible_for_profiles(
@@ -151,7 +175,11 @@ def build_install_choices(
         if artifact_visible_for_profiles(artifact, profile_names, profiles):
             out.append(
                 _Choice(
-                    "artifact", artifact.name, artifact.type, f"[{artifact.type}] {artifact.name}"
+                    "artifact",
+                    artifact.name,
+                    artifact.type,
+                    _choice_label("artifact", artifact.name, artifact.type, artifact.description),
+                    description=artifact.description,
                 )
             )
 
@@ -175,20 +203,17 @@ def build_install_choices(
             continue
 
         bundle = catalog.bundles[bundle_name]
-        desc = f" — {bundle.description}" if bundle.description else ""
         if hidden_count:
-            label = (
-                f"[bundle] {bundle_name}{desc} - "
-                f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
-            )
+            status = f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
         else:
-            label = f"[bundle] {bundle_name}{desc}"
+            status = ""
         out.append(
             _Choice(
                 "bundle",
                 bundle_name,
                 None,
-                label,
+                _choice_label("bundle", bundle_name, None, bundle.description, status),
+                description=bundle.description,
                 hidden_count=hidden_count,
                 complete=hidden_count == 0,
             )
@@ -229,8 +254,8 @@ def _build_manifest_choices(
     bundle_names = set()
 
     for entry in entries:
+        artifact = catalog.artifacts.get((entry.type, entry.artifact))
         if action == "update":
-            artifact = catalog.artifacts.get((entry.type, entry.artifact))
             if artifact is not None and not artifact_visible_for_profiles(
                 artifact, (entry.profile,), profiles
             ):
@@ -238,14 +263,31 @@ def _build_manifest_choices(
 
         if entry.artifact not in seen_names:
             seen_names.add(entry.artifact)
+            description = artifact.description if artifact is not None else ""
             out.append(
-                _Choice("artifact", entry.artifact, entry.type, f"[{entry.type}] {entry.artifact}")
+                _Choice(
+                    "artifact",
+                    entry.artifact,
+                    entry.type,
+                    _choice_label("artifact", entry.artifact, entry.type, description),
+                    description=description,
+                )
             )
         if entry.bundle:
             bundle_names.add(entry.bundle)
 
     for bundle_name in sorted(bundle_names):
-        out.append(_Choice("bundle", bundle_name, None, f"[bundle] {bundle_name} - installed"))
+        bundle = catalog.bundles.get(bundle_name)
+        description = bundle.description if bundle is not None else ""
+        out.append(
+            _Choice(
+                "bundle",
+                bundle_name,
+                None,
+                _choice_label("bundle", bundle_name, None, description, "installed"),
+                description=description,
+            )
+        )
     return tuple(out)
 
 
@@ -374,6 +416,15 @@ def _run_user_text(
             write("Source: recorded catalog subscription(s) from the consumer manifest")
         else:
             write(f"Source: {source.label()}")
+    elif action == "uninstall":
+        # Descriptions improve the manifest-driven uninstall menu when its source is available,
+        # but source/network failure must never make removal unavailable.
+        base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+        src_res = source_factory(base)
+        if not isinstance(src_res, Err):
+            cat_res = src_res.value.catalog()
+            if not isinstance(cat_res, Err):
+                catalog = cat_res.value
 
     manifest: Optional[Manifest] = None
     if action in ("update", "uninstall"):
@@ -394,8 +445,10 @@ def _run_user_text(
         return 0
 
     write(f"Select artifact(s)/bundle(s) for {_profiles_label(profiles)}:")
+    terminal_width = shutil.get_terminal_size(fallback=(200, 24)).columns
     for i, c in enumerate(choices, start=1):
-        write(f"  {i:>2}. {c.label}")
+        write(_text_choice_line(i, c, terminal_width))
+    write("Enter ?N to view the full description for item N.")
 
     picked = _prompt_indices(read, write, "Selection (e.g. 1,3): ", choices)
     if not picked:
@@ -795,6 +848,16 @@ def _prompt_indices(
         line = line.strip()
         if line == "" or line.lower() == "q":
             return ()
+        if line.startswith("?"):
+            number = line[1:].strip()
+            if number.isdigit() and 1 <= int(number) <= len(choices):
+                choice = choices[int(number) - 1]
+                identity = _choice_label(choice.kind, choice.name, choice.type, "")
+                detail = choice.description or "No catalog description is available."
+                write(f"{identity}: {detail}")
+                continue
+            write(f"Enter ?N with a number between 1 and {len(choices)}.")
+            continue
         parsed = _parse_indices(line, len(choices))
         if parsed:
             return parsed
@@ -817,6 +880,14 @@ def _parse_indices(line: str, choice_count: int) -> Tuple[int, ...]:
             seen.add(index)
             out.append(index)
     return tuple(out)
+
+
+def _text_choice_line(index: int, choice: _Choice, width: int) -> str:
+    """Render one numbered text-frontend row within the terminal width."""
+    prefix = f"  {index:>2}. "
+    if width <= len(prefix):
+        return _ellipsize(prefix, width)
+    return prefix + _ellipsize(choice.label, max(width - len(prefix), 0))
 
 
 def _prompt_action(read: ReadFn, write: WriteFn) -> Optional[str]:
@@ -935,6 +1006,15 @@ def _run_curses(
                 selection["error"] = (cat_res.reason, getattr(cat_res, "code", 1))
                 return
             catalog = cat_res.value
+        elif action == "uninstall":
+            # Uninstall remains manifest-driven; catalog lookup only enriches display metadata.
+            src_res = open_source(
+                Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            )
+            if not isinstance(src_res, Err):
+                cat_res = src_res.value.catalog()
+                if not isinstance(cat_res, Err):
+                    catalog = cat_res.value
 
         manifest: Optional[Manifest] = None
         if action in ("update", "uninstall"):
@@ -958,8 +1038,9 @@ def _run_curses(
         picked_arts = _curses_multiselect(
             curses,
             stdscr,
-            "Select artifact(s)/bundle(s)  (space=toggle, enter=confirm, q=quit)",
+            "Select artifact(s)/bundle(s)  (space=toggle, ?=details, enter=confirm, q=quit)",
             [c.label for c in choices],
+            details=[c.description for c in choices],
         )
         if picked_arts is None:
             return
@@ -1011,7 +1092,13 @@ def _run_curses(
     return _dispatch(request)
 
 
-def _curses_multiselect(curses, stdscr, title: str, labels: Sequence[str]):
+def _curses_multiselect(
+    curses,
+    stdscr,
+    title: str,
+    labels: Sequence[str],
+    details: Optional[Sequence[str]] = None,
+):
     """A checkbox list. Returns a tuple of selected indices, or ``None`` on quit."""
     if not labels:
         return ()
@@ -1028,6 +1115,8 @@ def _curses_multiselect(curses, stdscr, title: str, labels: Sequence[str]):
             cursor = (cursor + 1) % len(labels)
         elif ch == ord(" "):
             checked[cursor] = not checked[cursor]
+        elif ch == ord("?") and details is not None and cursor < len(details):
+            _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
             return tuple(i for i, on in enumerate(checked) if on)
 
@@ -1051,7 +1140,8 @@ def _curses_singleselect(curses, stdscr, title: str, labels: Sequence[str]):
 def _draw_list(curses, stdscr, title: str, labels, cursor: int, checked) -> None:
     """Render *title* + the labels, marking the cursor row and any checked rows."""
     stdscr.clear()
-    stdscr.addstr(0, 0, title[: _width(stdscr) - 1])
+    available = max(_width(stdscr) - 1, 0)
+    stdscr.addstr(0, 0, _ellipsize(title, available))
     for i, label in enumerate(labels):
         prefix = "> " if i == cursor else "  "
         box = ""
@@ -1060,8 +1150,63 @@ def _draw_list(curses, stdscr, title: str, labels, cursor: int, checked) -> None
         line = f"{prefix}{box}{label}"
         row = i + 2
         if row < _height(stdscr):
-            stdscr.addstr(row, 0, line[: _width(stdscr) - 1])
+            stdscr.addstr(row, 0, _ellipsize(line, available))
     stdscr.refresh()
+
+
+def _ellipsize(text: str, width: int) -> str:
+    """Return one visual line no wider than ``width``, marking truncation with ``…``."""
+    one_line = text.replace("\r", " ").replace("\n", " ")
+    if width <= 0:
+        return ""
+    if len(one_line) <= width:
+        return one_line
+    if width == 1:
+        return "…"
+    return one_line[: width - 1] + "…"
+
+
+def _draw_detail(curses, stdscr, label: str, description: str) -> None:
+    """Show the complete description in a wrapped, scrollable curses detail view."""
+    available = max(_width(stdscr) - 1, 1)
+    height = _height(stdscr)
+    content_top = 3
+    content_height = max(height - content_top - 1, 1)
+    wrapped = textwrap.wrap(description or "No catalog description is available.", available) or [
+        ""
+    ]
+    max_offset = max(len(wrapped) - content_height, 0)
+    offset = 0
+
+    while True:
+        stdscr.clear()
+        if height > 0:
+            stdscr.addstr(0, 0, _ellipsize("Artifact details", available))
+        if height > 1:
+            stdscr.addstr(1, 0, _ellipsize(label, available))
+        for relative_row, line in enumerate(wrapped[offset : offset + content_height]):
+            row = content_top + relative_row
+            if row >= max(height - 1, 0):
+                break
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height > 0:
+            footer = (
+                "↑/↓/Pg scroll · other key returns" if max_offset else "Press any key to return."
+            )
+            stdscr.addstr(height - 1, 0, _ellipsize(footer, available))
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+        if ch in (curses.KEY_DOWN, ord("j")) and offset < max_offset:
+            offset += 1
+        elif ch in (curses.KEY_UP, ord("k")) and offset > 0:
+            offset -= 1
+        elif ch == curses.KEY_NPAGE and offset < max_offset:
+            offset = min(offset + content_height, max_offset)
+        elif ch == curses.KEY_PPAGE and offset > 0:
+            offset = max(offset - content_height, 0)
+        else:
+            return
 
 
 def _height(stdscr) -> int:

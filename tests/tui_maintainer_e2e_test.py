@@ -34,11 +34,14 @@ class MaintainerTuiEndToEndTests(unittest.TestCase):
             staged = root / "staged"
             (catalog / "skills/seed").mkdir(parents=True)
             (catalog / "skills/seed/SKILL.md").write_text(
-                "---\nname: seed\n---\n# Seed\n", encoding="utf-8"
+                "---\nname: seed\ndescription: Seed a maintainer catalog.\n---\n# Seed\n",
+                encoding="utf-8",
             )
             (staged / "skills/demo").mkdir(parents=True)
             (staged / "skills/demo/SKILL.md").write_text(
-                "---\nname: demo\n---\n# Initial upstream\n", encoding="utf-8"
+                "---\nname: demo\ndescription: Demonstrate an imported skill.\n"
+                "---\n# Initial upstream\n",
+                encoding="utf-8",
             )
             (staged / "agent-artifacts.import.json").write_text(
                 json.dumps(
@@ -93,7 +96,9 @@ class MaintainerTuiEndToEndTests(unittest.TestCase):
                 self.assertEqual(checked, 0)
 
                 (staged / "skills/demo/SKILL.md").write_text(
-                    "---\nname: demo\n---\n# Refreshed upstream\n", encoding="utf-8"
+                    "---\nname: demo\ndescription: Demonstrate an imported skill.\n"
+                    "---\n# Refreshed upstream\n",
+                    encoding="utf-8",
                 )
                 with redirect_stdout(io.StringIO()):
                     updated = tui._run_text(

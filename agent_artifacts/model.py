@@ -73,6 +73,9 @@ class Artifact:
     name: str
     root: str  # path of the artifact within the source, relative (e.g. "skills/code-review")
     compatibility: Optional[Compatibility] = None
+    # Catalog parsers always populate a normalized, non-empty, single-line description.
+    # The default preserves lightweight hand-built domain fixtures outside the parser boundary.
+    description: str = ""
 
 
 @dataclass(frozen=True, slots=True)

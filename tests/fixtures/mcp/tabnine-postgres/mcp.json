@@ -1,6 +1,6 @@
 {
   "name": "tabnine-postgres",
-  "description": "Fixture Tabnine-only MCP server.",
+  "description": "Let Tabnine inspect and query PostgreSQL databases.",
   "compatibility": {
     "profiles": ["tabnine"]
   },

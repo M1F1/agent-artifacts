@@ -1,5 +1,5 @@
 ---
-description: Fixture house rules for the e2e gate.
+description: Apply the team's build, test, and review rules in every repository.
 mode: prepend
 ---
 # Fixture house rules

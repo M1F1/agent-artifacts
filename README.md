@@ -71,6 +71,9 @@ The bare `aart` command first asks which path you need:
   third-party upstreams through guided, preview-first operations.
 
 Both paths are available in the full-screen TUI and its plain-text fallback.
+Artifact and bundle selectors explain every choice in one line. In the full-screen selector,
+press `?` to open the complete description for the highlighted row. In the plain-text fallback,
+enter `?N` (for example `?3`) to repeat the complete description for item N.
 
 Prefer more command line examples?
 
@@ -115,6 +118,7 @@ Artifacts can declare that they only fit specific profiles. JSON descriptors use
 ```json
 {
   "name": "tabnine-postgres",
+  "description": "Let Tabnine inspect and query PostgreSQL databases.",
   "compatibility": {
     "profiles": ["tabnine"]
   },
@@ -130,6 +134,7 @@ Markdown/frontmatter artifacts use the same field as a dotted key:
 ```markdown
 ---
 name: code-review
+description: Review changes for bugs, risks, and maintainability problems.
 compatibility.profiles: tabnine, claude
 ---
 ```
@@ -293,11 +298,30 @@ Artifacts live in predictable locations:
 
 | Type | Catalog path | Required entry point |
 |------|--------------|----------------------|
-| **skill** | `skills/<name>/` | `SKILL.md` with `name: <name>` frontmatter |
-| **guideline** | `guidelines/<name>.md` | optional frontmatter |
-| **mcp** | `mcp/<name>.json` or `mcp/<name>/` | JSON with `name` and `server` |
-| **hook** | `hooks/<name>/` | `hook.json` with `name`, `events`, and `command` |
-| **memory** | `memory/<name>.md` | optional frontmatter and optional `mode` |
+| **skill** | `skills/<name>/` | `SKILL.md` frontmatter with `name` and `description` |
+| **guideline** | `guidelines/<name>.md` | frontmatter with `description` |
+| **mcp** | `mcp/<name>.json` or `mcp/<name>/` | JSON with `name`, `description`, and `server` |
+| **hook** | `hooks/<name>/` | `hook.json` with `name`, `description`, `events`, and `command` |
+| **memory** | `memory/<name>.md` | frontmatter with `description`; optional `mode` |
+
+Every artifact and bundle needs a concise, inviting `description`. Put it in Markdown
+frontmatter for skills, guidelines, and memory files, and in the JSON descriptor for MCPs, hooks,
+and bundles. The value must be a non-empty single-line string; block scalars and continued lines
+are rejected by catalog validation.
+
+Write the user benefit first and make the row useful before installation:
+
+```text
+Good: Let your agent inspect and query PostgreSQL databases.
+Good: Prevent edits that appear to introduce secrets.
+Avoid: PostgreSQL MCP implementation.
+Avoid: A hook artifact.
+```
+
+Aim for one short sentence, use an active verb where practical, and do not repeat only the
+artifact type. Run `aart upstream validate --source .` after editing; validation reports the
+artifact name and canonical descriptor path for missing, blank, non-string, or multiline values.
+`aart list --source .` and `aart list --source . --json` expose the same normalized description.
 
 After editing, validate and smoke-test the install plan:
 

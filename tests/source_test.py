@@ -170,6 +170,7 @@ class DirectoryMcpSourceTest(unittest.TestCase):
                 json.dumps(
                     {
                         "name": "stripe",
+                        "description": "Inspect Stripe account data.",
                         "server": {"command": "npx", "args": ["-y", "@stripe/mcp"]},
                     }
                 ),

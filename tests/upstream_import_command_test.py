@@ -47,8 +47,16 @@ class UpstreamImportCommandTests(unittest.TestCase):
                 }
             ),
         )
-        self._write(self.staged_root, "skills/debugging/SKILL.md", "---\nname: debugging\n---\n")
-        self._write(self.staged_root, "memory/superpowers.md", "# Memory\n")
+        self._write(
+            self.staged_root,
+            "skills/debugging/SKILL.md",
+            "---\nname: debugging\ndescription: Diagnose difficult failures.\n---\n",
+        )
+        self._write(
+            self.staged_root,
+            "memory/superpowers.md",
+            "---\ndescription: Apply a disciplined engineering workflow.\n---\n# Memory\n",
+        )
 
     def _run(self, request: Request):
         def fake_resolve(entry, **_kw):
@@ -162,7 +170,11 @@ class UpstreamImportCommandTests(unittest.TestCase):
         self.assertEqual(bundle["includes"]["memory"], ["superpowers"])
 
     def test_heuristic_import_skips_ambiguous_markdown(self):
-        self._write(self.staged_root, "docs/prompting.md", "# Prompting\n")
+        self._write(
+            self.staged_root,
+            "docs/prompting.md",
+            "---\ndescription: Improve prompting practices.\n---\n# Prompting\n",
+        )
 
         code, output = self._run(self._request("import", import_mode="heuristic", json=True))
 

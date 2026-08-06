@@ -106,7 +106,7 @@ def _print_text(
             print()
         first_section = False
         for art in sorted(items, key=lambda a: a.name):
-            print(f"{art.type:<12s}{art.name}")
+            print(f"{art.type:<12s}{art.name} — {art.description}")
 
     if show_bundles and catalog.bundles:
         if not first_section:
@@ -157,6 +157,7 @@ def _artifact_to_dict(artifact: Artifact) -> dict:
     out: dict[str, object] = {
         "type": artifact.type,
         "name": artifact.name,
+        "description": artifact.description,
         "root": artifact.root,
     }
     if artifact.compatibility is not None:

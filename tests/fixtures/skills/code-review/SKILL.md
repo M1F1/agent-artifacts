@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Fixture skill for testing.
+description: Review changes for bugs, risks, and maintainability problems.
 ---
 
 # Code Review (fixture)

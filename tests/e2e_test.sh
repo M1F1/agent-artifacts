@@ -44,6 +44,9 @@ mode: prepend
 EOF
 
 cat > "$SOURCE_DIR/guidelines/python-style.md" <<'EOF'
+---
+description: Keep Python changes consistent and maintainable.
+---
 # Python style
 - Prefer stdlib; keep functions small.
 EOF
@@ -60,6 +63,7 @@ EOF
 cat > "$SOURCE_DIR/hooks/block-secrets/hook.json" <<'EOF'
 {
   "name": "block-secrets",
+  "description": "Prevent edits that appear to introduce secrets.",
   "events": ["PreToolUse"],
   "command": "python scripts/guard.py",
   "files": ["scripts/guard.py"]
@@ -71,7 +75,11 @@ print("guard")
 EOF
 
 cat > "$SOURCE_DIR/mcp/postgres/mcp.json" <<'EOF'
-{"name": "postgres", "server": {"command": "npx", "args": ["-y", "postgres-mcp"]}}
+{
+  "name": "postgres",
+  "description": "Let your agent inspect and query PostgreSQL databases.",
+  "server": {"command": "npx", "args": ["-y", "postgres-mcp"]}
+}
 EOF
 
 cat > "$SOURCE_DIR/bundles/base.json" <<'EOF'

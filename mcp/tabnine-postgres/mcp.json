@@ -1,6 +1,6 @@
 {
   "name": "tabnine-postgres",
-  "description": "Tabnine-tested PostgreSQL MCP server definition.",
+  "description": "Let Tabnine inspect and query PostgreSQL databases.",
   "compatibility": {
     "profiles": ["tabnine"]
   },

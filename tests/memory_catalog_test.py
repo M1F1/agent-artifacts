@@ -2,7 +2,7 @@
 
 Covers (docs/plan/PLAN-memory.md WP-26 "Done when"):
 
-* ``catalog.parse_memory`` — valid (no frontmatter), valid (matching name + valid mode),
+* ``catalog.parse_memory`` — required description frontmatter, matching name + valid mode,
   name mismatch → Err, invalid mode → Err.
 * Bundle resolution — a bundle with ``includes={"memory": (...)}`` resolves via
   ``resolve_bundle``; a dangling ``memory`` reference is flagged by ``validate_catalog``.
@@ -45,29 +45,32 @@ def _bundle(name, *, description="", extends=(), includes=None, pins=None):
 # parse_memory                                                                 #
 # --------------------------------------------------------------------------- #
 class ParseMemoryTests(unittest.TestCase):
-    def test_no_frontmatter_is_ok(self):
+    def test_no_frontmatter_is_err(self):
         res = catalog.parse_memory("# House rules\nRun make test.\n", "house")
-        self.assertEqual(res, Ok(Artifact("memory", "house", "memory/house.md")))
+        self.assertIsInstance(res, Err)
 
     def test_root_is_dot_md(self):
-        res = catalog.parse_memory("body only\n", "house")
+        res = catalog.parse_memory("---\ndescription: House rules\n---\nbody only\n", "house")
         self.assertIsInstance(res, Ok)
         self.assertEqual(res.value.root, "memory/house.md")
 
     def test_frontmatter_matching_name_and_valid_mode_is_ok(self):
         text = "---\nname: house\ndescription: House rules\nmode: prepend\n---\n# Body\n"
         res = catalog.parse_memory(text, "house")
-        self.assertEqual(res, Ok(Artifact("memory", "house", "memory/house.md")))
+        self.assertEqual(
+            res,
+            Ok(Artifact("memory", "house", "memory/house.md", description="House rules")),
+        )
 
     def test_each_valid_mode_accepted(self):
         for mode in ("replace", "prepend", "append", "skip"):
-            text = f"---\nname: house\nmode: {mode}\n---\nbody"
+            text = f"---\nname: house\ndescription: House rules\nmode: {mode}\n---\nbody"
             self.assertIsInstance(
                 catalog.parse_memory(text, "house"), Ok, f"mode {mode!r} should parse"
             )
 
     def test_quoted_name_matches(self):
-        text = '---\nname: "house"\n---\nbody'
+        text = '---\nname: "house"\ndescription: House rules\n---\nbody'
         self.assertIsInstance(catalog.parse_memory(text, "house"), Ok)
 
     def test_name_mismatch_is_err(self):
@@ -92,7 +95,7 @@ class MemoryBundleTests(unittest.TestCase):
         self.assertEqual(catalog._section_to_type("memories"), "memory")
 
     def test_bundle_parses_memory_section(self):
-        text = '{"includes": {"memory": ["house"]}}'
+        text = '{"description": "Team defaults", "includes": {"memory": ["house"]}}'
         res = catalog.parse_bundle(text, "base")
         self.assertIsInstance(res, Ok)
         self.assertEqual(res.value.includes["memory"], ("house",))
@@ -135,7 +138,8 @@ class ScanMemoryTests(unittest.TestCase):
         memory_dir = pathlib.Path(self.root, "memory")
         memory_dir.mkdir()
         (memory_dir / "house.md").write_text(
-            "---\nname: house\nmode: prepend\n---\n# House rules\n", encoding="utf-8"
+            "---\nname: house\ndescription: Apply house rules\nmode: prepend\n---\n# House rules\n",
+            encoding="utf-8",
         )
         # A non-.md sibling must be ignored by the scanner.
         (memory_dir / "README.txt").write_text("ignore me", encoding="utf-8")
@@ -154,13 +158,16 @@ class ScanMemoryTests(unittest.TestCase):
         self.assertIn(("memory", "house"), cat.value.artifacts)
         self.assertEqual(
             cat.value.artifacts[("memory", "house")],
-            Artifact("memory", "house", "memory/house.md"),
+            Artifact("memory", "house", "memory/house.md", description="Apply house rules"),
         )
 
     def test_scan_memory_skips_non_markdown(self):
         results = self._source()._scan_memory()
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0], Ok(Artifact("memory", "house", "memory/house.md")))
+        self.assertEqual(
+            results[0],
+            Ok(Artifact("memory", "house", "memory/house.md", description="Apply house rules")),
+        )
 
 
 if __name__ == "__main__":
