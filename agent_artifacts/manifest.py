@@ -11,6 +11,7 @@ from typing import Any, Tuple
 
 from .fp import Err, Ok
 from .model import (
+    CatalogSubscription,
     InstallLink,
     InstallProof,
     Manifest,
@@ -72,6 +73,14 @@ def _entry_to_dict(e: ManifestEntry) -> dict:
         "source": e.source,
         "install": _install_to_dict(e.install),
     }
+    if e.subscription is not None:
+        subscription = {
+            "kind": e.subscription.kind,
+            "location": e.subscription.location,
+        }
+        if e.subscription.ref is not None:
+            subscription["ref"] = e.subscription.ref
+        out["subscription"] = subscription
     if e.bundle is not None:
         out["bundle"] = e.bundle
     out["files"] = dict(e.files)
@@ -169,7 +178,30 @@ def _entry_from_dict(d: object) -> ManifestEntry:
         merge=_merge_from_dict(merge) if merge is not None else None,
         installed_at=d.get("installed_at", ""),
         install=_install_from_dict(d.get("install")),
+        subscription=_subscription_from_dict(d.get("subscription")),
     )
+
+
+def _subscription_from_dict(d: object) -> CatalogSubscription | None:
+    """Parse optional source subscription metadata; absence keeps legacy manifests valid."""
+    if d is None:
+        return None
+    if not isinstance(d, dict):
+        raise _Corrupt("entry.subscription must be an object")
+    kind = d.get("kind")
+    location = d.get("location")
+    ref = d.get("ref")
+    if kind not in ("package", "local", "github"):
+        raise _Corrupt("entry.subscription.kind must be 'package', 'local', or 'github'")
+    if not isinstance(location, str) or not location:
+        raise _Corrupt("entry.subscription.location must be a non-empty string")
+    if ref is not None and (not isinstance(ref, str) or not ref):
+        raise _Corrupt("entry.subscription.ref must be a non-empty string when present")
+    if kind == "github" and ref is None:
+        raise _Corrupt("entry.subscription.ref is required for github subscriptions")
+    if kind != "github" and ref is not None:
+        raise _Corrupt("entry.subscription.ref is only valid for github subscriptions")
+    return CatalogSubscription(kind=kind, location=location, ref=ref)
 
 
 def parse_manifest(text: str) -> Result:

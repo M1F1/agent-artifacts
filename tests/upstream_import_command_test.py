@@ -154,9 +154,7 @@ class UpstreamImportCommandTests(unittest.TestCase):
         self.assertTrue(
             os.path.isfile(os.path.join(self.catalog_root, "skills", "debugging", "SKILL.md"))
         )
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.catalog_root, "memory", "superpowers.md"))
-        )
+        self.assertTrue(os.path.isfile(os.path.join(self.catalog_root, "memory", "superpowers.md")))
         tracking = json.loads(self._read("upstreams.json"))
         self.assertEqual(set(tracking["artifacts"]), {"skill/debugging", "memory/superpowers"})
         bundle = json.loads(self._read("bundles/superpowers.json"))

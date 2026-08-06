@@ -54,7 +54,9 @@ class SymlinkInstallTests(unittest.TestCase):
         self.assertEqual(os.readlink(dest), str(target))
 
         source_skill = target / "SKILL.md"
-        source_skill.write_text(source_skill.read_text(encoding="utf-8") + "\nlinked edit\n", encoding="utf-8")
+        source_skill.write_text(
+            source_skill.read_text(encoding="utf-8") + "\nlinked edit\n", encoding="utf-8"
+        )
         self.assertIn("linked edit", (dest / "SKILL.md").read_text(encoding="utf-8"))
 
         manifest = json.loads((self.project / ".agent-artifacts" / "manifest.json").read_text())

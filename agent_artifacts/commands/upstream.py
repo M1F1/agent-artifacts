@@ -15,6 +15,7 @@ from ..import_candidates import candidate_to_dict, render_scan, scan_to_dict
 from ..import_planner import BundleMode, ImportPlan, plan_import
 from ..import_scanner import ImportMode, scan_import_root
 from ..io import fs
+from ..maintainer import MaintainerContext, build_catalog_health, empty_upstreams
 from ..model import Err, Ok, Request
 from ..source import open_source
 from ..upstream_planner import (
@@ -59,6 +60,10 @@ def _github_token() -> Optional[str]:
 
 
 def run(request: Request) -> int:
+    if request.upstream_action == "validate":
+        return _run_validate(request)
+    if request.upstream_action == "health":
+        return _run_health(request)
     if request.upstream_action == "add":
         return _run_add(request)
     if request.upstream_action == "scan":
@@ -158,6 +163,140 @@ def run(request: Request) -> int:
         updated_count=len(updated),
     )
     return _common.OK
+
+
+def load_maintainer_context(request: Request):
+    """Load a recognizable local catalog plus optional upstream tracking metadata."""
+    catalog_root = os.path.abspath(_catalog_root(request))
+    if request.repo is not None:
+        return Err(
+            f"maintainer catalog must be a local checkout, not remote repo {request.repo!r}",
+            code=_common.USAGE,
+        )
+    if not os.path.isdir(catalog_root):
+        return Err(f"catalog directory does not exist: {catalog_root}", code=_common.USAGE)
+    markers = ("skills", "guidelines", "mcp", "hooks", "memory", "bundles", UPSTREAMS_FILE)
+    if not any(os.path.exists(os.path.join(catalog_root, marker)) for marker in markers):
+        return Err(f"not a catalog directory: {catalog_root}", code=_common.USAGE)
+
+    source_result = open_source(Request(command="list", source_dir=catalog_root))
+    if isinstance(source_result, Err):
+        return Err(f"catalog {catalog_root}: {source_result.reason}", code=source_result.code)
+    catalog_result = source_result.value.catalog()
+    if isinstance(catalog_result, Err):
+        return Err(f"catalog {catalog_root}: {catalog_result.reason}", code=catalog_result.code)
+    catalog = catalog_result.value
+
+    tracking_path = os.path.join(catalog_root, UPSTREAMS_FILE)
+    upstreams = empty_upstreams()
+    if os.path.exists(tracking_path):
+        try:
+            parsed = parse_upstreams(fs.read_text(tracking_path))
+        except OSError as exc:
+            return Err(f"cannot read {tracking_path}: {exc}", code=_common.ERROR)
+        if isinstance(parsed, Err):
+            return Err(f"catalog {catalog_root}: {parsed.reason}", code=_common.USAGE)
+        upstreams = parsed.value
+
+    errors = tuple(error.reason for error in catalog_mod.validate_catalog(catalog))
+    errors += tuple(error.reason for error in validate_upstreams(upstreams, catalog))
+    return Ok(
+        MaintainerContext(
+            root=catalog_root,
+            catalog=catalog,
+            upstreams=upstreams,
+            validation_errors=errors,
+        )
+    )
+
+
+def scan_import_candidates(request: Request):
+    """Public request-based query used by both CLI commands and interactive selectors."""
+    return _resolve_import_scan(request)
+
+
+def _run_validate(request: Request) -> int:
+    loaded = load_maintainer_context(request)
+    if isinstance(loaded, Err):
+        print(loaded.reason)
+        return _common.exit_code(loaded)
+    context = loaded.value
+    if request.json:
+        _common.print_json(
+            {
+                "action": "validate",
+                "catalog_root": context.root,
+                "valid": not context.validation_errors,
+                "errors": list(context.validation_errors),
+            }
+        )
+    elif context.validation_errors:
+        print(f"Catalog invalid: {context.root}")
+        for error in context.validation_errors:
+            print(f"  - {error}")
+    else:
+        print(f"Catalog valid: {context.root}")
+    return _common.OK if not context.validation_errors else _common.USAGE
+
+
+def _run_health(request: Request) -> int:
+    loaded = load_maintainer_context(request)
+    if isinstance(loaded, Err):
+        print(loaded.reason)
+        return _common.exit_code(loaded)
+    context = loaded.value
+    statuses: Tuple[UpstreamStatus, ...] = ()
+    if not context.validation_errors and context.upstreams.entries:
+        entries = tuple(
+            context.upstreams.entries[key]
+            for key in sorted(context.upstreams.entries, key=format_upstream_key)
+        )
+        resolved = _resolve_all(entries)
+        if isinstance(resolved, Err):
+            print(f"catalog {context.root}: {resolved.reason}")
+            return _common.exit_code(resolved)
+        planned = plan_upstream_check(
+            entries,
+            resolved.value,
+            local_hashes=_local_hashes(entries, context.root),
+            validation_errors=_validation_errors(resolved.value),
+        )
+        if isinstance(planned, Err):
+            print(planned.reason)
+            return _common.exit_code(planned)
+        statuses = planned.value
+
+    health = build_catalog_health(context, statuses)
+    if request.json:
+        _common.print_json(
+            {
+                "action": "health",
+                "catalog_root": health.catalog_root,
+                "counts": dict(health.counts_by_type),
+                "tracked": list(health.tracked),
+                "untracked": list(health.untracked),
+                "validation_errors": list(health.validation_errors),
+                "statuses": [
+                    _status_to_dict(status, context.upstreams.entries.get(status.key))
+                    for status in health.statuses
+                ],
+                "needs_attention": [
+                    format_upstream_key(status.key) for status in health.needs_attention
+                ],
+            }
+        )
+    else:
+        print(f"Catalog: {health.catalog_root}")
+        print(f"Artifacts: {sum(count for _type, count in health.counts_by_type)}")
+        for artifact_type, count in health.counts_by_type:
+            print(f"  - {artifact_type}: {count}")
+        print(f"Tracked: {len(health.tracked)}")
+        print(f"Untracked: {len(health.untracked)}")
+        print(f"Validation errors: {len(health.validation_errors)}")
+        print(f"Upstreams requiring attention: {len(health.needs_attention)}")
+        for status in health.needs_attention:
+            print(f"  - {format_upstream_key(status.key)}: {status.state}")
+    return _common.OK if not health.validation_errors else _common.USAGE
 
 
 def _run_scan(request: Request) -> int:
@@ -833,7 +972,9 @@ def _mcp_descriptor_path(path: str, name: str) -> Optional[str]:
     return None
 
 
-def _catalog_destination(key: UpstreamKey, catalog_root: str, *, tree: Optional[bool] = None) -> str:
+def _catalog_destination(
+    key: UpstreamKey, catalog_root: str, *, tree: Optional[bool] = None
+) -> str:
     if key.type == "skill":
         rel = os.path.join("skills", key.name)
     elif key.type == "hook":

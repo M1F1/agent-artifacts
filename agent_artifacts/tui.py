@@ -1,9 +1,9 @@
 """Interactive selector — WP-20. The second "skin" over the one command core.
 
 docs/design/DESIGN.md §13 ("one core, two skins"): a bare ``agent-artifacts`` on a TTY launches this
-selector; otherwise the CLI runs in flag mode. This module owns **no** install/update/
-uninstall logic — it only gathers a selection (profile(s), action, artifact(s)), assembles a
-:class:`~agent_artifacts.model.Request`, and dispatches it through the exact same command
+selector; otherwise the CLI runs in flag mode. This module owns **no** consumer or upstream
+mutation logic — it gathers role/action selections, assembles
+:class:`~agent_artifacts.model.Request` values, and dispatches them through the exact same command
 handlers the flag-mode CLI uses. The decision logic stays in the pure core / commands.
 
 Two front-ends, one body:
@@ -25,7 +25,8 @@ functions, so no command logic is ever duplicated here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from .catalog import resolve_bundle
@@ -37,6 +38,37 @@ from .source import open_source
 # The three write actions the selector can drive; these are the verbs that build and dispatch a
 # Request.
 ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall")
+
+
+@dataclass(frozen=True, slots=True)
+class _RoleChoice:
+    name: Literal["user", "maintainer"]
+    label: str
+    description: str
+
+
+ROLES: Tuple[_RoleChoice, ...] = (
+    _RoleChoice(
+        "user",
+        "User",
+        "Install, update, or remove harness artifacts from subscribed catalogs.",
+    ),
+    _RoleChoice(
+        "maintainer",
+        "Maintainer",
+        "Do the same, plus curate the catalog and manage third-party upstreams.",
+    ),
+)
+
+MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
+    ("health", "Show catalog health"),
+    ("validate", "Validate the local catalog"),
+    ("add", "Add one upstream from GitHub"),
+    ("import", "Scan and import artifacts from GitHub"),
+    ("check", "Check tracked upstreams"),
+    ("update", "Preview and update tracked upstreams"),
+    ("user", "Enter User workflows"),
+)
 
 # Canonical artifact-type display order (matches commands.list / docs/design/DESIGN.md §4).
 _TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
@@ -51,6 +83,7 @@ _TYPE_ATTR = {
 ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]
 SourceFactory = Callable[[Request], Result]
+DispatchFn = Callable[[Request], int]
 
 
 # --------------------------------------------------------------------------- #
@@ -117,7 +150,9 @@ def build_install_choices(
     for artifact in arts:
         if artifact_visible_for_profiles(artifact, profile_names, profiles):
             out.append(
-                _Choice("artifact", artifact.name, artifact.type, f"[{artifact.type}] {artifact.name}")
+                _Choice(
+                    "artifact", artifact.name, artifact.type, f"[{artifact.type}] {artifact.name}"
+                )
             )
 
     for bundle_name in sorted(catalog.bundles):
@@ -196,9 +231,9 @@ def _build_manifest_choices(
     for entry in entries:
         if action == "update":
             artifact = catalog.artifacts.get((entry.type, entry.artifact))
-            if artifact is None:
-                continue
-            if not artifact_visible_for_profiles(artifact, (entry.profile,), profiles):
+            if artifact is not None and not artifact_visible_for_profiles(
+                artifact, (entry.profile,), profiles
+            ):
                 continue
 
         if entry.artifact not in seen_names:
@@ -275,7 +310,7 @@ def _dispatch(request: Request) -> int:
 # --------------------------------------------------------------------------- #
 # Text / fallback flow — fully injectable, headless-testable.                   #
 # --------------------------------------------------------------------------- #
-def _run_text(
+def _run_user_text(
     read: ReadFn = input,
     write: WriteFn = print,
     *,
@@ -335,7 +370,10 @@ def _run_text(
             write(f"error: {cat_res.reason}")
             return getattr(cat_res, "code", 1)
         catalog = cat_res.value
-        write(f"Source: {source.label()}")
+        if action == "update" and source_dir is None and repo is None:
+            write("Source: recorded catalog subscription(s) from the consumer manifest")
+        else:
+            write(f"Source: {source.label()}")
 
     manifest: Optional[Manifest] = None
     if action in ("update", "uninstall"):
@@ -372,6 +410,336 @@ def _run_text(
         project=project,
     )
     return _dispatch(request)
+
+
+def _run_text(
+    read: ReadFn = input,
+    write: WriteFn = print,
+    *,
+    source_factory: SourceFactory = open_source,
+    source_dir: Optional[str] = None,
+    repo: Optional[str] = None,
+    project: Optional[str] = None,
+) -> int:
+    """Role-first text frontend shared by real fallback mode and headless tests."""
+    role = _prompt_role(read, write)
+    if role is None:
+        return 0
+    if role == "user":
+        return _run_user_text(
+            read,
+            write,
+            source_factory=source_factory,
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+        )
+    return _run_maintainer_text(
+        read,
+        write,
+        source_factory=source_factory,
+        source_dir=source_dir,
+        repo=repo,
+        project=project,
+    )
+
+
+def _prompt_role(read: ReadFn, write: WriteFn) -> Optional[str]:
+    write("Choose how you want to use aart:")
+    for index, role in enumerate(ROLES, start=1):
+        write(f"  {index:>2}. {role.label:<10} {role.description}")
+    while True:
+        line = _read_line(read, "Role (1=User, 2=Maintainer, q=quit): ")
+        if line is None:
+            return None
+        answer = line.strip().lower()
+        if answer in ("", "q"):
+            return None
+        if answer in ("1", "user"):
+            return "user"
+        if answer in ("2", "maintainer"):
+            return "maintainer"
+        write("Please enter 1 (User), 2 (Maintainer), or 'q' to quit.")
+
+
+def _run_maintainer_text(
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    source_factory: SourceFactory,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+) -> int:
+    """Guided maintainer menu over the existing upstream command/query core."""
+    del source_factory  # maintainer source resolution belongs to the upstream command core
+    from .commands import upstream
+
+    catalog_root = os.path.abspath(source_dir or ".")
+    context_request = Request(
+        command="upstream",
+        upstream_action="validate",
+        source_dir=catalog_root,
+        repo=repo,
+    )
+    context_result = upstream.load_maintainer_context(context_request)
+    if isinstance(context_result, Err):
+        write(f"error: {context_result.reason}")
+        return getattr(context_result, "code", 1)
+    context = context_result.value
+
+    write(f"Catalog: {context.root}")
+    write("Maintainer action:")
+    for index, (_action, label) in enumerate(MAINTAINER_ACTIONS, start=1):
+        write(f"  {index:>2}. {label}")
+    action = _prompt_maintainer_action(read, write)
+    if action is None:
+        return 0
+    return _run_maintainer_action_text(
+        action,
+        context,
+        read,
+        write,
+        source_dir=source_dir,
+        repo=repo,
+        project=project,
+    )
+
+
+def _run_maintainer_action_text(
+    action: str,
+    context,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+) -> int:
+    """Run one selected maintainer action after any full-screen frontend has closed."""
+    if action == "user":
+        return _run_user_text(
+            read,
+            write,
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+        )
+    if action in ("health", "validate"):
+        return _dispatch(
+            Request(command="upstream", upstream_action=action, source_dir=context.root)
+        )
+    if action == "add":
+        request = _prompt_upstream_add(read, write, context.root)
+        if request is None:
+            return 0
+        return _run_maintainer_mutation(request, read, write)
+    if action == "import":
+        request, prompt_code = _prompt_upstream_import(read, write, context.root)
+        if request is None:
+            return prompt_code
+        return _run_maintainer_mutation(request, read, write)
+    if action in ("check", "update"):
+        selection = _prompt_tracked_upstreams(read, write, context)
+        if selection is None:
+            return 0
+        names, all_selected = selection
+        request = Request(
+            command="upstream",
+            upstream_action=action,
+            names=names,
+            all=all_selected,
+            source_dir=context.root,
+        )
+        if action == "check":
+            return _dispatch(request)
+        return _run_maintainer_mutation(request, read, write)
+    return 2
+
+
+def _prompt_maintainer_action(read: ReadFn, write: WriteFn) -> Optional[str]:
+    by_name = {name: name for name, _label in MAINTAINER_ACTIONS}
+    while True:
+        line = _read_line(read, "Maintainer action: ")
+        if line is None:
+            return None
+        answer = line.strip().lower()
+        if answer in ("", "q"):
+            return None
+        if answer in by_name:
+            return by_name[answer]
+        if answer.isdigit() and 1 <= int(answer) <= len(MAINTAINER_ACTIONS):
+            return MAINTAINER_ACTIONS[int(answer) - 1][0]
+        write(f"Please enter 1-{len(MAINTAINER_ACTIONS)} or 'q' to quit.")
+
+
+def _prompt_required(read: ReadFn, write: WriteFn, prompt: str) -> Optional[str]:
+    while True:
+        line = _read_line(read, prompt)
+        if line is None:
+            return None
+        answer = line.strip()
+        if answer.lower() == "q":
+            return None
+        if answer:
+            return answer
+        write("A value is required (or enter 'q' to cancel).")
+
+
+def _prompt_optional(read: ReadFn, prompt: str) -> Optional[str]:
+    line = _read_line(read, prompt)
+    if line is None:
+        return None
+    answer = line.strip()
+    return answer or None
+
+
+def _prompt_upstream_add(read: ReadFn, write: WriteFn, catalog_root: str) -> Optional[Request]:
+    key = _prompt_required(read, write, "Artifact key (TYPE/NAME): ")
+    if key is None:
+        return None
+    url = _prompt_required(read, write, "GitHub URL: ")
+    if url is None:
+        return None
+    ref = _prompt_optional(read, "Ref override (blank to infer): ")
+    path = _prompt_optional(read, "Path override (blank to infer): ")
+    return Request(
+        command="upstream",
+        upstream_action="add",
+        names=(key,),
+        url=url,
+        ref=ref,
+        path=path,
+        source_dir=catalog_root,
+    )
+
+
+def _prompt_upstream_import(
+    read: ReadFn, write: WriteFn, catalog_root: str
+) -> Tuple[Optional[Request], int]:
+    from .commands import upstream
+    from .import_candidates import candidate_label
+
+    url = _prompt_required(read, write, "GitHub repository/tree URL: ")
+    if url is None:
+        return None, 0
+    scan_request = Request(
+        command="upstream",
+        upstream_action="scan",
+        url=url,
+        import_mode="auto",
+        source_dir=catalog_root,
+    )
+    scan_result = upstream.scan_import_candidates(scan_request)
+    if isinstance(scan_result, Err):
+        write(f"error: {scan_result.reason}")
+        return None, getattr(scan_result, "code", 1)
+    candidates = scan_result.value.candidates
+    if not candidates:
+        write("No importable artifacts detected.")
+        return None, 0
+    choices = tuple(
+        _Choice(
+            "artifact",
+            candidate_label(candidate),
+            candidate.key.type,
+            f"{candidate_label(candidate)} [{candidate.confidence}] {candidate.source.path}",
+        )
+        for candidate in candidates
+    )
+    write("Detected artifacts:")
+    for index, choice in enumerate(choices, start=1):
+        write(f"  {index:>2}. {choice.label}")
+    picked = _prompt_indices(read, write, "Import selection: ", choices)
+    if not picked:
+        return None, 0
+    bundle = _prompt_optional(read, "Bundle name (blank for none): ")
+    bundle_description = None
+    if bundle is not None:
+        bundle_description = _prompt_optional(read, "Bundle description (blank for default): ")
+    return (
+        replace(
+            scan_request,
+            upstream_action="import",
+            names=tuple(choices[index].name for index in picked),
+            bundles=(bundle,) if bundle else (),
+            bundle_description=bundle_description,
+            bundle_mode="append",
+        ),
+        0,
+    )
+
+
+def _prompt_tracked_upstreams(read: ReadFn, write: WriteFn, context):
+    from .upstreams import format_upstream_key
+
+    labels = tuple(
+        format_upstream_key(key)
+        for key in sorted(context.upstreams.entries, key=format_upstream_key)
+    )
+    if not labels:
+        write(f"No tracked upstreams in {context.root}.")
+        return None
+    write("Tracked upstreams:")
+    for index, label in enumerate(labels, start=1):
+        write(f"  {index:>2}. {label}")
+    choices = tuple(_Choice("artifact", label, None, label) for label in labels)
+    while True:
+        line = _read_line(read, "Selection (numbers or 'a' for all): ")
+        if line is None:
+            return None
+        answer = line.strip().lower()
+        if answer in ("", "q"):
+            return None
+        if answer in ("a", "all"):
+            return (), True
+        picked = _parse_indices(answer, len(choices))
+        if picked:
+            return tuple(labels[index] for index in picked), False
+        write(f"Please enter number(s) between 1 and {len(choices)}, 'a', or 'q'.")
+
+
+def _run_maintainer_mutation(
+    request: Request,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    dispatch: Optional[DispatchFn] = None,
+) -> int:
+    """Validate -> preview -> confirm -> apply -> validate, with no hidden mutation."""
+    dispatch_fn = dispatch or _dispatch
+    validation = Request(
+        command="upstream",
+        upstream_action="validate",
+        source_dir=request.source_dir,
+    )
+    before = dispatch_fn(validation)
+    if before != 0:
+        write(f"Catalog validation failed before mutation: {request.source_dir}")
+        return before
+
+    preview = dispatch_fn(replace(request, dry_run=True))
+    if preview != 0:
+        write("Preview failed; no catalog changes were applied.")
+        return preview
+
+    answer = _read_line(read, "Apply these catalog changes? [y/N]: ")
+    if answer is None or answer.strip().lower() not in ("y", "yes"):
+        write("Cancelled; no catalog changes were applied.")
+        return 0
+
+    applied = dispatch_fn(replace(request, dry_run=False))
+    if applied != 0:
+        return applied
+    after = dispatch_fn(validation)
+    if after != 0:
+        write(f"Catalog validation failed after mutation: {request.source_dir}")
+        return after
+    write(
+        f"Next: review the working-tree diff in {request.source_dir} and run "
+        f"`aart upstream validate --source {request.source_dir}`."
+    )
+    return 0
 
 
 def _load_manifest_for_action(
@@ -427,25 +795,28 @@ def _prompt_indices(
         line = line.strip()
         if line == "" or line.lower() == "q":
             return ()
-        tokens = [t for t in line.replace(",", " ").split() if t]
-        out: List[int] = []
-        seen = set()
-        ok = True
-        for tok in tokens:
-            if not tok.isdigit():
-                ok = False
-                break
-            n = int(tok)
-            if not (1 <= n <= len(choices)):
-                ok = False
-                break
-            zero = n - 1
-            if zero not in seen:
-                seen.add(zero)
-                out.append(zero)
-        if ok and out:
-            return tuple(out)
+        parsed = _parse_indices(line, len(choices))
+        if parsed:
+            return parsed
         write(f"Please enter number(s) between 1 and {len(choices)} (or 'q' to quit).")
+
+
+def _parse_indices(line: str, choice_count: int) -> Tuple[int, ...]:
+    """Pure 1-based comma/space selection parser used by both text menus."""
+    tokens = [token for token in line.replace(",", " ").split() if token]
+    out: List[int] = []
+    seen = set()
+    for token in tokens:
+        if not token.isdigit():
+            return ()
+        number = int(token)
+        if not (1 <= number <= choice_count):
+            return ()
+        index = number - 1
+        if index not in seen:
+            seen.add(index)
+            out.append(index)
+    return tuple(out)
 
 
 def _prompt_action(read: ReadFn, write: WriteFn) -> Optional[str]:
@@ -478,10 +849,10 @@ def _run_curses(
 ) -> int:
     """Full-screen selector via stdlib ``curses``; falls back to text on any failure.
 
-    The curses layer only collects the same profile -> action -> filtered choice selections;
-    once gathered it leaves curses and calls the shared `_build_request` / `_dispatch` (so the
-    install/update/uninstall logic and its stdout summary are identical to flag mode). Any
-    curses error -> the text flow.
+    The curses layer selects the role first. User mode then collects the same profile -> action ->
+    filtered choices as the text frontend. Maintainer mode selects a guided action and leaves
+    full-screen mode before line-oriented URL/input prompts or command output. Both paths use the
+    shared request builders and dispatch; any curses error falls back to the text frontend.
     """
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
 
@@ -495,6 +866,48 @@ def _run_curses(
 
     def _ui(stdscr) -> None:
         curses.curs_set(0)
+        role_idx = _curses_singleselect(
+            curses,
+            stdscr,
+            "Choose how you want to use aart  (enter=confirm, q=quit)",
+            [f"{role.label} - {role.description}" for role in ROLES],
+        )
+        if role_idx is None:
+            return
+        role = ROLES[role_idx].name
+        selection["role"] = role
+        if role == "maintainer":
+            from .commands import upstream
+
+            catalog_root = os.path.abspath(source_dir or ".")
+            context_result = upstream.load_maintainer_context(
+                Request(
+                    command="upstream",
+                    upstream_action="validate",
+                    source_dir=catalog_root,
+                    repo=repo,
+                )
+            )
+            if isinstance(context_result, Err):
+                selection["error"] = (
+                    context_result.reason,
+                    getattr(context_result, "code", 1),
+                )
+                return
+            maintainer_idx = _curses_singleselect(
+                curses,
+                stdscr,
+                f"Maintainer - {catalog_root}  (enter=confirm, q=quit)",
+                [label for _action, label in MAINTAINER_ACTIONS],
+            )
+            if maintainer_idx is None:
+                return
+            maintainer_action = MAINTAINER_ACTIONS[maintainer_idx][0]
+            if maintainer_action != "user":
+                selection["maintainer_action"] = maintainer_action
+                selection["maintainer_context"] = context_result.value
+                return
+
         picked_profs = _curses_multiselect(
             curses,
             stdscr,
@@ -569,6 +982,16 @@ def _run_curses(
         action, profiles = selection["empty"]
         print(_empty_choices_message(action, profiles))
         return 0
+    if "maintainer_action" in selection:
+        return _run_maintainer_action_text(
+            selection["maintainer_action"],
+            selection["maintainer_context"],
+            input,
+            print,
+            source_dir=source_dir,
+            repo=repo,
+            project=project,
+        )
     if "action" not in selection:
         return 0  # user quit before completing the flow
 

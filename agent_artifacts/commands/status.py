@@ -119,6 +119,18 @@ def _install_json(entry: ManifestEntry) -> dict:
     }
 
 
+def _subscription_json(entry: ManifestEntry):
+    if entry.subscription is None:
+        return None
+    payload = {
+        "kind": entry.subscription.kind,
+        "location": entry.subscription.location,
+    }
+    if entry.subscription.ref is not None:
+        payload["ref"] = entry.subscription.ref
+    return payload
+
+
 # -- JSON output shape ------------------------------------------------------ #
 
 
@@ -133,7 +145,7 @@ def _entry_json(project: str, entry: ManifestEntry) -> dict:
         else:
             state = _file_state(project, path, base_hash)
             files_report.append({"path": path, "state": state, "kind": "file"})
-    return {
+    payload = {
         "artifact": entry.artifact,
         "type": entry.type,
         "profile": entry.profile,
@@ -141,6 +153,10 @@ def _entry_json(project: str, entry: ManifestEntry) -> dict:
         "install": _install_json(entry),
         "files": files_report,
     }
+    subscription = _subscription_json(entry)
+    if subscription is not None:
+        payload["subscription"] = subscription
+    return payload
 
 
 # -- human-readable output -------------------------------------------------- #
@@ -160,6 +176,9 @@ def _print_human(project: str, repo: str, entries: tuple) -> None:
             f"  {entry.type}/{entry.artifact}  profile={entry.profile}  "
             f"source={entry.source}  install={entry.install.mode}"
         )
+        if entry.subscription is not None:
+            ref = f"@{entry.subscription.ref}" if entry.subscription.ref else ""
+            print(f"    subscription={entry.subscription.kind}:{entry.subscription.location}{ref}")
         links = {link.path: link for link in entry.install.links}
         for path, base_hash in entry.files.items():
             link = links.get(path)

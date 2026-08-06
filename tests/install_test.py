@@ -124,6 +124,8 @@ class InstallEndToEndTests(unittest.TestCase):
         self.assertEqual(types, ["guideline", "hook", "mcp", "memory", "skill"])
         # local source label recorded verbatim
         self.assertTrue(all(e["source"].startswith("local:") for e in data["installed"]))
+        self.assertTrue(all(e["subscription"]["kind"] == "local" for e in data["installed"]))
+        self.assertTrue(all(e["subscription"]["location"] == FIXTURES for e in data["installed"]))
 
     # ---- two profiles ---------------------------------------------------- #
     def test_installs_to_two_profiles(self):

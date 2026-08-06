@@ -170,12 +170,7 @@ class Source:
             if rel is None:
                 continue
             if name in seen:
-                out.append(
-                    Err(
-                        f"mcp {name!r}: duplicate descriptors "
-                        f"mcp/{name}.json and {rel}"
-                    )
-                )
+                out.append(Err(f"mcp {name!r}: duplicate descriptors mcp/{name}.json and {rel}"))
                 continue
             text = self._read_text(rel)
             out.append(catalog_mod.parse_mcp(text, name, root=rel))
@@ -244,6 +239,8 @@ def open_source(
 
     if request.source_dir is not None:
         root = os.path.abspath(request.source_dir)
+        if not os.path.isdir(root):
+            return Err(f"local catalog directory does not exist: {root}", code=2)
         return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     if not request.repo:

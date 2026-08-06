@@ -78,8 +78,7 @@ def resolve_upstream_source(entry: UpstreamEntry, *, opener=None, token=None) ->
         )
     except (OSError, tarfile.TarError, EOFError) as exc:
         return Err(
-            f"failed to materialise upstream {location.value.repo}@{sha}: "
-            f"{exc}{_auth_hint(exc)}",
+            f"failed to materialise upstream {location.value.repo}@{sha}: {exc}{_auth_hint(exc)}",
             code=3,
         )
 

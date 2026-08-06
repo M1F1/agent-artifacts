@@ -20,6 +20,7 @@ from .model import (
     Action,
     Artifact,
     ArtifactType,
+    CatalogSubscription,
     CopyTree,
     Err,
     GuidelineTarget,
@@ -443,6 +444,7 @@ def _manifest_entry(
     installed_at: str,
     requested_mode: InstallMode,
     source_root: str,
+    subscription: Optional[CatalogSubscription] = None,
 ) -> ManifestEntry:
     """Assemble a `ManifestEntry` (proof of install) for one artifact×profile Plan."""
     return ManifestEntry(
@@ -459,6 +461,7 @@ def _manifest_entry(
             requested_mode=requested_mode,
             source_root=source_root,
         ),
+        subscription=subscription,
     )
 
 
@@ -500,6 +503,7 @@ def plan_install(
           MCP descriptor or ``hook.json``). Hooks copy their whole script tree.
       Optional metadata keys (used only to fill manifest proofs, all default sensibly):
         * ``f"source:{a.name}"`` -> ``str`` resolved source label (default ``"main:?"``).
+        * ``f"subscription:{a.name}"`` -> ``CatalogSubscription`` used to reopen the source.
         * ``f"bundle:{a.name}"`` -> ``str`` bundle name (default ``None``).
         * ``"__installed_at__"`` -> ISO timestamp string (default ``""``).
     - ``profiles`` — ``profile_name -> Profile`` (built-ins + overrides, WP-8).
@@ -556,6 +560,7 @@ def plan_install(
                 installed_at=installed_at,
                 requested_mode=target_requested_mode,
                 source_root=source_root,
+                subscription=files.get(f"subscription:{artifact.name}"),  # type: ignore[arg-type]
             ),
         )
 
