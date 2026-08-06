@@ -75,6 +75,18 @@ Artifact and bundle selectors explain every choice in one line. In the full-scre
 press `?` to open the complete description for the highlighted row. In the plain-text fallback,
 enter `?N` (for example `?3`) to repeat the complete description for item N.
 
+For Install, both frontends ask for an installation mode before artifact selection:
+
+- **Copy (recommended)** installs an independent snapshot and remains the default.
+- **Symlink** live-links supported skill and hook directories to a local catalog. Copy-only
+  individual rows are disabled with a reason; mixed bundles disclose projected linked/copied
+  counts and keep file/merge artifacts in Copy mode.
+
+Before applying an Install, the confirmation view shows the catalog source, Project destination
+root, harnesses, requested mode, selected rows, and projected mode counts. Symlink is rejected for
+a remote source before artifact selection; use flag mode with `--source DIR --link` to choose a
+durable local checkout.
+
 Every completed action ends with an explicit outcome summary in command mode and both TUI
 frontends. A successful no-op is not silent and is distinct from an empty selection:
 
@@ -180,8 +192,9 @@ and can extend other bundles, so team setup is one command instead of a pile of 
 
 ### Live-Link From A Local Catalog Checkout
 
-Use `--link` when you want artifacts installed into your project to stay connected to a local
-catalog checkout instead of being copied as a snapshot.
+Choose **Symlink** (spelled `--link` in flag mode) when you want supported artifacts installed into
+your project to stay connected to a local catalog checkout instead of using the default **Copy**
+snapshot.
 
 ```sh
 aart install code-review --profile tabnine --link
@@ -193,7 +206,7 @@ root, and linkable directory artifacts are symlinked from there into your projec
 installed in editable mode from a local `agent-artifacts` checkout, those symlinks point back to
 that checkout.
 
-Copy remains the default install mode. With `--link`, changes propagate only when the local
+Copy remains the recommended default install mode. With Symlink/`--link`, changes propagate only when the local
 source path changes, for example after local edits, `git pull`, branch switches, or
 `aart upstream update` in the catalog. Use `aart status --json` to see whether an installed
 artifact is `copy` or `symlink` and where a link points. Pass `--source DIR` only when you want

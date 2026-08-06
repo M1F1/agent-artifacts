@@ -57,7 +57,7 @@ class RoleFirstTextTests(unittest.TestCase):
             tui, "_dispatch", side_effect=lambda request: captured.append(request) or 0
         ):
             code = tui._run_text(
-                _scripted_reader(["1", "1", "install", "1"]),
+                _scripted_reader(["1", "1", "install", "", "1", "y"]),
                 write,
                 source_dir=FIXTURES,
                 project="/tmp/project",
@@ -273,7 +273,7 @@ class MaintainerTextTests(unittest.TestCase):
             tui, "_dispatch", side_effect=lambda request: captured.append(request) or 0
         ):
             code = tui._run_text(
-                _scripted_reader(["2", "7", "1", "install", "1"]),
+                _scripted_reader(["2", "7", "1", "install", "", "1", "y"]),
                 write,
                 source_dir=FIXTURES,
             )

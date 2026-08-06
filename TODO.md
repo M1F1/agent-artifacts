@@ -67,20 +67,20 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#18 — TUI: let users choose copy or symlink install mode](https://github.com/M1F1/agent-artifacts/issues/18)
 
-- [ ] Add an Install-only mode screen to curses and text TUI:
+- [x] Add an Install-only mode screen to curses and text TUI:
   - Copy (recommended): install an independent snapshot;
   - Symlink: live-link supported directory artifacts to a local catalog.
-- [ ] Keep Copy as the default.
-- [ ] Pass the choice through Request.install_mode/the existing CLI link behavior.
-- [ ] Explain that Symlink is local-source-only and currently applies to linkable skills/hooks;
+- [x] Keep Copy as the default.
+- [x] Pass the choice through Request.install_mode/the existing CLI link behavior.
+- [x] Explain that Symlink is local-source-only and currently applies to linkable skills/hooks;
       merged and file artifacts still use copy semantics.
-- [ ] Reject remote-only symlink sources before mutation and explain how to select a local source.
-- [ ] Disable/hide individual non-linkable rows with a reason instead of failing late.
-- [ ] Disclose mixed bundle behavior before confirmation, including linked/copied counts.
-- [ ] Show source, destination scope/path, harness, and mode on the confirmation screen.
-- [ ] Report the actual mode used for each artifact in the completion summary.
-- [ ] Preserve recorded modes during update and remove only managed links during uninstall.
-- [ ] Test default Copy, Symlink, navigation, source validation, non-linkable artifacts, mixed
+- [x] Reject remote-only symlink sources before mutation and explain how to select a local source.
+- [x] Disable/hide individual non-linkable rows with a reason instead of failing late.
+- [x] Disclose mixed bundle behavior before confirmation, including linked/copied counts.
+- [x] Show source, destination scope/path, harness, and mode on the confirmation screen.
+- [x] Report the actual mode used for each artifact in the completion summary.
+- [x] Preserve recorded modes during update and remove only managed links during uninstall.
+- [x] Test default Copy, Symlink, navigation, source validation, non-linkable artifacts, mixed
       bundles, manifest metadata, update, and uninstall.
 
 ## [#19 — Support project-scoped and user-global installs per harness](https://github.com/M1F1/agent-artifacts/issues/19)

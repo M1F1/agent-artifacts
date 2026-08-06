@@ -322,15 +322,18 @@ class TestHelpAndVersion(unittest.TestCase):
     def test_help_exits_zero(self):
         self._help_text(["--help"])
 
-    def test_top_level_help_mentions_local_live_link_install(self):
+    def test_top_level_help_uses_copy_and_symlink_mode_terms(self):
         out = self._help_text(["--help"])
-        self.assertIn("--link for local live links", out)
+        self.assertIn("Copy by default", out)
+        self.assertIn("--link enables local Symlink", out)
 
     def test_install_help_documents_symlink_context(self):
         out = self._help_text(["install", "--help"])
+        self.assertIn("Copy (recommended)", out)
+        self.assertIn("Symlink (--link)", out)
         self.assertIn("--link", out)
         self.assertIn("agent-artifacts install code-review --profile tabnine", out)
-        self.assertIn("--link is local-only", out)
+        self.assertIn("is local-only", out)
         self.assertIn("Pass --source DIR only to link to a different local checkout", out)
         self.assertIn("Changes propagate only when that local source changes", out)
         self.assertIn("install.mode, requested_mode, and link targets", out)

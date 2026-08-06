@@ -37,6 +37,7 @@ from ..compatibility import (
     check_profile_compatibility,
     skipped_target_to_dict,
 )
+from ..install_modes import LINKABLE_ARTIFACT_TYPES
 from ..io import fs
 from ..model import Artifact, Profile, Request, SkippedTarget
 from ..outcomes import (
@@ -62,7 +63,6 @@ _TYPE_ATTR = {
     "memory": "memory",
 }
 UNSUPPORTED_TYPE = "unsupported-type"
-_LINKABLE_TYPES = {"skill", "hook"}
 
 
 def _err(message: str) -> None:
@@ -249,7 +249,7 @@ def execute(request: Request) -> CommandOutcome:
                     skipped_targets.append(skipped)
                 continue
 
-            if link_requested and a.type not in _LINKABLE_TYPES:
+            if link_requested and a.type not in LINKABLE_ARTIFACT_TYPES:
                 if explicit:
                     link_errors.append(_link_error(a))
                     continue

@@ -33,7 +33,18 @@ from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from .catalog import resolve_bundle
 from .compatibility import check_profile_compatibility
-from .model import Artifact, ArtifactType, Catalog, Err, Manifest, Profile, Request, Result
+from .install_modes import supports_symlink
+from .model import (
+    Artifact,
+    ArtifactType,
+    Catalog,
+    Err,
+    InstallMode,
+    Manifest,
+    Profile,
+    Request,
+    Result,
+)
 from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
 from .profiles.loader import load_profiles
 from .source import open_source
@@ -89,6 +100,53 @@ SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
 
 
+@dataclass(frozen=True, slots=True)
+class InstallModeChoice:
+    """One user-facing installation-mode choice."""
+
+    mode: InstallMode
+    label: str
+    description: str
+
+
+INSTALL_MODE_CHOICES: Tuple[InstallModeChoice, ...] = (
+    InstallModeChoice(
+        "copy",
+        "Copy (recommended)",
+        "Install an independent snapshot into the target harness.",
+    ),
+    InstallModeChoice(
+        "symlink",
+        "Symlink",
+        (
+            "Live-link supported skills and hooks to a local catalog; file and merged "
+            "artifacts selected through bundles use copy semantics."
+        ),
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class InstallModeCounts:
+    """Projected artifact/profile targets by actual installation mode."""
+
+    linked: int = 0
+    copied: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class InstallConfirmation:
+    """Immutable facts rendered by both Install confirmation frontends."""
+
+    source_label: str
+    source_root: str
+    destination_root: str
+    profiles: Tuple[str, ...]
+    requested_mode: InstallMode
+    selected: Tuple[str, ...]
+    modes: InstallModeCounts
+
+
 # --------------------------------------------------------------------------- #
 # Choice model — a flat, ordered menu derived from the catalog (pure).         #
 # --------------------------------------------------------------------------- #
@@ -108,6 +166,10 @@ class _Choice:
     description: str = ""
     hidden_count: int = 0
     complete: bool = True
+    enabled: bool = True
+    reason: str = ""
+    linked_count: int = 0
+    copied_count: int = 0
 
 
 def _type_rank(t: ArtifactType) -> int:
@@ -117,6 +179,12 @@ def _type_rank(t: ArtifactType) -> int:
 def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
     """True when a profile has a target for ``art_type``."""
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
+
+
+def _linkable(artifact: Artifact) -> bool:
+    """Whether the existing install core can live-link this artifact's payload."""
+
+    return supports_symlink(artifact.type)
 
 
 def _choice_label(
@@ -167,6 +235,8 @@ def build_install_choices(
     catalog: Catalog,
     profile_names: Sequence[str],
     profiles: Mapping[str, Profile],
+    *,
+    install_mode: InstallMode = "copy",
 ) -> Tuple[_Choice, ...]:
     """Build installable artifact/bundle choices for selected profiles."""
     out: List[_Choice] = []
@@ -174,13 +244,37 @@ def build_install_choices(
     arts.sort(key=lambda a: (_type_rank(a.type), a.name))
     for artifact in arts:
         if artifact_visible_for_profiles(artifact, profile_names, profiles):
+            linkable = _linkable(artifact)
+            enabled = install_mode == "copy" or linkable
+            reason = (
+                "copy-only; choose Copy or select a mixed bundle"
+                if install_mode == "symlink" and not linkable
+                else ""
+            )
+            status = ""
+            if install_mode == "symlink":
+                status = "will symlink" if linkable else reason
             out.append(
                 _Choice(
                     "artifact",
                     artifact.name,
                     artifact.type,
-                    _choice_label("artifact", artifact.name, artifact.type, artifact.description),
+                    _choice_label(
+                        "artifact",
+                        artifact.name,
+                        artifact.type,
+                        artifact.description,
+                        status,
+                    ),
                     description=artifact.description,
+                    enabled=enabled,
+                    reason=reason,
+                    linked_count=(
+                        len(profile_names) if install_mode == "symlink" and linkable else 0
+                    ),
+                    copied_count=(
+                        len(profile_names) if install_mode == "copy" or not linkable else 0
+                    ),
                 )
             )
 
@@ -189,25 +283,36 @@ def build_install_choices(
         if isinstance(resolved, Err):
             continue
 
-        visible_count = 0
+        visible_artifacts: List[Artifact] = []
         hidden_count = 0
         for artifact_type, artifact_name in resolved.value.artifacts:
             bundle_artifact = catalog.artifacts.get((artifact_type, artifact_name))
             if bundle_artifact is None:
                 continue
             if artifact_visible_for_profiles(bundle_artifact, profile_names, profiles):
-                visible_count += 1
+                visible_artifacts.append(bundle_artifact)
             else:
                 hidden_count += 1
 
+        visible_count = len(visible_artifacts)
         if visible_count == 0:
             continue
 
         bundle = catalog.bundles[bundle_name]
+        linked_count = 0
+        copied_count = visible_count * len(profile_names)
+        status_parts = []
+        if install_mode == "symlink":
+            linked_count = sum(1 for artifact in visible_artifacts if _linkable(artifact)) * len(
+                profile_names
+            )
+            copied_count = visible_count * len(profile_names) - linked_count
+            status_parts.append(f"{linked_count} linked, {copied_count} copied")
         if hidden_count:
-            status = f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
-        else:
-            status = ""
+            status_parts.append(
+                f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
+            )
+        status = "; ".join(status_parts)
         out.append(
             _Choice(
                 "bundle",
@@ -217,6 +322,8 @@ def build_install_choices(
                 description=bundle.description,
                 hidden_count=hidden_count,
                 complete=hidden_count == 0,
+                linked_count=linked_count,
+                copied_count=copied_count,
             )
         )
 
@@ -229,15 +336,121 @@ def build_action_choices(
     manifest: Optional[Manifest],
     profile_names: Sequence[str],
     profiles: Mapping[str, Profile],
+    *,
+    install_mode: InstallMode = "copy",
 ) -> Tuple[_Choice, ...]:
     """Build the selectable rows for an action after profile selection."""
     if action == "install":
-        return build_install_choices(catalog, profile_names, profiles)
+        return build_install_choices(
+            catalog,
+            profile_names,
+            profiles,
+            install_mode=install_mode,
+        )
     if action in ("update", "uninstall"):
         if manifest is None:
             return ()
         return _build_manifest_choices(action, catalog, manifest, profile_names, profiles)
     return ()
+
+
+def _selected_install_artifacts(
+    catalog: Catalog,
+    choices: Sequence[_Choice],
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+) -> Tuple[Artifact, ...]:
+    """Resolve and de-duplicate eligible artifacts represented by selected rows."""
+
+    keys: List[Tuple[ArtifactType, str]] = []
+    seen = set()
+    for choice in choices:
+        choice_keys: Sequence[Tuple[ArtifactType, str]] = ()
+        if choice.kind == "artifact" and choice.type is not None:
+            choice_keys = ((choice.type, choice.name),)
+        elif choice.kind == "bundle":
+            resolved = resolve_bundle(catalog, choice.name)
+            if not isinstance(resolved, Err):
+                choice_keys = resolved.value.artifacts
+        for key in choice_keys:
+            if key not in seen:
+                seen.add(key)
+                keys.append(key)
+
+    return tuple(
+        artifact
+        for key in keys
+        if (artifact := catalog.artifacts.get(key)) is not None
+        and artifact_visible_for_profiles(artifact, profile_names, profiles)
+    )
+
+
+def install_selection_mode_counts(
+    catalog: Catalog,
+    choices: Sequence[_Choice],
+    profile_names: Sequence[str],
+    profiles: Mapping[str, Profile],
+    install_mode: InstallMode,
+) -> InstallModeCounts:
+    """Count projected actual modes over de-duplicated artifact/profile targets."""
+
+    artifacts = _selected_install_artifacts(catalog, choices, profile_names, profiles)
+    target_multiplier = len(profile_names)
+    if install_mode == "copy":
+        return InstallModeCounts(copied=len(artifacts) * target_multiplier)
+    linked = sum(1 for artifact in artifacts if _linkable(artifact)) * target_multiplier
+    return InstallModeCounts(
+        linked=linked,
+        copied=len(artifacts) * target_multiplier - linked,
+    )
+
+
+def build_install_confirmation(
+    *,
+    source_label: str,
+    source_root: str,
+    project: Optional[str],
+    profiles: Sequence[str],
+    requested_mode: InstallMode,
+    catalog: Catalog,
+    choices: Sequence[_Choice],
+    profiles_map: Mapping[str, Profile],
+) -> InstallConfirmation:
+    """Build the shared immutable confirmation model for an Install selection."""
+
+    return InstallConfirmation(
+        source_label=source_label,
+        source_root=os.path.abspath(source_root),
+        destination_root=os.path.abspath(project or "."),
+        profiles=tuple(profiles),
+        requested_mode=requested_mode,
+        selected=tuple(choice.name for choice in choices),
+        modes=install_selection_mode_counts(
+            catalog,
+            choices,
+            profiles,
+            profiles_map,
+            requested_mode,
+        ),
+    )
+
+
+def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str, ...]:
+    """Pure text projection shared by text and curses Install confirmation."""
+
+    mode_label = "Symlink" if confirmation.requested_mode == "symlink" else "Copy"
+    return (
+        "Confirm installation",
+        f"  Source: {confirmation.source_label} ({confirmation.source_root})",
+        f"  Destination: Project — {confirmation.destination_root}",
+        f"  Harnesses: {', '.join(confirmation.profiles)}",
+        f"  Requested mode: {mode_label}",
+        (
+            f"  Projected modes: {confirmation.modes.linked} linked, "
+            f"{confirmation.modes.copied} copied"
+        ),
+        f"  Selected: {', '.join(confirmation.selected)}",
+    )
 
 
 def _build_manifest_choices(
@@ -303,6 +516,7 @@ def _build_request(
     source_dir: Optional[str],
     repo: Optional[str],
     project: Optional[str],
+    install_mode: InstallMode = "copy",
 ) -> Request:
     """Assemble the `Request` for *action* from the picked rows + profiles.
 
@@ -322,6 +536,7 @@ def _build_request(
         repo=repo,
         project=project,
         yes=True,
+        install_mode=install_mode,
     )
 
 
@@ -466,40 +681,61 @@ def _run_user_text(
         return _cancel(write)
     profiles = [profile_names[idx] for idx in picked_profiles]
 
-    write("Action:")
-    for i, act in enumerate(ACTIONS, start=1):
-        write(f"  {i:>2}. {act}")
-    action = _prompt_action(read, write)
-    if action is None:
-        return _cancel(write)
+    install_mode: InstallMode = "copy"
+    install_source = None
+    while True:
+        write("Action:")
+        for i, act in enumerate(ACTIONS, start=1):
+            write(f"  {i:>2}. {act}")
+        action = _prompt_action(read, write)
+        if action is None:
+            return _cancel(write)
 
-    catalog = Catalog(artifacts={}, bundles={})
-    if action in ("install", "update"):
-        base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
-        src_res = source_factory(base)
-        if isinstance(src_res, Err):
-            write(f"error: {src_res.reason}")
-            return getattr(src_res, "code", 1)
-        source = src_res.value
+        catalog = Catalog(artifacts={}, bundles={})
+        if action in ("install", "update"):
+            base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            src_res = source_factory(base)
+            if isinstance(src_res, Err):
+                write(f"error: {src_res.reason}")
+                return getattr(src_res, "code", 1)
+            source = src_res.value
 
-        cat_res = source.catalog()
-        if isinstance(cat_res, Err):
-            write(f"error: {cat_res.reason}")
-            return getattr(cat_res, "code", 1)
-        catalog = cat_res.value
-        if action == "update" and source_dir is None and repo is None:
-            write("Source: recorded catalog subscription(s) from the consumer manifest")
-        else:
-            write(f"Source: {source.label()}")
-    elif action == "uninstall":
-        # Descriptions improve the manifest-driven uninstall menu when its source is available,
-        # but source/network failure must never make removal unavailable.
-        base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
-        src_res = source_factory(base)
-        if not isinstance(src_res, Err):
-            cat_res = src_res.value.catalog()
-            if not isinstance(cat_res, Err):
-                catalog = cat_res.value
+            cat_res = source.catalog()
+            if isinstance(cat_res, Err):
+                write(f"error: {cat_res.reason}")
+                return getattr(cat_res, "code", 1)
+            catalog = cat_res.value
+            if action == "update" and source_dir is None and repo is None:
+                write("Source: recorded catalog subscription(s) from the consumer manifest")
+            else:
+                write(f"Source: {source.label()}")
+            if action == "install":
+                selected_mode = _prompt_install_mode(read, write)
+                if selected_mode is None:
+                    return _cancel(write)
+                if selected_mode == "back":
+                    continue
+                install_mode = selected_mode
+                if install_mode == "symlink" and not source.label().startswith("local:"):
+                    write(
+                        "Symlink requires a durable local catalog; the selected source is remote."
+                    )
+                    write(
+                        "Choose a local catalog with flag mode: "
+                        "aart install ... --source DIR --link"
+                    )
+                    return 2
+                install_source = source
+        elif action == "uninstall":
+            # Descriptions improve the manifest-driven uninstall menu when its source is available,
+            # but source/network failure must never make removal unavailable.
+            base = Request(command=action, source_dir=source_dir, repo=repo, project=project)
+            src_res = source_factory(base)
+            if not isinstance(src_res, Err):
+                cat_res = src_res.value.catalog()
+                if not isinstance(cat_res, Err):
+                    catalog = cat_res.value
+        break
 
     manifest: Optional[Manifest] = None
     if action in ("update", "uninstall"):
@@ -514,7 +750,14 @@ def _run_user_text(
             return getattr(manifest_res, "code", 1)
         manifest = manifest_res.value
 
-    choices = build_action_choices(action, catalog, manifest, profiles, profiles_map)
+    choices = build_action_choices(
+        action,
+        catalog,
+        manifest,
+        profiles,
+        profiles_map,
+        install_mode=install_mode,
+    )
     if not choices:
         write(_empty_choices_message(action, profiles))
         return _render_result(CommandOutcome(0, ActionSummary(action=action)), write)
@@ -529,14 +772,32 @@ def _run_user_text(
     if not picked:
         return _cancel(write, "No artifacts selected; no changes were made.")
 
+    chosen = [choices[i] for i in picked]
     request = _build_request(
         action,
-        [choices[i] for i in picked],
+        chosen,
         profiles,
         source_dir=source_dir,
         repo=repo,
         project=project,
+        install_mode=install_mode,
     )
+    if action == "install":
+        assert install_source is not None
+        confirmation = build_install_confirmation(
+            source_label=install_source.label(),
+            source_root=install_source.root,
+            project=project,
+            profiles=profiles,
+            requested_mode=install_mode,
+            catalog=catalog,
+            choices=chosen,
+            profiles_map=profiles_map,
+        )
+        for line in render_install_confirmation(confirmation):
+            write(line)
+        if not _prompt_install_confirmation(read):
+            return _cancel(write)
     return _render_result(_dispatch_result(request), write)
 
 
@@ -935,6 +1196,12 @@ def _prompt_indices(
             continue
         parsed = _parse_indices(line, len(choices))
         if parsed:
+            disabled = tuple(choices[index] for index in parsed if not choices[index].enabled)
+            if disabled:
+                for choice in disabled:
+                    reason = choice.reason or "this item is unavailable"
+                    write(f"{choice.name}: {reason}.")
+                continue
             return parsed
         write(f"Please enter number(s) between 1 and {len(choices)} (or 'q' to quit).")
 
@@ -963,6 +1230,38 @@ def _text_choice_line(index: int, choice: _Choice, width: int) -> str:
     if width <= len(prefix):
         return _ellipsize(prefix, width)
     return prefix + _ellipsize(choice.label, max(width - len(prefix), 0))
+
+
+def _prompt_install_mode(
+    read: ReadFn,
+    write: WriteFn,
+) -> Optional[Literal["copy", "symlink", "back"]]:
+    """Select the Install-only mode; blank is Copy and back returns to Action."""
+
+    write("Installation mode:")
+    for index, choice in enumerate(INSTALL_MODE_CHOICES, start=1):
+        write(f"  {index:>2}. {choice.label:<20} {choice.description}")
+    while True:
+        line = _read_line(read, "Installation mode [1] (b=back, q=quit): ")
+        if line is None:
+            return None
+        answer = line.strip().lower()
+        if answer in ("q", "quit"):
+            return None
+        if answer in ("b", "back"):
+            return "back"
+        if answer in ("", "1", "copy"):
+            return "copy"
+        if answer in ("2", "symlink", "link"):
+            return "symlink"
+        write("Please enter 1 (Copy), 2 (Symlink), 'b' to go back, or 'q' to quit.")
+
+
+def _prompt_install_confirmation(read: ReadFn) -> bool:
+    """Return true only for an explicit affirmative Install confirmation."""
+
+    line = _read_line(read, "Proceed with installation? [y/N]: ")
+    return line is not None and line.strip().lower() in ("y", "yes")
 
 
 def _prompt_action(read: ReadFn, write: WriteFn) -> Optional[str]:
@@ -1062,34 +1361,56 @@ def _run_curses(
         )
         if picked_profs is None:
             return
-        action_idx = _curses_singleselect(
-            curses, stdscr, "Action  (enter=confirm, q=quit)", list(ACTIONS)
-        )
-        if action_idx is None:
-            return
-        action = ACTIONS[action_idx]
-        catalog = Catalog(artifacts={}, bundles={})
-        if action in ("install", "update"):
-            src_res = open_source(
-                Request(command=action, source_dir=source_dir, repo=repo, project=project)
+        install_mode: InstallMode = "copy"
+        install_source = None
+        while True:
+            action_idx = _curses_singleselect(
+                curses, stdscr, "Action  (enter=confirm, q=quit)", list(ACTIONS)
             )
-            if isinstance(src_res, Err):
-                selection["error"] = (src_res.reason, getattr(src_res, "code", 1))
+            if action_idx is None:
                 return
-            cat_res = src_res.value.catalog()
-            if isinstance(cat_res, Err):
-                selection["error"] = (cat_res.reason, getattr(cat_res, "code", 1))
-                return
-            catalog = cat_res.value
-        elif action == "uninstall":
-            # Uninstall remains manifest-driven; catalog lookup only enriches display metadata.
-            src_res = open_source(
-                Request(command=action, source_dir=source_dir, repo=repo, project=project)
-            )
-            if not isinstance(src_res, Err):
-                cat_res = src_res.value.catalog()
-                if not isinstance(cat_res, Err):
-                    catalog = cat_res.value
+            action = ACTIONS[action_idx]
+            catalog = Catalog(artifacts={}, bundles={})
+            if action in ("install", "update"):
+                src_res = open_source(
+                    Request(command=action, source_dir=source_dir, repo=repo, project=project)
+                )
+                if isinstance(src_res, Err):
+                    selection["error"] = (src_res.reason, getattr(src_res, "code", 1))
+                    return
+                source = src_res.value
+                cat_res = source.catalog()
+                if isinstance(cat_res, Err):
+                    selection["error"] = (cat_res.reason, getattr(cat_res, "code", 1))
+                    return
+                catalog = cat_res.value
+                if action == "install":
+                    selected_mode = _curses_install_mode(curses, stdscr)
+                    if selected_mode is None:
+                        return
+                    if selected_mode == "back":
+                        continue
+                    install_mode = selected_mode
+                    if install_mode == "symlink" and not source.label().startswith("local:"):
+                        selection["error"] = (
+                            (
+                                "Symlink requires a durable local catalog; choose one with "
+                                "aart install ... --source DIR --link"
+                            ),
+                            2,
+                        )
+                        return
+                    install_source = source
+            elif action == "uninstall":
+                # Uninstall remains manifest-driven; catalog lookup only enriches display metadata.
+                src_res = open_source(
+                    Request(command=action, source_dir=source_dir, repo=repo, project=project)
+                )
+                if not isinstance(src_res, Err):
+                    cat_res = src_res.value.catalog()
+                    if not isinstance(cat_res, Err):
+                        catalog = cat_res.value
+            break
 
         manifest: Optional[Manifest] = None
         if action in ("update", "uninstall"):
@@ -1105,7 +1426,14 @@ def _run_curses(
             manifest = manifest_res.value
 
         selected_profiles = [profile_names[i] for i in picked_profs]
-        choices = build_action_choices(action, catalog, manifest, selected_profiles, profiles_map)
+        choices = build_action_choices(
+            action,
+            catalog,
+            manifest,
+            selected_profiles,
+            profiles_map,
+            install_mode=install_mode,
+        )
         if not choices:
             selection["empty"] = (action, selected_profiles)
             return
@@ -1116,13 +1444,39 @@ def _run_curses(
             "Select artifact(s)/bundle(s)  (space=toggle, ?=details, enter=confirm, q=quit)",
             [c.label for c in choices],
             details=[c.description for c in choices],
+            disabled=[not choice.enabled for choice in choices],
         )
         if picked_arts is None:
             return
+        if not picked_arts:
+            selection["empty_selection"] = True
+            return
+        disabled_picks = tuple(index for index in picked_arts if not choices[index].enabled)
+        if disabled_picks:
+            choice = choices[disabled_picks[0]]
+            selection["error"] = (f"{choice.name}: {choice.reason}", 2)
+            return
+        chosen = [choices[index] for index in picked_arts]
+        if action == "install":
+            assert install_source is not None
+            confirmation = build_install_confirmation(
+                source_label=install_source.label(),
+                source_root=install_source.root,
+                project=project,
+                profiles=selected_profiles,
+                requested_mode=install_mode,
+                catalog=catalog,
+                choices=chosen,
+                profiles_map=profiles_map,
+            )
+            if not _curses_confirm_install(curses, stdscr, confirmation):
+                selection["cancelled"] = True
+                return
         selection["arts"] = picked_arts
         selection["profs"] = picked_profs
         selection["action"] = action_idx
         selection["choices"] = choices
+        selection["install_mode"] = install_mode
 
     try:
         curses.wrapper(_ui)
@@ -1148,6 +1502,8 @@ def _run_curses(
             repo=repo,
             project=project,
         )
+    if "empty_selection" in selection:
+        return _cancel(print, "No artifacts selected; no changes were made.")
     if "action" not in selection:
         return _cancel(print)
 
@@ -1163,6 +1519,7 @@ def _run_curses(
         source_dir=source_dir,
         repo=repo,
         project=project,
+        install_mode=selection.get("install_mode", "copy"),
     )
     return _render_result(_dispatch_result(request), print)
 
@@ -1173,6 +1530,7 @@ def _curses_multiselect(
     title: str,
     labels: Sequence[str],
     details: Optional[Sequence[str]] = None,
+    disabled: Optional[Sequence[bool]] = None,
 ):
     """A checkbox list. Returns a tuple of selected indices, or ``None`` on quit."""
     if not labels:
@@ -1180,7 +1538,7 @@ def _curses_multiselect(
     cursor = 0
     checked = [False] * len(labels)
     while True:
-        _draw_list(curses, stdscr, title, labels, cursor, checked)
+        _draw_list(curses, stdscr, title, labels, cursor, checked, disabled=disabled)
         ch = stdscr.getch()
         if ch in (ord("q"), 27):  # q / ESC
             return None
@@ -1189,7 +1547,8 @@ def _curses_multiselect(
         elif ch in (curses.KEY_DOWN, ord("j")):
             cursor = (cursor + 1) % len(labels)
         elif ch == ord(" "):
-            checked[cursor] = not checked[cursor]
+            if disabled is None or not disabled[cursor]:
+                checked[cursor] = not checked[cursor]
         elif ch == ord("?") and details is not None and cursor < len(details):
             _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
@@ -1212,7 +1571,16 @@ def _curses_singleselect(curses, stdscr, title: str, labels: Sequence[str]):
             return cursor
 
 
-def _draw_list(curses, stdscr, title: str, labels, cursor: int, checked) -> None:
+def _draw_list(
+    curses,
+    stdscr,
+    title: str,
+    labels,
+    cursor: int,
+    checked,
+    *,
+    disabled: Optional[Sequence[bool]] = None,
+) -> None:
     """Render *title* + the labels, marking the cursor row and any checked rows."""
     stdscr.clear()
     available = max(_width(stdscr) - 1, 0)
@@ -1221,12 +1589,72 @@ def _draw_list(curses, stdscr, title: str, labels, cursor: int, checked) -> None
         prefix = "> " if i == cursor else "  "
         box = ""
         if checked is not None:
-            box = "[x] " if checked[i] else "[ ] "
+            if disabled is not None and disabled[i]:
+                box = "[-] "
+            else:
+                box = "[x] " if checked[i] else "[ ] "
         line = f"{prefix}{box}{label}"
         row = i + 2
         if row < _height(stdscr):
             stdscr.addstr(row, 0, _ellipsize(line, available))
     stdscr.refresh()
+
+
+def _curses_install_mode(
+    curses,
+    stdscr,
+) -> Optional[Literal["copy", "symlink", "back"]]:
+    """Install-only mode selector with Copy under the initial cursor."""
+
+    labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_MODE_CHOICES]
+    cursor = 0
+    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    while True:
+        _draw_list(
+            curses,
+            stdscr,
+            "Installation mode  (enter=confirm, backspace=back, q=quit)",
+            labels,
+            cursor,
+            None,
+        )
+        ch = stdscr.getch()
+        if ch in (ord("q"), 27):
+            return None
+        if ch in backspace_keys:
+            return "back"
+        if ch in (curses.KEY_UP, ord("k")):
+            cursor = (cursor - 1) % len(labels)
+        elif ch in (curses.KEY_DOWN, ord("j")):
+            cursor = (cursor + 1) % len(labels)
+        elif ch in (curses.KEY_ENTER, 10, 13):
+            return INSTALL_MODE_CHOICES[cursor].mode
+
+
+def _curses_confirm_install(curses, stdscr, confirmation: InstallConfirmation) -> bool:
+    """Render shared confirmation facts and return true only on explicit confirmation."""
+
+    lines = render_install_confirmation(confirmation)
+    stdscr.clear()
+    available = max(_width(stdscr) - 1, 0)
+    height = _height(stdscr)
+    for row, line in enumerate(lines):
+        if row >= max(height - 1, 0):
+            break
+        stdscr.addstr(row, 0, _ellipsize(line, available))
+    if height > 0:
+        stdscr.addstr(
+            height - 1,
+            0,
+            _ellipsize("Enter/y = install · n/q = cancel", available),
+        )
+    stdscr.refresh()
+    while True:
+        ch = stdscr.getch()
+        if ch in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
+            return True
+        if ch in (ord("n"), ord("N"), ord("q"), 27):
+            return False
 
 
 def _ellipsize(text: str, width: int) -> str:

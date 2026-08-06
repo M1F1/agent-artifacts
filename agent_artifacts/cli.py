@@ -132,17 +132,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "install",
         formatter_class=_HELP_FORMATTER,
-        help="install artifacts (copy by default; --link for local live links)",
+        help="install artifacts (Copy by default; --link enables local Symlink mode)",
         description=(
             "Install artifacts into a consumer project.\n\n"
-            "Default mode copies artifacts. Use --link when you want supported directory "
-            "artifacts to stay live-linked to the local catalog used by the installed tool. "
+            "Installation modes:\n"
+            "  Copy (recommended) installs an independent snapshot.\n"
+            "  Symlink (--link) keeps supported directory artifacts live-linked to a local "
+            "catalog.\n"
             "Pass --source DIR only when you want a different local checkout."
         ),
         epilog=(
-            "Symlink install:\n"
+            "Symlink mode:\n"
             "  agent-artifacts install code-review --profile tabnine --link\n\n"
-            "  --link is local-only: by default it links to the local catalog used by this tool.\n"
+            "  Symlink (--link) is local-only: by default it links to the local catalog used by this tool.\n"
             "  Pass --source DIR only to link to a different local checkout.\n"
             "  Changes propagate only when that local source changes, for example after you edit it\n"
             "  or pull upstream updates into it.\n"
@@ -174,8 +176,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--link",
         action="store_true",
         help=(
-            "symlink supported directory artifacts from a local catalog instead of copying; "
-            "local-only live link"
+            "select Symlink mode for supported directory artifacts from a local catalog; "
+            "Copy remains the default"
         ),
     )
     _add_json(p)
