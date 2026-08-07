@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `P01` after D01 merges
+- **Next task:** `P02` after P01 merges
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -43,8 +43,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | P00 | Land planning baseline | — | complete | `codex/aart-1-0-p00-planning-baseline` | [#28](https://github.com/M1F1/agent-artifacts/pull/28) / `d9bd997` | Docs gates and both CI runs passed; squash merge verified on `origin/main` |
 | Q01 | Non-mutating quality gates and CI parity | P00 | complete | `codex/aart-1-0-q01-quality-gates` | [#29](https://github.com/M1F1/agent-artifacts/pull/29) / `3c34c16` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | V01 | Alpha versioning and release discipline | Q01 | complete | `codex/aart-1-0-v01-alpha-versioning` | [#30](https://github.com/M1F1/agent-artifacts/pull/30) / `550e1d2` | Four Python 3.10/3.14 CI jobs passed after one recorded compatibility fix; squash merge verified |
-| D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | pending PR / merge | 13 focused tests, 98.14% kernel coverage, and all local gates pass |
-| P01 | Strict JSON/hash/SemVer/capabilities | D01 | pending | — | — | Protocol primitives |
+| D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | [#31](https://github.com/M1F1/agent-artifacts/pull/31) / `140c169` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | pending PR / merge | 16 focused tests, 90.96% protocol coverage, and all local gates pass |
 | P02 | Canonical artifact/native source protocol | P01 | pending | — | — | `aart-source.json`, `artifact.json` |
 | P03 | Registry entry/lock/index schemas | P02 | pending | — | — | Deterministic frozen registry inputs |
 | C01 | Deterministic compiler pipeline | P03 | pending | — | — | Pure phases and diagnostics |
@@ -80,19 +80,19 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: D01 — Create the DDD domain kernel and typed diagnostic contract
-Branch: codex/aart-1-0-d01-domain-kernel
-Worktree: /tmp/aart-d01.kTojQG/worktree
+Task: P01 — Strict JSON, canonical hashing, SemVer, and capability primitives
+Branch: codex/aart-1-0-p01-protocol-primitives
+Worktree: /tmp/aart-p01.epEmKA/worktree
 Started: 2026-08-07
-Bounded contexts: Shared domain kernel, typed diagnostics/results/outcomes, legacy adapters
-Red test and expected failure: PASS — 1 failure and 9 errors proved the domain/adapters packages,
-  typed contracts, immutable helpers, callable ports, and architecture boundary did not exist
-Focused tests: PASS — 13 D01 contract tests; 98.14% branch coverage for the new kernel/adapter;
-  836-test regression passes on Python 3.11 and 3.14.6
-Files owned: agent_artifacts/domain/*, agent_artifacts/adapters/*, focused domain tests,
-  architecture checks, PROGRESS.md
-Risks/migrations: avoid circular imports and a big-bang model.py move; new domain modules must remain
-  IO-free, frozen, deterministic, serialization-explicit, Python 3.10-compatible, and strict-mypy clean
+Bounded contexts: Protocol JSON/schema/path/SemVer/capabilities and canonical hashing
+Red test and expected failure: PASS — 1 failure and 15 errors proved strict immutable JSON,
+  schema diagnostics, safe paths, SemVer bounds, capability negotiation, and canonical digests
+  did not exist; boundary-review regressions additionally caught three escaping/ambiguous cases
+Focused tests: PASS — 16 P01 contract tests; 90.96% branch coverage for the protocol context;
+  852-test regression passes on Python 3.11 and 3.14.6
+Files owned: agent_artifacts/protocol/*, focused protocol tests, architecture checks, PROGRESS.md
+Risks/migrations: protocol parsing must be Python 3.10 stdlib-only, locale/host independent,
+  deterministic, bounded, diagnostic-based, and must not silently accept unsafe legacy inputs
 PR: pending after push
 CI: pending; local matrix evidence includes Python 3.11 quality and Python 3.14.6 regression
 Merge: pending
@@ -105,7 +105,8 @@ Merge: pending
 | P00 | docs consistency pass | n/a | n/a | n/a | n/a | n/a | n/a | allowlist + issue pass | n/a | n/a | fences/links/diff pass | 2× validate pass |
 | Q01 | 8 pass | 138 files pass | pass | 51 files pass | 812 pass | 21 pass | 11-step pass | pass | 82.32% (≥82%) | wheel build/import pass | links/fences/ledger pass | 4× Python 3.10/3.14 pass |
 | V01 | 11 pass | 140 files pass | pass | 51 files pass | 823 pass | 21 pass | 11-step pass | version/tag pass | 82.32% (≥82%) | `1.0.0a1` wheel/metadata pass | pass | 4× Python 3.10/3.14 pass |
-| D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | pending |
+| D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -124,6 +125,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-008 | Public reference registry remote is `M1F1/agent-artifacts-registry`, visibility `PUBLIC` | accepted | Same admin-owned account as the public tool repo; exact name was absent on 2026-08-07; SEP01 must recheck and pass the public-export audit before creation |
 | D-009 | Versions change only through explicit commands; wheels are untracked release outputs | accepted | Ordinary commits and quality gates must be reproducible and non-mutating |
 | D-010 | New 1.0 value contracts live in an IO-free `domain` package; legacy conversion lives in `adapters` | accepted | Enforces dependency direction while allowing incremental migration from `model.py` |
+| D-011 | Protocol v1 uses immutable strict JSON values, lowercase namespaced extensions, signed-64-bit numeric SemVer identifiers, and framed lexical tree hashing | accepted | Makes parsing and identities bounded, host-independent, reviewable, and fail-closed without runtime dependencies |
 
 ## Blockers
 
@@ -216,3 +218,25 @@ None.
 - Verified 13 focused tests and 98.14% branch coverage for the new kernel/adapter; `make quality`
   passes with 836 tests, strict mypy over 60 files, 21 integration tests, shell E2E, 82.65% overall
   coverage, packaging, docs, validation, and no mutation; all 836 tests pass on Python 3.14.6.
+
+### 2026-08-07 — D01 merged; P01 started
+
+- Observed all four Python 3.10/3.14 push/PR jobs pass and squash-merged PR #31 as `140c169`;
+  verified the merged PR, exact `origin/main`, remote branch deletion, and clean task worktree.
+- Removed only the explicit D01 temporary worktree and created isolated P01 from exact `140c169`.
+
+### 2026-08-07 — P01 local gates complete
+
+- Confirmed Red with one failure and 15 errors because the protocol package and its strict value,
+  validation, version, capability, and hashing contracts did not exist.
+- Added frozen UTF-8 JSON/object values with duplicate-key, float, integer, Unicode, depth, and
+  string bounds; schema helpers accumulate stable field diagnostics and permit only explicit
+  lowercase namespaced extensions.
+- Added NFC POSIX relative paths, SemVer 2.0 precedence and half-open bounds, deterministic
+  required/optional capability negotiation, canonical SHA-256 values, and framed lexical tree
+  hashing with executable-bit and directory identity plus a golden digest fixture.
+- Boundary review captured fail-closed regressions for 5,000-digit JSON/SemVer numbers, oversized
+  tree sizes, invalid entry kinds, and required/optional capability overlap before fixing them.
+- Verified 16 focused tests and 90.96% branch coverage for the protocol context; `make quality`
+  passes with 852 tests, strict mypy over 68 files, 21 integration tests, shell E2E, 83.00% overall
+  coverage, packaging, docs, validation, and no mutation; all 852 tests pass on Python 3.14.6.
