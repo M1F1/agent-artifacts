@@ -52,8 +52,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / `15304ae` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `54c139a` | Four Python 3.10/3.14 implementation CI jobs passed; final ledger CI and squash merge pending |
-| IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
+| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `85a5a5f` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| IMP01 | Importer contract and legacy catalog importer | MKT01 | in_progress | `codex/aart-1-0-imp01-legacy-importer` | pending | Maintainer-only deterministic conversion |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
 | REG01 | Maintainer registry commands/quality gate | IMP02 | pending | — | — | No automatic Git mutation |
 | STATE01 | Manifest v2 and state migration | REG01 | pending | — | — | Backup/dry-run/rollback |
@@ -80,21 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: MKT01 — Federated marketplace, qualification, and trust overlay
-Branch: codex/aart-1-0-mkt01-federated-marketplace
-Worktree: /tmp/aart-mkt01.zr75wT/worktree
+Task: IMP01 — Maintainer importer contract and legacy catalog importer
+Branch: codex/aart-1-0-imp01-legacy-importer
+Worktree: /tmp/aart-imp01.YP48sl/worktree
 Started: 2026-08-07
-Bounded contexts: Pure runtime source views, trust evidence/decisions, ranked marketplace catalog,
-  deterministic search/list/rendering, and qualified/unqualified resolution over the C02 graph
-Red test and expected failure: four expected import errors because the marketplace package and
-  exact company-reviewed source policy value did not exist; the dependency-boundary test passed
-Focused tests: 47 pass; 97.56% branch coverage across marketplace/configuration contexts
-Files owned: new marketplace modules/tests/docs, exact company-review policy schema, TODO.md,
-  PROGRESS.md
-Risks/migrations: no CLI/TUI/install wiring in MKT01; aliases/default ranking never grant trust or
-  resolve collisions; company review requires exact policy source identity plus approved entry
-PR: https://github.com/M1F1/agent-artifacts/pull/40 (ready)
-CI: four implementation push/pull_request jobs passed on Python 3.10/3.14; final ledger rerun pending
+Bounded contexts: Built-in importer registry and frozen workflow values; pure legacy catalog scan,
+  deterministic canonical materialization/provenance/validation/diff; reviewed temp-output apply
+Red test and expected failure: five expected import errors because the protocol-v1 importer
+  package and canonical provenance/collection writers do not exist; two boundary tests pass
+Focused tests: 42 pass; 90.61% branch coverage across importer/application/filesystem contexts
+Files owned: new importer/application/IO modules and tests/fixtures/docs, native canonical writers,
+  TODO.md, PROGRESS.md
+Risks/migrations: maintainer-only conversion must never execute content, follow unsafe entries,
+  infer ambiguous semantics, include credentials/timestamps/local paths, or mutate before review
+PR: https://github.com/M1F1/agent-artifacts/pull/41 (ready)
+CI: four implementation push/pull_request jobs pass on Python 3.10/3.14; ledger rerun pending
 Merge: pending
 ```
 
@@ -114,7 +114,8 @@ Merge: pending
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 implementation pass; ledger rerun pending |
+| MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 2× 4-job Python 3.10/3.14 pass |
+| IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 4× implementation CI pass; ledger rerun pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -502,3 +503,55 @@ None.
 - All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
 - Recorded the verified evidence and marked the task complete in its branch; the status becomes
   authoritative only after the protected squash merge to `main`.
+
+### 2026-08-07 — MKT01 merged; IMP01 started
+
+- Observed all four replacement Python 3.10/3.14 jobs pass and squash-merged PR #40 as `85a5a5f`;
+  verified the merged PR, exact `origin/main`, and remote branch deletion.
+- Removed only the explicit clean MKT01 temporary worktree and created isolated IMP01 from exact
+  `85a5a5f`; unrelated files in the root worktree remain untouched.
+- Scoped IMP01 to a built-in, maintainer-only importer registry and a plan-before-apply workflow
+  that converts the complete 0.1.x catalog layout into validated canonical native packages with
+  digest-bound provenance and no content execution.
+
+### 2026-08-07 — IMP01 Red
+
+- Added a complete legacy-catalog fixture covering skills, guidelines, MCP plus declarative setup,
+  hooks with inert executable-looking payload, memory, bundles/pins, and pinned upstream tracking.
+- Confirmed Red with five expected import errors because the new importer package and canonical
+  provenance/collection writers do not exist; both dependency-boundary tests already pass.
+- Fixed the contract around explicit immutable Git input, strict built-in importer/version/options,
+  deterministic canonical materialization and validation, exact provenance, loss/ambiguity/stale
+  rejection, and digest-bound diff/apply planning.
+
+### 2026-08-07 — IMP01 Green and review
+
+- Implemented the closed `legacy-catalog-v1` registry and frozen scan/plan/materialize/validate/
+  diff/apply values over immutable Git snapshots, with exact option/input/output/review digests.
+- Converted skills, guidelines, MCP, hooks, memory, bundles/pins, declarative setup content, and
+  tracked/untracked origins into deterministic native source packages and provenance without
+  executing repository content or retaining timestamps, credentials, or checkout-local paths.
+- Added a reviewed filesystem output port with bounded descriptor-relative reads, symlink/special
+  file rejection, private sibling staging, destination preconditions, verified replacement,
+  rollback, no-op feedback, retained-backup warnings, and post-publication durability warnings.
+- Applied the repository `code-review` skill. It found two substantive adapter defects: forged
+  prefix-compatible stage receipts and a false failure after successful publication when parent
+  `fsync` failed. Bound stages to their issuing live adapter and made post-publication durability
+  failure an explicit success warning; regression and fault-injection tests cover both fixes.
+- Focused Red/Green/regression suite: 42 tests pass with 90.61% branch coverage across the new
+  importer/application/filesystem contexts; Ruff and mypy pass across the complete changed scope.
+- Canonical `make quality` passes: 267 formatted/linted files, 113 typed source files, 1130 unit
+  tests, 28 integration tests, 11-step shell E2E, validation/version checks, 87.78% global branch
+  coverage, deterministic `1.0.0a1` wheel packaging, and documentation checks.
+- Re-ran all 1130 unit/regression tests successfully on local Python 3.14.6. The two pre-existing
+  HTTP 401 cleanup `ResourceWarning` messages remain non-failing and are unrelated to IMP01.
+
+### 2026-08-07 — IMP01 implementation CI
+
+- Committed the reviewed implementation as `4e25b46`, pushed the isolated task branch, and opened
+  ready PR #41 targeting `main`.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only code fix.
+- Corrected a malformed PR description caused by local shell backtick interpretation; the accidental
+  action only reran local quality commands and did not mutate tracked files or remote code.
+- Recorded the verified implementation evidence in this ledger. A final four-job matrix reruns on
+  this documentation-only commit before the protected squash merge.

@@ -924,3 +924,56 @@ def artifact_manifest_to_json(manifest: ArtifactManifest) -> JsonObject:
         entries.append(("homepage", manifest.homepage))
     entries.extend(manifest.extensions)
     return _object(entries)
+
+
+def provenance_to_json(provenance: Provenance) -> JsonObject:
+    entries: list[tuple[str, JsonValue]] = [
+        (
+            "importer",
+            _object(
+                (
+                    ("id", provenance.importer.id),
+                    ("options_digest", str(provenance.importer.options_digest)),
+                    ("version", str(provenance.importer.version)),
+                )
+            ),
+        ),
+        (
+            "origin",
+            _object(
+                (
+                    ("input_digest", str(provenance.origin.input_digest)),
+                    ("kind", provenance.origin.kind),
+                    ("path", str(provenance.origin.path)),
+                    ("resolved_commit", provenance.origin.resolved_commit),
+                    ("url", provenance.origin.url),
+                )
+            ),
+        ),
+        ("schema_version", provenance.schema_version),
+        ("warnings", _array(provenance.warnings)),
+    ]
+    entries.extend(provenance.extensions)
+    return _object(entries)
+
+
+def collection_manifest_to_json(manifest: CollectionManifest) -> JsonObject:
+    artifacts: list[JsonValue] = []
+    for selector in manifest.artifacts:
+        selector_entries: list[tuple[str, JsonValue]] = [
+            ("name", selector.identity.name),
+            ("type", selector.identity.kind),
+        ]
+        if selector.version is not None:
+            selector_entries.append(("version", _bounds_to_json(selector.version)))
+        artifacts.append(_object(selector_entries))
+    entries: list[tuple[str, JsonValue]] = [
+        ("artifacts", JsonArray(tuple(artifacts))),
+        ("name", manifest.name),
+        ("schema_version", manifest.schema_version),
+        ("summary", manifest.summary),
+    ]
+    if manifest.collections:
+        entries.append(("collections", _array(manifest.collections)))
+    entries.extend(manifest.extensions)
+    return _object(entries)

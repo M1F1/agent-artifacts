@@ -675,6 +675,11 @@ Likely initial candidates are existing `SKILL.md` directory layouts and selected
 layouts where the transformation is lossless. Ambiguous monolithic instruction files require the
 maintainer to choose artifact type/name/compatibility explicitly.
 
+The first implemented contract is the closed, deterministic
+[`legacy-catalog-v1`](../importers/legacy-catalog-v1.md) importer. Its mapping, rejection rules,
+provenance projection, review/apply boundary, and current limitations are normative for the 0.1.x
+catalog conversion.
+
 ## 14. Managed source and object store
 
 ### 14.1 Layout
@@ -1137,19 +1142,19 @@ follow the untrusted-input and privacy constraints retained from superseded issu
 
 ## 25. Migration from 0.1.x
 
-### 24.1 Catalog content
+### 25.1 Catalog content
 
-Add built-in importer `aart-legacy-catalog-v0` for the current top-level:
+Use built-in importer `legacy-catalog-v1` for the current top-level:
 
 ```text
 skills/ guidelines/ mcp/ hooks/ memory/ bundles/ upstreams.json
 ```
 
-It produces the canonical `artifacts/`, `collections/`, source/registry root, provenance, lock, and
-index layout. Migration runs in a new/explicit registry checkout and never deletes the source tree
-without a reviewed apply.
+It produces a canonical native source root with `aart-source.json`, `artifacts/`, `collections/`,
+and provenance. IMP02/REG01 add promotion, registry lock, and compiled index workflows. Migration
+runs in a new/explicit output directory and never deletes the source tree without a reviewed apply.
 
-### 24.2 Installation state
+### 25.2 Installation state
 
 Migration command:
 
