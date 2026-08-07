@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `C02`
+- **Next task:** `CFG01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -47,8 +47,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | [#32](https://github.com/M1F1/agent-artifacts/pull/32) / `9790312` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | [#33](https://github.com/M1F1/agent-artifacts/pull/33) / `8b13c6f` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | [#34](https://github.com/M1F1/agent-artifacts/pull/34) / `b7d5cc5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | pending | Local gates pass: typed phases, deterministic replay, injected ports, publication gate |
-| C02 | Compatibility/effects/collection graph | C01 | pending | — | — | Deterministic expansion |
+| C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | [#35](https://github.com/M1F1/agent-artifacts/pull/35) / `15dfe61` | Four Python 3.10/3.14 CI jobs passed after a recorded Ruff drift fix; squash merge verified |
+| C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | pending | Local gates pass: qualified records, deterministic expansion, compatibility reasons, lifecycle/version rules |
 | CFG01 | Platform config and organization policy | P01,D01 | pending | — | — | Zero sources/default optional |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | pending | — | — | Atomic last-known-good |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | pending | — | — | Safe verify/GC/reference model |
@@ -80,17 +80,17 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: C01 — Deterministic functional compiler pipeline
-Branch: codex/aart-1-0-c01-compiler-pipeline
-Worktree: /tmp/aart-c01.Em6MjL/worktree
+Task: C02 — Compatibility, effects, collection, and source graph compiler
+Branch: codex/aart-1-0-c02-graph-compiler
+Worktree: /tmp/aart-c02.O915bV/worktree
 Started: 2026-08-07
-Bounded contexts: Pure compiler phase values/transitions and injected application orchestration
-Red test and expected failure: PASS — three expected import/file errors because phase results,
-  orchestration, frozen resolution, deterministic replay, and publish gating did not exist
-Focused tests: 18 pass; 100% branch coverage across compiler domain/application modules
-Files owned: new compiler domain/application modules, compiler tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: no durable IO adapter in C01; effects remain behind source/object/publish ports;
-  invalid or incomplete candidates must never reach materialization or publication
+Bounded contexts: Pure normalized marketplace/source graph, compatibility decisions, reusable
+  collection expansion, selection policy, and previous-snapshot version/removal comparison
+Red test and expected failure: PASS — two expected import errors because the graph API did not exist
+Focused tests: 11 pass; 98.52% branch coverage for the compiler graph context
+Files owned: compiler graph module/exports, graph tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: graph stays IO-free and policy-neutral; source acquisition, trust overlay, CAS,
+  qualified-text parsing, install plans, and durable state remain in later bounded tasks
 PR: pending after push
 CI: local Python 3.11 quality matrix and Python 3.14.6 full suite pass; remote matrix pending
 Merge: pending
@@ -107,7 +107,8 @@ Merge: pending
 | P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P03 | 33 pass | pass | pass | strict protocol pass | 911 pass | 21 pass | 11-step pass | pass | 84.81% overall; 96.72% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| C01 | 18 pass | pass | pass | strict new contexts pass | 929 pass | 21 pass | 11-step pass | pass | 85.24% overall; 100% new context | `1.0.0a1` wheel/import pass | pass | pending |
+| C01 | 18 pass | pass | pass | strict new contexts pass | 929 pass | 21 pass | 11-step pass | pass | 85.24% overall; 100% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -130,6 +131,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-012 | Native-source compilation consumes an acquired immutable snapshot, discovers only the root marker and declared roots, and normalizes directory representation | accepted | Keeps local and pinned-Git compilation identical, prevents heuristic consumer crawling, allows unrelated repository content, and rejects links/special files only inside declared source content |
 | D-013 | Registry consumers resolve native references only through a matching committed lock; service declarations stay inert and parsed indexes revalidate their graph | accepted | Prevents moving refs, self-authored trust/reporting activation, stale input use, and forged collection memberships from reaching installation |
 | D-014 | Compiler Index creates an immutable candidate before Materialize, and pure phases receive no source locator/host path | accepted | Enforces plan-before-write, keeps host-specific acquisition data out of deterministic identity, and makes Publish unreachable until all candidate object/snapshot receipts match |
+| D-015 | Marketplace identity is source-alias-qualified; collection expansion and compatibility decisions are pure shared graph results | accepted | Prevents silent cross-source shadowing and keeps browse, bundles, security, and install consumers on one deterministic expansion/reason contract |
 
 ## Blockers
 
@@ -331,3 +333,28 @@ None.
   and the CI-resolved Ruff 0.16.2; no compiler behavior or test result had failed.
 - Applied the current canonical formatting and re-ran the complete local quality and Python 3.14
   gates before updating the PR.
+
+### 2026-08-07 — C01 merged; C02 started
+
+- Observed all four replacement Python 3.10/3.14 jobs pass and squash-merged PR #35 as `15dfe61`;
+  verified the merged PR, exact `origin/main`, remote branch deletion, and clean task worktree.
+- Removed only the explicit C01 temporary worktree and created isolated C02 from exact `15dfe61`.
+- Scoped C02 to an IO-free qualified marketplace graph, compatibility/effect decisions, reusable
+  collection expansion, explicit-vs-broad selection behavior, and previous-snapshot lifecycle rules.
+
+### 2026-08-07 — C02 Red/Green and boundary review
+
+- Confirmed Red with two expected import errors because no marketplace graph API existed.
+- Added qualified source/artifact/collection values, canonical payload-free graph bytes, a typed C01
+  phase output bridge, deterministic nested expansion, and accumulated compatibility/setup reasons.
+- Added broad-versus-explicit selection semantics: broad requests retain per-item skip reasons;
+  explicit missing, removed, version-mismatched, or incompatible requests fail without filtering.
+- Added previous-snapshot comparison for removal tombstones, version regression, same-precedence
+  digest changes, and reviewable version-without-projected-content warnings.
+- Boundary review made same-version checks bind full manifest/payload/object digests (including
+  setup/README bytes), rejected mismatched/duplicate source graph values, and stopped conflicting
+  requested versions from being silently deduplicated.
+- Verified 11 focused tests and 98.52% branch coverage for the graph context. `make quality` passes
+  with 940 tests, strict mypy over 81 files, 21 integration tests, shell E2E, 85.70% overall
+  coverage, validation, `1.0.0a1` wheel/import, docs, and no tracked mutation; all 940 tests pass on
+  Python 3.14.6 and Ruff 0.16.2 also accepts the complete format/lint surface.

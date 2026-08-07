@@ -594,6 +594,29 @@ Build output MUST be byte-identical for equal source trees, locks, compiler prot
 options. It MUST exclude wall-clock time, host paths, usernames, environment order, locale, and Git
 credentials. Diagnostics have stable codes and sorted source/path ordering.
 
+### 12.4 Qualified marketplace graph
+
+The normalized graph qualifies every artifact and collection by the configured source alias while
+retaining its source-authored ID. A registry-resolved external artifact remains qualified by the
+registry alias and retains its pinned origin/commit/path provenance. Duplicate aliases/source IDs,
+source-ID mismatches, duplicate qualified records, unavailable required compiler capabilities,
+dangling collection members, excluded versions, and collection cycles fail graph compilation.
+
+Collection references are source-local in protocol v1. Compilation stores their deterministic,
+deduplicated transitive membership so selection, bundles, installation-risk aggregation, and
+install planning consume the same expansion.
+
+Compatibility evaluates profile, platform, scope, mode, supported install effects, setup platform,
+and setup capabilities independently. Every failed dimension remains visible. Broad selection may
+skip items with reasons; an explicit incompatible/missing/removed selection fails rather than being
+silently filtered. Payload compatibility remains distinct from optional setup compatibility.
+
+Against a previous graph, version regression fails. Equal SemVer precedence plus a changed
+manifest, payload, object, or projected-semantic digest fails, so build metadata cannot conceal a
+content change. A precedence increase without a projected semantic change emits a reviewable
+warning. Missing current artifacts become non-selectable removed tombstones rather than vanishing
+from lifecycle feedback.
+
 ## 13. Source importers
 
 ### 13.1 Boundary

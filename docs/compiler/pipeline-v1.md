@@ -42,4 +42,6 @@ digests regardless of source request order or host locator.
 
 `CompilerSteps` is intentionally generic in C01. C02 supplies the concrete artifact/source graph
 types and functions for compatibility, effects, collections, external references, and normalized
-marketplace records without changing the effect boundary or publication gate.
+marketplace records without changing the effect boundary or publication gate. The graph contract,
+selection semantics, history rules, and typed phase bridge are documented in
+[`graph-v1.md`](graph-v1.md).
