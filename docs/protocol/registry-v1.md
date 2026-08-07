@@ -39,3 +39,6 @@ Both generation and parsing validate the complete collection graph. Duplicate or
 artifact identities, version exclusions, dangling artifact/collection references, cycles, and
 membership claims that do not match the graph are rejected. Canonical JSON makes index bytes
 independent of input ordering.
+
+Maintainer-side entry, promotion, locked-update, review-digest, and apply-port rules are documented
+in [`registry maintenance planning v1`](../registry/maintenance-planning-v1.md).

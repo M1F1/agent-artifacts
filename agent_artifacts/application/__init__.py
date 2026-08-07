@@ -7,6 +7,7 @@ from .configuration import (
     load_configuration,
 )
 from .importers import finalize_legacy_import, prepare_legacy_import
+from .registry_maintenance import finalize_registry_mutation, prepare_native_promotion
 from .sources import (
     SourceStatusRequest,
     SourceSyncPorts,
@@ -36,10 +37,12 @@ __all__ = [
     "StoreGcPorts",
     "collect_garbage",
     "finalize_legacy_import",
+    "finalize_registry_mutation",
     "object_status",
     "compile_sources",
     "load_configuration",
     "prepare_legacy_import",
+    "prepare_native_promotion",
     "source_status",
     "replace_references",
     "sync_source",
