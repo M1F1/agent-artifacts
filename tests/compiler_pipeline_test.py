@@ -208,8 +208,8 @@ class CompilerPipelineTest(unittest.TestCase):
                     "validate": base.validate,
                     "index": base.index,
                 }
-                replacements[failing_phase.value] = (
-                    lambda *_args, phase_failure=failure: phase_failure
+                replacements[failing_phase.value] = lambda *_args, phase_failure=failure: (
+                    phase_failure
                 )
                 steps = CompilerSteps(**replacements)
 

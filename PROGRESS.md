@@ -324,3 +324,10 @@ None.
 - `make quality` passes with 929 tests, strict mypy, 21 integration tests, shell E2E, 85.24% overall
   coverage, validation, `1.0.0a1` wheel/import, docs, and no mutation; all 929 tests pass on Python
   3.14.6.
+
+### 2026-08-07 — C01 CI formatter drift fixed
+
+- Diagnosed all four PR #35 failures as the same format-only difference between local Ruff 0.12.2
+  and the CI-resolved Ruff 0.16.2; no compiler behavior or test result had failed.
+- Applied the current canonical formatting and re-ran the complete local quality and Python 3.14
+  gates before updating the PR.
