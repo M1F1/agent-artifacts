@@ -1,5 +1,10 @@
 # agent-artifacts — Implementation Plan (parallel, multi-agent)
 
+> [!WARNING]
+> This is the completed/legacy `0.1.x` implementation plan. New work follows the federated AART 1.0
+> [PRD](../product/PRD-aart-1.0.md), [technical specification](../design/SPEC-aart-1.0.md), and
+> [tracker](../../TODO.md).
+
 Companion to [../design/DESIGN.md](../design/DESIGN.md). This plan splits the build into **work packages (WPs)**
 sized for parallel execution by multiple agents. The functional architecture (§14 of the
 design) is what makes this parallelizable: once the **data contracts and function signatures

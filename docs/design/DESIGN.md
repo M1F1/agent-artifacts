@@ -1,5 +1,11 @@
 # agent-artifacts — Design (for review)
 
+> [!WARNING]
+> This document describes the implemented `0.1.x` monolithic tool-plus-catalog architecture. The
+> AART 1.0 redesign supersedes its package/source boundaries; see
+> [`SPEC-aart-1.0.md`](SPEC-aart-1.0.md) and
+> [`../product/PRD-aart-1.0.md`](../product/PRD-aart-1.0.md).
+
 One source of truth for a team's AI artifacts (skills, guidelines, MCP configs, **hooks**)
 plus a tool, `agent-artifacts` (short alias `aart`), that installs selected sets (bundles)
 into multiple agentic harnesses (OpenCode, Claude Code, Tabnine, … and future ones such as
@@ -594,4 +600,3 @@ is always explicit (§16), never automatic.
    `check`/`upgrade` have a reference point (§15).
 6. **Committing the prebuilt wheel vs. release-only asset** — decide whether `dist/*.whl`
    lives in the repo (truly offline clone-and-install) or only on releases (§15).
-```
