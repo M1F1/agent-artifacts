@@ -106,34 +106,34 @@ the source of truth for discussion and status; keep this file aligned with them.
 
 ## [#20 — Support queued per-artifact interactive setup installers on macOS](https://github.com/M1F1/agent-artifacts/issues/20)
 
-- [ ] Define and validate a reviewed, per-artifact macOS setup convention, for example an
+- [x] Define and validate a reviewed, per-artifact macOS setup convention, for example an
       `install.sh` plus metadata for OS support, purpose, and credential/help URLs.
-- [ ] Only run scripts shipped with the reviewed artifact source; never auto-run a script directly
+- [x] Only run scripts shipped with the reviewed artifact source; never auto-run a script directly
       from an unreviewed network response.
-- [ ] After core artifact installation, queue setup-capable selected artifacts and run their
+- [x] After core artifact installation, queue setup-capable selected artifacts and run their
       installers sequentially in the foreground.
-- [ ] Allow each installer to:
+- [x] Allow each installer to:
   - explain the configuration it will perform;
   - show a direct credential/help URL and wait for the user;
   - read secrets without echoing them;
   - store secrets in macOS Keychain;
   - create only explicit, managed, idempotent configuration/snippets;
   - verify setup and return a meaningful exit status.
-- [ ] Account for subprocess limitations: scripts cannot export variables into the parent TUI;
+- [x] Account for subprocess limitations: scripts cannot export variables into the parent TUI;
       use a durable Keychain plus managed shell/harness lookup and explain restart requirements.
-- [ ] On failure/cancellation, preserve earlier successes, mark setup incomplete, and continue to
+- [x] On failure/cancellation, preserve earlier successes, mark setup incomplete, and continue to
       the next installer unless the user stops the queue.
-- [ ] Distinguish “installed and configured” from “artifact installed, setup incomplete.”
-- [ ] List every incomplete installer with a safe retry command and offer a preselected TUI retry.
-- [ ] Add a first-class CLI setup/retry runner using the same validation and state tracking.
-- [ ] Never put credentials in argv, manifests, logs, stdout, or JSON output.
-- [ ] Before execution, show artifact name, reviewed source identity, script path, and requested
+- [x] Distinguish “installed and configured” from “artifact installed, setup incomplete.”
+- [x] List every incomplete installer with a safe retry command and offer a preselected TUI retry.
+- [x] Add a first-class CLI setup/retry runner using the same validation and state tracking.
+- [x] Never put credentials in argv, manifests, logs, stdout, or JSON output.
+- [x] Before execution, show artifact name, reviewed source identity, script path, and requested
       effects, then require explicit consent.
-- [ ] Use a controlled working directory, documented minimal environment, and safely quoted paths.
-- [ ] Record only non-secret status, installer version/hash, timestamps, and exit status.
-- [ ] On non-macOS systems, do not execute the installer and show a clear unsupported message.
-- [ ] Test with fake installers and a fake Keychain command: success, hidden input, failure,
+- [x] Use a controlled working directory, documented minimal environment, and safely quoted paths.
+- [x] Record only non-secret status, installer version/hash, timestamps, and exit status.
+- [x] On non-macOS systems, do not execute the installer and show a clear unsupported message.
+- [x] Test with fake installers and a fake Keychain command: success, hidden input, failure,
       cancellation, continue/stop, idempotent retry, and secret redaction.
-- [ ] Add a representative MCP setup fixture or reviewed example (Atlassian preferred).
-- [ ] Document the trust model, authoring contract, retry flow, and the role of SETUP.md as
+- [x] Add a representative MCP setup fixture or reviewed example (Atlassian preferred).
+- [x] Document the trust model, authoring contract, retry flow, and the role of SETUP.md as
       optional reference rather than the primary guided setup path.

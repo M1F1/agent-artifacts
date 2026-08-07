@@ -45,11 +45,13 @@ from .model import (
     Profile,
     Request,
     Result,
+    SetupQueueItem,
 )
 from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
 from .planners import install_target_paths
 from .profiles.loader import load_profiles
 from .profiles.scope import profile_for_scope
+from .setup import build_queue, recovery_messages
 from .source import open_source
 
 # The three write actions the selector can drive; these are the verbs that build and dispatch a
@@ -173,6 +175,7 @@ class InstallConfirmation:
     modes: InstallModeCounts
     scope: InstallScope = "project"
     destinations: Tuple[str, ...] = ()
+    setup_queue: Tuple[SetupQueueItem, ...] = ()
 
 
 # --------------------------------------------------------------------------- #
@@ -492,7 +495,8 @@ def build_install_confirmation(
     )
     destinations: List[str] = []
     seen_destinations = set()
-    for artifact in _selected_install_artifacts(catalog, choices, profiles, profiles_map):
+    artifacts = _selected_install_artifacts(catalog, choices, profiles, profiles_map)
+    for artifact in artifacts:
         for profile_name in profiles:
             profile = profiles_map.get(profile_name)
             if profile is None:
@@ -521,6 +525,13 @@ def build_install_confirmation(
         ),
         scope=scope,
         destinations=tuple(destinations),
+        setup_queue=build_queue(
+            artifacts,
+            profiles,
+            scope=scope,
+            source_label=source_label,
+            source_root=os.path.abspath(source_root),
+        ),
     )
 
 
@@ -544,6 +555,14 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
     if confirmation.scope == "user" and confirmation.destinations:
         lines += ("  Resolved destinations:",) + tuple(
             f"    - {path}" for path in confirmation.destinations
+        )
+    if confirmation.setup_queue:
+        lines += ("  Setup queue (runs after artifact installation):",) + tuple(
+            (
+                f"    - {item.artifact_type}/{item.artifact_name}@{item.profile}: "
+                f"{item.installer.purpose}"
+            )
+            for item in confirmation.setup_queue
         )
     return lines
 
@@ -714,6 +733,95 @@ def _dispatch_result(request: Request) -> CommandOutcome:
             items=(item,),
         ),
     )
+
+
+def _run_post_install_setup(
+    queue: Sequence[SetupQueueItem],
+    request: Request,
+    *,
+    scope_root: str,
+    read: ReadFn,
+    write: WriteFn,
+) -> int:
+    """Run the reviewed setup queue in the foreground after the core install succeeds."""
+
+    if not queue:
+        return 0
+    from .commands import setup as setup_command
+
+    setup_request = replace(
+        request,
+        command="setup",
+        setup_action="run",
+        yes=False,
+        dry_run=False,
+    )
+    result = setup_command.run_queue(
+        queue,
+        scope_root=scope_root,
+        target_root=os.path.abspath(request.user_home or os.path.expanduser("~")),
+        request=setup_request,
+        read=read,
+        write=write,
+    )
+    if isinstance(result, Err):
+        write(f"error: {result.reason}")
+        return result.code
+    for record in result:
+        write(
+            f"Setup {record.artifact_type}/{record.artifact_name}@{record.profile}: "
+            f"{record.status} — {record.detail}"
+        )
+        if record.retry_command:
+            write(f"  Retry: {record.retry_command}")
+        if record.rollback_command:
+            write(f"  Rollback: {record.rollback_command}")
+        for message in recovery_messages(record):
+            write(f"  Recovery: {message}")
+    incomplete = tuple(
+        record for record in result if record.status not in ("configured", "already_configured")
+    )
+    if not incomplete:
+        return 0
+    try:
+        answer = read("Retry incomplete setup now? [Y/n]: ").strip().lower()
+    except EOFError:
+        answer = "n"
+    if answer in ("", "y", "yes"):
+        failed_keys = {
+            (record.artifact_type, record.artifact_name, record.profile) for record in incomplete
+        }
+        retry_queue = tuple(
+            item
+            for item in queue
+            if (item.artifact_type, item.artifact_name, item.profile) in failed_keys
+        )
+        retried = setup_command.run_queue(
+            retry_queue,
+            scope_root=scope_root,
+            target_root=os.path.abspath(request.user_home or os.path.expanduser("~")),
+            request=replace(setup_request, setup_action="retry"),
+            read=read,
+            write=write,
+        )
+        if isinstance(retried, Err):
+            write(f"error: {retried.reason}")
+            return retried.code
+        for record in retried:
+            write(
+                f"Setup retry {record.artifact_type}/{record.artifact_name}@{record.profile}: "
+                f"{record.status} — {record.detail}"
+            )
+            if record.rollback_command:
+                write(f"  Rollback: {record.rollback_command}")
+            for message in recovery_messages(record):
+                write(f"  Recovery: {message}")
+        return (
+            0
+            if all(record.status in ("configured", "already_configured") for record in retried)
+            else 1
+        )
+    return 1
 
 
 def _render_result(result: CommandOutcome, write: WriteFn) -> int:
@@ -927,6 +1035,7 @@ def _run_user_text(
         scope=scope,
         user_home=user_home,
     )
+    confirmation: Optional[InstallConfirmation] = None
     if action == "install":
         assert install_source is not None
         confirmation = build_install_confirmation(
@@ -945,7 +1054,17 @@ def _run_user_text(
             write(line)
         if not _prompt_install_confirmation(read):
             return _cancel(write)
-    return _render_result(_dispatch_result(request), write)
+    outcome = _dispatch_result(request)
+    code = _render_result(outcome, write)
+    if code != 0 or confirmation is None:
+        return code
+    return _run_post_install_setup(
+        confirmation.setup_queue,
+        request,
+        scope_root=confirmation.destination_root,
+        read=read,
+        write=write,
+    )
 
 
 def _run_text(
@@ -1691,6 +1810,8 @@ def _run_curses(
             if not _curses_confirm_install(curses, stdscr, confirmation):
                 selection["cancelled"] = True
                 return
+            selection["setup_queue"] = confirmation.setup_queue
+            selection["setup_root"] = confirmation.destination_root
         selection["arts"] = picked_arts
         selection["profs"] = picked_profs
         selection["action"] = action_idx
@@ -1761,7 +1882,22 @@ def _run_curses(
         scope=selection.get("scope", "project"),
         user_home=user_home,
     )
-    return _render_result(_dispatch_result(request), print)
+    outcome = _dispatch_result(request)
+    code = _render_result(outcome, print)
+    if code != 0 or request.command != "install":
+        return code
+    return _run_post_install_setup(
+        selection.get("setup_queue", ()),
+        request,
+        scope_root=selection.get(
+            "setup_root",
+            os.path.abspath(
+                user_home or os.path.expanduser("~") if request.scope == "user" else project or "."
+            ),
+        ),
+        read=input,
+        write=print,
+    )
 
 
 def _curses_multiselect(

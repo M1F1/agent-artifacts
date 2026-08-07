@@ -89,7 +89,8 @@ For Install, both frontends then ask for an installation mode before artifact se
   counts and keep file/merge artifacts in Copy mode.
 
 Before applying an Install, the confirmation view shows the catalog source, selected scope,
-resolved destination paths, harnesses, requested mode, selected rows, and projected mode counts.
+resolved destination paths, harnesses, requested mode, selected rows, projected mode counts, and
+the ordered setup queue for setup-capable artifacts.
 User destinations are absolute. Symlink is rejected for a remote source before artifact selection;
 use flag mode with `--source DIR --link` to choose a durable local checkout.
 
@@ -177,7 +178,53 @@ User-global destinations include Claude's `~/.claude/` files and `~/.claude.json
 
 MCP artifacts can be a single `mcp/<name>.json` file, or a directory like
 `mcp/<name>/mcp.json` with supporting docs such as `SETUP.md`. Harness installs merge only the
-JSON server definition; setup docs stay in the catalog for humans.
+JSON server definition. `SETUP.md` stays optional human reference; guided setup is declared by a
+strict `setup/installer.json` contract.
+
+### Reviewed Setup Installers On macOS
+
+A directory-shaped artifact may include `setup/installer.json`. The static version-1 recipe
+declares its purpose, HTTPS help links, required tools, capabilities, secret prompts, and exact
+module steps. Catalog discovery validates and hashes it but never executes it. The TUI shows the
+ordered queue before final installation, finishes the ordinary artifact install, leaves curses,
+and then processes setup items sequentially in the foreground.
+
+Shared modules cover macOS Keychain, owned shell/file blocks, owned JSON values, directories,
+digest-pinned Docker pulls, fixed-argv verification, and restart notices. Before mutation, setup
+shows the reviewed source identity, recipe and plan hashes, targets/argv, capabilities, and
+rollback limits. Consent is per effect and defaults to No. One item is one transaction: failure
+rolls back that item's completed reversible steps, preserves earlier successful items, and
+continues unless Stop was explicitly selected.
+
+Flag-mode artifact installation never auto-runs setup. Use the setup runner after the matching
+artifact/profile has been installed:
+
+```sh
+aart setup run mcp/atlassian --profile tabnine --scope user
+aart setup status --scope user --json
+aart setup retry --profile tabnine --scope user
+aart setup rollback mcp/atlassian --profile tabnine --scope user
+```
+
+Project setup state lives at `<project>/.agent-artifacts/setup-state.json`; User state lives at
+`~/.agent-artifacts/setup-state.json`. It stores terminal status, source/installer/plan hashes,
+timestamps, safe retry/rollback commands, and non-secret ownership receipts. It never stores
+input values or captured credential output. Every incomplete item prints a retry command; the TUI
+offers a preselected retry of only incomplete items.
+
+For Keychain steps, production runs `/usr/bin/security add-generic-password ... -w` with a final
+value-less `-w`, allowing the system tool to own the hidden prompt. The safe default preserves an
+existing item; reviewed replacement is explicit and not automatically reversible. Managed shell blocks contain
+only a Keychain lookup. A new shell then puts the value in its environment, which child processes
+can inherit; close/reopen the shell and restart the harness as instructed. GUI apps may not read
+`.zshrc`.
+
+Non-macOS hosts record `unsupported` before invoking effect adapters. An optional hash-bound
+custom entrypoint may implement the reviewed `plan/apply/verify/rollback` protocol in a private
+`0700` run directory with a minimal environment and `shell=False`; it remains trusted reviewed
+code, not a sandbox. Catalog authors should use
+[`skills/author-aart-installer/SKILL.md`](skills/author-aart-installer/SKILL.md) and the full trust
+model in [`docs/design/DESIGN-setup-installers.md`](docs/design/DESIGN-setup-installers.md).
 
 Artifacts can declare that they only fit specific profiles. JSON descriptors use:
 
@@ -307,17 +354,14 @@ read-only token with access only to the catalog/upstream repos the command needs
 store the token in Keychain, then export `GITHUB_TOKEN` from that secret in your shell config:
 
 ```sh
-# Store once in macOS Keychain. The prompt input is hidden; -U updates an existing item.
-printf "GitHub token: "
-IFS= read -r -s GITHUB_TOKEN; echo
-security add-generic-password -U \
+# Store/update in macOS Keychain. A final value-less -w lets `security` own the hidden prompt.
+/usr/bin/security add-generic-password -U \
   -a "$USER" \
   -s GITHUB_TOKEN \
-  -w "$GITHUB_TOKEN"
-unset GITHUB_TOKEN
+  -w
 
 # Add this to ~/.zshrc so new terminals set GITHUB_TOKEN from Keychain.
-export GITHUB_TOKEN="$(security find-generic-password \
+export GITHUB_TOKEN="$(/usr/bin/security find-generic-password \
   -a "$USER" \
   -s GITHUB_TOKEN \
   -w 2>/dev/null)"
@@ -548,6 +592,7 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | no by default | Re-apply reviewed artifacts; `--prune`, `--force` |
 | `aart uninstall` | no | Reverse installed files and merge entries |
+| `aart setup` | no by default | Review/run/retry/status/rollback declarative artifact setup |
 | `aart upgrade` | offline-capable | Reinstall the CLI itself |
 
 ### Maintainer Commands
@@ -574,7 +619,7 @@ combined with `--version` since a local checkout has no ref to resolve. Remote-o
 like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
 
 **Consumer scope** — Commands that modify or inspect harness configuration (`install`, `update`,
-`uninstall`, `status`, `check`) accept `--scope project|user`; Project is the default. In Project
+`uninstall`, `status`, `check`, `setup`) accept `--scope project|user`; Project is the default. In Project
 scope, `--project DIR` selects the consumer directory (default: cwd). User scope uses explicit
 harness-global destinations and separate state under the user's home, so `--scope user` and
 `--project` are mutually exclusive. Catalog-only commands (`list`) and self-updaters (`upgrade`)

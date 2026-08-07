@@ -32,7 +32,7 @@ file-like`` (same contract as :mod:`agent_artifacts.io.net`). It is threaded thr
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Optional
 
 from . import catalog as catalog_mod
@@ -40,6 +40,7 @@ from . import fp
 from .fp import Err, Ok
 from .io import cache, fs, net
 from .model import Catalog, Request, Resolved, Result, source_label
+from .setup import custom_entrypoint_name, parse_installer
 
 # Reader signature: given an absolute path, return its bytes. Injectable for testing,
 # defaults to the real filesystem performer.
@@ -132,7 +133,13 @@ class Source:
             if not fs.exists(os.path.join(self.root, rel)):
                 continue  # not a skill dir (no SKILL.md) — skip silently
             text = self._read_text(rel)
-            out.append(catalog_mod.parse_skill(text, name))
+            out.append(
+                self._attach_setup(
+                    catalog_mod.parse_skill(text, name),
+                    package_rel=os.path.join(_SKILL_DIR, name),
+                    artifact_key=f"skill/{name}",
+                )
+            )
         return out
 
     def _scan_guidelines(self) -> List[Result]:
@@ -173,7 +180,13 @@ class Source:
                 out.append(Err(f"mcp {name!r}: duplicate descriptors mcp/{name}.json and {rel}"))
                 continue
             text = self._read_text(rel)
-            out.append(catalog_mod.parse_mcp(text, name, root=rel))
+            out.append(
+                self._attach_setup(
+                    catalog_mod.parse_mcp(text, name, root=rel),
+                    package_rel=os.path.join(_MCP_DIR, name),
+                    artifact_key=f"mcp/{name}",
+                )
+            )
             seen.add(name)
         return out
 
@@ -196,8 +209,67 @@ class Source:
             if not fs.exists(os.path.join(self.root, rel)):
                 continue  # not a hook dir (no hook.json) — skip silently
             text = self._read_text(rel)
-            out.append(catalog_mod.parse_hook(text, name))
+            out.append(
+                self._attach_setup(
+                    catalog_mod.parse_hook(text, name),
+                    package_rel=os.path.join(_HOOK_DIR, name),
+                    artifact_key=f"hook/{name}",
+                )
+            )
         return out
+
+    def _attach_setup(
+        self, artifact_result: Result, *, package_rel: str, artifact_key: str
+    ) -> Result:
+        """Attach a validated setup recipe to one directory package, without executing it."""
+
+        if isinstance(artifact_result, Err):
+            return artifact_result
+        descriptor_rel = os.path.join(package_rel, "setup", "installer.json")
+        descriptor_abs = os.path.join(self.root, descriptor_rel)
+        if not fs.exists(descriptor_abs):
+            return artifact_result
+        root_real = os.path.realpath(self.root)
+        package_abs = os.path.join(self.root, package_rel)
+        descriptor_real = os.path.realpath(descriptor_abs)
+        if (
+            os.path.islink(package_abs)
+            or os.path.islink(descriptor_abs)
+            or not os.path.isfile(descriptor_abs)
+            or os.path.commonpath((root_real, descriptor_real)) != root_real
+        ):
+            return Err(f"{artifact_key}: setup/installer.json must be a regular file")
+        try:
+            raw = self.read(descriptor_rel)
+        except (OSError, UnicodeError) as exc:
+            return Err(f"{artifact_key}: cannot read setup/installer.json ({exc})")
+        custom_name = custom_entrypoint_name(raw)
+        if isinstance(custom_name, Err):
+            return custom_name
+        custom_bytes = None
+        if custom_name.value is not None:
+            custom_rel = os.path.join(package_rel, "setup", custom_name.value)
+            custom_abs = os.path.join(self.root, custom_rel)
+            custom_real = os.path.realpath(custom_abs)
+            if (
+                os.path.islink(custom_abs)
+                or not os.path.isfile(custom_abs)
+                or os.path.commonpath((root_real, custom_real)) != root_real
+            ):
+                return Err(f"{artifact_key}: custom entrypoint must be a regular file below setup/")
+            try:
+                custom_bytes = self.read(custom_rel)
+            except OSError as exc:
+                return Err(f"{artifact_key}: cannot read custom entrypoint ({exc})")
+        installer = parse_installer(
+            raw,
+            artifact_key=artifact_key,
+            descriptor_path=descriptor_rel,
+            custom_bytes=custom_bytes,
+        )
+        if isinstance(installer, Err):
+            return installer
+        return Ok(replace(artifact_result.value, setup=installer.value))
 
     def _scan_bundles(self) -> List[Result]:
         out: List[Result] = []

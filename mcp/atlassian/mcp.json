@@ -1,0 +1,10 @@
+{
+  "name": "atlassian",
+  "description": "Connect to Atlassian Rovo MCP with OAuth by default or an optional service-account API key.",
+  "server": {
+    "url": "https://mcp.atlassian.com/v1/mcp/authv2",
+    "headers": {
+      "Authorization": "Bearer ${ATLASSIAN_API_KEY}"
+    }
+  }
+}

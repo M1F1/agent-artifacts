@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "artifact": "mcp/atlassian",
+  "purpose": "Configure optional non-interactive Atlassian service-account API-key access.",
+  "platforms": ["darwin"],
+  "help_urls": [
+    {
+      "label": "Atlassian API-token authentication",
+      "url": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/"
+    },
+    {
+      "label": "Atlassian OAuth setup (recommended for interactive use)",
+      "url": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+    }
+  ],
+  "required_tools": ["/usr/bin/security"],
+  "capabilities": ["keychain", "filesystem"],
+  "inputs": [
+    {
+      "id": "api_key",
+      "type": "secret",
+      "prompt": "Paste the Atlassian service-account API key",
+      "help_url": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/configuring-authentication-via-api-token/"
+    }
+  ],
+  "steps": [
+    {
+      "id": "keychain",
+      "use": "macos-keychain.store@1",
+      "with": {
+        "input": "api_key",
+        "service": "aart/mcp/atlassian/service-account-api-key",
+        "account": "default"
+      }
+    },
+    {
+      "id": "shell",
+      "use": "shell.env-from-keychain@1",
+      "with": {
+        "file": "~/.zshrc",
+        "variables": {
+          "ATLASSIAN_API_KEY": {
+            "service": "aart/mcp/atlassian/service-account-api-key",
+            "account": "default"
+          }
+        }
+      }
+    },
+    {
+      "id": "restart",
+      "use": "restart.notice@1",
+      "with": {
+        "message": "Open a new shell and restart the harness before using Atlassian Rovo MCP."
+      }
+    }
+  ]
+}

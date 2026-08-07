@@ -55,9 +55,10 @@ class TestMcpJsonFiles(unittest.TestCase):
                     data["name"], mcp_dir.name, f"{mcp_dir.name}/mcp.json name mismatch"
                 )
                 self.assertIn("server", data, f"{mcp_dir.name}/mcp.json missing 'server'")
-                # server must have at least 'command'
-                self.assertIn(
-                    "command", data["server"], f"{mcp_dir.name}/mcp.json server missing 'command'"
+                # MCP supports local stdio servers (`command`) and remote HTTP servers (`url`).
+                self.assertTrue(
+                    "command" in data["server"] or "url" in data["server"],
+                    f"{mcp_dir.name}/mcp.json server missing 'command' or 'url'",
                 )
 
 

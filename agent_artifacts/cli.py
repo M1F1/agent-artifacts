@@ -21,7 +21,7 @@ from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
 from .cli_rules import validate_flags
-from .commands import check, install, status, uninstall, update, upgrade
+from .commands import check, install, setup, status, uninstall, update, upgrade
 from .commands import list as list_cmd
 from .commands._common import OK
 from .model import Request
@@ -44,6 +44,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "uninstall": uninstall.run,
     "upgrade": upgrade.run,
     "upstream": _run_upstream,
+    "setup": setup.run,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -296,6 +297,69 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="print the pip invocation; install nothing"
     )
 
+    # setup ------------------------------------------------------------------- #
+    p = sub.add_parser(
+        "setup",
+        formatter_class=_HELP_FORMATTER,
+        help="review, run, retry, inspect, or roll back artifact setup",
+        description=(
+            "Run reviewed declarative setup after artifact installation. "
+            "State and receipts contain no credential values."
+        ),
+    )
+    setup_sub = p.add_subparsers(dest="setup_action", metavar="ACTION", required=True)
+
+    def _add_setup_scope(target: argparse.ArgumentParser) -> None:
+        _add_project(target)
+        _add_scope(target)
+
+    def _add_setup_selection(target: argparse.ArgumentParser, *, optional: bool = False) -> None:
+        target.add_argument(
+            "names",
+            nargs="*" if optional else "+",
+            metavar="TYPE/NAME",
+            help="installed setup-capable artifact key(s)",
+        )
+        _add_profile(target)
+
+    p_run = setup_sub.add_parser("run", help="review and run setup for installed artifacts")
+    _add_setup_selection(p_run)
+    _add_setup_scope(p_run)
+    _add_repo(p_run)
+    _add_source(p_run, "use an explicit installed local catalog")
+    _add_version(p_run)
+    p_run.add_argument("--yes", action="store_true", help="approve the exact rendered plan")
+    p_run.add_argument(
+        "--stop-on-failure",
+        action="store_true",
+        help="stop after an incomplete item and mark unstarted items skipped",
+    )
+    _add_json(p_run)
+
+    p_retry = setup_sub.add_parser("retry", help="retry incomplete setup records")
+    _add_setup_selection(p_retry, optional=True)
+    _add_setup_scope(p_retry)
+    _add_repo(p_retry)
+    _add_source(p_retry, "use an explicit installed local catalog")
+    _add_version(p_retry)
+    p_retry.add_argument("--yes", action="store_true", help="approve the exact rendered plan")
+    p_retry.add_argument(
+        "--stop-on-failure",
+        action="store_true",
+        help="stop after an incomplete retry and mark unstarted items skipped",
+    )
+    _add_json(p_retry)
+
+    p_setup_status = setup_sub.add_parser("status", help="show local setup state")
+    _add_setup_scope(p_setup_status)
+    _add_json(p_setup_status)
+
+    p_rollback = setup_sub.add_parser("rollback", help="roll back owned effects from a receipt")
+    _add_setup_selection(p_rollback)
+    _add_setup_scope(p_rollback)
+    p_rollback.add_argument("--yes", action="store_true", help="confirm rollback")
+    _add_json(p_rollback)
+
     # upstream ---------------------------------------------------------------- #
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
     up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
@@ -461,6 +525,8 @@ def _to_request(args: argparse.Namespace) -> Request:
         bundle_mode=getattr(args, "bundle_mode", None),
         bundle_description=getattr(args, "bundle_description", None),
         interactive=bool(getattr(args, "interactive", False)),
+        setup_action=getattr(args, "setup_action", None),
+        stop_on_failure=bool(getattr(args, "stop_on_failure", False)),
     )
 
 

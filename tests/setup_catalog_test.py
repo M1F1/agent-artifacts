@@ -1,0 +1,248 @@
+"""Issue #20: declarative setup recipe and catalog attachment contracts."""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import tempfile
+import unittest
+from dataclasses import FrozenInstanceError
+
+from agent_artifacts.model import Err, Ok, Request
+from agent_artifacts.setup import parse_installer
+from agent_artifacts.source import open_source
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def recipe(**changes: object) -> bytes:
+    value: dict[str, object] = {
+        "schema_version": 1,
+        "protocol_version": 1,
+        "artifact": "mcp/atlassian",
+        "purpose": "Configure optional Atlassian token access.",
+        "platforms": ["darwin"],
+        "help_urls": [{"label": "Atlassian auth", "url": "https://example.test/auth"}],
+        "required_tools": ["/usr/bin/security"],
+        "capabilities": ["keychain", "filesystem"],
+        "inputs": [
+            {
+                "id": "api_token",
+                "type": "secret",
+                "prompt": "Paste the Atlassian API token",
+                "help_url": "https://example.test/token",
+            }
+        ],
+        "steps": [
+            {
+                "id": "token",
+                "use": "macos-keychain.store@1",
+                "with": {
+                    "input": "api_token",
+                    "service": "aart/mcp/atlassian",
+                    "account": "default",
+                },
+            },
+            {
+                "id": "shell",
+                "use": "shell.env-from-keychain@1",
+                "with": {
+                    "file": "~/.zshrc",
+                    "variables": {
+                        "ATLASSIAN_API_TOKEN": {
+                            "service": "aart/mcp/atlassian",
+                            "account": "default",
+                        }
+                    },
+                },
+            },
+        ],
+    }
+    value.update(changes)
+    return json.dumps(value).encode()
+
+
+class SetupRecipeParserTests(unittest.TestCase):
+    def test_valid_recipe_is_frozen_and_hash_bound(self):
+        raw = recipe()
+        result = parse_installer(
+            raw,
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        installer = result.value
+        self.assertEqual(installer.artifact, "mcp/atlassian")
+        self.assertEqual(installer.steps[0].use, "macos-keychain.store@1")
+        self.assertEqual(len(installer.descriptor_hash), 64)
+        with self.assertRaises(FrozenInstanceError):
+            installer.purpose = "changed"  # type: ignore[misc]
+
+    def test_unknown_field_and_artifact_mismatch_are_rejected(self):
+        unknown = parse_installer(
+            recipe(surprise=True),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+        mismatch = parse_installer(
+            recipe(artifact="mcp/other"),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(unknown, Err)
+        self.assertIn("unknown field", unknown.reason)
+        self.assertIsInstance(mismatch, Err)
+        self.assertIn("does not match", mismatch.reason)
+
+    def test_unpinned_docker_and_secret_interpolation_are_rejected(self):
+        docker = parse_installer(
+            recipe(
+                capabilities=["docker", "network", "process"],
+                inputs=[],
+                required_tools=["docker"],
+                steps=[
+                    {
+                        "id": "image",
+                        "use": "docker.pull@1",
+                        "with": {"image": "example/tool:latest"},
+                    }
+                ],
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+        command = parse_installer(
+            recipe(
+                capabilities=["process"],
+                required_tools=[],
+                steps=[
+                    {
+                        "id": "verify",
+                        "use": "command.verify@1",
+                        "with": {"argv": ["tool", "${api_token}"]},
+                    }
+                ],
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(docker, Err)
+        self.assertIn("digest", docker.reason)
+        self.assertIsInstance(command, Err)
+        self.assertIn("secret", command.reason)
+
+    def test_custom_entrypoint_is_relative_hash_bound_and_capability_gated(self):
+        without_capability = parse_installer(
+            recipe(custom_entrypoint="install.sh"),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+            custom_bytes=b"#!/bin/sh\n",
+        )
+        traversing = parse_installer(
+            recipe(
+                capabilities=["keychain", "filesystem", "process", "custom-code"],
+                custom_entrypoint="../install.sh",
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+            custom_bytes=b"#!/bin/sh\n",
+        )
+
+        self.assertIsInstance(without_capability, Err)
+        self.assertIn("custom-code", without_capability.reason)
+        self.assertIsInstance(traversing, Err)
+        self.assertIn("relative", traversing.reason)
+
+
+class SetupSourceTests(unittest.TestCase):
+    def test_directory_mcp_attaches_validated_installer_without_executing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = pathlib.Path(tmp) / "mcp" / "atlassian"
+            (package / "setup").mkdir(parents=True)
+            (package / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "atlassian",
+                        "description": "Use the Atlassian remote MCP server.",
+                        "server": {"url": "https://mcp.atlassian.com/v1/mcp/authv2"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "setup" / "installer.json").write_bytes(recipe())
+
+            result = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+
+            self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+            installer = result.value.artifacts[("mcp", "atlassian")].setup
+            self.assertIsNotNone(installer)
+            assert installer is not None
+            self.assertEqual(installer.descriptor_path, "mcp/atlassian/setup/installer.json")
+
+    def test_invalid_installer_invalidates_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = pathlib.Path(tmp) / "mcp" / "atlassian"
+            (package / "setup").mkdir(parents=True)
+            (package / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "atlassian",
+                        "description": "Use Atlassian.",
+                        "server": {"url": "https://example.test"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "setup" / "installer.json").write_bytes(recipe(schema_version=2))
+
+            result = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+
+            self.assertIsInstance(result, Err)
+            self.assertIn("schema_version", result.reason)
+
+    def test_setup_package_symlink_cannot_escape_the_reviewed_source(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+            package = pathlib.Path(outside)
+            (package / "setup").mkdir()
+            (package / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "atlassian",
+                        "description": "Use Atlassian.",
+                        "server": {"url": "https://example.test"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "setup" / "installer.json").write_bytes(recipe())
+            mcp_root = pathlib.Path(tmp, "mcp")
+            mcp_root.mkdir()
+            mcp_root.joinpath("atlassian").symlink_to(package, target_is_directory=True)
+
+            result = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+
+            self.assertIsInstance(result, Err)
+            self.assertIn("regular file", result.reason)
+
+
+class AuthoringAssetsTests(unittest.TestCase):
+    def test_schema_is_closed_world_and_template_uses_the_runtime_parser(self):
+        assets = REPO_ROOT / "skills" / "author-aart-installer" / "assets"
+        schema = json.loads((assets / "installer.schema.json").read_text(encoding="utf-8"))
+        template = (assets / "installer.template.json").read_bytes()
+
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        parsed = parse_installer(
+            template,
+            artifact_key="mcp/example",
+            descriptor_path="mcp/example/setup/installer.json",
+        )
+        self.assertIsInstance(parsed, Ok, getattr(parsed, "reason", ""))
+
+
+if __name__ == "__main__":
+    unittest.main()

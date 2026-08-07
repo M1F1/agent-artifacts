@@ -180,15 +180,12 @@ Use `GITHUB_TOKEN` for private repos, GitHub Enterprise repos, and higher rate l
 macOS, recommend Keychain:
 
 ```sh
-printf "GitHub token: "
-IFS= read -r -s GITHUB_TOKEN; echo
-security add-generic-password -U \
+/usr/bin/security add-generic-password -U \
   -a "$USER" \
   -s GITHUB_TOKEN \
-  -w "$GITHUB_TOKEN"
-unset GITHUB_TOKEN
+  -w
 
-export GITHUB_TOKEN="$(security find-generic-password \
+export GITHUB_TOKEN="$(/usr/bin/security find-generic-password \
   -a "$USER" \
   -s GITHUB_TOKEN \
   -w 2>/dev/null)"

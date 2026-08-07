@@ -50,6 +50,59 @@ Result = Union[Ok, Err]  # conceptually Result[T]
 # --------------------------------------------------------------------------- #
 # Catalog (source side)                                                        #
 # --------------------------------------------------------------------------- #
+SetupCapability = Literal["keychain", "filesystem", "docker", "network", "process", "custom-code"]
+SetupTerminalStatus = Literal[
+    "configured",
+    "already_configured",
+    "cancelled",
+    "skipped",
+    "unsupported",
+    "prerequisite_missing",
+    "apply_failed_rolled_back",
+    "rollback_incomplete",
+    "verification_failed",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class SetupHelpUrl:
+    label: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
+class SetupInput:
+    id: str
+    type: Literal["secret"]
+    prompt: str
+    help_url: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
+class SetupStep:
+    id: str
+    use: str
+    config: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class SetupInstaller:
+    schema_version: int
+    protocol_version: int
+    artifact: str
+    purpose: str
+    platforms: Tuple[str, ...]
+    help_urls: Tuple[SetupHelpUrl, ...]
+    required_tools: Tuple[str, ...]
+    capabilities: Tuple[SetupCapability, ...]
+    inputs: Tuple[SetupInput, ...]
+    steps: Tuple[SetupStep, ...]
+    descriptor_path: str
+    descriptor_hash: str
+    custom_entrypoint: Optional[str] = None
+    custom_hash: Optional[str] = None
+
+
 @dataclass(frozen=True, slots=True)
 class Compatibility:
     profiles: Tuple[str, ...]
@@ -80,6 +133,71 @@ class Artifact:
     # Catalog parsers always populate a normalized, non-empty, single-line description.
     # The default preserves lightweight hand-built domain fixtures outside the parser boundary.
     description: str = ""
+    setup: Optional[SetupInstaller] = None
+
+
+@dataclass(frozen=True, slots=True)
+class SetupQueueItem:
+    artifact_type: ArtifactType
+    artifact_name: str
+    profile: str
+    scope: InstallScope
+    source_label: str
+    source_root: str
+    installer: SetupInstaller
+
+
+@dataclass(frozen=True, slots=True)
+class SetupEffect:
+    step_id: str
+    module: str
+    capability: Optional[SetupCapability]
+    summary: str
+    target: str = ""
+    argv: Tuple[str, ...] = ()
+    reversible: bool = False
+    config: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class SetupPlan:
+    item: SetupQueueItem
+    effects: Tuple[SetupEffect, ...]
+    plan_hash: str
+    target_root: str = ""
+    home_root: str = ""
+    run_root: str = ""
+    preflight_status: Optional[SetupTerminalStatus] = None
+    preflight_detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SetupStateRecord:
+    artifact_type: ArtifactType
+    artifact_name: str
+    profile: str
+    scope: InstallScope
+    status: SetupTerminalStatus
+    detail: str
+    source_label: str = ""
+    installer_path: str = ""
+    installer_hash: str = ""
+    custom_hash: str = ""
+    schema_version: int = 1
+    protocol_version: int = 1
+    plan_hash: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    exit_status: Optional[int] = None
+    retry_command: str = ""
+    rollback_command: str = ""
+    receipt_path: str = ""
+    receipt: Tuple[Mapping[str, object], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SetupState:
+    records: Tuple[SetupStateRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,3 +463,5 @@ class Request:
     bundle_mode: Optional[str] = None  # "append" | "replace" | "fail" for import-created bundles
     bundle_description: Optional[str] = None
     interactive: bool = False
+    setup_action: Optional[str] = None  # run | retry | status | rollback
+    stop_on_failure: bool = False
