@@ -10,6 +10,7 @@ class CompilerBoundaryTest(unittest.TestCase):
         root = Path(__file__).parents[1] / "agent_artifacts"
         files = (
             root / "compiler" / "model.py",
+            root / "compiler" / "graph.py",
             root / "application" / "compiler.py",
         )
         forbidden = {

@@ -19,7 +19,7 @@ Product requirements:
 - [x] Treat importers as deterministic Maintainer-time migration/curation tools, never consumer
       runtime conversion.
 - [x] Write the AART 1.0 PRD and technical specification.
-- [ ] Start implementation versions at `1.0.0a1`; do not tag `1.0.0` before the release gates pass.
+- [x] Start implementation versions at `1.0.0a1`; do not tag `1.0.0` before the release gates pass.
 
 ### Protocol and compiler
 
@@ -33,7 +33,7 @@ Product requirements:
       frozen registry lock resolution.
 - [x] Implement typed deterministic compiler phases, accumulated diagnostics, immutable candidate
       planning, injected effect ports, and publication gating.
-- [ ] Supply the concrete source/compatibility/effects graph compiler on the phase framework.
+- [x] Supply the concrete source/compatibility/effects graph compiler on the phase framework.
 - [ ] Implement built-in deterministic importers, provenance, loss/ambiguity checks, stale-output
       validation, and promotion of native direct sources into registries.
 - [ ] Add registry quality gates for format, validate, lock, build, audit, diff, and profile tests.
