@@ -47,7 +47,7 @@ Product requirements:
       capabilities, minimum user-scope trust, custom setup, and reporting destinations.
 - [ ] Extend policy consumption with exact company-reviewed source identity and operation-specific
       scope/trust/setup gates in the marketplace, installation, and setup tasks.
-- [ ] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
+- [x] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
       concurrency control, and offline last-known-good behavior.
 - [ ] Implement the content-addressed artifact object store with digest verification, safe GC, and
       install/setup references.

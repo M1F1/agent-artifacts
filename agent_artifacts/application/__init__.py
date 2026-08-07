@@ -6,12 +6,24 @@ from .configuration import (
     ConfigurationRequest,
     load_configuration,
 )
+from .sources import (
+    SourceStatusRequest,
+    SourceSyncPorts,
+    SourceSyncRequest,
+    source_status,
+    sync_source,
+)
 
 __all__ = [
     "CompilerPorts",
     "CompilerSteps",
     "ConfigurationPorts",
     "ConfigurationRequest",
+    "SourceSyncPorts",
+    "SourceSyncRequest",
+    "SourceStatusRequest",
     "compile_sources",
     "load_configuration",
+    "source_status",
+    "sync_source",
 ]
