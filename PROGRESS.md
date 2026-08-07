@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `D01` after V01 merges
+- **Next task:** `P01` after D01 merges
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -42,8 +42,8 @@ short note. Do not mark work complete from memory or commentary alone.
 |---|---|---|---|---|---|---|
 | P00 | Land planning baseline | — | complete | `codex/aart-1-0-p00-planning-baseline` | [#28](https://github.com/M1F1/agent-artifacts/pull/28) / `d9bd997` | Docs gates and both CI runs passed; squash merge verified on `origin/main` |
 | Q01 | Non-mutating quality gates and CI parity | P00 | complete | `codex/aart-1-0-q01-quality-gates` | [#29](https://github.com/M1F1/agent-artifacts/pull/29) / `3c34c16` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| V01 | Alpha versioning and release discipline | Q01 | complete | `codex/aart-1-0-v01-alpha-versioning` | pending PR / merge | 11 focused tests and all local gates pass; first implementation version is `1.0.0a1` |
-| D01 | DDD domain kernel and diagnostics | V01 | pending | — | — | Functional core foundation |
+| V01 | Alpha versioning and release discipline | Q01 | complete | `codex/aart-1-0-v01-alpha-versioning` | [#30](https://github.com/M1F1/agent-artifacts/pull/30) / `550e1d2` | Four Python 3.10/3.14 CI jobs passed after one recorded compatibility fix; squash merge verified |
+| D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | pending PR / merge | 13 focused tests, 98.14% kernel coverage, and all local gates pass |
 | P01 | Strict JSON/hash/SemVer/capabilities | D01 | pending | — | — | Protocol primitives |
 | P02 | Canonical artifact/native source protocol | P01 | pending | — | — | `aart-source.json`, `artifact.json` |
 | P03 | Registry entry/lock/index schemas | P02 | pending | — | — | Deterministic frozen registry inputs |
@@ -80,18 +80,19 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: V01 — Introduce explicit alpha versioning and release discipline
-Branch: codex/aart-1-0-v01-alpha-versioning
-Worktree: /tmp/aart-v01.ulujfO/worktree
+Task: D01 — Create the DDD domain kernel and typed diagnostic contract
+Branch: codex/aart-1-0-d01-domain-kernel
+Worktree: /tmp/aart-d01.kTojQG/worktree
 Started: 2026-08-07
-Bounded contexts: Versioning, release tooling, packaging metadata, repository hooks
-Red test and expected failure: PASS — 9 expected failures/errors proved prereleases, explicit-only
-  writes, stable-release policy, non-mutating hooks, untracked wheels, and metadata checks were absent
-Focused tests: PASS — 11 V01 contract tests on Python 3.11; 823-test regression on Python 3.14.6
-Files owned: version scripts/tests, pyproject.toml, agent_artifacts/__init__.py, Makefile,
-  release workflow, .githooks, .gitignore, dist policy, README.md, PLAN.md, PROGRESS.md
-Risks/migrations: alpha version must remain PEP 440 wheel-compatible; stable 1.0.0/tag must fail
-  closed until every REL01 prerequisite is complete
+Bounded contexts: Shared domain kernel, typed diagnostics/results/outcomes, legacy adapters
+Red test and expected failure: PASS — 1 failure and 9 errors proved the domain/adapters packages,
+  typed contracts, immutable helpers, callable ports, and architecture boundary did not exist
+Focused tests: PASS — 13 D01 contract tests; 98.14% branch coverage for the new kernel/adapter;
+  836-test regression passes on Python 3.11 and 3.14.6
+Files owned: agent_artifacts/domain/*, agent_artifacts/adapters/*, focused domain tests,
+  architecture checks, PROGRESS.md
+Risks/migrations: avoid circular imports and a big-bang model.py move; new domain modules must remain
+  IO-free, frozen, deterministic, serialization-explicit, Python 3.10-compatible, and strict-mypy clean
 PR: pending after push
 CI: pending; local matrix evidence includes Python 3.11 quality and Python 3.14.6 regression
 Merge: pending
@@ -103,7 +104,8 @@ Merge: pending
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | P00 | docs consistency pass | n/a | n/a | n/a | n/a | n/a | n/a | allowlist + issue pass | n/a | n/a | fences/links/diff pass | 2× validate pass |
 | Q01 | 8 pass | 138 files pass | pass | 51 files pass | 812 pass | 21 pass | 11-step pass | pass | 82.32% (≥82%) | wheel build/import pass | links/fences/ledger pass | 4× Python 3.10/3.14 pass |
-| V01 | 11 pass | 140 files pass | pass | 51 files pass | 823 pass | 21 pass | 11-step pass | version/tag pass | 82.32% (≥82%) | `1.0.0a1` wheel/metadata pass | pass | pending |
+| V01 | 11 pass | 140 files pass | pass | 51 files pass | 823 pass | 21 pass | 11-step pass | version/tag pass | 82.32% (≥82%) | `1.0.0a1` wheel/metadata pass | pass | 4× Python 3.10/3.14 pass |
+| D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -121,6 +123,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-007 | Task branches are squash-merged after green CI | accepted | One bounded change and traceable progress per PR |
 | D-008 | Public reference registry remote is `M1F1/agent-artifacts-registry`, visibility `PUBLIC` | accepted | Same admin-owned account as the public tool repo; exact name was absent on 2026-08-07; SEP01 must recheck and pass the public-export audit before creation |
 | D-009 | Versions change only through explicit commands; wheels are untracked release outputs | accepted | Ordinary commits and quality gates must be reproducible and non-mutating |
+| D-010 | New 1.0 value contracts live in an IO-free `domain` package; legacy conversion lives in `adapters` | accepted | Enforces dependency direction while allowing incremental migration from `model.py` |
 
 ## Blockers
 
@@ -190,3 +193,26 @@ None.
   directly invoked the documented Python 3.11+ stdlib builder. Matched the existing packaging-test
   contract by skipping that builder-specific assertion below 3.11; Python 3.10 still runs its
   packaging gate, and Python 3.14 continues to prove the builder filename/metadata assertion.
+
+### 2026-08-07 — V01 merged; D01 started
+
+- Observed all four replacement Python 3.10/3.14 push/PR jobs pass and squash-merged PR #30 as
+  `550e1d2`; verified the merged PR, exact `origin/main`, and remote branch deletion.
+- Activated shared `core.hooksPath=.githooks`, ran the non-mutating hook successfully on merged
+  `main`, and removed only the explicit V01 temporary worktree.
+- Created the isolated D01 worktree from exact merge `550e1d2` and kept the unrelated root
+  worktree files outside the task scope.
+
+### 2026-08-07 — D01 local gates complete
+
+- Confirmed Red with one failure and nine errors caused by the absent domain and adapter packages.
+- Added frozen nominal source/artifact/digest identities, typed diagnostics and source locations,
+  an accumulating `Result`, canonical terminal outcomes, immutable collection transforms, and
+  runtime-checkable callable port conventions; none of the domain modules import IO/legacy layers.
+- Added an explicit adapter that round-trips representative legacy `Ok`/`Err` values (including
+  exit codes) and translates legacy artifacts without moving the existing model wholesale.
+- Code review found a root-error/partial-cancellation session-classification bug; captured it as a
+  failing regression before fixing the pure status fold.
+- Verified 13 focused tests and 98.14% branch coverage for the new kernel/adapter; `make quality`
+  passes with 836 tests, strict mypy over 60 files, 21 integration tests, shell E2E, 82.65% overall
+  coverage, packaging, docs, validation, and no mutation; all 836 tests pass on Python 3.14.6.
