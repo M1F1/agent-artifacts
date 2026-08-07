@@ -25,8 +25,9 @@ Product requirements:
 
 - [x] Implement strict JSON schemas for native sources, artifacts, provenance, and collections.
 - [x] Implement strict registry, native entry, committed lock, and compiled index schemas.
-- [ ] Implement remaining strict JSON schemas for config, policy, outcomes, and manifest v2
-      documents.
+- [x] Implement strict JSON schemas and canonical writers for user configuration and organization
+      policy.
+- [ ] Implement remaining strict JSON schemas for outcomes and manifest v2 documents.
 - [x] Implement SemVer bounds, protocol/capability negotiation, and canonical JSON/tree digests.
 - [ ] Complete qualified-coordinate parsing and ambiguity handling in compiler/marketplace tasks.
 - [x] Implement deterministic registry-input hashing, graph validation, index generation, and
@@ -40,10 +41,12 @@ Product requirements:
 
 ### Federated sources and managed store
 
-- [ ] Add user configuration for zero or more local/Git source and registry aliases, with at most
+- [x] Add user configuration for zero or more local/Git source and registry aliases, with at most
       one optional default registry.
-- [ ] Add organization policy for recommended/required sources, allowed Git hosts/prefixes, setup
-      capabilities, scopes, trust, and reporting destinations.
+- [x] Add organization policy for recommended/required sources, allowed Git hosts/prefixes, setup
+      capabilities, minimum user-scope trust, custom setup, and reporting destinations.
+- [ ] Extend policy consumption with exact company-reviewed source identity and operation-specific
+      scope/trust/setup gates in the marketplace, installation, and setup tasks.
 - [ ] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
       concurrency control, and offline last-known-good behavior.
 - [ ] Implement the content-addressed artifact object store with digest verification, safe GC, and

@@ -48,8 +48,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | [#33](https://github.com/M1F1/agent-artifacts/pull/33) / `8b13c6f` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | [#34](https://github.com/M1F1/agent-artifacts/pull/34) / `b7d5cc5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | [#35](https://github.com/M1F1/agent-artifacts/pull/35) / `15dfe61` | Four Python 3.10/3.14 CI jobs passed after a recorded Ruff drift fix; squash merge verified |
-| C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | pending | Local gates pass: qualified records, deterministic expansion, compatibility reasons, lifecycle/version rules |
-| CFG01 | Platform config and organization policy | P01,D01 | pending | — | — | Zero sources/default optional |
+| C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| CFG01 | Platform config and organization policy | P01,D01 | in_progress | `codex/aart-1-0-cfg01-config-policy` | pending | 36 focused tests pass with 98.45% branch coverage across the new context; full gates pass |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | pending | — | — | Atomic last-known-good |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | pending | — | — | Safe verify/GC/reference model |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
@@ -80,19 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: C02 — Compatibility, effects, collection, and source graph compiler
-Branch: codex/aart-1-0-c02-graph-compiler
-Worktree: /tmp/aart-c02.O915bV/worktree
+Task: CFG01 — Platform configuration and organization policy
+Branch: codex/aart-1-0-cfg01-config-policy
+Worktree: /tmp/aart-cfg01.q1cqys/worktree
 Started: 2026-08-07
-Bounded contexts: Pure normalized marketplace/source graph, compatibility decisions, reusable
-  collection expansion, selection policy, and previous-snapshot version/removal comparison
-Red test and expected failure: PASS — two expected import errors because the graph API did not exist
-Focused tests: 11 pass; 98.52% branch coverage for the compiler graph context
-Files owned: compiler graph module/exports, graph tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: graph stays IO-free and policy-neutral; source acquisition, trust overlay, CAS,
-  qualified-text parsing, install plans, and durable state remain in later bounded tasks
+Bounded contexts: Pure platform paths, strict user config/organization policy, effective precedence,
+  first-run/content requests, corrupt recovery plans, and atomic private filesystem persistence
+Red test and expected failure: PASS — five expected import errors because configuration,
+  application ports, and the atomic store did not exist
+Focused tests: 36 pass; 98.45% branch coverage across the configuration/application/store context
+Files owned: new configuration/application/store modules, configuration tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: no CLI/TUI wiring or Git/network access in CFG01; all tests inject fake/temp roots;
+  corrupt policy fails closed and corrupt user config cannot authorize content operations
 PR: pending after push
-CI: local Python 3.11 quality matrix and Python 3.14.6 full suite pass; remote matrix pending
+CI: local quality matrix and Python 3.14.6 full suite pass; remote CI pending
 Merge: pending
 ```
 
@@ -358,3 +359,25 @@ None.
   with 940 tests, strict mypy over 81 files, 21 integration tests, shell E2E, 85.70% overall
   coverage, validation, `1.0.0a1` wheel/import, docs, and no tracked mutation; all 940 tests pass on
   Python 3.14.6 and Ruff 0.16.2 also accepts the complete format/lint surface.
+
+### 2026-08-07 — C02 merged; CFG01 started
+
+- Observed all four Python 3.10/3.14 jobs pass and squash-merged PR #36 as `261c5a5`; verified the
+  merged PR, exact `origin/main`, remote branch deletion, and clean task worktree.
+- Removed only the explicit C02 temporary worktree and created isolated CFG01 from exact `261c5a5`.
+- Scoped CFG01 so platform paths are injected/pure, policy is evaluated before write/network ports,
+  zero-source local operation is valid, and corrupt recovery never exposes or discards input bytes.
+
+### 2026-08-07 — CFG01 Red/Green/Refactor
+
+- Confirmed Red with five expected import errors for the absent configuration domain, application
+  ports, and filesystem adapter.
+- Added pure macOS/Linux/XDG path resolution, strict canonical config/policy schema v1, immutable
+  precedence and policy decisions, first-run/no-source/recovery application requests, and a private
+  atomic `fsync`/replace filesystem adapter.
+- Expanded malformed/type/security/precondition coverage to 36 focused tests; the six new runtime
+  modules reach 98.45% combined branch coverage, with model/application at 100%. Tests use only
+  injected fake paths and `TemporaryDirectory` roots.
+- Passed the canonical local quality matrix with 976 unit-discovery tests, 21 integration tests,
+  shell E2E, strict mypy over 88 source files, 86.52% global branch coverage, validation,
+  `1.0.0a1` wheel/import checks, documentation checks, and no tracked mutation.
