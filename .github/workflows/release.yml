@@ -28,6 +28,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Verify source version and release tag
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: python scripts/version.py check-tag "$TAG"
+
       - name: Inject commit
         run: python scripts/inject_commit.py
 

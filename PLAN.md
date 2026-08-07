@@ -54,9 +54,10 @@ gate passes, the public reference-registry decision is resolved, and the stable 
 - The approved public reference-registry target is exactly
   `https://github.com/M1F1/agent-artifacts-registry` with `PUBLIC` visibility. Do not create a
   different owner/name or change visibility without a new recorded decision.
-- The current local `.git/hooks/pre-commit` mutates versions and wheels. Execution commits MUST use
-  `--no-verify` only after the explicit gates in this plan pass. Task `V01` replaces this legacy
-  workflow with repository-owned, non-mutating checks and explicit release versioning.
+- The legacy local `.git/hooks/pre-commit` mutates versions and wheels. P00, Q01, and V01 commits use
+  `--no-verify` only after their explicit gates pass. V01 installs repository-owned, non-mutating
+  hook guidance; after V01 merges and `core.hooksPath` points to `.githooks`, later task commits run
+  normally and MUST NOT bypass that hook.
 
 ## 3. Delivery model
 
@@ -71,8 +72,8 @@ Every task ID below is an independently reviewable delivery unit:
 5. Run task-specific and global gates.
 6. Update the task row/evidence and mark it `complete` in the same branch.
 7. Stage only task-owned files.
-8. Commit intentionally using `git commit --no-verify` because the legacy local hook mutates
-   unrelated release files.
+8. Commit intentionally. P00/Q01/V01 use `git commit --no-verify` because the legacy local hook
+   mutates unrelated release files. After V01, use normal `git commit` with `.githooks` active.
 9. Push the branch and create a ready PR linked to #27.
 10. Wait for required CI checks and review/mergeability.
 11. Squash-merge to `main` and delete the remote branch.

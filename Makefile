@@ -7,7 +7,7 @@
 PYTHON ?= python
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration e2e wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality
+.PHONY: test unit integration e2e wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-set
 
 # Backwards-compatible aggregate. The Python discovery remains the broad unit/regression gate.
 test: unit e2e
@@ -56,6 +56,21 @@ docs-check:
 
 quality:
 	$(QUALITY)
+
+version-check:
+	$(PYTHON) scripts/version.py check
+
+version-show:
+	$(PYTHON) scripts/version.py show
+
+version-next-alpha:
+	$(PYTHON) scripts/version.py next-alpha
+
+version-bump-alpha:
+	$(PYTHON) scripts/version.py bump-alpha --write
+
+version-set:
+	$(PYTHON) scripts/version.py set "$(VERSION)" --write
 
 # Remove build leftovers (safe: only the dist/ wheels and build/ tree).
 clean:
