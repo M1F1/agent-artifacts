@@ -714,20 +714,31 @@ selected/changed counts, status item lists, actual modes, warnings, and safe rec
 ## Developer workflow
 
 ```sh
-make test       # full unittest suite + bash E2E round-trip
-make validate   # catalog integrity + a "no non-stdlib imports" gate
-make wheel      # stamp the commit and build the offline dist/*.whl
+make quality          # canonical non-mutating local/CI gate suite
+make test             # broad Python regression suite + bash E2E compatibility alias
+make validate         # catalog integrity + zero-runtime-dependency import gate
+make packaging-check  # build/import a wheel in a throwaway source copy
+make wheel            # release build: stamps the commit and writes dist/*.whl
 ```
 
-**Optional linting / formatting / type checking.** These are *not* required to run, test,
-or build the CLI — the runtime stays zero-dependency. Install the dev extra to use them:
+The quality tools are required only for development and CI; the installed AART runtime remains
+zero-dependency. Install the dev extra to run the same gates as GitHub Actions:
 
 ```sh
-pip install -e ".[dev]"   # adds ruff + mypy
+pip install -e ".[dev]"   # adds Ruff, mypy, coverage, and wheel smoke tooling
 make lint                 # ruff: real-bug + import-hygiene checks
 make format               # ruff: auto-format (format-check to verify only)
 make typecheck            # mypy over agent_artifacts/
+make unit                 # broad stdlib unittest discovery
+make integration          # Python end-to-end/integration modules
+make e2e                  # real shell-driven CLI round trip
+make coverage             # branch-aware ratcheted coverage report
+make docs-check           # Markdown links/fences and PLAN/PROGRESS consistency
 ```
+
+`make quality` runs every non-mutating check in that order using temporary Ruff/mypy/coverage and
+packaging locations, then verifies that repository files are byte-for-byte unchanged. CI invokes
+that same command on Python 3.10 and the latest stable feature series, currently Python 3.14.
 
 To auto-bump the version and rebuild the wheel on every commit, enable the git hook:
 

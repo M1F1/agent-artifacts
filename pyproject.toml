@@ -20,6 +20,8 @@ dependencies = []
 dev = [
     "ruff>=0.6",
     "mypy>=1.11",
+    "coverage>=7.6",
+    "wheel>=0.44",
 ]
 
 [project.scripts]
@@ -65,3 +67,13 @@ warn_unused_ignores = true
 warn_unused_configs = true
 no_implicit_optional = true
 check_untyped_defs = true
+
+[tool.coverage.run]
+branch = true
+source = ["agent_artifacts"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+precision = 2
+fail_under = 82

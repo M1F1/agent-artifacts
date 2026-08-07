@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `0.1.48`
 - **Execution status:** In progress
-- **Next task:** `Q01` after P00 merges
+- **Next task:** `V01` after Q01 merges
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -33,15 +33,15 @@ short note. Do not mark work complete from memory or commentary alone.
 | Catalog/runtime validation | Pass | Replace monolithic-catalog assumption incrementally |
 | Ruff lint | Clean tracked code is expected; current shared worktree contains unrelated untracked work | Use isolated task worktrees and never touch unrelated files |
 | Bash E2E | Existing gate | Preserve and expand through vertical slices |
-| Coverage | Not recorded | Q01 establishes non-decreasing baseline |
+| Coverage | 82.32% branch-aware on Python 3.11 | Enforce non-decreasing `fail_under = 82`; new contexts target 90% |
 | Wheel smoke | Existing hermetic unit coverage | Q01 creates explicit non-mutating gate; DIST01 expands it |
 
 ## Task ledger
 
 | ID | Task | Depends on | Status | Branch | PR / merge | Gate evidence / notes |
 |---|---|---|---|---|---|---|
-| P00 | Land planning baseline | — | complete | `codex/aart-1-0-p00-planning-baseline` | pending merge | Docs gates pass: 8 allowlisted files, 33 tasks, 29 SPEC sections, issue #27 open |
-| Q01 | Non-mutating quality gates and CI parity | P00 | pending | — | — | Establish coverage baseline |
+| P00 | Land planning baseline | — | complete | `codex/aart-1-0-p00-planning-baseline` | [#28](https://github.com/M1F1/agent-artifacts/pull/28) / `d9bd997` | Docs gates and both CI runs passed; squash merge verified on `origin/main` |
+| Q01 | Non-mutating quality gates and CI parity | P00 | complete | `codex/aart-1-0-q01-quality-gates` | pending merge | `make quality` passes; 812 unit, 21 integration, shell E2E, 82.32% coverage; Python 3.14 unit pass |
 | V01 | Alpha versioning and release discipline | Q01 | pending | — | — | First implementation version `1.0.0a1` |
 | D01 | DDD domain kernel and diagnostics | V01 | pending | — | — | Functional core foundation |
 | P01 | Strict JSON/hash/SemVer/capabilities | D01 | pending | — | — | Protocol primitives |
@@ -80,20 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: P00 — Land the AART 1.0 planning baseline
-Branch: codex/aart-1-0-p00-planning-baseline
-Worktree: /Users/mifi/code/agent-artifacts
+Task: Q01 — Establish non-mutating quality gates and CI parity
+Branch: codex/aart-1-0-q01-quality-gates
+Worktree: /tmp/aart-q01.fJUZB2/worktree
 Started: 2026-08-07
-Bounded contexts: Program governance and documentation
-Red test and expected failure: Docs-first characterization — the 0.1.x baseline had no federated
-  AART 1.0 PRD, SPEC, execution plan, or durable ledger.
-Focused tests: PASS — Markdown fences/links/headings/task-ledger consistency; git diff --check;
-  eight-file allowlist; issue #27 OPEN
-Files owned: README.md, TODO.md, PLAN.md, PROGRESS.md, docs/product/PRD-aart-1.0.md,
-  docs/design/SPEC-aart-1.0.md, docs/design/DESIGN.md, docs/plan/PLAN.md
-Risks/migrations: Documentation only; no code, version, generated artifact, or runtime mutation
-PR: pending
-CI: pending after push
+Bounded contexts: Developer tooling, verification, packaging, CI
+Red test and expected failure: 8 expected failures proved missing canonical targets/scripts, a
+  duplicated Python-3.11-only CI workflow, absent coverage tooling, and no hermetic packaging check
+Focused tests: PASS — 8 Q01 contract tests on Python 3.11 and 3.14; 812-test Python 3.14 regression
+Files owned: Makefile, pyproject.toml, .github/workflows/validate.yml, quality scripts/tests/docs,
+  PROGRESS.md
+Risks/migrations: developer-only coverage dependency; runtime dependencies must remain empty;
+  quality and packaging checks must not mutate the source tree
+PR: pending after push
+CI: pending; matrix configured for Python 3.10 and 3.14
 Merge: pending
 ```
 
@@ -101,7 +101,8 @@ Merge: pending
 
 | Task | Focused tests | Format | Ruff | Mypy | Unit | Integration | E2E | Validate | Coverage | Packaging | Docs | CI |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| P00 | docs consistency pass | n/a | n/a | n/a | n/a | n/a | n/a | allowlist + issue pass | n/a | n/a | fences/links/diff pass | pending |
+| P00 | docs consistency pass | n/a | n/a | n/a | n/a | n/a | n/a | allowlist + issue pass | n/a | n/a | fences/links/diff pass | 2× validate pass |
+| Q01 | 8 pass | 138 files pass | pass | 51 files pass | 812 pass | 21 pass | 11-step pass | pass | 82.32% (≥82%) | wheel build/import pass | links/fences/ledger pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -143,3 +144,25 @@ None.
   orphan closing fence and reran the complete validation successfully.
 - Verified eight allowlisted files, 33 PLAN/PROGRESS tasks, 29 sequential SPEC sections, valid local
   links/fences, a clean diff, and open umbrella issue #27.
+
+### 2026-08-07 — P00 merged; Q01 started
+
+- Pushed commit `f698c4a`, opened ready PR #28, observed both `validate` jobs pass, and squash-merged
+  without bypassing protection as `d9bd997`.
+- Verified `origin/main` contains the P00 ledger and the remote P00 branch was deleted.
+- Created the isolated Q01 worktree from exact merge `d9bd997`; unrelated root-worktree files are
+  outside all Q01 tooling and Git status.
+
+### 2026-08-07 — Q01 local gates complete
+
+- Confirmed Red with eight contract failures for missing Make targets/scripts, CI parity, coverage,
+  documentation, and non-mutating packaging behavior.
+- Added one canonical functional quality runner used by all Make targets and CI; every subprocess
+  receives temporary caches/data and the runner compares repository path/content/mode snapshots.
+- Extracted catalog/import validation from duplicated Make/CI snippets, added Markdown and
+  packaging checks, and preserved `dependencies = []` while adding developer-only tooling.
+- Established branch-aware coverage at 82.32% with a non-decreasing 82% fail-under threshold.
+- Verified `make quality`: Ruff format/lint, mypy, 812 unit/regression tests, 21 Python integration
+  tests, the 11-step shell E2E, validation, coverage, wheel build/import, docs, and no source mutation.
+- Verified all 812 tests on Python 3.14 and made one help assertion independent of version-specific
+  `argparse` line wrapping; CI supplies the remaining Python 3.10 matrix evidence.

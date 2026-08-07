@@ -337,7 +337,7 @@ class TestHelpAndVersion(unittest.TestCase):
     def test_top_level_help_uses_copy_and_symlink_mode_terms(self):
         out = self._help_text(["--help"])
         self.assertIn("Copy by default", out)
-        self.assertIn("--link enables local Symlink", out)
+        self.assertIn("--link enables local Symlink", " ".join(out.split()))
 
     def test_install_help_documents_symlink_context(self):
         out = self._help_text(["install", "--help"])
