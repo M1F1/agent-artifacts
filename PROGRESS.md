@@ -50,7 +50,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | [#35](https://github.com/M1F1/agent-artifacts/pull/35) / `15dfe61` | Four Python 3.10/3.14 CI jobs passed after a recorded Ruff drift fix; squash merge verified |
 | C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | in_progress | `codex/aart-1-0-src01-source-acquisition` | pending | Local quality passes: 1030 unit, 22 integration, E2E, 87.10% overall / 95.42% new-context coverage; Python 3.14 parity passes |
+| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / pending | Four Python 3.10/3.14 CI jobs pass; 1030 unit, 22 integration, E2E, 87.10% overall / 95.42% new-context coverage |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | pending | — | — | Safe verify/GC/reference model |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
@@ -95,8 +95,8 @@ Focused tests: PASS — 54 local/Git/process/store/lock/validation/status/E2E te
 Files owned: new sources/application/io modules, source tests/docs, TODO.md, PROGRESS.md
 Risks/migrations: no CAS/marketplace/CLI/TUI wiring in SRC01; local test transports are explicit;
   candidates are inert bytes and publication remains unreachable before native-source validation
-PR: pending after push
-CI: pending
+PR: #38 ready — https://github.com/M1F1/agent-artifacts/pull/38
+CI: PASS — four push/pull_request Python 3.10/3.14 quality jobs
 Merge: pending
 ```
 
@@ -114,7 +114,7 @@ Merge: pending
 | C01 | 18 pass | pass | pass | strict new contexts pass | 929 pass | 21 pass | 11-step pass | pass | 85.24% overall; 100% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | pending |
+| SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -417,3 +417,10 @@ None.
   non-mutating quality matrix passes with 1030 unit tests, 22 integration tests, shell E2E, strict
   mypy over 97 source files, Ruff, 87.10% global coverage, validation, `1.0.0a1` wheel/import, and
   documentation; all 1030 tests also pass on Python 3.14.6.
+
+### 2026-08-07 — SRC01 PR quality passed
+
+- Pushed implementation commit `b5aed23` and opened ready PR #38.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
+- Recorded the verified evidence and marked the task complete in its branch; the status becomes
+  authoritative only after the protected squash merge to `main`.
