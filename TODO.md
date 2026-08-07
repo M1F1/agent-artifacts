@@ -23,10 +23,11 @@ Product requirements:
 
 ### Protocol and compiler
 
-- [ ] Implement strict JSON schemas for source, artifact, registry, entry, lock, index, config,
-      policy, provenance, outcomes, and manifest v2 documents.
-- [ ] Implement SemVer bounds, protocol/capability negotiation, canonical JSON/tree digests, and
-      qualified coordinates.
+- [x] Implement strict JSON schemas for native sources, artifacts, provenance, and collections.
+- [ ] Implement remaining strict JSON schemas for registry, entry, lock, index, config, policy,
+      outcomes, and manifest v2 documents.
+- [x] Implement SemVer bounds, protocol/capability negotiation, and canonical JSON/tree digests.
+- [ ] Complete qualified-coordinate parsing and ambiguity handling in compiler/marketplace tasks.
 - [ ] Implement deterministic source compilation, graph validation, diagnostics, index generation,
       and frozen registry lock resolution.
 - [ ] Implement built-in deterministic importers, provenance, loss/ambiguity checks, stale-output

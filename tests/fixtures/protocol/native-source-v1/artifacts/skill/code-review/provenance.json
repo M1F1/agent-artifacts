@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "origin": {
+    "kind": "git",
+    "url": "https://github.com/example/reference-skills.git",
+    "resolved_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "path": "skills/code-review",
+    "input_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "importer": {
+    "id": "claude-skill-v1",
+    "version": "1.0.0",
+    "options_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "warnings": []
+}

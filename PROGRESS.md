@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `P02` after P01 merges
+- **Next task:** `P03`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -44,8 +44,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | Q01 | Non-mutating quality gates and CI parity | P00 | complete | `codex/aart-1-0-q01-quality-gates` | [#29](https://github.com/M1F1/agent-artifacts/pull/29) / `3c34c16` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | V01 | Alpha versioning and release discipline | Q01 | complete | `codex/aart-1-0-v01-alpha-versioning` | [#30](https://github.com/M1F1/agent-artifacts/pull/30) / `550e1d2` | Four Python 3.10/3.14 CI jobs passed after one recorded compatibility fix; squash merge verified |
 | D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | [#31](https://github.com/M1F1/agent-artifacts/pull/31) / `140c169` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | pending PR / merge | 16 focused tests, 90.96% protocol coverage, and all local gates pass |
-| P02 | Canonical artifact/native source protocol | P01 | pending | — | — | `aart-source.json`, `artifact.json` |
+| P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | [#32](https://github.com/M1F1/agent-artifacts/pull/32) / `9790312` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | pending | Local gates pass: strict native documents, explicit-root snapshot loader, legacy adapter, executable fixture |
 | P03 | Registry entry/lock/index schemas | P02 | pending | — | — | Deterministic frozen registry inputs |
 | C01 | Deterministic compiler pipeline | P03 | pending | — | — | Pure phases and diagnostics |
 | C02 | Compatibility/effects/collection graph | C01 | pending | — | — | Deterministic expansion |
@@ -80,21 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: P01 — Strict JSON, canonical hashing, SemVer, and capability primitives
-Branch: codex/aart-1-0-p01-protocol-primitives
-Worktree: /tmp/aart-p01.epEmKA/worktree
+Task: P02 — Canonical artifact and native source protocol v1
+Branch: codex/aart-1-0-p02-native-protocol
+Worktree: /tmp/aart-p02.ntPuWa/worktree
 Started: 2026-08-07
-Bounded contexts: Protocol JSON/schema/path/SemVer/capabilities and canonical hashing
-Red test and expected failure: PASS — 1 failure and 15 errors proved strict immutable JSON,
-  schema diagnostics, safe paths, SemVer bounds, capability negotiation, and canonical digests
-  did not exist; boundary-review regressions additionally caught three escaping/ambiguous cases
-Focused tests: PASS — 16 P01 contract tests; 90.96% branch coverage for the protocol context;
-  852-test regression passes on Python 3.11 and 3.14.6
-Files owned: agent_artifacts/protocol/*, focused protocol tests, architecture checks, PROGRESS.md
-Risks/migrations: protocol parsing must be Python 3.10 stdlib-only, locale/host independent,
-  deterministic, bounded, diagnostic-based, and must not silently accept unsafe legacy inputs
+Bounded contexts: Native source/artifact/provenance/collection documents and acquired-tree loading
+Red test and expected failure: PASS — 16 expected import errors because canonical schemas, packages,
+  snapshot validation, provenance/collections, and the legacy artifact adapter did not exist
+Focused tests: 26 pass; 91.09% branch coverage across new native protocol/adapter modules
+Files owned: protocol native modules, incremental legacy adapter, native protocol tests/fixtures/docs,
+  TODO.md, PROGRESS.md
+Risks/migrations: consumer discovery must use explicit roots only; source trees reject symlinks and
+  special files; parsing remains pure/stdlib-only while Git/local acquisition stays outside P02
 PR: pending after push
-CI: pending; local matrix evidence includes Python 3.11 quality and Python 3.14.6 regression
+CI: local Python 3.11 quality matrix and Python 3.14.6 full suite pass; remote matrix pending
 Merge: pending
 ```
 
@@ -106,7 +105,8 @@ Merge: pending
 | Q01 | 8 pass | 138 files pass | pass | 51 files pass | 812 pass | 21 pass | 11-step pass | pass | 82.32% (≥82%) | wheel build/import pass | links/fences/ledger pass | 4× Python 3.10/3.14 pass |
 | V01 | 11 pass | 140 files pass | pass | 51 files pass | 823 pass | 21 pass | 11-step pass | version/tag pass | 82.32% (≥82%) | `1.0.0a1` wheel/metadata pass | pass | 4× Python 3.10/3.14 pass |
 | D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | pending |
+| P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -126,6 +126,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-009 | Versions change only through explicit commands; wheels are untracked release outputs | accepted | Ordinary commits and quality gates must be reproducible and non-mutating |
 | D-010 | New 1.0 value contracts live in an IO-free `domain` package; legacy conversion lives in `adapters` | accepted | Enforces dependency direction while allowing incremental migration from `model.py` |
 | D-011 | Protocol v1 uses immutable strict JSON values, lowercase namespaced extensions, signed-64-bit numeric SemVer identifiers, and framed lexical tree hashing | accepted | Makes parsing and identities bounded, host-independent, reviewable, and fail-closed without runtime dependencies |
+| D-012 | Native-source compilation consumes an acquired immutable snapshot, discovers only the root marker and declared roots, and normalizes directory representation | accepted | Keeps local and pinned-Git compilation identical, prevents heuristic consumer crawling, allows unrelated repository content, and rejects links/special files only inside declared source content |
 
 ## Blockers
 
@@ -240,3 +241,26 @@ None.
 - Verified 16 focused tests and 90.96% branch coverage for the protocol context; `make quality`
   passes with 852 tests, strict mypy over 68 files, 21 integration tests, shell E2E, 83.00% overall
   coverage, packaging, docs, validation, and no mutation; all 852 tests pass on Python 3.14.6.
+
+### 2026-08-07 — P01 merged; P02 started
+
+- Observed all four Python 3.10/3.14 push/PR jobs pass and squash-merged PR #32 as `9790312`;
+  verified the merged PR, exact `origin/main`, remote branch deletion, and clean task worktree.
+- Removed only the explicit P01 temporary worktree and created isolated P02 from exact `9790312`.
+
+### 2026-08-07 — P02 local gates complete
+
+- Confirmed Red with 16 import errors because canonical native-source schemas, package loading,
+  provenance/collections, and the legacy artifact adapter did not exist.
+- Added strict immutable `aart-source.json`, `artifact.json`, provenance, and collection documents
+  for skill, guideline, MCP, hook, and memory artifacts, including SemVer/capability handshakes,
+  type-specific payload formats/effects, setup references, and canonical hash projections.
+- Added a pure acquired-snapshot loader: local and immutable Git origins compile identically,
+  discovery uses only the root marker and declared roots, directory representation is normalized,
+  and symlinks/special files are rejected inside declared content without rejecting unrelated files.
+- Added a deterministic legacy-artifact adapter plus an executable, documented native-source v1
+  fixture; boundary review tightened URL credentials, collection versions, immutable constants,
+  effects, malformed metadata, tree entries, and setup reference behavior.
+- Verified 26 focused tests and 91.09% branch coverage for the new context; `make quality` passes
+  with 878 tests, strict protocol mypy, 21 integration tests, shell E2E, 83.77% overall coverage,
+  validation, `1.0.0a1` wheel/import, docs, and no mutation; all 878 tests pass on Python 3.14.6.

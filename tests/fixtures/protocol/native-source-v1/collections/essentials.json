@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "essentials",
+  "summary": "Install the essential reviewed agent artifacts.",
+  "artifacts": [
+    {
+      "type": "skill",
+      "name": "code-review",
+      "version": {
+        "min_inclusive": "1.0.0",
+        "max_exclusive": "2.0.0"
+      }
+    }
+  ],
+  "collections": []
+}
