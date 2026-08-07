@@ -743,6 +743,9 @@ Install manifests pin object digests. Garbage collection retains objects referen
 - active setup transactions.
 
 `aart store gc` defaults to dry-run, acquires a global GC lock, and never follows user symlinks.
+The implemented envelope, publication, reference, transaction, verification, repair, and rollback
+contract is documented in
+[`content-addressed-store-v1.md`](../store/content-addressed-store-v1.md).
 
 ### 14.4 Sync policy
 

@@ -13,6 +13,14 @@ from .sources import (
     source_status,
     sync_source,
 )
+from .store import (
+    ReferenceUpdatePorts,
+    ReferenceUpdateRequest,
+    StoreGcPorts,
+    collect_garbage,
+    object_status,
+    replace_references,
+)
 
 __all__ = [
     "CompilerPorts",
@@ -22,8 +30,14 @@ __all__ = [
     "SourceSyncPorts",
     "SourceSyncRequest",
     "SourceStatusRequest",
+    "ReferenceUpdatePorts",
+    "ReferenceUpdateRequest",
+    "StoreGcPorts",
+    "collect_garbage",
+    "object_status",
     "compile_sources",
     "load_configuration",
     "source_status",
+    "replace_references",
     "sync_source",
 ]
