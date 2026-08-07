@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlsplit
 
-from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.identifiers import SourceAlias, SourceId
 from agent_artifacts.protocol.capabilities import Capability
 
 _SCP_GIT_RE = re.compile(r"^(?P<user>git)@(?P<host>[A-Za-z0-9.-]+):(?P<path>[^\s?#]+)$")
+_SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+_GIT_HOST_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)$")
 TRUST_CLASSES = frozenset(
     {"unverified", "local", "direct-source", "registry-reviewed", "company-reviewed"}
 )
@@ -122,6 +124,35 @@ class ReportingPolicy:
             raise ValueError("reporting public-destination policy must be boolean")
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class CompanyReviewedSource:
+    """Exact organization-designated registry identity, independent of local alias."""
+
+    source_id: SourceId
+    git_host: str
+    repository: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.source_id, SourceId)
+            or not isinstance(self.git_host, str)
+            or not isinstance(self.repository, str)
+            or self.repository.startswith("/")
+            or any(character in self.repository for character in "?#")
+        ):
+            raise ValueError("company-reviewed source identity is invalid")
+        host = self.git_host.casefold()
+        repository = _valid_repository_path(self.repository)
+        if (
+            _SLUG_RE.fullmatch(self.source_id.value) is None
+            or _GIT_HOST_RE.fullmatch(host) is None
+            or repository is None
+        ):
+            raise ValueError("company-reviewed source identity is invalid")
+        object.__setattr__(self, "git_host", host)
+        object.__setattr__(self, "repository", repository)
+
+
 @dataclass(frozen=True, slots=True)
 class OrganizationPolicy:
     schema_version: int
@@ -134,6 +165,7 @@ class OrganizationPolicy:
     allowed_setup_capabilities: tuple[Capability, ...] | None = None
     allow_custom_setup_entrypoints: bool | None = None
     reporting: ReportingPolicy = field(default_factory=ReportingPolicy)
+    company_reviewed_sources: tuple[CompanyReviewedSource, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version != 1:
@@ -148,12 +180,20 @@ class OrganizationPolicy:
             raise ValueError("organization policy minimum trust is invalid")
         if not isinstance(self.reporting, ReportingPolicy):
             raise ValueError("organization reporting policy is invalid")
+        if not all(
+            isinstance(source, CompanyReviewedSource) for source in self.company_reviewed_sources
+        ):
+            raise ValueError("organization company-reviewed source identities are invalid")
         recommended = tuple(sorted(set(self.recommended_sources)))
         required = tuple(sorted(set(self.required_sources)))
         if set(recommended) & set(required):
             raise ValueError("recommended and required sources must not overlap")
         object.__setattr__(self, "recommended_sources", recommended)
         object.__setattr__(self, "required_sources", required)
+        reviewed = tuple(sorted(set(self.company_reviewed_sources)))
+        if len(reviewed) != len(self.company_reviewed_sources):
+            raise ValueError("company-reviewed source identities must be unique")
+        object.__setattr__(self, "company_reviewed_sources", reviewed)
         if self.allowed_git_hosts is not None:
             object.__setattr__(
                 self,

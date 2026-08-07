@@ -1,6 +1,7 @@
 """Configuration and organization-policy bounded context."""
 
 from .model import (
+    CompanyReviewedSource,
     ConfiguredSource,
     OrganizationPolicy,
     ReportingMode,
@@ -24,6 +25,7 @@ from .schema import (
 
 __all__ = [
     "ConfigPaths",
+    "CompanyReviewedSource",
     "ConfiguredSource",
     "EffectiveConfiguration",
     "OrganizationPolicy",

@@ -42,6 +42,8 @@ emit deterministic UTF-8 JSON with sorted object keys and one trailing newline.
 The separate strict schema-v1 policy supports:
 
 - recommended and required source aliases;
+- exact company-reviewed registry identities (`source_id`, normalized Git host, and normalized
+  repository path);
 - allowed Git hosts and repository path prefixes;
 - enabling or denying direct sources;
 - minimum trust for user-scope installation;
@@ -53,8 +55,11 @@ overrides and before any write/network performer. An override that conflicts wit
 an effective configuration outside the source/reporting allow-list returns
 `source-policy-denied`.
 
-Setup/trust values are parsed and retained here; their operation-specific enforcement belongs to
-the setup, marketplace, and installation tasks.
+An exact company-reviewed identity is independent of the local alias and default-registry choice.
+Only the marketplace trust overlay combines it with a valid approved registry entry; source
+self-claims, aliases, and ranking cannot grant reviewed trust. Setup and minimum-installation-trust
+values are parsed and retained here; their operation-specific enforcement belongs to the setup and
+installation tasks.
 
 ## First run and no-source behavior
 

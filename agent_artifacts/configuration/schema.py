@@ -7,7 +7,7 @@ import re
 from typing import Callable, TypeVar
 
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.identifiers import SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability, parse_capability
 from agent_artifacts.protocol.json import (
@@ -21,6 +21,7 @@ from agent_artifacts.protocol.schema import validate_object_fields
 
 from .model import (
     TRUST_CLASSES,
+    CompanyReviewedSource,
     ConfiguredSource,
     OrganizationPolicy,
     ReportingMode,
@@ -407,6 +408,51 @@ def _policy_reporting(value: JsonValue) -> Result[ReportingPolicy]:
     return Ok(ReportingPolicy(mode, destination, deny))
 
 
+def _company_reviewed_source(value: JsonValue) -> Result[CompanyReviewedSource]:
+    object_result = _object(value, POLICY_INVALID, "company-reviewed source")
+    if isinstance(object_result, Err):
+        return object_result
+    fields = _validated(
+        object_result.value,
+        POLICY_INVALID,
+        required=frozenset({"source_id", "git_host", "repository"}),
+    )
+    if isinstance(fields, Err):
+        return fields
+    source_id = _string(fields.value["source_id"], POLICY_INVALID, "company source ID")
+    host = _string(fields.value["git_host"], POLICY_INVALID, "company Git host")
+    repository = _string(
+        fields.value["repository"],
+        POLICY_INVALID,
+        "company repository",
+    )
+    if isinstance(source_id, Err):
+        return source_id
+    if isinstance(host, Err):
+        return host
+    if isinstance(repository, Err):
+        return repository
+    try:
+        return Ok(CompanyReviewedSource(SourceId(source_id.value), host.value, repository.value))
+    except ValueError as error:
+        return _error(POLICY_INVALID, str(error))
+
+
+def _company_reviewed_sources(value: JsonValue) -> Result[tuple[CompanyReviewedSource, ...]]:
+    if not isinstance(value, JsonArray):
+        return _error(POLICY_INVALID, "company_reviewed_sources must be an array")
+    sources: list[CompanyReviewedSource] = []
+    for item in value.items:
+        parsed = _company_reviewed_source(item)
+        if isinstance(parsed, Err):
+            return parsed
+        sources.append(parsed.value)
+    ordered = tuple(sorted(set(sources)))
+    if len(ordered) != len(sources):
+        return _error(POLICY_INVALID, "company_reviewed_sources must not contain duplicates")
+    return Ok(ordered)
+
+
 def parse_organization_policy(data: bytes | str) -> Result[OrganizationPolicy]:
     document = _document(data, POLICY_INVALID)
     if isinstance(document, Err):
@@ -425,6 +471,7 @@ def parse_organization_policy(data: bytes | str) -> Result[OrganizationPolicy]:
                 "minimum_trust_for_user_scope",
                 "allowed_setup_capabilities",
                 "allow_custom_setup_entrypoints",
+                "company_reviewed_sources",
                 "reporting",
             }
         ),
@@ -469,6 +516,11 @@ def parse_organization_policy(data: bytes | str) -> Result[OrganizationPolicy]:
     allow_custom: bool | None = None
     minimum_trust: str | None = None
     capabilities: tuple[Capability, ...] | None = None
+    company_sources = _company_reviewed_sources(
+        fields.value.get("company_reviewed_sources", JsonArray(()))
+    )
+    if isinstance(company_sources, Err):
+        return company_sources
     if "allow_direct_sources" in fields.value:
         parsed_direct = _boolean(
             fields.value["allow_direct_sources"], POLICY_INVALID, "allow_direct_sources"
@@ -526,6 +578,7 @@ def parse_organization_policy(data: bytes | str) -> Result[OrganizationPolicy]:
                 capabilities,
                 allow_custom,
                 reporting.value,
+                company_sources.value,
             )
         )
     except ValueError as error:
@@ -534,6 +587,21 @@ def parse_organization_policy(data: bytes | str) -> Result[OrganizationPolicy]:
 
 def organization_policy_bytes(policy: OrganizationPolicy) -> bytes:
     entries: list[tuple[str, JsonValue]] = [
+        (
+            "company_reviewed_sources",
+            JsonArray(
+                tuple(
+                    JsonObject(
+                        (
+                            ("git_host", source.git_host),
+                            ("repository", source.repository),
+                            ("source_id", source.source_id.value),
+                        )
+                    )
+                    for source in policy.company_reviewed_sources
+                )
+            ),
+        ),
         (
             "recommended_sources",
             JsonArray(tuple(item.value for item in policy.recommended_sources)),
