@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "type": "skill",
+  "name": "code-review",
+  "version": "1.0.0",
+  "summary": "Review changes for correctness, security, and maintainability.",
+  "payload": {
+    "root": "payload",
+    "format": "aart-skill-v1"
+  },
+  "compatibility": {
+    "profiles": ["claude", "tabnine"],
+    "platforms": ["darwin", "linux"]
+  },
+  "install": {
+    "scopes": ["project", "user"],
+    "modes": ["copy", "symlink"],
+    "effects": ["copy-tree"]
+  }
+}

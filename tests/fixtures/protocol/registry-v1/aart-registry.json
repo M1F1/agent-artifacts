@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "registry_id": "reference-registry",
+  "display_name": "Reference Registry",
+  "requires_aart": {
+    "min_inclusive": "1.0.0",
+    "max_exclusive": "2.0.0"
+  },
+  "required_capabilities": [
+    "artifact-manifest-v1",
+    "lockfile-v1",
+    "registry-entry-v1"
+  ],
+  "default_channel": "main",
+  "services": {
+    "usage_reporting": {
+      "kind": "github-issues",
+      "repository": "M1F1/agent-artifacts-registry"
+    }
+  }
+}

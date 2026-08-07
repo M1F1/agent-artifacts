@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `P03`
+- **Next task:** `C01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -45,8 +45,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | V01 | Alpha versioning and release discipline | Q01 | complete | `codex/aart-1-0-v01-alpha-versioning` | [#30](https://github.com/M1F1/agent-artifacts/pull/30) / `550e1d2` | Four Python 3.10/3.14 CI jobs passed after one recorded compatibility fix; squash merge verified |
 | D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | [#31](https://github.com/M1F1/agent-artifacts/pull/31) / `140c169` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | [#32](https://github.com/M1F1/agent-artifacts/pull/32) / `9790312` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | pending | Local gates pass: strict native documents, explicit-root snapshot loader, legacy adapter, executable fixture |
-| P03 | Registry entry/lock/index schemas | P02 | pending | — | — | Deterministic frozen registry inputs |
+| P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | [#33](https://github.com/M1F1/agent-artifacts/pull/33) / `8b13c6f` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | pending | Local gates pass: deterministic inputs, pinned resolution, strict index/graph, executable fixture |
 | C01 | Deterministic compiler pipeline | P03 | pending | — | — | Pure phases and diagnostics |
 | C02 | Compatibility/effects/collection graph | C01 | pending | — | — | Deterministic expansion |
 | CFG01 | Platform config and organization policy | P01,D01 | pending | — | — | Zero sources/default optional |
@@ -80,18 +80,18 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: P02 — Canonical artifact and native source protocol v1
-Branch: codex/aart-1-0-p02-native-protocol
-Worktree: /tmp/aart-p02.ntPuWa/worktree
+Task: P03 — Registry entry, lock, index, and collection schemas
+Branch: codex/aart-1-0-p03-registry-protocol
+Worktree: /tmp/aart-p03.hh8Zx9/worktree
 Started: 2026-08-07
-Bounded contexts: Native source/artifact/provenance/collection documents and acquired-tree loading
-Red test and expected failure: PASS — 16 expected import errors because canonical schemas, packages,
-  snapshot validation, provenance/collections, and the legacy artifact adapter did not exist
-Focused tests: 26 pass; 91.09% branch coverage across new native protocol/adapter modules
-Files owned: protocol native modules, incremental legacy adapter, native protocol tests/fixtures/docs,
-  TODO.md, PROGRESS.md
-Risks/migrations: consumer discovery must use explicit roots only; source trees reject symlinks and
-  special files; parsing remains pure/stdlib-only while Git/local acquisition stays outside P02
+Bounded contexts: Registry manifest/services, native references, committed lock, deterministic index,
+  registry input hashing, and collection graph validation
+Red test and expected failure: PASS — three expected import errors because registry documents,
+  immutable lock resolution, graph validation, and deterministic index projection did not exist
+Focused tests: 33 pass; 96.72% branch coverage across new registry protocol modules
+Files owned: protocol registry modules, registry tests/fixtures/docs, TODO.md, PROGRESS.md
+Risks/migrations: moving refs must never escape into consumer resolution; registry-owned packages use
+  P02 canonical packages; trust remains a runtime overlay and is forbidden in authored documents
 PR: pending after push
 CI: local Python 3.11 quality matrix and Python 3.14.6 full suite pass; remote matrix pending
 Merge: pending
@@ -106,7 +106,8 @@ Merge: pending
 | V01 | 11 pass | 140 files pass | pass | 51 files pass | 823 pass | 21 pass | 11-step pass | version/tag pass | 82.32% (≥82%) | `1.0.0a1` wheel/metadata pass | pass | 4× Python 3.10/3.14 pass |
 | D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | pending |
+| P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| P03 | 33 pass | pass | pass | strict protocol pass | 911 pass | 21 pass | 11-step pass | pass | 84.81% overall; 96.72% new context | `1.0.0a1` wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -127,6 +128,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-010 | New 1.0 value contracts live in an IO-free `domain` package; legacy conversion lives in `adapters` | accepted | Enforces dependency direction while allowing incremental migration from `model.py` |
 | D-011 | Protocol v1 uses immutable strict JSON values, lowercase namespaced extensions, signed-64-bit numeric SemVer identifiers, and framed lexical tree hashing | accepted | Makes parsing and identities bounded, host-independent, reviewable, and fail-closed without runtime dependencies |
 | D-012 | Native-source compilation consumes an acquired immutable snapshot, discovers only the root marker and declared roots, and normalizes directory representation | accepted | Keeps local and pinned-Git compilation identical, prevents heuristic consumer crawling, allows unrelated repository content, and rejects links/special files only inside declared source content |
+| D-013 | Registry consumers resolve native references only through a matching committed lock; service declarations stay inert and parsed indexes revalidate their graph | accepted | Prevents moving refs, self-authored trust/reporting activation, stale input use, and forged collection memberships from reaching installation |
 
 ## Blockers
 
@@ -264,3 +266,31 @@ None.
 - Verified 26 focused tests and 91.09% branch coverage for the new context; `make quality` passes
   with 878 tests, strict protocol mypy, 21 integration tests, shell E2E, 83.77% overall coverage,
   validation, `1.0.0a1` wheel/import, docs, and no mutation; all 878 tests pass on Python 3.14.6.
+
+### 2026-08-07 — P02 merged; P03 started
+
+- Observed all four Python 3.10/3.14 push/PR jobs pass and squash-merged PR #33 as `8b13c6f`;
+  verified the merged PR, exact `origin/main`, remote branch deletion, and clean task worktree.
+- Removed only the explicit P02 temporary worktree and created isolated P03 from exact `8b13c6f`.
+
+### 2026-08-07 — P03 local gates complete
+
+- Confirmed Red with three import errors covering 33 planned registry schema, lock, tree, graph,
+  deterministic index, security-boundary, and executable-fixture tests.
+- Added frozen strict documents for `aart-registry.json`, native Git entries, committed lock records,
+  and payload-free indexes, with canonical projections, namespaced extension preservation, service
+  advertisements, review/provenance summaries, pinned commits, and all required digests.
+- Added host-independent registry-input hashing that canonicalizes JSON, binds payload/review input,
+  excludes generated lock/index and unrelated files, rejects declared links/specials, and produces
+  identical results for local and immutable-Git snapshots.
+- Added consumer resolution that returns only approved committed-lock coordinates after input,
+  URL/ref/path/review, identity, and self-reference checks; a moving requested ref is never used as
+  the resolved source.
+- Added deterministic index generation plus parser-side graph revalidation for duplicates,
+  ambiguity, version bounds, dangling references, cycles, and derived nested membership; documented
+  and executed a registry fixture containing both an owned package and an external native reference.
+- Boundary review preserved Git path case during origin comparison, tightened ref validation, kept
+  service advertisements inert, rejected trust/payload bytes, and prevented extension loss.
+- Verified 33 focused tests and 96.72% branch coverage for the new context; `make quality` passes
+  with 911 tests, strict protocol mypy, 21 integration tests, shell E2E, 84.81% overall coverage,
+  validation, `1.0.0a1` wheel/import, docs, and no mutation; all 911 tests pass on Python 3.14.6.
