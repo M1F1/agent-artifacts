@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+PYTHON_BIN="${PYTHON:-python3}"
+"$PYTHON_BIN" scripts/version.py check
+git diff --cached --check

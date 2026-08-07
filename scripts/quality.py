@@ -82,7 +82,10 @@ def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ..
             ((python, "-m", "unittest", "discover", "-s", "tests", "-p", "*e2e_test.py"),),
         ),
         Gate("e2e", (("bash", "tests/e2e_test.sh"),)),
-        Gate("validate", ((python, "scripts/validate.py"),)),
+        Gate(
+            "validate",
+            ((python, "scripts/validate.py"), (python, "scripts/version.py", "check")),
+        ),
         Gate(
             "coverage",
             (

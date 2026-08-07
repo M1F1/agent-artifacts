@@ -4,9 +4,7 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-# Keep dist/ — the offline wheel is shipped (DESIGN.md §15 / PLAN.md WP-21)
-# (remove the next line's leading '#' if you decide dist/ is release-only)
-#dist/
+/dist/*.whl
 
 # Local env
 .venv/

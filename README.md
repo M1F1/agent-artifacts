@@ -719,6 +719,9 @@ make test             # broad Python regression suite + bash E2E compatibility a
 make validate         # catalog integrity + zero-runtime-dependency import gate
 make packaging-check  # build/import a wheel in a throwaway source copy
 make wheel            # release build: stamps the commit and writes dist/*.whl
+make version-check    # validate source version consistency and stable-release policy
+make version-show     # print the current canonical version
+make version-next-alpha  # preview the next 1.0.0aN without changing files
 ```
 
 The quality tools are required only for development and CI; the installed AART runtime remains
@@ -740,8 +743,22 @@ make docs-check           # Markdown links/fences and PLAN/PROGRESS consistency
 packaging locations, then verifies that repository files are byte-for-byte unchanged. CI invokes
 that same command on Python 3.10 and the latest stable feature series, currently Python 3.14.
 
-To auto-bump the version and rebuild the wheel on every commit, enable the git hook:
+Version changes are deliberate release actions. The development train starts at `1.0.0a1`:
 
 ```sh
-chmod +x .git/hooks/pre-commit
+make version-bump-alpha                # explicitly write the next 1.0.0aN
+make version-set VERSION=1.0.0rc1      # explicitly write another validated prerelease
 ```
+
+Setting or tagging stable `1.0.0` fails closed until every task through `REL01` is complete.
+Generated `dist/*.whl` files are local/release outputs and are not committed; GitHub release jobs
+verify that the tag and source version match before building and uploading a wheel.
+
+Enable the repository-owned pre-commit hook with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The hook is non-mutating: it checks synchronized versions and staged whitespace only. It never
+bumps a version, builds a wheel, or stages files.
