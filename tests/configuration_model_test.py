@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agent_artifacts.configuration.model import (
+    CompanyReviewedSource,
     ConfiguredSource,
     OrganizationPolicy,
     ReportingMode,
@@ -14,7 +15,7 @@ from agent_artifacts.configuration.model import (
     UserConfiguration,
     git_location_parts,
 )
-from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.identifiers import SourceAlias, SourceId
 
 
 class ConfigurationModelTest(unittest.TestCase):
@@ -51,6 +52,14 @@ class ConfigurationModelTest(unittest.TestCase):
                 1,
                 recommended_sources=(SourceAlias("same"),),
                 required_sources=(SourceAlias("same"),),
+            ),
+            lambda: OrganizationPolicy(1, company_reviewed_sources=("source",)),  # type: ignore[arg-type]
+            lambda: OrganizationPolicy(
+                1,
+                company_reviewed_sources=(
+                    CompanyReviewedSource(SourceId("source"), "example.test", "team/repo"),
+                    CompanyReviewedSource(SourceId("source"), "EXAMPLE.TEST", "team/repo.git"),
+                ),
             ),
         )
 

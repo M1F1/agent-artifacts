@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `MKT01`
+- **Next task:** `IMP01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -51,8 +51,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / pending | Four Python 3.10/3.14 jobs pass; 1067 unit, 23 integration, E2E, 87.34% overall / 91.01% store-context coverage |
-| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
+| CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / `15304ae` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `54c139a` | Four Python 3.10/3.14 implementation CI jobs passed; final ledger CI and squash merge pending |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
 | REG01 | Maintainer registry commands/quality gate | IMP02 | pending | — | — | No automatic Git mutation |
@@ -80,20 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: CAS01 — Immutable content-addressed artifact store
-Branch: codex/aart-1-0-cas01-content-store
-Worktree: /tmp/aart-cas01.JmlOc2/worktree
+Task: MKT01 — Federated marketplace, qualification, and trust overlay
+Branch: codex/aart-1-0-mkt01-federated-marketplace
+Worktree: /tmp/aart-mkt01.zr75wT/worktree
 Started: 2026-08-07
-Bounded contexts: Pure immutable-object/reference/GC plans, digest-verifying store application,
-  private filesystem adapter, repair/status, global GC lock, and dry-run-first collection
-Red test and expected failure: PASS — six expected import errors because immutable
-  store/application/object/reference/lock APIs did not exist
-Focused tests: 37 pass; 91.01% branch coverage across the new store context
-Files owned: new store/application/io modules, store tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: no install/marketplace wiring in CAS01; deletion requires explicit execute mode;
-  source/current and installed/setup references must dominate retention before any collection
-PR: #39 ready — https://github.com/M1F1/agent-artifacts/pull/39
-CI: PASS — four push/pull_request Python 3.10/3.14 quality jobs
+Bounded contexts: Pure runtime source views, trust evidence/decisions, ranked marketplace catalog,
+  deterministic search/list/rendering, and qualified/unqualified resolution over the C02 graph
+Red test and expected failure: four expected import errors because the marketplace package and
+  exact company-reviewed source policy value did not exist; the dependency-boundary test passed
+Focused tests: 47 pass; 97.56% branch coverage across marketplace/configuration contexts
+Files owned: new marketplace modules/tests/docs, exact company-review policy schema, TODO.md,
+  PROGRESS.md
+Risks/migrations: no CLI/TUI/install wiring in MKT01; aliases/default ranking never grant trust or
+  resolve collisions; company review requires exact policy source identity plus approved entry
+PR: https://github.com/M1F1/agent-artifacts/pull/40 (ready)
+CI: four implementation push/pull_request jobs passed on Python 3.10/3.14; final ledger rerun pending
 Merge: pending
 ```
 
@@ -113,6 +114,7 @@ Merge: pending
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 implementation pass; ledger rerun pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -137,6 +139,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-014 | Compiler Index creates an immutable candidate before Materialize, and pure phases receive no source locator/host path | accepted | Enforces plan-before-write, keeps host-specific acquisition data out of deterministic identity, and makes Publish unreachable until all candidate object/snapshot receipts match |
 | D-015 | Marketplace identity is source-alias-qualified; collection expansion and compatibility decisions are pure shared graph results | accepted | Prevents silent cross-source shadowing and keeps browse, bundles, security, and install consumers on one deterministic expansion/reason contract |
 | D-016 | Source snapshots are keyed by origin-independent content digest while pointers also bind the resolved local digest or Git commit | accepted | Converges identical local/Git bytes, permits safe concurrent publication, and preserves immutable revision provenance without path-derived identity |
+| D-017 | Effective marketplace trust is a local policy overlay bound to source, snapshot, object, review, provenance, and policy evidence | accepted | Prevents source self-claims, aliases, and default ranking from granting reviewed trust and makes evidence changes invalidate the decision |
 
 ## Blockers
 
@@ -456,6 +459,46 @@ None.
 ### 2026-08-07 — CAS01 PR quality passed
 
 - Pushed implementation commit `cf845a1` and opened ready PR #39.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
+- Recorded the verified evidence and marked the task complete in its branch; the status becomes
+  authoritative only after the protected squash merge to `main`.
+
+### 2026-08-07 — CAS01 merged; MKT01 started
+
+- Observed all four replacement Python 3.10/3.14 jobs pass and squash-merged PR #39 as `15304ae`;
+  verified the merged PR, exact `origin/main`, store files, and remote branch deletion.
+- Removed only the explicit clean CAS01 temporary worktree and created isolated MKT01 from exact
+  `15304ae`; unrelated root-worktree files remain untouched.
+- Scoped MKT01 around the existing qualified C02 graph: deterministic ranking without shadowing,
+  exact resolution, source health/freshness, local policy-derived trust, provenance/digest output,
+  and trust-evidence invalidation.
+
+### 2026-08-07 — MKT01 Red/Green and boundary review
+
+- Confirmed Red with four expected import errors for the absent marketplace package and exact
+  company-reviewed source policy identity; the pure dependency-boundary test already passed.
+- Added a bounded deterministic union over enabled runtime source states and the qualified C02
+  graph, default-registry presentation ranking without shadowing, explicit unique/qualified
+  resolution, removed-history projections, and preservation of qualified collections.
+- Added locally derived `local`, `direct-source`, `registry-reviewed`, `company-reviewed`, and
+  `unverified` decisions. Company review requires the exact declared source ID, normalized Git
+  host/repository policy identity, and an approved registry entry; aliases, defaults, and direct
+  source review metadata cannot elevate trust.
+- Bound trust evidence to artifact digests, normalized provenance, source identity/origin/revision/
+  snapshot, entry review, and the complete canonical policy. JSON and human projections include
+  qualified provenance/digest/health/trust evidence and defensively redact common secrets.
+- Repository code review tightened strict SemVer/slug/query values, runtime health/current
+  consistency, source/item/collection binding, duplicate collection rejection, hard catalog
+  bounds, ambiguity details, and credential-bearing provenance/summary output.
+- Verified 47 focused tests and 97.56% branch coverage across the marketplace/configuration
+  contexts. The canonical non-mutating quality matrix passes with 1088 unit tests, 24 integration
+  tests, the 11-step shell E2E, strict mypy over 107 source files, Ruff over 250 files, 87.55%
+  global branch coverage, validation, `1.0.0a1` wheel/import, and documentation. All 1088 tests
+  also pass on Python 3.14.6; exact PR/CI evidence follows below.
+
+### 2026-08-07 — MKT01 implementation PR quality passed
+
+- Pushed implementation commit `54c139a` and opened ready PR #40.
 - All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
 - Recorded the verified evidence and marked the task complete in its branch; the status becomes
   authoritative only after the protected squash merge to `main`.

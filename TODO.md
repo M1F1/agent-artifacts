@@ -29,7 +29,9 @@ Product requirements:
       policy.
 - [ ] Implement remaining strict JSON schemas for outcomes and manifest v2 documents.
 - [x] Implement SemVer bounds, protocol/capability negotiation, and canonical JSON/tree digests.
-- [ ] Complete qualified-coordinate parsing and ambiguity handling in compiler/marketplace tasks.
+- [x] Implement qualified marketplace resolution and ambiguity diagnostics without silent source
+      shadowing.
+- [ ] Parse user-entered qualified coordinates at the future CLI/TUI application boundary.
 - [x] Implement deterministic registry-input hashing, graph validation, index generation, and
       frozen registry lock resolution.
 - [x] Implement typed deterministic compiler phases, accumulated diagnostics, immutable candidate
@@ -45,13 +47,14 @@ Product requirements:
       one optional default registry.
 - [x] Add organization policy for recommended/required sources, allowed Git hosts/prefixes, setup
       capabilities, minimum user-scope trust, custom setup, and reporting destinations.
-- [ ] Extend policy consumption with exact company-reviewed source identity and operation-specific
-      scope/trust/setup gates in the marketplace, installation, and setup tasks.
+- [x] Extend policy and marketplace consumption with exact company-reviewed source identity and
+      effective trust evidence.
+- [ ] Enforce operation-specific scope/trust/setup gates in the installation and setup tasks.
 - [x] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
       concurrency control, and offline last-known-good behavior.
 - [x] Implement the content-addressed artifact object store with digest verification, safe GC, and
       install/setup references.
-- [ ] Merge configured sources deterministically without silent shadowing and display effective
+- [x] Merge configured sources deterministically without silent shadowing and display effective
       source/trust for every artifact.
 
 ### Consumer and TUI migration

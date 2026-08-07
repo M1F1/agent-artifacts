@@ -774,6 +774,10 @@ Effective trust classes:
 Trust is recalculated when URL, declared source/registry ID, resolved commit, lock, entry review,
 object digest, or policy changes. It is not serialized into the artifact package.
 
+The implemented pure runtime projection, qualification rules, exact organization source identity,
+trust-evidence digest, and JSON/human output contract are recorded in
+[`federated-marketplace-v1.md`](../marketplace/federated-marketplace-v1.md).
+
 Duplicate `<type>/<name>` entries remain visible as distinct qualified rows. An unqualified CLI
 request that matches more than one row fails with `artifact-ambiguous` and lists valid qualified
 coordinates.
