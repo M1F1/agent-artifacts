@@ -1,0 +1,7 @@
+{
+  "name": "lint",
+  "description": "Run a deterministic lint hook.",
+  "events": ["PreToolUse"],
+  "command": "python3 ${SCRIPT_DIR}/scripts/lint.py",
+  "files": ["scripts/lint.py"]
+}

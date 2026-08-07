@@ -37,8 +37,9 @@ Product requirements:
 - [x] Implement typed deterministic compiler phases, accumulated diagnostics, immutable candidate
       planning, injected effect ports, and publication gating.
 - [x] Supply the concrete source/compatibility/effects graph compiler on the phase framework.
-- [ ] Implement built-in deterministic importers, provenance, loss/ambiguity checks, stale-output
-      validation, and promotion of native direct sources into registries.
+- [x] Implement the closed built-in importer registry plus deterministic legacy-catalog conversion,
+      provenance, loss/ambiguity checks, and stale-output validation.
+- [ ] Implement promotion of native direct sources into registries and locked importer reruns.
 - [ ] Add registry quality gates for format, validate, lock, build, audit, diff, and profile tests.
 
 ### Federated sources and managed store
@@ -90,8 +91,10 @@ Product requirements:
 - [ ] Create the public `M1F1/agent-artifacts-registry` reference marketplace during SEP01, only
       after the deterministic export and public-content preflight pass.
 - [ ] Provide a confidential-content-free bootstrap/template for a company registry.
-- [ ] Migrate the current top-level 0.1.x catalog into canonical source/registry layout with a
-      reviewable built-in importer.
+- [x] Provide deterministic, reviewable conversion of the current top-level 0.1.x catalog into a
+      canonical native source.
+- [ ] Promote the converted top-level 0.1.x catalog into the canonical registry layout during the
+      reviewed SEP01 migration.
 - [ ] Add dry-run/apply/backup/rollback migration for existing 0.1.x installation state.
 - [ ] Test direct-source-only, multi-registry, company-plus-team, native-reference, foreign-import,
       collision, trust, offline, concurrency, Copy/Symlink, setup, and reporting fixtures.

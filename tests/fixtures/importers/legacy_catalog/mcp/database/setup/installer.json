@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "artifact": "mcp/database",
+  "purpose": "Configure the test database connection.",
+  "platforms": ["darwin"],
+  "help_urls": [],
+  "required_tools": [],
+  "capabilities": [],
+  "inputs": [],
+  "steps": []
+}

@@ -1,0 +1,15 @@
+{
+  "name": "base",
+  "description": "The complete deterministic importer fixture.",
+  "extends": [],
+  "includes": {
+    "skills": ["demo"],
+    "guidelines": ["style"],
+    "mcp": ["database"],
+    "hooks": ["lint"],
+    "memory": ["house"]
+  },
+  "pins": {
+    "demo": "legacy-ref"
+  }
+}
