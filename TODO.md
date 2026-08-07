@@ -39,7 +39,7 @@ Product requirements:
 - [x] Supply the concrete source/compatibility/effects graph compiler on the phase framework.
 - [x] Implement the closed built-in importer registry plus deterministic legacy-catalog conversion,
       provenance, loss/ambiguity checks, and stale-output validation.
-- [ ] Implement promotion of native direct sources into registries and locked importer reruns.
+- [x] Implement promotion of native direct sources into registries and locked importer reruns.
 - [ ] Add registry quality gates for format, validate, lock, build, audit, diff, and profile tests.
 
 ### Federated sources and managed store

@@ -72,8 +72,10 @@ migration/registry-command responsibility.
 
 - This task exposes the typed Python application service and filesystem output adapter; Maintainer
   CLI commands arrive with the registry command work.
-- The result is a canonical native source, not a registry lock or compiled index. Native reference
-  promotion and locked upstream refresh belong to IMP02 and REG01.
+- The result is a canonical native source, not a registry lock or compiled index. IMP02 supplies
+  the exact recorded-importer rerun check; REG01 will expose it through maintainer commands and
+  registry quality gates. See
+  [`registry maintenance planning v1`](../registry/maintenance-planning-v1.md).
 - Foreign layouts that cannot be mapped without guessing must first be converted to the native AART
   standard. One-off converter plugins are intentionally unsupported.
 - Import diagnostics never include credentials, local checkout paths, raw setup output, or arbitrary

@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `IMP01`
+- **Next task:** `REG01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -53,8 +53,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / `15304ae` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `85a5a5f` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| IMP01 | Importer contract and legacy catalog importer | MKT01 | in_progress | `codex/aart-1-0-imp01-legacy-importer` | pending | Maintainer-only deterministic conversion |
-| IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
+| IMP01 | Importer contract and legacy catalog importer | MKT01 | complete | `codex/aart-1-0-imp01-legacy-importer` | [#41](https://github.com/M1F1/agent-artifacts/pull/41) / `e3157d3` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| IMP02 | Native references/promotion/upstream locks | IMP01,P03 | complete | `codex/aart-1-0-imp02-native-promotion` | pending | Local gates pass; no payload duplication or automatic Git mutation |
 | REG01 | Maintainer registry commands/quality gate | IMP02 | pending | — | — | No automatic Git mutation |
 | STATE01 | Manifest v2 and state migration | REG01 | pending | — | — | Backup/dry-run/rollback |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | pending | — | — | Immutable reviewed plan |
@@ -80,21 +80,22 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: IMP01 — Maintainer importer contract and legacy catalog importer
-Branch: codex/aart-1-0-imp01-legacy-importer
-Worktree: /tmp/aart-imp01.YP48sl/worktree
+Task: IMP02 — Native references, promotion, and locked upstream updates
+Branch: codex/aart-1-0-imp02-native-promotion
+Worktree: /tmp/aart-imp02.22GGIK/worktree
 Started: 2026-08-07
-Bounded contexts: Built-in importer registry and frozen workflow values; pure legacy catalog scan,
-  deterministic canonical materialization/provenance/validation/diff; reviewed temp-output apply
-Red test and expected failure: five expected import errors because the protocol-v1 importer
-  package and canonical provenance/collection writers do not exist; two boundary tests pass
-Focused tests: 42 pass; 90.61% branch coverage across importer/application/filesystem contexts
-Files owned: new importer/application/IO modules and tests/fixtures/docs, native canonical writers,
-  TODO.md, PROGRESS.md
-Risks/migrations: maintainer-only conversion must never execute content, follow unsafe entries,
-  infer ambiguous semantics, include credentials/timestamps/local paths, or mutate before review
-PR: https://github.com/M1F1/agent-artifacts/pull/41 (ready)
-CI: four implementation push/pull_request jobs pass on Python 3.10/3.14; ledger rerun pending
+Bounded contexts: Pure registry mutation/promotion/update plans; immutable native acquisition proof;
+  lock/index regeneration; exact recorded-importer upstream checks; injected reviewed apply port
+Red test and expected failure: five expected import errors because registry-maintenance models,
+  planning, and application services do not exist; two dependency-boundary tests pass
+Focused tests: 31 pass plus 2 subtests; deterministic add/promotion/no-op/update, review transition,
+  stale-state, owned-package, collection, and recorded-importer cases pass
+Files owned: new registry-maintenance domain/application modules and tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: native references must never duplicate payloads; identity/ref/commit/digests must
+  agree; materialized importer updates must use recorded importer/options and remain reviewed diffs;
+  no service may commit or push Git changes
+PR: [#42](https://github.com/M1F1/agent-artifacts/pull/42), ready and mergeable
+CI: first four-job push/PR Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -115,7 +116,8 @@ Merge: pending
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 2× 4-job Python 3.10/3.14 pass |
-| IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 4× implementation CI pass; ledger rerun pending |
+| IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 2× 4-job Python 3.10/3.14 pass |
+| IMP02 | 31 pass + 2 subtests | 281 files pass | pass | 118 source files pass | 1161 pass | 28 pass | 11-step pass | pass | 87.72% overall; 85.68% focused context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1161 pass; first 4-job Python 3.10/3.14 CI matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -141,6 +143,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-015 | Marketplace identity is source-alias-qualified; collection expansion and compatibility decisions are pure shared graph results | accepted | Prevents silent cross-source shadowing and keeps browse, bundles, security, and install consumers on one deterministic expansion/reason contract |
 | D-016 | Source snapshots are keyed by origin-independent content digest while pointers also bind the resolved local digest or Git commit | accepted | Converges identical local/Git bytes, permits safe concurrent publication, and preserves immutable revision provenance without path-derived identity |
 | D-017 | Effective marketplace trust is a local policy overlay bound to source, snapshot, object, review, provenance, and policy evidence | accepted | Prevents source self-claims, aliases, and default ranking from granting reviewed trust and makes evidence changes invalidate the decision |
+| D-018 | Native registry references retain upstream source identity and promotion is a reviewed three-file projection | accepted | Preserves marketplace qualification, avoids payload duplication, and confines mutations to entry/lock/index without commit or push |
 
 ## Blockers
 
@@ -555,3 +558,46 @@ None.
   action only reran local quality commands and did not mutate tracked files or remote code.
 - Recorded the verified implementation evidence in this ledger. A final four-job matrix reruns on
   this documentation-only commit before the protected squash merge.
+
+### 2026-08-07 — IMP01 merged; IMP02 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #41 as `e3157d3`; verified the
+  merged PR, exact `origin/main`, and remote branch deletion.
+- Removed only the clean IMP01 temporary worktree and created the isolated IMP02 worktree from
+  exact `e3157d3`; unrelated root-worktree files remain untouched.
+- Scoped IMP02 to pure, review-digest-bound registry entry/promotion/upstream plans over existing
+  protocol-v1 lock/index primitives, with native references that write no payload bytes and
+  materialized foreign refreshes that rerun only the recorded built-in importer/options.
+
+### 2026-08-07 — IMP02 Red
+
+- Added tests for deterministic entry-only add, native promotion without payload duplication,
+  exact lock/ref/commit/digest projection, identity mismatch, unchanged/changed upstream checks,
+  recorded importer/options enforcement, and reviewed application finalization.
+- Confirmed Red with five expected missing-module import errors; both pure-planner and consumer
+  dependency-boundary tests already pass.
+
+### 2026-08-07 — IMP02 Green, review, and local gates
+
+- Added pure entry, native promotion, locked-upstream check, and recorded-importer rerun planners;
+  every registry change is digest-bound and limited to entry/lock/index, while apply remains behind
+  an injected port with no Git publication operation.
+- Native references retain the acquired upstream `source_id` and payload bytes stay in the source;
+  registry-owned packages and collections are revalidated and preserved in the compiled index.
+- Applied the repository `code-review` skill. Regression-first review fixed forged review digests,
+  stale no-op finalization, inconsistent lock/index preservation, hard-coded artifact roots, lost
+  owned packages, source-ID changes, runtime value validation, and pending/re-review transitions.
+- Verified 31 focused tests plus 2 subtests and the broader registry/importer suite; strict mypy and
+  dependency-boundary tests forbid IO, Git/process, dynamic-plugin, and consumer-path imports.
+- `make quality` passes with 1,161 unit tests, 28 integration tests, the 11-step shell E2E, Ruff over
+  281 files, mypy over 118 source files, 87.72% global branch coverage, `1.0.0a1` wheel/import,
+  validation, docs, and the non-mutation check. All 1,161 tests also pass on Python 3.14.6.
+
+### 2026-08-07 — IMP02 implementation CI
+
+- Committed the reviewed implementation as `05a758c`, pushed the isolated task branch, and opened
+  ready PR #42 targeting `main` with the complete Red/Green/gate/security evidence.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
