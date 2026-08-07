@@ -1,7 +1,95 @@
 # TODO
 
-Backup implementation tracker for the open TUI and installation UX work. GitHub issues remain
-the source of truth for discussion and status; keep this file aligned with them.
+Backup implementation tracker. GitHub issues remain the source of truth for discussion and status;
+keep this file aligned with them.
+
+## [#27 — AART 1.0: federated artifact compiler and optional registries](https://github.com/M1F1/agent-artifacts/issues/27)
+
+Product requirements:
+[`docs/product/PRD-aart-1.0.md`](docs/product/PRD-aart-1.0.md). Technical contract:
+[`docs/design/SPEC-aart-1.0.md`](docs/design/SPEC-aart-1.0.md). Task sequencing and quality gates:
+[`PLAN.md`](PLAN.md). Durable execution state: [`PROGRESS.md`](PROGRESS.md).
+
+### Architecture and release
+
+- [x] Separate the AART compiler/tool repository from operational artifact registries.
+- [x] Define a federated marketplace with zero or more direct sources/registries and an optional
+      default registry.
+- [x] Define native references, materialized foreign imports, and direct source subscriptions.
+- [x] Treat importers as deterministic Maintainer-time migration/curation tools, never consumer
+      runtime conversion.
+- [x] Write the AART 1.0 PRD and technical specification.
+- [ ] Start implementation versions at `1.0.0a1`; do not tag `1.0.0` before the release gates pass.
+
+### Protocol and compiler
+
+- [ ] Implement strict JSON schemas for source, artifact, registry, entry, lock, index, config,
+      policy, provenance, outcomes, and manifest v2 documents.
+- [ ] Implement SemVer bounds, protocol/capability negotiation, canonical JSON/tree digests, and
+      qualified coordinates.
+- [ ] Implement deterministic source compilation, graph validation, diagnostics, index generation,
+      and frozen registry lock resolution.
+- [ ] Implement built-in deterministic importers, provenance, loss/ambiguity checks, stale-output
+      validation, and promotion of native direct sources into registries.
+- [ ] Add registry quality gates for format, validate, lock, build, audit, diff, and profile tests.
+
+### Federated sources and managed store
+
+- [ ] Add user configuration for zero or more local/Git source and registry aliases, with at most
+      one optional default registry.
+- [ ] Add organization policy for recommended/required sources, allowed Git hosts/prefixes, setup
+      capabilities, scopes, trust, and reporting destinations.
+- [ ] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
+      concurrency control, and offline last-known-good behavior.
+- [ ] Implement the content-addressed artifact object store with digest verification, safe GC, and
+      install/setup references.
+- [ ] Merge configured sources deterministically without silent shadowing and display effective
+      source/trust for every artifact.
+
+### Consumer and TUI migration
+
+- [ ] Resolve Install/Update from qualified source subscriptions and immutable objects.
+- [ ] Keep Copy as default and make managed Symlink target immutable store content; sync alone must
+      not retarget installed artifacts.
+- [ ] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
+      setup state, and structured outcomes to manifest v2.
+- [ ] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
+      Review/Finalize, descriptions, modes, scopes, and explicit outcomes.
+- [ ] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests.
+- [ ] Keep reporting disabled without an explicit destination and route configured reports only to
+      the policy-approved repository.
+
+### Installation-risk assessment
+
+- [ ] Add a zero-runtime-dependency baseline that reports digest-bound installation-risk evidence,
+      not a claim that an artifact is safe.
+- [ ] Add a versioned out-of-process JSON protocol for independently installed analyzers; never
+      auto-install them or import them into the AART process.
+- [ ] Add optional adapters/suites for applicable open-source analyzers while preserving the
+      stdlib-only AART runtime.
+- [ ] Add signed/digest-bound evidence indexes, freshness handling, deterministic bundle
+      aggregation, and policy gates based on worst/unknown status rather than average alone.
+- [ ] Show provider, rules version, evidence age, coverage, risk range, and remediation details in
+      CLI/TUI marketplace, review, maintainer, and outcome views.
+- [ ] Test malicious provider output, timeout, crash, stale/mismatched evidence, partial bundle
+      coverage, offline behavior, and policy enforcement.
+
+### Repositories, migration, and verification
+
+- [ ] Create the public `M1F1/agent-artifacts-registry` reference marketplace during SEP01, only
+      after the deterministic export and public-content preflight pass.
+- [ ] Provide a confidential-content-free bootstrap/template for a company registry.
+- [ ] Migrate the current top-level 0.1.x catalog into canonical source/registry layout with a
+      reviewable built-in importer.
+- [ ] Add dry-run/apply/backup/rollback migration for existing 0.1.x installation state.
+- [ ] Test direct-source-only, multi-registry, company-plus-team, native-reference, foreign-import,
+      collision, trust, offline, concurrency, Copy/Symlink, setup, and reporting fixtures.
+- [ ] Test local editable and local-wheel installation without an embedded operational registry or
+      checkout-relative runtime data.
+- [ ] Prove deleting/recreating the Python environment does not break managed artifact symlinks.
+- [ ] Run registry CI with the minimum supported and latest compatible AART versions.
+
+## Completed 0.1.x TUI and installation UX
 
 ## [#15 — TUI: add User/Maintainer entry paths and maintainer workflows](https://github.com/M1F1/agent-artifacts/issues/15)
 

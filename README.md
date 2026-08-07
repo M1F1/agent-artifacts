@@ -1,5 +1,14 @@
 # agent-artifacts (`aart`)
 
+> [!IMPORTANT]
+> The current implementation is `0.1.x` and still uses the monolithic tool-plus-catalog model
+> documented below. The approved AART 1.0 direction separates the compiler from federated artifact
+> sources and optional registries. See the
+> [AART 1.0 PRD](docs/product/PRD-aart-1.0.md),
+> [technical specification](docs/design/SPEC-aart-1.0.md), and
+> [implementation plan](PLAN.md) with its [progress ledger](PROGRESS.md), plus the
+> [tracking issue #27](https://github.com/M1F1/agent-artifacts/issues/27).
+
 **One catalog of AI artifacts. Every agentic harness on your team, in sync.**
 
 `agent-artifacts` installs your team's **skills, guidelines, MCP servers, hooks, and memory
