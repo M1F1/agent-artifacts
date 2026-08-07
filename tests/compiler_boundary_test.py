@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import ast
+import unittest
+from pathlib import Path
+
+
+class CompilerBoundaryTest(unittest.TestCase):
+    def test_compiler_domain_and_application_have_no_durable_io_imports(self) -> None:
+        root = Path(__file__).parents[1] / "agent_artifacts"
+        files = (
+            root / "compiler" / "model.py",
+            root / "application" / "compiler.py",
+        )
+        forbidden = {
+            "os",
+            "pathlib",
+            "shutil",
+            "socket",
+            "subprocess",
+            "urllib",
+            "agent_artifacts.io",
+            "agent_artifacts.github_source",
+        }
+        for path in files:
+            with self.subTest(path=path):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                imported: set[str] = set()
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        imported.update(alias.name for alias in node.names)
+                    elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                        imported.add(node.module)
+                self.assertFalse(
+                    any(
+                        name == forbidden_name or name.startswith(f"{forbidden_name}.")
+                        for name in imported
+                        for forbidden_name in forbidden
+                    ),
+                    imported,
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
