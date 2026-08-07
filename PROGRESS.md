@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `C01`
+- **Next task:** `C02`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -46,8 +46,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | D01 | DDD domain kernel and diagnostics | V01 | complete | `codex/aart-1-0-d01-domain-kernel` | [#31](https://github.com/M1F1/agent-artifacts/pull/31) / `140c169` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P01 | Strict JSON/hash/SemVer/capabilities | D01 | complete | `codex/aart-1-0-p01-protocol-primitives` | [#32](https://github.com/M1F1/agent-artifacts/pull/32) / `9790312` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | P02 | Canonical artifact/native source protocol | P01 | complete | `codex/aart-1-0-p02-native-protocol` | [#33](https://github.com/M1F1/agent-artifacts/pull/33) / `8b13c6f` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | pending | Local gates pass: deterministic inputs, pinned resolution, strict index/graph, executable fixture |
-| C01 | Deterministic compiler pipeline | P03 | pending | — | — | Pure phases and diagnostics |
+| P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | [#34](https://github.com/M1F1/agent-artifacts/pull/34) / `b7d5cc5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | pending | Local gates pass: typed phases, deterministic replay, injected ports, publication gate |
 | C02 | Compatibility/effects/collection graph | C01 | pending | — | — | Deterministic expansion |
 | CFG01 | Platform config and organization policy | P01,D01 | pending | — | — | Zero sources/default optional |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | pending | — | — | Atomic last-known-good |
@@ -80,18 +80,17 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: P03 — Registry entry, lock, index, and collection schemas
-Branch: codex/aart-1-0-p03-registry-protocol
-Worktree: /tmp/aart-p03.hh8Zx9/worktree
+Task: C01 — Deterministic functional compiler pipeline
+Branch: codex/aart-1-0-c01-compiler-pipeline
+Worktree: /tmp/aart-c01.Em6MjL/worktree
 Started: 2026-08-07
-Bounded contexts: Registry manifest/services, native references, committed lock, deterministic index,
-  registry input hashing, and collection graph validation
-Red test and expected failure: PASS — three expected import errors because registry documents,
-  immutable lock resolution, graph validation, and deterministic index projection did not exist
-Focused tests: 33 pass; 96.72% branch coverage across new registry protocol modules
-Files owned: protocol registry modules, registry tests/fixtures/docs, TODO.md, PROGRESS.md
-Risks/migrations: moving refs must never escape into consumer resolution; registry-owned packages use
-  P02 canonical packages; trust remains a runtime overlay and is forbidden in authored documents
+Bounded contexts: Pure compiler phase values/transitions and injected application orchestration
+Red test and expected failure: PASS — three expected import/file errors because phase results,
+  orchestration, frozen resolution, deterministic replay, and publish gating did not exist
+Focused tests: 18 pass; 100% branch coverage across compiler domain/application modules
+Files owned: new compiler domain/application modules, compiler tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: no durable IO adapter in C01; effects remain behind source/object/publish ports;
+  invalid or incomplete candidates must never reach materialization or publication
 PR: pending after push
 CI: local Python 3.11 quality matrix and Python 3.14.6 full suite pass; remote matrix pending
 Merge: pending
@@ -107,7 +106,8 @@ Merge: pending
 | D01 | 13 pass | 150 files pass | pass | 60 files pass | 836 pass | 21 pass | 11-step pass | pass | 82.65% overall; 98.14% new kernel | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P01 | 16 pass | 162 files pass | pass | 68 files + strict protocol pass | 852 pass | 21 pass | 11-step pass | pass | 83.00% overall; 90.96% protocol | wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| P03 | 33 pass | pass | pass | strict protocol pass | 911 pass | 21 pass | 11-step pass | pass | 84.81% overall; 96.72% new context | `1.0.0a1` wheel/import pass | pass | pending |
+| P03 | 33 pass | pass | pass | strict protocol pass | 911 pass | 21 pass | 11-step pass | pass | 84.81% overall; 96.72% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| C01 | 18 pass | pass | pass | strict new contexts pass | 929 pass | 21 pass | 11-step pass | pass | 85.24% overall; 100% new context | `1.0.0a1` wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -129,6 +129,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-011 | Protocol v1 uses immutable strict JSON values, lowercase namespaced extensions, signed-64-bit numeric SemVer identifiers, and framed lexical tree hashing | accepted | Makes parsing and identities bounded, host-independent, reviewable, and fail-closed without runtime dependencies |
 | D-012 | Native-source compilation consumes an acquired immutable snapshot, discovers only the root marker and declared roots, and normalizes directory representation | accepted | Keeps local and pinned-Git compilation identical, prevents heuristic consumer crawling, allows unrelated repository content, and rejects links/special files only inside declared source content |
 | D-013 | Registry consumers resolve native references only through a matching committed lock; service declarations stay inert and parsed indexes revalidate their graph | accepted | Prevents moving refs, self-authored trust/reporting activation, stale input use, and forged collection memberships from reaching installation |
+| D-014 | Compiler Index creates an immutable candidate before Materialize, and pure phases receive no source locator/host path | accepted | Enforces plan-before-write, keeps host-specific acquisition data out of deterministic identity, and makes Publish unreachable until all candidate object/snapshot receipts match |
 
 ## Blockers
 
@@ -294,3 +295,39 @@ None.
 - Verified 33 focused tests and 96.72% branch coverage for the new context; `make quality` passes
   with 911 tests, strict protocol mypy, 21 integration tests, shell E2E, 84.81% overall coverage,
   validation, `1.0.0a1` wheel/import, docs, and no mutation; all 911 tests pass on Python 3.14.6.
+
+### 2026-08-07 — P03 merged; C01 started
+
+- Observed all four Python 3.10/3.14 push/PR jobs pass and squash-merged PR #34 as `b7d5cc5`;
+  exact-head protection rejected one incorrect full SHA before the verified head was merged.
+- Verified `origin/main`, remote branch deletion, removed only the explicit P03 worktree, and created
+  isolated C01 from exact `b7d5cc5`.
+
+### 2026-08-07 — C01 local gates complete
+
+- Confirmed Red with three import/file errors because the compiler domain, application service,
+  typed phase results, effect ports, and architecture boundary did not exist.
+- Added frozen source/acquisition/context, phase output/report, resolved compilation, object plan,
+  immutable candidate, publication request/receipt, and complete run values with digest-bound bytes,
+  canonical ordering, and deterministic diagnostics.
+- Added generic pure Parse/Handshake/Resolve/Normalize/Validate/Index steps plus injected Acquire,
+  Materialize, and Publish callable ports; no durable IO imports or adapters were introduced.
+- Consumer requests require locked revisions/snapshot digests and a frozen Resolve result. Acquire
+  and Materialize accumulate independent failures, while every failed phase deterministically skips
+  all later phases and makes publication unreachable.
+- Boundary review removed locators/host paths from the pure compiler context, retained warnings when
+  a phase also errors, validated every port receipt, and refined the SPEC so Index creates the
+  complete candidate before any object write.
+- Verified deterministic replay across source order and different host locators, all phase failure
+  cuts, partial immutable-object failures, invalid candidates, mismatched receipts, and programmer
+  invariants with 18 focused tests and 100% branch coverage.
+- `make quality` passes with 929 tests, strict mypy, 21 integration tests, shell E2E, 85.24% overall
+  coverage, validation, `1.0.0a1` wheel/import, docs, and no mutation; all 929 tests pass on Python
+  3.14.6.
+
+### 2026-08-07 — C01 CI formatter drift fixed
+
+- Diagnosed all four PR #35 failures as the same format-only difference between local Ruff 0.12.2
+  and the CI-resolved Ruff 0.16.2; no compiler behavior or test result had failed.
+- Applied the current canonical formatting and re-ran the complete local quality and Python 3.14
+  gates before updating the PR.

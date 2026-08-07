@@ -575,10 +575,15 @@ The same core compiler serves consumers and Maintainer CI.
 5. **Normalize:** produce canonical in-memory artifact records.
 6. **Validate:** check identities, versions, paths, digests, graph references, collections,
    compatibility, effects, setup, and policy.
-7. **Materialize:** copy a selected/required canonical package into the content-addressed store.
-8. **Index:** emit deterministic compiled marketplace records.
+7. **Index:** emit a deterministic, immutable candidate with its required object plans.
+8. **Materialize:** copy only candidate objects into the content-addressed store.
 9. **Diagnose:** return structured warnings/errors and human rendering.
-10. **Publish:** atomically mark a complete validated snapshot current.
+10. **Publish:** atomically mark a complete validated and materialized snapshot current.
+
+Index construction precedes materialization so every semantic/compiler failure happens before a
+write port is called. Immutable object writes may partially succeed when an adapter reports several
+independent failures, but publication remains unreachable until every planned object receipt and
+the final snapshot receipt match their digests.
 
 Consumer compilation is frozen: it never advances an external registry ref. Maintainer
 `lock/update` may resolve moving refs and then produces a reviewable lock/index diff.

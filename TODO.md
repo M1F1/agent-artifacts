@@ -31,7 +31,9 @@ Product requirements:
 - [ ] Complete qualified-coordinate parsing and ambiguity handling in compiler/marketplace tasks.
 - [x] Implement deterministic registry-input hashing, graph validation, index generation, and
       frozen registry lock resolution.
-- [ ] Implement the complete deterministic source compiler phases and accumulated diagnostics.
+- [x] Implement typed deterministic compiler phases, accumulated diagnostics, immutable candidate
+      planning, injected effect ports, and publication gating.
+- [ ] Supply the concrete source/compatibility/effects graph compiler on the phase framework.
 - [ ] Implement built-in deterministic importers, provenance, loss/ambiguity checks, stale-output
       validation, and promotion of native direct sources into registries.
 - [ ] Add registry quality gates for format, validate, lock, build, audit, diff, and profile tests.
