@@ -137,3 +137,25 @@ the source of truth for discussion and status; keep this file aligned with them.
 - [x] Add a representative MCP setup fixture or reviewed example (Atlassian preferred).
 - [x] Document the trust model, authoring contract, retry flow, and the role of SETUP.md as
       optional reference rather than the primary guided setup path.
+
+## [#21 — TUI: add onboarding, progress stepper, back navigation, and persistent selections](https://github.com/M1F1/agent-artifacts/issues/21)
+
+- [x] Start text and curses sessions with a concise controls/onboarding screen.
+- [x] Derive an accessible, non-color-only progress stepper from the applicable User or Maintainer
+      stage graph and keep it usable in narrow terminals.
+- [x] Model navigation, confirmations, basket values, notices, and curses cursor/scroll positions
+      in one immutable `WizardSession` shared by both frontends.
+- [x] Support one-stage Back on every applicable screen (`KEY_BACKSPACE`, `127`, and `8` in
+      curses; `b`/`back` in text) without dispatching or losing valid selections.
+- [x] Preserve the artifact/bundle/upstream basket across Review/Edit and selectively remove only
+      choices invalidated by earlier edits, with a visible reason.
+- [x] Show complete Review facts from issues #15–#20, including descriptions, source, scope,
+      destinations, projected install modes, warnings, structured outcomes, and setup queue.
+- [x] Make Finalize the sole consumer/upstream apply boundary; keep curses teardown before command
+      dispatch and setup execution.
+- [x] Preserve Maintainer validation/dry-run preview while moving catalog apply behind Finalize.
+- [x] Confirm quit when the basket is non-empty and explicitly report that cancellation made no
+      changes.
+- [x] Cover pure transitions/rendering, text and curses adapters, Maintainer flows, real lifecycle
+      E2E, and all repository quality gates.
+- [x] Document onboarding, navigation, basket persistence, Review, and Finalize behavior.

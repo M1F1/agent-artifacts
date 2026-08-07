@@ -89,7 +89,7 @@ class MaintainerTuiEndToEndTests(unittest.TestCase):
 
                 with redirect_stdout(io.StringIO()):
                     checked = tui._run_text(
-                        _scripted_reader(["2", "5", "1"]),
+                        _scripted_reader(["2", "5", "1", "y"]),
                         lambda _text="": None,
                         source_dir=str(catalog),
                     )

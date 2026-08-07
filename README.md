@@ -71,6 +71,21 @@ The bare `aart` command first asks which path you need:
   third-party upstreams through guided, preview-first operations.
 
 Both paths are available in the full-screen TUI and its plain-text fallback.
+The first screen explains the controls. Every later screen starts with a text marker stepper, so
+progress is still clear without color and in narrow terminals:
+
+```text
+[x] How it works -> [x] Role -> [x] Harness -> [●] Action
+[ ] Scope -> [ ] Mode -> [ ] Artifacts -> [ ] Review
+Stage: Action
+Enter = choose · b / back = previous · q / quit = quit
+```
+
+Use Backspace in the full-screen TUI or `b`/`back` in the fallback to move back exactly one
+applicable stage. Confirmed choices, the artifact/bundle basket, and the curses cursor/scroll
+position are retained. If an earlier edit makes only some basket rows invalid, the wizard removes
+only those rows and prints the reason. Quitting with a non-empty basket asks before discarding it.
+
 Artifact and bundle selectors explain every choice in one line. In the full-screen selector,
 press `?` to open the complete description for the highlighted row. In the plain-text fallback,
 enter `?N` (for example `?3`) to repeat the complete description for item N.
@@ -93,6 +108,12 @@ resolved destination paths, harnesses, requested mode, selected rows, projected 
 the ordered setup queue for setup-capable artifacts.
 User destinations are absolute. Symlink is rejected for a remote source before artifact selection;
 use flag mode with `--source DIR --link` to choose a durable local checkout.
+
+Install, Update, Uninstall, Status, and Maintainer paths all end at a separate **Review** stage.
+`Finalize` is the only wizard decision that can dispatch the reviewed request. Back/edit, quit,
+cursor movement, source reads, validation, and Maintainer dry-run previews do not apply changes.
+For Maintainer add/import/update, Review records a successful `validate -> dry-run` preview;
+Finalize then performs exactly one apply and validates the resulting catalog again.
 
 Every completed action ends with an explicit outcome summary in command mode and both TUI
 frontends. A successful no-op is not silent and is distinct from an empty selection:

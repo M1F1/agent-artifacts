@@ -34,16 +34,17 @@ def _collector():
 
 
 class RoleFirstTextTests(unittest.TestCase):
-    def test_role_is_first_and_each_role_has_one_line_explanation(self):
+    def test_onboarding_is_first_then_roles_have_one_line_explanations(self):
         write, lines = _collector()
 
         with mock.patch.object(tui, "_dispatch") as dispatch:
-            code = tui._run_text(_scripted_reader(["q"]), write, source_dir=FIXTURES)
+            code = tui._run_text(_scripted_reader(["", "q"]), write, source_dir=FIXTURES)
 
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
         screen = "\n".join(lines)
-        self.assertTrue(screen.startswith("Choose how you want to use aart:"))
+        self.assertTrue(screen.startswith("How aart TUI works"))
+        self.assertIn("Choose how you want to use aart:", screen)
         self.assertIn("User", screen)
         self.assertIn("subscribed catalogs", screen)
         self.assertIn("Maintainer", screen)
@@ -118,6 +119,7 @@ class RoleFirstCursesTests(unittest.TestCase):
         with (
             mock.patch.object(curses, "wrapper", side_effect=wrapper),
             mock.patch.object(curses, "curs_set", return_value=None),
+            mock.patch("builtins.input", side_effect=["y"]),
             mock.patch.object(tui, "_curses_singleselect", side_effect=single),
             mock.patch.object(
                 tui, "_dispatch", side_effect=lambda request: captured.append(request) or 0
@@ -211,7 +213,7 @@ class MaintainerTextTests(unittest.TestCase):
             tui, "_dispatch", side_effect=lambda request: captured.append(request) or 0
         ):
             code = tui._run_text(
-                _scripted_reader(["2", "1"]),
+                _scripted_reader(["2", "1", "y"]),
                 write,
                 source_dir=FIXTURES,
             )
@@ -391,9 +393,7 @@ class MaintainerTextTests(unittest.TestCase):
             ):
                 with self.subTest(action=expected_action, selection=answer):
                     captured = []
-                    answers = ["2", action_number, answer]
-                    if expected_action == "update":
-                        answers.append("y")
+                    answers = ["2", action_number, answer, "y"]
                     with mock.patch.object(
                         tui,
                         "_dispatch",

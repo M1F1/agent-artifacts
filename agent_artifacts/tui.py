@@ -1,4 +1,4 @@
-"""Interactive selector — WP-20. The second "skin" over the one command core.
+"""Persistent interactive wizard. The second "skin" over the one command core.
 
 docs/design/DESIGN.md §13 ("one core, two skins"): a bare ``agent-artifacts`` on a TTY launches this
 selector; otherwise the CLI runs in flag mode. This module owns **no** consumer or upstream
@@ -12,11 +12,10 @@ Two front-ends, one body:
   full-screen selector and **degrades to a plain ``input()``/``print()`` flow** when curses
   is unavailable or fails to initialise (no TTY, dumb terminal, ``curses`` import/`setupterm`
   error). Either way the *same* selection→Request→dispatch path runs.
-* ``_run_text(read, write, ...)`` — the fallback flow, factored so the I/O channels and the
-  source factory are injectable. This makes the whole interaction unit-testable headless: a
-  test scripts ``read`` with a list of answers, points ``source_factory`` at
-  ``tests/fixtures`` and ``project`` at a tmp dir, and asserts the resulting exit code /
-  filesystem effects — no real terminal, no curses.
+* ``_run_text(read, write, ...)`` — the fallback flow, factored so I/O and source resolution are
+  injectable. Text and curses fold explicit input events into the same immutable
+  :class:`~agent_artifacts.wizard.WizardSession`, then map only a finalized Review to the command
+  core. This keeps the complete interaction headlessly testable without a real terminal.
 
 Dispatch is resilient to integration order: it prefers ``cli.DISPATCH`` (WP-19) when present
 and otherwise imports the command modules directly. Both routes call the *same* ``run``
@@ -42,6 +41,7 @@ from .model import (
     InstallMode,
     InstallScope,
     Manifest,
+    ManifestEntry,
     Profile,
     Request,
     Result,
@@ -53,6 +53,27 @@ from .profiles.loader import load_profiles
 from .profiles.scope import profile_for_scope
 from .setup import build_queue, recovery_messages
 from .source import open_source
+from .wizard import (
+    BasketItem,
+    WizardInput,
+    WizardSession,
+    can_finalize,
+    initial_session,
+    onboarding_lines,
+    reconcile_basket,
+    remember_position,
+    render_header,
+    request_quit,
+)
+from .wizard import (
+    advance as wizard_advance,
+)
+from .wizard import (
+    back as wizard_back,
+)
+from .wizard import (
+    select as wizard_select,
+)
 
 # The three write actions the selector can drive; these are the verbs that build and dispatch a
 # Request.
@@ -541,7 +562,9 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
     mode_label = "Symlink" if confirmation.requested_mode == "symlink" else "Copy"
     scope_label = "User" if confirmation.scope == "user" else "Project"
     lines: Tuple[str, ...] = (
-        "Confirm installation",
+        "Review installation",
+        "  Role: User",
+        "  Action: Install",
         f"  Source: {confirmation.source_label} ({confirmation.source_root})",
         f"  Destination: {scope_label} — {confirmation.destination_root}",
         f"  Harnesses: {', '.join(confirmation.profiles)}",
@@ -550,8 +573,12 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
             f"  Projected modes: {confirmation.modes.linked} linked, "
             f"{confirmation.modes.copied} copied"
         ),
+        f"  Selected count: {len(confirmation.selected)}",
         f"  Selected: {', '.join(confirmation.selected)}",
+        "  Expected mutation: install managed artifacts and record their manifest state.",
     )
+    if confirmation.modes.linked and confirmation.modes.copied:
+        lines += ("  Warning: mixed-mode fallback copies targets that cannot be safely symlinked.",)
     if confirmation.scope == "user" and confirmation.destinations:
         lines += ("  Resolved destinations:",) + tuple(
             f"    - {path}" for path in confirmation.destinations
@@ -1067,6 +1094,539 @@ def _run_user_text(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _UserWizardReadModel:
+    catalog: Catalog
+    manifest: Optional[Manifest]
+    choices: Tuple[_Choice, ...]
+    profiles_map: Mapping[str, Profile]
+    source_label: str = ""
+    source_root: str = ""
+
+
+def _basket_key(choice: _Choice) -> str:
+    return (
+        f"{choice.type}/{choice.name}"
+        if choice.kind == "artifact" and choice.type is not None
+        else f"{choice.kind}/{choice.name}"
+    )
+
+
+def _basket_item(choice: _Choice) -> BasketItem:
+    return BasketItem(
+        "bundle" if choice.kind == "bundle" else "artifact",
+        _basket_key(choice),
+        choice.label,
+        choice.description,
+    )
+
+
+def _user_review_lines(
+    session: WizardSession,
+    read_model: Optional[_UserWizardReadModel],
+    *,
+    project: Optional[str],
+    user_home: Optional[str],
+) -> Tuple[str, ...]:
+    """Project complete non-Install Review facts without performing effects."""
+    scope_root = os.path.abspath(
+        user_home or os.path.expanduser("~") if session.scope == "user" else project or "."
+    )
+    lines: Tuple[str, ...] = (
+        "Review action",
+        "  Role: User",
+        f"  Action: {(session.action or 'status').title()}",
+        f"  Harnesses: {_profiles_label(session.profiles)}",
+        f"  Scope: {session.scope.title()} — {scope_root}",
+    )
+    if read_model is not None and read_model.source_label:
+        lines += (f"  Catalog source: {read_model.source_label}",)
+
+    entries: Tuple[ManifestEntry, ...] = ()
+    if read_model is not None and read_model.manifest is not None:
+        selected_artifacts = {
+            item.key.split("/", 1)[1]
+            for item in session.basket
+            if item.kind == "artifact" and "/" in item.key
+        }
+        selected_bundles = {
+            item.key.split("/", 1)[1]
+            for item in session.basket
+            if item.kind == "bundle" and "/" in item.key
+        }
+        entries = tuple(
+            entry
+            for entry in read_model.manifest.installed
+            if entry.profile in session.profiles
+            and (entry.artifact in selected_artifacts or entry.bundle in selected_bundles)
+        )
+        subscriptions = tuple(
+            dict.fromkeys(
+                (
+                    f"{entry.subscription.kind}:{entry.subscription.location}"
+                    + (f"@{entry.subscription.ref}" if entry.subscription.ref else "")
+                )
+                for entry in entries
+                if entry.subscription is not None
+            )
+        )
+        for subscription in subscriptions:
+            lines += (f"  Recorded subscription: {subscription}",)
+
+    lines += (f"  Selected count: {len(session.basket)}",)
+    for item in session.basket:
+        description = f" — {item.description}" if item.description else ""
+        lines += (f"  Selected: {item.label}{description}",)
+
+    destinations: List[str] = []
+    for entry in entries:
+        destinations.extend(entry.files)
+        if entry.merge is not None:
+            destinations.append(entry.merge.file)
+        destinations.extend(link.path for link in entry.install.links)
+    for destination in dict.fromkeys(destinations):
+        resolved = (
+            destination
+            if os.path.isabs(destination)
+            else os.path.abspath(os.path.join(scope_root, destination))
+        )
+        lines += (f"  Resolved destination: {resolved}",)
+    if session.action == "status":
+        lines += ("  Expected mutation: none; Status is read-only.",)
+    else:
+        lines += (f"  Expected mutation: {session.action} only the selected managed artifacts.",)
+    return lines
+
+
+def _write_wizard_header(session: WizardSession, write: WriteFn) -> None:
+    width = shutil.get_terminal_size(fallback=(100, 24)).columns
+    for line in render_header(session, width=max(width, 1), frontend="text"):
+        write(line)
+
+
+def _prompt_wizard_indices(
+    read: ReadFn,
+    write: WriteFn,
+    prompt: str,
+    choices: Sequence[_Choice],
+    *,
+    selected: Sequence[int] = (),
+) -> WizardInput:
+    selected_tuple = tuple(dict.fromkeys(selected))
+    while True:
+        line = _read_line(read, prompt)
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip()
+        low = answer.lower()
+        if low in ("q", "quit"):
+            return WizardInput("quit")
+        if low in ("b", "back"):
+            return WizardInput("back")
+        if not answer and selected_tuple:
+            return WizardInput("confirm", selected_tuple)
+        if answer.startswith("?"):
+            number = answer[1:].strip()
+            if number.isdigit() and 1 <= int(number) <= len(choices):
+                choice = choices[int(number) - 1]
+                identity = _choice_label(choice.kind, choice.name, choice.type, "")
+                write(f"{identity}: {choice.description or 'No catalog description is available.'}")
+                continue
+            write(f"Enter ?N with a number between 1 and {len(choices)}.")
+            continue
+        parsed = _parse_indices(answer, len(choices))
+        if parsed:
+            disabled = tuple(choices[index] for index in parsed if not choices[index].enabled)
+            if disabled:
+                for choice in disabled:
+                    write(f"{choice.name}: {choice.reason or 'this item is unavailable'}.")
+                continue
+            return WizardInput("confirm", parsed)
+        write(
+            f"Please enter number(s) between 1 and {len(choices)}, 'b' to go back, or 'q' to quit."
+        )
+
+
+def _prompt_wizard_action(read: ReadFn, write: WriteFn) -> WizardInput | str:
+    while True:
+        line = _read_line(read, "Action (b=back, q=quit): ")
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip().lower()
+        if answer in ("q", "quit"):
+            return WizardInput("quit")
+        if answer in ("b", "back"):
+            return WizardInput("back")
+        if answer in ACTIONS:
+            return answer
+        if answer.isdigit() and 1 <= int(answer) <= len(ACTIONS):
+            return ACTIONS[int(answer) - 1]
+        write(f"Please enter 1-{len(ACTIONS)}, an action name, 'b', or 'q'.")
+
+
+def _prompt_wizard_scope(read: ReadFn, write: WriteFn) -> WizardInput | InstallScope:
+    while True:
+        line = _read_line(read, "Installation scope [1] (b=back, q=quit): ")
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip().lower()
+        if answer in ("q", "quit"):
+            return WizardInput("quit")
+        if answer in ("b", "back"):
+            return WizardInput("back")
+        if answer in ("", "1", "project"):
+            return "project"
+        if answer in ("2", "user", "global"):
+            return "user"
+        write("Please enter 1 (Project), 2 (User), 'b' to go back, or 'q' to quit.")
+
+
+def _load_user_wizard_read_model(
+    session: WizardSession,
+    *,
+    source_factory: SourceFactory,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+    user_home: Optional[str],
+) -> _UserWizardReadModel | Err:
+    assert session.action is not None
+    base_profiles = load_profiles(project)
+    resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
+    scope = session.scope
+    profiles_map: Mapping[str, Profile] = (
+        base_profiles
+        if scope == "project"
+        else {
+            name: profile_for_scope(profile, "user", resolved_home)
+            for name, profile in base_profiles.items()
+        }
+    )
+    request_project = project if scope == "project" else None
+    catalog = Catalog(artifacts={}, bundles={})
+    source_label = ""
+    source_root = ""
+    if session.action in ("install", "update"):
+        source_result = source_factory(
+            Request(
+                command=session.action,
+                source_dir=source_dir,
+                repo=repo,
+                project=request_project,
+                scope=scope,  # type: ignore[arg-type]
+                user_home=user_home,
+            )
+        )
+        if isinstance(source_result, Err):
+            return source_result
+        source = source_result.value
+        catalog_result = source.catalog()
+        if isinstance(catalog_result, Err):
+            return catalog_result
+        catalog = catalog_result.value
+        source_label = source.label()
+        source_root = getattr(source, "root", source_label.removeprefix("local:"))
+        if (
+            session.action == "install"
+            and session.install_mode == "symlink"
+            and not source_label.startswith("local:")
+        ):
+            return Err(
+                "Symlink requires a durable local catalog; choose one with "
+                "aart install ... --source DIR --link",
+                code=2,
+            )
+    elif session.action == "uninstall":
+        source_result = source_factory(
+            Request(
+                command="uninstall",
+                source_dir=source_dir,
+                repo=repo,
+                project=request_project,
+                scope=scope,  # type: ignore[arg-type]
+                user_home=user_home,
+            )
+        )
+        if not isinstance(source_result, Err):
+            catalog_result = source_result.value.catalog()
+            if not isinstance(catalog_result, Err):
+                catalog = catalog_result.value
+                source_label = source_result.value.label()
+                source_root = source_result.value.root
+
+    manifest: Optional[Manifest] = None
+    if session.action in ("update", "uninstall"):
+        manifest_result = _load_manifest_for_action(
+            session.action,
+            source_dir=source_dir,
+            repo=repo,
+            project=request_project,
+            scope=scope,  # type: ignore[arg-type]
+            user_home=user_home,
+        )
+        if isinstance(manifest_result, Err):
+            return manifest_result
+        manifest = manifest_result.value
+    choices = build_action_choices(
+        session.action,
+        catalog,
+        manifest,
+        session.profiles,
+        profiles_map,
+        install_mode=session.install_mode,  # type: ignore[arg-type]
+        scope=scope,  # type: ignore[arg-type]
+    )
+    return _UserWizardReadModel(
+        catalog,
+        manifest,
+        choices,
+        profiles_map,
+        source_label,
+        source_root,
+    )
+
+
+def _confirm_wizard_quit(session: WizardSession, read: ReadFn, write: WriteFn) -> bool:
+    if request_quit(session) == "quit":
+        return True
+    write(f"Discard {len(session.basket)} selected basket item(s)?")
+    line = _read_line(read, f"Discard {len(session.basket)} selected basket item(s)? [y/N]: ")
+    if line is None:
+        write("Input ended; the basket was discarded and no changes were made.")
+        return True
+    if line.strip().lower() in ("y", "yes"):
+        return True
+    write("Returning to the wizard; no changes were made.")
+    return False
+
+
+def _run_user_text_wizard(
+    session: WizardSession,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    source_factory: SourceFactory,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+    user_home: Optional[str],
+) -> int | WizardSession:
+    read_model: Optional[_UserWizardReadModel] = None
+    read_key: Optional[tuple] = None
+    profile_names = tuple(sorted(load_profiles(project)))
+    while True:
+        if session.current in ("role", "maintainer_action"):
+            return session
+        _write_wizard_header(session, write)
+        if session.current == "profiles":
+            write("Select profile(s):")
+            choices = tuple(_Choice("profile", name, None, name) for name in profile_names)
+            for index, choice in enumerate(choices, start=1):
+                write(f"  {index:>2}. {choice.label}")
+            selected = tuple(
+                index for index, name in enumerate(profile_names) if name in session.profiles
+            )
+            write(f"Selected: {len(selected)} profile(s)")
+            event = _prompt_wizard_indices(
+                read,
+                write,
+                "Profile(s) (b=back, q=quit): ",
+                choices,
+                selected=selected,
+            )
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            session = wizard_select(
+                session, "profiles", tuple(profile_names[index] for index in event.selected)
+            )
+            session = wizard_advance(session)
+            continue
+        if session.current == "action":
+            write("Action:")
+            for index, action in enumerate(ACTIONS, start=1):
+                write(f"  {index:>2}. {action}")
+            selected_action = _prompt_wizard_action(read, write)
+            if isinstance(selected_action, WizardInput):
+                if selected_action.kind == "back":
+                    session = wizard_back(session)
+                elif _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            session = wizard_select(session, "action", selected_action)
+            if selected_action == "status" and session.basket:
+                session = reconcile_basket(
+                    session,
+                    {item.key: "not applicable to the Status action" for item in session.basket},
+                )
+            session = wizard_advance(session)
+            read_model = None
+            continue
+        if session.current == "scope":
+            write("Installation scope:")
+            for index, scope_choice in enumerate(INSTALL_SCOPE_CHOICES, start=1):
+                write(f"  {index:>2}. {scope_choice.label:<23} {scope_choice.description}")
+            selected_scope = _prompt_wizard_scope(read, write)
+            if isinstance(selected_scope, WizardInput):
+                if selected_scope.kind == "back":
+                    session = wizard_back(session)
+                elif _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            session = wizard_select(session, "scope", selected_scope)
+            session = wizard_advance(session)
+            read_model = None
+            continue
+        if session.current == "mode":
+            selected_mode = _prompt_install_mode(read, write)
+            if selected_mode is None:
+                if _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            if selected_mode == "back":
+                session = wizard_back(session)
+                continue
+            session = wizard_select(session, "mode", selected_mode)
+            session = wizard_advance(session)
+            read_model = None
+            continue
+        if session.current == "artifacts":
+            key = (
+                session.action,
+                session.profiles,
+                session.scope,
+                session.install_mode,
+            )
+            if read_model is None or read_key != key:
+                loaded = _load_user_wizard_read_model(
+                    session,
+                    source_factory=source_factory,
+                    source_dir=source_dir,
+                    repo=repo,
+                    project=project,
+                    user_home=user_home,
+                )
+                if isinstance(loaded, Err):
+                    write(f"error: {loaded.reason}")
+                    return loaded.code
+                read_model = loaded
+                read_key = key
+            if not read_model.choices:
+                write(_empty_choices_message(session.action or "", session.profiles))
+                return _render_result(
+                    CommandOutcome(0, ActionSummary(action=session.action or "selection")), write
+                )
+            availability = {
+                _basket_key(choice): "" if choice.enabled else choice.reason
+                for choice in read_model.choices
+            }
+            session = reconcile_basket(session, availability)
+            write(f"Select artifact(s)/bundle(s) for {_profiles_label(session.profiles)}:")
+            width = shutil.get_terminal_size(fallback=(200, 24)).columns
+            for index, choice in enumerate(read_model.choices, start=1):
+                write(_text_choice_line(index, choice, width))
+            write("Enter ?N for details; blank keeps the current basket.")
+            selected = tuple(
+                index
+                for index, choice in enumerate(read_model.choices)
+                if _basket_key(choice) in {item.key for item in session.basket}
+            )
+            write(f"Selected: {len(selected)} basket item(s)")
+            event = _prompt_wizard_indices(
+                read,
+                write,
+                "Selection (b=back, q=quit): ",
+                read_model.choices,
+                selected=selected,
+            )
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            if not event.selected:
+                write("Select at least one artifact or bundle before continuing.")
+                continue
+            session = wizard_select(
+                session,
+                "artifacts",
+                tuple(_basket_item(read_model.choices[index]) for index in event.selected),
+            )
+            session = wizard_advance(session)
+            continue
+        if session.current == "review":
+            chosen: Tuple[_Choice, ...] = ()
+            if read_model is not None:
+                by_key = {_basket_key(choice): choice for choice in read_model.choices}
+                chosen = tuple(by_key[item.key] for item in session.basket if item.key in by_key)
+            request = _build_request(
+                session.action or "status",
+                chosen,
+                session.profiles,
+                source_dir=source_dir,
+                repo=repo,
+                project=project,
+                install_mode=session.install_mode,  # type: ignore[arg-type]
+                scope=session.scope,  # type: ignore[arg-type]
+                user_home=user_home,
+            )
+            confirmation: Optional[InstallConfirmation] = None
+            if session.action == "install":
+                assert read_model is not None
+                confirmation = build_install_confirmation(
+                    source_label=read_model.source_label,
+                    source_root=read_model.source_root,
+                    project=project,
+                    profiles=session.profiles,
+                    requested_mode=session.install_mode,  # type: ignore[arg-type]
+                    catalog=read_model.catalog,
+                    choices=chosen,
+                    profiles_map=read_model.profiles_map,
+                    scope=session.scope,  # type: ignore[arg-type]
+                    user_home=user_home,
+                )
+                for line in render_install_confirmation(confirmation):
+                    write(line)
+            else:
+                for line in _user_review_lines(
+                    session, read_model, project=project, user_home=user_home
+                ):
+                    write(line)
+            write("Finalize applies this reviewed action; Back edits without changes.")
+            review_answer = _read_line(read, "Finalize? [y/N] (b=back, q=quit): ")
+            answer = "q" if review_answer is None else review_answer.strip().lower()
+            if answer in ("b", "back"):
+                session = wizard_back(session)
+                continue
+            if answer in ("q", "quit"):
+                if _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            if answer not in ("y", "yes", "f", "finalize"):
+                write("Review not finalized; no changes were made.")
+                continue
+            if not can_finalize(session, revision=session.revision):
+                write("Wizard state changed; review it again before Finalize.")
+                continue
+            outcome = _dispatch_result(request)
+            code = _render_result(outcome, write)
+            if code != 0 or confirmation is None:
+                return code
+            return _run_post_install_setup(
+                confirmation.setup_queue,
+                request,
+                scope_root=confirmation.destination_root,
+                read=read,
+                write=write,
+            )
+
+
 def _run_text(
     read: ReadFn = input,
     write: WriteFn = print,
@@ -1077,41 +1637,80 @@ def _run_text(
     project: Optional[str] = None,
     user_home: Optional[str] = None,
 ) -> int:
-    """Role-first text frontend shared by real fallback mode and headless tests."""
-    role = _prompt_role(read, write)
-    if role is None:
-        return _cancel(write)
-    if role == "user":
-        return _run_user_text(
-            read,
-            write,
-            source_factory=source_factory,
-            source_dir=source_dir,
-            repo=repo,
-            project=project,
-            user_home=user_home,
-        )
-    return _run_maintainer_text(
-        read,
-        write,
-        source_factory=source_factory,
-        source_dir=source_dir,
-        repo=repo,
-        project=project,
-    )
+    """Persistent onboarding/role wizard shared by the fallback and headless tests."""
+
+    session = initial_session()
+    buffered_role: Optional[str] = None
+    while True:
+        if session.current == "onboarding":
+            for line in onboarding_lines("text"):
+                write(line)
+            _write_wizard_header(session, write)
+            onboarding_answer = _read_line(read, "Press Enter to start (q=quit): ")
+            if onboarding_answer is None or onboarding_answer.strip().lower() in ("q", "quit"):
+                return _cancel(write)
+            buffered_role = onboarding_answer if onboarding_answer.strip() else None
+            session = wizard_advance(session)
+            continue
+        if session.current == "role":
+            _write_wizard_header(session, write)
+            role = _prompt_role(read, write, initial_answer=buffered_role)
+            buffered_role = None
+            if role is None:
+                return _cancel(write)
+            if role == "back":
+                session = wizard_back(session)
+                continue
+            session = wizard_select(session, "role", role)
+            session = wizard_advance(session)
+            if role == "user":
+                result = _run_user_text_wizard(
+                    session,
+                    read,
+                    write,
+                    source_factory=source_factory,
+                    source_dir=source_dir,
+                    repo=repo,
+                    project=project,
+                    user_home=user_home,
+                )
+                if isinstance(result, WizardSession):
+                    session = result
+                    continue
+                return result
+            result = _run_maintainer_text(
+                session,
+                read,
+                write,
+                source_factory=source_factory,
+                source_dir=source_dir,
+                repo=repo,
+                project=project,
+            )
+            if isinstance(result, WizardSession):
+                session = result
+                continue
+            return result
 
 
-def _prompt_role(read: ReadFn, write: WriteFn) -> Optional[str]:
+def _prompt_role(
+    read: ReadFn, write: WriteFn, *, initial_answer: Optional[str] = None
+) -> Optional[str]:
     write("Choose how you want to use aart:")
     for index, role in enumerate(ROLES, start=1):
         write(f"  {index:>2}. {role.label:<10} {role.description}")
     while True:
-        line = _read_line(read, "Role (1=User, 2=Maintainer, q=quit): ")
+        line = initial_answer
+        initial_answer = None
+        if line is None:
+            line = _read_line(read, "Role (1=User, 2=Maintainer, b=back, q=quit): ")
         if line is None:
             return None
         answer = line.strip().lower()
         if answer in ("", "q"):
             return None
+        if answer in ("b", "back"):
+            return "back"
         if answer in ("1", "user"):
             return "user"
         if answer in ("2", "maintainer"):
@@ -1120,6 +1719,7 @@ def _prompt_role(read: ReadFn, write: WriteFn) -> Optional[str]:
 
 
 def _run_maintainer_text(
+    session: WizardSession,
     read: ReadFn,
     write: WriteFn,
     *,
@@ -1127,8 +1727,8 @@ def _run_maintainer_text(
     source_dir: Optional[str],
     repo: Optional[str],
     project: Optional[str],
-) -> int:
-    """Guided maintainer menu over the existing upstream command/query core."""
+) -> int | WizardSession:
+    """Drive Maintainer stages and expose apply only at the Review Finalize boundary."""
     del source_factory  # maintainer source resolution belongs to the upstream command core
     from .commands import upstream
 
@@ -1145,89 +1745,276 @@ def _run_maintainer_text(
         return getattr(context_result, "code", 1)
     context = context_result.value
 
-    write(f"Catalog: {context.root}")
-    write("Maintainer action:")
-    for index, (_action, label) in enumerate(MAINTAINER_ACTIONS, start=1):
-        write(f"  {index:>2}. {label}")
-    action = _prompt_maintainer_action(read, write)
-    if action is None:
-        return _cancel(write)
-    return _run_maintainer_action_text(
-        action,
-        context,
-        read,
-        write,
-        source_dir=source_dir,
-        repo=repo,
-        project=project,
-    )
-
-
-def _run_maintainer_action_text(
-    action: str,
-    context,
-    read: ReadFn,
-    write: WriteFn,
-    *,
-    source_dir: Optional[str],
-    repo: Optional[str],
-    project: Optional[str],
-) -> int:
-    """Run one selected maintainer action after any full-screen frontend has closed."""
-    if action == "user":
-        return _run_user_text(
-            read,
-            write,
-            source_dir=source_dir,
-            repo=repo,
-            project=project,
-        )
-    if action in ("health", "validate"):
-        return _dispatch(
-            Request(command="upstream", upstream_action=action, source_dir=context.root)
-        )
-    if action == "add":
-        request = _prompt_upstream_add(read, write, context.root)
-        if request is None:
-            return _cancel(write)
-        return _run_maintainer_mutation(request, read, write)
-    if action == "import":
-        request, prompt_code = _prompt_upstream_import(read, write, context.root)
-        if request is None:
-            return prompt_code if prompt_code != 0 else _cancel(write)
-        return _run_maintainer_mutation(request, read, write)
-    if action in ("check", "update"):
-        selection = _prompt_tracked_upstreams(read, write, context)
-        if selection is None:
-            return _cancel(write)
-        names, all_selected = selection
-        request = Request(
-            command="upstream",
-            upstream_action=action,
-            names=names,
-            all=all_selected,
-            source_dir=context.root,
-        )
-        if action == "check":
-            return _dispatch(request)
-        return _run_maintainer_mutation(request, read, write)
-    return 2
-
-
-def _prompt_maintainer_action(read: ReadFn, write: WriteFn) -> Optional[str]:
-    by_name = {name: name for name, _label in MAINTAINER_ACTIONS}
+    request: Optional[Request] = None
+    previewed: Optional[Request] = None
     while True:
-        line = _read_line(read, "Maintainer action: ")
+        if session.current == "role":
+            return session
+        _write_wizard_header(session, write)
+        if session.current == "maintainer_action":
+            write(f"Catalog: {context.root}")
+            write("Maintainer action:")
+            for index, (_action, label) in enumerate(MAINTAINER_ACTIONS, start=1):
+                write(f"  {index:>2}. {label}")
+            selected = _prompt_maintainer_action_wizard(read, write)
+            if isinstance(selected, WizardInput):
+                if selected.kind == "back":
+                    return wizard_back(session)
+                return _cancel(write)
+            session = replace(session, basket=(), notices=())
+            session = wizard_select(session, "maintainer_action", selected)
+            session = wizard_advance(session)
+            request = None
+            previewed = None
+            if selected == "user":
+                result = _run_user_text_wizard(
+                    session,
+                    read,
+                    write,
+                    source_factory=open_source,
+                    source_dir=source_dir,
+                    repo=repo,
+                    project=project,
+                    user_home=None,
+                )
+                if isinstance(result, WizardSession):
+                    session = result
+                    continue
+                return result
+            continue
+
+        action = session.maintainer_action
+        assert action is not None
+        if session.current == "upstream_details":
+            if action == "add":
+                add_prompted = _prompt_upstream_add_wizard(
+                    read, write, context.root, existing=request
+                )
+                if isinstance(add_prompted, WizardInput):
+                    if add_prompted.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _confirm_wizard_quit(session, read, write):
+                        return _cancel(write)
+                    continue
+                request = add_prompted
+                session = wizard_select(
+                    session,
+                    "artifacts",
+                    (BasketItem("upstream", request.names[0], request.names[0]),),
+                )
+                session = wizard_advance(session)
+                previewed = None
+                continue
+            if action == "import":
+                import_request, code = _prompt_upstream_import(read, write, context.root)
+                if import_request is None:
+                    if code:
+                        return code
+                    if _confirm_wizard_quit(session, read, write):
+                        return _cancel(write)
+                    continue
+                request = import_request
+                session = wizard_select(
+                    session,
+                    "artifacts",
+                    tuple(BasketItem("upstream", name, name) for name in request.names),
+                )
+                session = wizard_advance(wizard_advance(session))
+                previewed = None
+                continue
+
+        if session.current == "artifacts":
+            if action in ("check", "update"):
+                tracked_prompted = _prompt_tracked_upstreams_wizard(
+                    read, write, context, existing=request
+                )
+                if isinstance(tracked_prompted, WizardInput):
+                    if tracked_prompted.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _confirm_wizard_quit(session, read, write):
+                        return _cancel(write)
+                    continue
+                names, all_selected = tracked_prompted
+                request = Request(
+                    command="upstream",
+                    upstream_action=action,
+                    names=names,
+                    all=all_selected,
+                    source_dir=context.root,
+                )
+                basket_names = names or (("all tracked upstreams",) if all_selected else ())
+                session = wizard_select(
+                    session,
+                    "artifacts",
+                    tuple(BasketItem("upstream", name, name) for name in basket_names),
+                )
+                session = wizard_advance(session)
+                previewed = None
+                continue
+            if action == "import":
+                write("Selected import candidates:")
+                for item in session.basket:
+                    write(f"  - {item.label}")
+                line = _read_line(read, "Enter=continue, b=back, q=quit: ")
+                answer = "q" if line is None else line.strip().lower()
+                if answer in ("b", "back"):
+                    session = wizard_back(session)
+                    continue
+                if answer in ("q", "quit"):
+                    if _confirm_wizard_quit(session, read, write):
+                        return _cancel(write)
+                    continue
+                session = wizard_advance(session)
+                continue
+
+        if session.current != "review":
+            return 2
+        if request is None:
+            request = Request(
+                command="upstream",
+                upstream_action=action,
+                source_dir=context.root,
+            )
+        is_mutation = action in ("add", "import", "update")
+        if is_mutation and previewed != request:
+            preview_code = _preview_maintainer_mutation(request, write)
+            if preview_code:
+                return preview_code
+            previewed = request
+        write("Review maintainer action")
+        write(f"  Catalog: {context.root}")
+        write(f"  Action: {action}")
+        if request.names:
+            write(f"  Selected: {', '.join(request.names)}")
+        if request.all:
+            write("  Selected: all tracked upstreams")
+        if request.url:
+            write(f"  URL: {request.url}")
+        if is_mutation:
+            write("  Preview succeeded; Finalize applies the reviewed catalog changes.")
+        else:
+            write("  Finalize runs the reviewed read-only command.")
+        line = _read_line(read, "Finalize? [y/N] (b=back, q=quit): ")
+        answer = "q" if line is None else line.strip().lower()
+        if answer in ("b", "back"):
+            session = wizard_back(session)
+            continue
+        if answer in ("q", "quit"):
+            if _confirm_wizard_quit(session, read, write):
+                return _cancel(write)
+            continue
+        if answer not in ("y", "yes", "f", "finalize"):
+            write("Review not finalized; no changes were made.")
+            continue
+        if not can_finalize(session, revision=session.revision):
+            write("Wizard state changed; review it again before Finalize.")
+            continue
+        if is_mutation:
+            return _apply_maintainer_mutation(request, write)
+        return _dispatch(request)
+
+
+def _prompt_maintainer_action_wizard(read: ReadFn, write: WriteFn) -> str | WizardInput:
+    while True:
+        line = _read_line(read, "Maintainer action (b=back, q=quit): ")
         if line is None:
-            return None
+            return WizardInput("quit")
         answer = line.strip().lower()
-        if answer in ("", "q"):
-            return None
+        if answer in ("q", "quit"):
+            return WizardInput("quit")
+        if answer in ("b", "back"):
+            return WizardInput("back")
+        by_name = {name: name for name, _label in MAINTAINER_ACTIONS}
         if answer in by_name:
             return by_name[answer]
         if answer.isdigit() and 1 <= int(answer) <= len(MAINTAINER_ACTIONS):
             return MAINTAINER_ACTIONS[int(answer) - 1][0]
-        write(f"Please enter 1-{len(MAINTAINER_ACTIONS)} or 'q' to quit.")
+        write(f"Please enter 1-{len(MAINTAINER_ACTIONS)}, 'b', or 'q'.")
+
+
+def _prompt_wizard_value(
+    read: ReadFn,
+    write: WriteFn,
+    prompt: str,
+    *,
+    current: Optional[str] = None,
+    required: bool,
+) -> str | None | WizardInput:
+    while True:
+        line = _read_line(read, prompt)
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip()
+        lower = answer.lower()
+        if lower in ("q", "quit"):
+            return WizardInput("quit")
+        if lower in ("b", "back"):
+            return WizardInput("back")
+        if answer:
+            return answer
+        if current is not None:
+            return current
+        if not required:
+            return None
+        write("A value is required (or enter 'b' to go back, 'q' to quit).")
+
+
+def _prompt_upstream_add_wizard(
+    read: ReadFn,
+    write: WriteFn,
+    catalog_root: str,
+    *,
+    existing: Optional[Request] = None,
+) -> Request | WizardInput:
+    key = _prompt_wizard_value(
+        read,
+        write,
+        "Artifact key (TYPE/NAME): ",
+        current=existing.names[0] if existing and existing.names else None,
+        required=True,
+    )
+    if isinstance(key, WizardInput):
+        return key
+    url = _prompt_wizard_value(
+        read,
+        write,
+        "GitHub URL: ",
+        current=existing.url if existing else None,
+        required=True,
+    )
+    if isinstance(url, WizardInput):
+        return url
+    ref = _prompt_wizard_value(
+        read,
+        write,
+        "Ref override (blank to infer): ",
+        current=existing.ref if existing else None,
+        required=False,
+    )
+    if isinstance(ref, WizardInput):
+        return ref
+    path = _prompt_wizard_value(
+        read,
+        write,
+        "Path override (blank to infer): ",
+        current=existing.path if existing else None,
+        required=False,
+    )
+    if isinstance(path, WizardInput):
+        return path
+    assert isinstance(key, str)
+    assert isinstance(url, str)
+    return Request(
+        command="upstream",
+        upstream_action="add",
+        names=(key,),
+        url=url,
+        ref=ref,
+        path=path,
+        source_dir=catalog_root,
+    )
 
 
 def _prompt_required(read: ReadFn, write: WriteFn, prompt: str) -> Optional[str]:
@@ -1249,26 +2036,6 @@ def _prompt_optional(read: ReadFn, prompt: str) -> Optional[str]:
         return None
     answer = line.strip()
     return answer or None
-
-
-def _prompt_upstream_add(read: ReadFn, write: WriteFn, catalog_root: str) -> Optional[Request]:
-    key = _prompt_required(read, write, "Artifact key (TYPE/NAME): ")
-    if key is None:
-        return None
-    url = _prompt_required(read, write, "GitHub URL: ")
-    if url is None:
-        return None
-    ref = _prompt_optional(read, "Ref override (blank to infer): ")
-    path = _prompt_optional(read, "Path override (blank to infer): ")
-    return Request(
-        command="upstream",
-        upstream_action="add",
-        names=(key,),
-        url=url,
-        ref=ref,
-        path=path,
-        source_dir=catalog_root,
-    )
 
 
 def _prompt_upstream_import(
@@ -1327,7 +2094,13 @@ def _prompt_upstream_import(
     )
 
 
-def _prompt_tracked_upstreams(read: ReadFn, write: WriteFn, context):
+def _prompt_tracked_upstreams_wizard(
+    read: ReadFn,
+    write: WriteFn,
+    context,
+    *,
+    existing: Optional[Request] = None,
+) -> Tuple[Tuple[str, ...], bool] | WizardInput:
     from .upstreams import format_upstream_key
 
     labels = tuple(
@@ -1336,24 +2109,28 @@ def _prompt_tracked_upstreams(read: ReadFn, write: WriteFn, context):
     )
     if not labels:
         write(f"No tracked upstreams in {context.root}.")
-        return None
+        return WizardInput("quit")
     write("Tracked upstreams:")
     for index, label in enumerate(labels, start=1):
-        write(f"  {index:>2}. {label}")
-    choices = tuple(_Choice("artifact", label, None, label) for label in labels)
+        marker = "x" if existing and (existing.all or label in existing.names) else " "
+        write(f"  {index:>2}. [{marker}] {label}")
     while True:
-        line = _read_line(read, "Selection (numbers or 'a' for all): ")
+        line = _read_line(read, "Selection (numbers, 'a'=all, b=back, q=quit): ")
         if line is None:
-            return None
+            return WizardInput("quit")
         answer = line.strip().lower()
-        if answer in ("", "q"):
-            return None
+        if answer in ("q", "quit"):
+            return WizardInput("quit")
+        if answer in ("b", "back"):
+            return WizardInput("back")
+        if answer == "" and existing is not None:
+            return existing.names, existing.all
         if answer in ("a", "all"):
             return (), True
-        picked = _parse_indices(answer, len(choices))
+        picked = _parse_indices(answer, len(labels))
         if picked:
             return tuple(labels[index] for index in picked), False
-        write(f"Please enter number(s) between 1 and {len(choices)}, 'a', or 'q'.")
+        write(f"Please enter number(s) between 1 and {len(labels)}, 'a', 'b', or 'q'.")
 
 
 def _run_maintainer_mutation(
@@ -1364,6 +2141,25 @@ def _run_maintainer_mutation(
     dispatch: Optional[DispatchFn] = None,
 ) -> int:
     """Validate -> preview -> confirm -> apply -> validate, with no hidden mutation."""
+    dispatch_fn = dispatch or _dispatch
+    preview = _preview_maintainer_mutation(request, write, dispatch=dispatch_fn)
+    if preview != 0:
+        return preview
+
+    answer = _read_line(read, "Apply these catalog changes? [y/N]: ")
+    if answer is None or answer.strip().lower() not in ("y", "yes"):
+        write("Cancelled; no catalog changes were applied.")
+        return 0
+    return _apply_maintainer_mutation(request, write, dispatch=dispatch_fn)
+
+
+def _preview_maintainer_mutation(
+    request: Request,
+    write: WriteFn,
+    *,
+    dispatch: Optional[DispatchFn] = None,
+) -> int:
+    """Run the non-mutating validation and dry-run half of a maintainer change."""
     dispatch_fn = dispatch or _dispatch
     validation = Request(
         command="upstream",
@@ -1379,15 +2175,26 @@ def _run_maintainer_mutation(
     if preview != 0:
         write("Preview failed; no catalog changes were applied.")
         return preview
+    write("Preview succeeded; no catalog changes have been applied yet.")
+    return 0
 
-    answer = _read_line(read, "Apply these catalog changes? [y/N]: ")
-    if answer is None or answer.strip().lower() not in ("y", "yes"):
-        write("Cancelled; no catalog changes were applied.")
-        return 0
 
+def _apply_maintainer_mutation(
+    request: Request,
+    write: WriteFn,
+    *,
+    dispatch: Optional[DispatchFn] = None,
+) -> int:
+    """Apply an already-previewed maintainer request and validate the result."""
+    dispatch_fn = dispatch or _dispatch
     applied = dispatch_fn(replace(request, dry_run=False))
     if applied != 0:
         return applied
+    validation = Request(
+        command="upstream",
+        upstream_action="validate",
+        source_dir=request.source_dir,
+    )
     after = dispatch_fn(validation)
     if after != 0:
         write(f"Catalog validation failed after mutation: {request.source_dir}")
@@ -1581,8 +2388,466 @@ def _prompt_action(read: ReadFn, write: WriteFn) -> Optional[str]:
 
 
 # --------------------------------------------------------------------------- #
-# curses front-end — thin: gather selection, then reuse the same dispatch.      #
+# curses front-end — gather an immutable session, dispatch only after teardown. #
 # --------------------------------------------------------------------------- #
+def _curses_header(stdscr, session: WizardSession) -> Tuple[str, ...]:
+    width = _width(stdscr) if hasattr(stdscr, "getmaxyx") else 80
+    return render_header(session, width=max(width - 1, 1), frontend="curses")
+
+
+def _position(session: WizardSession, stage: str) -> Tuple[int, int]:
+    for position in session.positions:
+        if position.stage == stage:
+            return position.cursor, position.scroll
+    return 0, 0
+
+
+def _curses_single_event(curses, stdscr, title, labels, session: WizardSession) -> WizardInput:
+    cursor, scroll = _position(session, session.current)
+    try:
+        result = _curses_singleselect(
+            curses,
+            stdscr,
+            title,
+            labels,
+            wizard=True,
+            initial_cursor=cursor,
+            initial_scroll=scroll,
+            header=_curses_header(stdscr, session),
+        )
+    except TypeError as error:
+        if "unexpected keyword argument" not in str(error):
+            raise
+        result = _curses_singleselect(curses, stdscr, title, labels)
+    if isinstance(result, WizardInput):
+        return result
+    if result is None:
+        return WizardInput("quit", cursor=cursor, scroll=scroll)
+    selected = int(result)
+    return WizardInput("confirm", (selected,), selected, scroll)
+
+
+def _curses_multi_event(
+    curses,
+    stdscr,
+    title,
+    labels,
+    session: WizardSession,
+    *,
+    selected: Sequence[int] = (),
+    details: Optional[Sequence[str]] = None,
+    disabled: Optional[Sequence[bool]] = None,
+) -> WizardInput:
+    cursor, scroll = _position(session, session.current)
+    try:
+        result = _curses_multiselect(
+            curses,
+            stdscr,
+            title,
+            labels,
+            details=details,
+            disabled=disabled,
+            wizard=True,
+            initial_checked=selected,
+            initial_cursor=cursor,
+            initial_scroll=scroll,
+            header=_curses_header(stdscr, session),
+        )
+    except TypeError as error:
+        if "unexpected keyword argument" not in str(error):
+            raise
+        result = _curses_multiselect(curses, stdscr, title, labels, details, disabled)
+    if isinstance(result, WizardInput):
+        return result
+    if result is None:
+        return WizardInput("quit", cursor=cursor, scroll=scroll)
+    picked = tuple(int(index) for index in result)
+    return WizardInput("confirm", picked, cursor, scroll)
+
+
+def _curses_confirm_discard(curses, stdscr, session: WizardSession) -> bool:
+    if request_quit(session) == "quit":
+        return True
+    if not all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh", "getch")):
+        return True
+    lines = _curses_header(stdscr, session) + (
+        f"Discard {len(session.basket)} selected basket item(s)?",
+        "y = discard · n/Backspace = return",
+    )
+    while True:
+        stdscr.clear()
+        available = max(_width(stdscr) - 1, 0)
+        for row, line in enumerate(lines[: _height(stdscr)]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (ord("y"), ord("Y")):
+            return True
+        if key in (
+            ord("n"),
+            ord("N"),
+            getattr(curses, "KEY_BACKSPACE", -1),
+            127,
+            8,
+        ):
+            return False
+
+
+def _curses_review(curses, stdscr, session: WizardSession, lines: Sequence[str]):
+    if not all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh", "getch")):
+        return False
+    content = _curses_header(stdscr, session) + tuple(lines)
+    offset = 0
+    while True:
+        stdscr.clear()
+        available = max(_width(stdscr) - 1, 0)
+        height = _height(stdscr)
+        body_height = max(height - 1, 1)
+        max_offset = max(len(content) - body_height, 0)
+        offset = min(offset, max_offset)
+        for row, line in enumerate(content[offset : offset + body_height]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height:
+            stdscr.addstr(
+                height - 1,
+                0,
+                _ellipsize(
+                    "↑/↓ = scroll · Enter/y = Finalize · Backspace = back · q = quit",
+                    available,
+                ),
+            )
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
+            return True
+        if key in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8):
+            return "back"
+        if key in (ord("q"), 27):
+            return "quit"
+        if key in (ord("n"), ord("N")):
+            return False
+        if key in (curses.KEY_DOWN, ord("j")) and offset < max_offset:
+            offset += 1
+        elif key in (curses.KEY_UP, ord("k")) and offset > 0:
+            offset -= 1
+        elif key == getattr(curses, "KEY_NPAGE", -1) and offset < max_offset:
+            offset = min(offset + body_height, max_offset)
+        elif key == getattr(curses, "KEY_PPAGE", -1) and offset > 0:
+            offset = max(offset - body_height, 0)
+
+
+def _run_user_curses_wizard(
+    curses,
+    stdscr,
+    session: WizardSession,
+    selection: dict,
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    project: Optional[str],
+    user_home: Optional[str],
+) -> WizardSession:
+    profile_names = tuple(sorted(load_profiles(project)))
+    read_model: Optional[_UserWizardReadModel] = None
+    read_key: Optional[tuple] = None
+    while session.current not in ("role", "maintainer_action"):
+        if session.current == "profiles":
+            selected = tuple(
+                index for index, name in enumerate(profile_names) if name in session.profiles
+            )
+            event = _curses_multi_event(
+                curses,
+                stdscr,
+                "Select profile(s)  (space=toggle, enter=confirm, q=quit)",
+                profile_names,
+                session,
+                selected=selected,
+            )
+            session = remember_position(
+                session, "profiles", cursor=event.cursor, scroll=event.scroll
+            )
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            if not event.selected:
+                selection["empty_selection"] = True
+                return session
+            session = wizard_select(
+                session,
+                "profiles",
+                tuple(profile_names[index] for index in event.selected),
+            )
+            session = wizard_advance(session)
+            continue
+
+        if session.current == "action":
+            event = _curses_single_event(
+                curses,
+                stdscr,
+                "Action  (enter=confirm, q=quit)",
+                ACTIONS,
+                session,
+            )
+            session = remember_position(session, "action", cursor=event.cursor, scroll=event.scroll)
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            action = ACTIONS[event.selected[0]]
+            session = wizard_select(session, "action", action)
+            if action == "status" and session.basket:
+                session = reconcile_basket(
+                    session,
+                    {item.key: "not applicable to the Status action" for item in session.basket},
+                )
+            session = wizard_advance(session)
+            read_model = None
+            continue
+
+        if session.current == "scope":
+            cursor, scroll = _position(session, "scope")
+            try:
+                result = _curses_install_scope(
+                    curses,
+                    stdscr,
+                    wizard=True,
+                    initial_cursor=cursor,
+                    initial_scroll=scroll,
+                    header=_curses_header(stdscr, session),
+                )
+            except TypeError as error:
+                if "unexpected keyword argument" not in str(error):
+                    raise
+                result = _curses_install_scope(curses, stdscr)
+            if isinstance(result, WizardInput):
+                event = result
+                scope = INSTALL_SCOPE_CHOICES[event.selected[0]].scope if event.selected else None
+            else:
+                scope = result
+                event = (
+                    WizardInput("quit", cursor=cursor, scroll=scroll)
+                    if scope is None
+                    else WizardInput(
+                        "confirm",
+                        (0 if scope == "project" else 1,),
+                        0 if scope == "project" else 1,
+                        scroll,
+                    )
+                )
+            session = remember_position(session, "scope", cursor=event.cursor, scroll=event.scroll)
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            assert scope is not None
+            session = wizard_select(session, "scope", scope)
+            session = wizard_advance(session)
+            read_model = None
+            continue
+
+        if session.current == "mode":
+            cursor, scroll = _position(session, "mode")
+            try:
+                result = _curses_install_mode(
+                    curses,
+                    stdscr,
+                    wizard=True,
+                    initial_cursor=cursor,
+                    initial_scroll=scroll,
+                    header=_curses_header(stdscr, session),
+                )
+            except TypeError as error:
+                if "unexpected keyword argument" not in str(error):
+                    raise
+                result = _curses_install_mode(curses, stdscr)
+            if isinstance(result, WizardInput):
+                event = result
+                mode = INSTALL_MODE_CHOICES[event.selected[0]].mode if event.selected else None
+            else:
+                mode = result
+                if result == "back":
+                    event = WizardInput("back", cursor=cursor, scroll=scroll)
+                elif result is None:
+                    event = WizardInput("quit", cursor=cursor, scroll=scroll)
+                else:
+                    index = 0 if result == "copy" else 1
+                    event = WizardInput("confirm", (index,), index, scroll)
+            session = remember_position(session, "mode", cursor=event.cursor, scroll=event.scroll)
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            assert mode is not None
+            session = wizard_select(session, "mode", mode)
+            session = wizard_advance(session)
+            read_model = None
+            continue
+
+        if session.current == "artifacts":
+            key = (session.action, session.profiles, session.scope, session.install_mode)
+            if read_model is None or read_key != key:
+                loaded = _load_user_wizard_read_model(
+                    session,
+                    source_factory=open_source,
+                    source_dir=source_dir,
+                    repo=repo,
+                    project=project,
+                    user_home=user_home,
+                )
+                if isinstance(loaded, Err):
+                    selection["error"] = (loaded.reason, loaded.code)
+                    return session
+                read_model = loaded
+                read_key = key
+                if loaded.source_label:
+                    session = wizard_select(
+                        session, "source", (loaded.source_label, loaded.source_root)
+                    )
+            if not read_model.choices:
+                selection["empty"] = (session.action or "selection", session.profiles)
+                return session
+            availability = {
+                _basket_key(choice): "" if choice.enabled else choice.reason
+                for choice in read_model.choices
+            }
+            session = reconcile_basket(session, availability)
+            basket_keys = {item.key for item in session.basket}
+            selected = tuple(
+                index
+                for index, choice in enumerate(read_model.choices)
+                if _basket_key(choice) in basket_keys
+            )
+            event = _curses_multi_event(
+                curses,
+                stdscr,
+                "Select artifact(s)/bundle(s)  (space=toggle, ?=details, enter=confirm, q=quit)",
+                tuple(choice.label for choice in read_model.choices),
+                session,
+                selected=selected,
+                details=tuple(choice.description for choice in read_model.choices),
+                disabled=tuple(not choice.enabled for choice in read_model.choices),
+            )
+            session = remember_position(
+                session, "artifacts", cursor=event.cursor, scroll=event.scroll
+            )
+            if event.kind == "back":
+                session = wizard_back(session)
+                continue
+            if event.kind == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            if not event.selected:
+                selection["empty_selection"] = True
+                return session
+            disabled_picks = tuple(
+                index for index in event.selected if not read_model.choices[index].enabled
+            )
+            if disabled_picks:
+                choice = read_model.choices[disabled_picks[0]]
+                selection["error"] = (f"{choice.name}: {choice.reason}", 2)
+                return session
+            session = wizard_select(
+                session,
+                "artifacts",
+                tuple(_basket_item(read_model.choices[index]) for index in event.selected),
+            )
+            session = wizard_advance(session)
+            continue
+
+        if session.current == "review":
+            chosen: Tuple[_Choice, ...] = ()
+            if read_model is not None:
+                by_key = {_basket_key(choice): choice for choice in read_model.choices}
+                chosen = tuple(by_key[item.key] for item in session.basket if item.key in by_key)
+            request = _build_request(
+                session.action or "status",
+                chosen,
+                session.profiles,
+                source_dir=source_dir,
+                repo=repo,
+                project=project,
+                install_mode=session.install_mode,  # type: ignore[arg-type]
+                scope=session.scope,  # type: ignore[arg-type]
+                user_home=user_home,
+            )
+            confirmation: Optional[InstallConfirmation] = None
+            if session.action == "install":
+                assert read_model is not None
+                confirmation = build_install_confirmation(
+                    source_label=read_model.source_label,
+                    source_root=read_model.source_root,
+                    project=project,
+                    profiles=session.profiles,
+                    requested_mode=session.install_mode,  # type: ignore[arg-type]
+                    catalog=read_model.catalog,
+                    choices=chosen,
+                    profiles_map=read_model.profiles_map,
+                    scope=session.scope,  # type: ignore[arg-type]
+                    user_home=user_home,
+                )
+                try:
+                    review = _curses_confirm_install(
+                        curses,
+                        stdscr,
+                        confirmation,
+                        header=_curses_header(stdscr, session),
+                    )
+                except TypeError as error:
+                    if "unexpected keyword argument" not in str(error):
+                        raise
+                    review = _curses_confirm_install(curses, stdscr, confirmation)
+            else:
+                review = _curses_review(
+                    curses,
+                    stdscr,
+                    session,
+                    _user_review_lines(
+                        session,
+                        read_model,
+                        project=project,
+                        user_home=user_home,
+                    ),
+                )
+            if review == "back":
+                session = wizard_back(session)
+                continue
+            if review == "quit":
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            if not review:
+                selection["cancelled"] = True
+                return session
+            if not can_finalize(session, revision=session.revision):
+                selection["error"] = ("Wizard state changed; review it again before Finalize.", 2)
+                return session
+            selection["request"] = request
+            selection["confirmation"] = confirmation
+            return session
+
+    return session
+
+
 def _run_curses(
     *,
     source_dir: Optional[str] = None,
@@ -1590,36 +2855,58 @@ def _run_curses(
     project: Optional[str] = None,
     user_home: Optional[str] = None,
 ) -> int:
-    """Full-screen selector via stdlib ``curses``; falls back to text on any failure.
-
-    The curses layer selects the role first. User mode then collects the same profile -> action ->
-    filtered choices as the text frontend. Maintainer mode selects a guided action and leaves
-    full-screen mode before line-oriented URL/input prompts or command output. Both paths use the
-    shared request builders and dispatch; any curses error falls back to the text frontend.
-    """
+    """Collect a persistent wizard session and dispatch only after curses teardown."""
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
 
-    base_profiles = load_profiles(project)
-    profile_names = sorted(base_profiles)
-    if not profile_names:  # pragma: no cover - built-ins always present
+    if not load_profiles(project):  # pragma: no cover - built-ins always present
         print("No profiles available.")
         return 0
-
     selection: dict = {}
 
     def _ui(stdscr) -> None:
         curses.curs_set(0)
-        role_idx = _curses_singleselect(
-            curses,
-            stdscr,
-            "Choose how you want to use aart  (enter=confirm, q=quit)",
-            [f"{role.label} - {role.description}" for role in ROLES],
-        )
-        if role_idx is None:
+        session = initial_session()
+        onboarding = _curses_onboarding(curses, stdscr)
+        if onboarding.kind == "quit":
+            selection["cancelled"] = True
             return
-        role = ROLES[role_idx].name
-        selection["role"] = role
-        if role == "maintainer":
+        session = wizard_advance(session)
+        while session.current == "role":
+            event = _curses_single_event(
+                curses,
+                stdscr,
+                "Choose how you want to use aart  (enter=confirm, q=quit)",
+                tuple(f"{role.label} - {role.description}" for role in ROLES),
+                session,
+            )
+            session = remember_position(session, "role", cursor=event.cursor, scroll=event.scroll)
+            if event.kind == "back":
+                onboarding = _curses_onboarding(curses, stdscr)
+                if onboarding.kind == "quit":
+                    selection["cancelled"] = True
+                    return
+                continue
+            if event.kind == "quit":
+                selection["cancelled"] = True
+                return
+            role = ROLES[event.selected[0]].name
+            session = wizard_select(session, "role", role)
+            session = wizard_advance(session)
+            if role == "user":
+                session = _run_user_curses_wizard(
+                    curses,
+                    stdscr,
+                    session,
+                    selection,
+                    source_dir=source_dir,
+                    repo=repo,
+                    project=project,
+                    user_home=user_home,
+                )
+                if selection or session.current != "role":
+                    return
+                continue
+
             from .commands import upstream
 
             catalog_root = os.path.abspath(source_dir or ".")
@@ -1632,197 +2919,47 @@ def _run_curses(
                 )
             )
             if isinstance(context_result, Err):
-                selection["error"] = (
-                    context_result.reason,
-                    getattr(context_result, "code", 1),
+                selection["error"] = (context_result.reason, context_result.code)
+                return
+            while session.current == "maintainer_action":
+                event = _curses_single_event(
+                    curses,
+                    stdscr,
+                    f"Maintainer - {catalog_root}  (enter=confirm, q=quit)",
+                    tuple(label for _action, label in MAINTAINER_ACTIONS),
+                    session,
                 )
-                return
-            maintainer_idx = _curses_singleselect(
-                curses,
-                stdscr,
-                f"Maintainer - {catalog_root}  (enter=confirm, q=quit)",
-                [label for _action, label in MAINTAINER_ACTIONS],
-            )
-            if maintainer_idx is None:
-                return
-            maintainer_action = MAINTAINER_ACTIONS[maintainer_idx][0]
-            if maintainer_action != "user":
-                selection["maintainer_action"] = maintainer_action
+                if event.kind == "back":
+                    session = wizard_back(session)
+                    break
+                if event.kind == "quit":
+                    selection["cancelled"] = True
+                    return
+                action = MAINTAINER_ACTIONS[event.selected[0]][0]
+                session = wizard_select(session, "maintainer_action", action)
+                session = wizard_advance(session)
+                if action == "user":
+                    session = _run_user_curses_wizard(
+                        curses,
+                        stdscr,
+                        session,
+                        selection,
+                        source_dir=source_dir,
+                        repo=repo,
+                        project=project,
+                        user_home=user_home,
+                    )
+                    if selection or session.current != "maintainer_action":
+                        return
+                    continue
+                selection["maintainer_action"] = action
                 selection["maintainer_context"] = context_result.value
+                selection["maintainer_session"] = session
                 return
-
-        picked_profs = _curses_multiselect(
-            curses,
-            stdscr,
-            "Select profile(s)  (space=toggle, enter=confirm, q=quit)",
-            profile_names,
-        )
-        if picked_profs is None:
-            return
-        selected_profiles = [profile_names[i] for i in picked_profs]
-        install_mode: InstallMode = "copy"
-        scope: InstallScope = "project"
-        profiles_map: Mapping[str, Profile] = base_profiles
-        install_source = None
-        while True:
-            action_idx = _curses_singleselect(
-                curses, stdscr, "Action  (enter=confirm, q=quit)", list(ACTIONS)
-            )
-            if action_idx is None:
-                return
-            action = ACTIONS[action_idx]
-            selected_scope = _curses_install_scope(curses, stdscr)
-            if selected_scope is None:
-                return
-            scope = selected_scope
-            resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
-            profiles_map = (
-                base_profiles
-                if scope == "project"
-                else {
-                    name: profile_for_scope(profile, scope, resolved_home)
-                    for name, profile in base_profiles.items()
-                }
-            )
-            request_project = project if scope == "project" else None
-            if action == "status":
-                selection["status"] = True
-                selection["profs"] = picked_profs
-                selection["scope"] = scope
-                return
-            catalog = Catalog(artifacts={}, bundles={})
-            if action in ("install", "update"):
-                src_res = open_source(
-                    Request(
-                        command=action,
-                        source_dir=source_dir,
-                        repo=repo,
-                        project=request_project,
-                        scope=scope,
-                        user_home=user_home,
-                    )
-                )
-                if isinstance(src_res, Err):
-                    selection["error"] = (src_res.reason, getattr(src_res, "code", 1))
-                    return
-                source = src_res.value
-                cat_res = source.catalog()
-                if isinstance(cat_res, Err):
-                    selection["error"] = (cat_res.reason, getattr(cat_res, "code", 1))
-                    return
-                catalog = cat_res.value
-                if action == "install":
-                    selected_mode = _curses_install_mode(curses, stdscr)
-                    if selected_mode is None:
-                        return
-                    if selected_mode == "back":
-                        continue
-                    install_mode = selected_mode
-                    if install_mode == "symlink" and not source.label().startswith("local:"):
-                        selection["error"] = (
-                            (
-                                "Symlink requires a durable local catalog; choose one with "
-                                "aart install ... --source DIR --link"
-                            ),
-                            2,
-                        )
-                        return
-                    install_source = source
-            elif action == "uninstall":
-                # Uninstall remains manifest-driven; catalog lookup only enriches display metadata.
-                src_res = open_source(
-                    Request(
-                        command=action,
-                        source_dir=source_dir,
-                        repo=repo,
-                        project=request_project,
-                        scope=scope,
-                        user_home=user_home,
-                    )
-                )
-                if not isinstance(src_res, Err):
-                    cat_res = src_res.value.catalog()
-                    if not isinstance(cat_res, Err):
-                        catalog = cat_res.value
-            break
-
-        manifest: Optional[Manifest] = None
-        if action in ("update", "uninstall"):
-            manifest_res = _load_manifest_for_action(
-                action,
-                source_dir=source_dir,
-                repo=repo,
-                project=request_project,
-                scope=scope,
-                user_home=user_home,
-            )
-            if isinstance(manifest_res, Err):
-                selection["error"] = (manifest_res.reason, getattr(manifest_res, "code", 1))
-                return
-            manifest = manifest_res.value
-
-        choices = build_action_choices(
-            action,
-            catalog,
-            manifest,
-            selected_profiles,
-            profiles_map,
-            install_mode=install_mode,
-            scope=scope,
-        )
-        if not choices:
-            selection["empty"] = (action, selected_profiles)
-            return
-
-        picked_arts = _curses_multiselect(
-            curses,
-            stdscr,
-            "Select artifact(s)/bundle(s)  (space=toggle, ?=details, enter=confirm, q=quit)",
-            [c.label for c in choices],
-            details=[c.description for c in choices],
-            disabled=[not choice.enabled for choice in choices],
-        )
-        if picked_arts is None:
-            return
-        if not picked_arts:
-            selection["empty_selection"] = True
-            return
-        disabled_picks = tuple(index for index in picked_arts if not choices[index].enabled)
-        if disabled_picks:
-            choice = choices[disabled_picks[0]]
-            selection["error"] = (f"{choice.name}: {choice.reason}", 2)
-            return
-        chosen = [choices[index] for index in picked_arts]
-        if action == "install":
-            assert install_source is not None
-            confirmation = build_install_confirmation(
-                source_label=install_source.label(),
-                source_root=install_source.root,
-                project=project,
-                profiles=selected_profiles,
-                requested_mode=install_mode,
-                catalog=catalog,
-                choices=chosen,
-                profiles_map=profiles_map,
-                scope=scope,
-                user_home=user_home,
-            )
-            if not _curses_confirm_install(curses, stdscr, confirmation):
-                selection["cancelled"] = True
-                return
-            selection["setup_queue"] = confirmation.setup_queue
-            selection["setup_root"] = confirmation.destination_root
-        selection["arts"] = picked_arts
-        selection["profs"] = picked_profs
-        selection["action"] = action_idx
-        selection["choices"] = choices
-        selection["install_mode"] = install_mode
-        selection["scope"] = scope
 
     try:
         curses.wrapper(_ui)
     except Exception:
-        # Terminal too small, no color, init failure, etc. — degrade gracefully.
         return _run_text(
             source_dir=source_dir,
             repo=repo,
@@ -1839,62 +2976,31 @@ def _run_curses(
         print(_empty_choices_message(action, profiles))
         return _render_result(CommandOutcome(0, ActionSummary(action=action)), print)
     if "maintainer_action" in selection:
-        return _run_maintainer_action_text(
-            selection["maintainer_action"],
-            selection["maintainer_context"],
+        result = _run_maintainer_text(
+            selection["maintainer_session"],
             input,
             print,
+            source_factory=open_source,
             source_dir=source_dir,
             repo=repo,
             project=project,
         )
-    if "status" in selection:
-        scope = selection.get("scope", "project")
-        return _render_result(
-            _dispatch_result(
-                Request(
-                    command="status",
-                    project=project if scope == "project" else None,
-                    scope=scope,
-                    user_home=user_home,
-                )
-            ),
-            print,
-        )
-    if "empty_selection" in selection:
-        return _cancel(print, "No artifacts selected; no changes were made.")
-    if "action" not in selection:
+        return _cancel(print) if isinstance(result, WizardSession) else result
+    if "request" not in selection:
+        if "empty_selection" in selection:
+            return _cancel(print, "No artifacts selected; no changes were made.")
         return _cancel(print)
 
-    choices = selection["choices"]
-    chosen = [choices[i] for i in selection["arts"]]
-    profiles = [profile_names[i] for i in selection["profs"]]
-    if not chosen or not profiles:
-        return _cancel(print, "No artifacts selected; no changes were made.")
-    request = _build_request(
-        ACTIONS[selection["action"]],
-        chosen,
-        profiles,
-        source_dir=source_dir,
-        repo=repo,
-        project=project,
-        install_mode=selection.get("install_mode", "copy"),
-        scope=selection.get("scope", "project"),
-        user_home=user_home,
-    )
+    request = selection["request"]
     outcome = _dispatch_result(request)
     code = _render_result(outcome, print)
-    if code != 0 or request.command != "install":
+    confirmation = selection.get("confirmation")
+    if code != 0 or confirmation is None:
         return code
     return _run_post_install_setup(
-        selection.get("setup_queue", ()),
+        confirmation.setup_queue,
         request,
-        scope_root=selection.get(
-            "setup_root",
-            os.path.abspath(
-                user_home or os.path.expanduser("~") if request.scope == "user" else project or "."
-            ),
-        ),
+        scope_root=confirmation.destination_root,
         read=input,
         write=print,
     )
@@ -1907,17 +3013,40 @@ def _curses_multiselect(
     labels: Sequence[str],
     details: Optional[Sequence[str]] = None,
     disabled: Optional[Sequence[bool]] = None,
+    *,
+    wizard: bool = False,
+    initial_checked: Sequence[int] = (),
+    initial_cursor: int = 0,
+    initial_scroll: int = 0,
+    header: Sequence[str] = (),
 ):
-    """A checkbox list. Returns a tuple of selected indices, or ``None`` on quit."""
+    """A checkbox list, optionally returning explicit wizard navigation and position."""
     if not labels:
-        return ()
-    cursor = 0
+        return WizardInput("confirm") if wizard else ()
+    cursor = min(max(initial_cursor, 0), len(labels) - 1)
+    scroll = max(initial_scroll, 0)
     checked = [False] * len(labels)
+    for index in initial_checked:
+        if 0 <= index < len(checked) and (disabled is None or not disabled[index]):
+            checked[index] = True
+    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
     while True:
-        _draw_list(curses, stdscr, title, labels, cursor, checked, disabled=disabled)
+        scroll = _draw_list(
+            curses,
+            stdscr,
+            title,
+            labels,
+            cursor,
+            checked,
+            disabled=disabled,
+            header=header,
+            scroll=scroll,
+        )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):  # q / ESC
-            return None
+            return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
+        elif wizard and ch in backspace_keys:
+            return WizardInput("back", cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
         elif ch in (curses.KEY_DOWN, ord("j")):
@@ -1928,23 +3057,51 @@ def _curses_multiselect(
         elif ch == ord("?") and details is not None and cursor < len(details):
             _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
-            return tuple(i for i, on in enumerate(checked) if on)
+            selected = tuple(i for i, on in enumerate(checked) if on)
+            return (
+                WizardInput("confirm", selected, cursor=cursor, scroll=scroll)
+                if wizard
+                else selected
+            )
 
 
-def _curses_singleselect(curses, stdscr, title: str, labels: Sequence[str]):
-    """A single-choice list. Returns the chosen index, or ``None`` on quit."""
-    cursor = 0
+def _curses_singleselect(
+    curses,
+    stdscr,
+    title: str,
+    labels: Sequence[str],
+    *,
+    wizard: bool = False,
+    initial_cursor: int = 0,
+    initial_scroll: int = 0,
+    header: Sequence[str] = (),
+):
+    """A single-choice list, optionally returning explicit wizard navigation."""
+    cursor = min(max(initial_cursor, 0), max(len(labels) - 1, 0))
+    scroll = max(initial_scroll, 0)
+    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
     while True:
-        _draw_list(curses, stdscr, title, labels, cursor, None)
+        scroll = _draw_list(
+            curses,
+            stdscr,
+            title,
+            labels,
+            cursor,
+            None,
+            header=header,
+            scroll=scroll,
+        )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):
-            return None
+            return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
+        elif wizard and ch in backspace_keys:
+            return WizardInput("back", cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
         elif ch in (curses.KEY_DOWN, ord("j")):
             cursor = (cursor + 1) % len(labels)
         elif ch in (curses.KEY_ENTER, 10, 13):
-            return cursor
+            return WizardInput("confirm", (cursor,), cursor, scroll) if wizard else cursor
 
 
 def _draw_list(
@@ -1956,12 +3113,63 @@ def _draw_list(
     checked,
     *,
     disabled: Optional[Sequence[bool]] = None,
-) -> None:
+    header: Sequence[str] = (),
+    scroll: int = 0,
+) -> int:
     """Render *title* + the labels, marking the cursor row and any checked rows."""
     stdscr.clear()
     available = max(_width(stdscr) - 1, 0)
-    stdscr.addstr(0, 0, _ellipsize(title, available))
-    for i, label in enumerate(labels):
+    height = _height(stdscr)
+    header_budget = max(height - 4, 1)
+    if len(header) > header_budget:
+        priorities = (
+            lambda line: "[●]" in line,
+            lambda line: line.startswith("Stage:"),
+            lambda line: line.startswith("Basket:"),
+            lambda line: line.startswith("Removed "),
+            lambda line: "back" in line.lower() and "quit" in line.lower(),
+        )
+        picked: List[int] = []
+        for predicate in priorities:
+            picked.extend(
+                index
+                for index, line in enumerate(header)
+                if predicate(line) and index not in picked
+            )
+        picked.extend(index for index in range(len(header)) if index not in picked)
+        visible_indices = set(picked[:header_budget])
+        header = tuple(line for index, line in enumerate(header) if index in visible_indices)
+    row = 0
+    for line in header:
+        if row >= height:
+            break
+        stdscr.addstr(row, 0, _ellipsize(line, available))
+        row += 1
+    if row < height:
+        stdscr.addstr(row, 0, _ellipsize(title, available))
+    list_start = row + 2
+    if checked is not None:
+        selected_count = sum(
+            1
+            for index, value in enumerate(checked)
+            if value and (disabled is None or not disabled[index])
+        )
+        if row + 1 < height:
+            stdscr.addstr(
+                row + 1,
+                0,
+                _ellipsize(f"Selected: {selected_count}", available),
+            )
+        list_start = row + 3
+    visible_rows = max(height - list_start, 1)
+    max_scroll = max(len(labels) - visible_rows, 0)
+    scroll = min(max(scroll, 0), max_scroll)
+    if cursor < scroll:
+        scroll = cursor
+    elif cursor >= scroll + visible_rows:
+        scroll = cursor - visible_rows + 1
+    for display_row, i in enumerate(range(scroll, min(len(labels), scroll + visible_rows))):
+        label = labels[i]
         prefix = "> " if i == cursor else "  "
         box = ""
         if checked is not None:
@@ -1970,13 +3178,63 @@ def _draw_list(
             else:
                 box = "[x] " if checked[i] else "[ ] "
         line = f"{prefix}{box}{label}"
-        row = i + 2
-        if row < _height(stdscr):
-            stdscr.addstr(row, 0, _ellipsize(line, available))
+        target_row = list_start + display_row
+        if target_row < height:
+            stdscr.addstr(target_row, 0, _ellipsize(line, available))
     stdscr.refresh()
+    return scroll
 
 
-def _curses_install_scope(curses, stdscr) -> Optional[InstallScope]:
+def _curses_onboarding(curses, stdscr) -> WizardInput:
+    """Render the first-screen controls; test doubles without a screen auto-confirm."""
+
+    if not all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh", "getch")):
+        return WizardInput("confirm")
+    session = initial_session()
+    offset = 0
+    while True:
+        stdscr.clear()
+        available = max(_width(stdscr) - 1, 0)
+        lines = onboarding_lines("curses") + render_header(
+            session, width=max(available, 1), frontend="curses"
+        )
+        height = _height(stdscr)
+        body_height = max(height - 1, 1)
+        max_offset = max(len(lines) - body_height, 0)
+        offset = min(offset, max_offset)
+        for row, line in enumerate(lines[offset : offset + body_height]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height:
+            stdscr.addstr(
+                height - 1,
+                0,
+                _ellipsize("Enter = start · ↑/↓ = scroll · q = quit", available),
+            )
+        stdscr.refresh()
+        ch = stdscr.getch()
+        if ch in (curses.KEY_ENTER, 10, 13):
+            return WizardInput("confirm")
+        if ch in (ord("q"), 27):
+            return WizardInput("quit")
+        if ch in (curses.KEY_DOWN, ord("j")) and offset < max_offset:
+            offset += 1
+        elif ch in (curses.KEY_UP, ord("k")) and offset > 0:
+            offset -= 1
+        elif ch == getattr(curses, "KEY_NPAGE", -1) and offset < max_offset:
+            offset = min(offset + body_height, max_offset)
+        elif ch == getattr(curses, "KEY_PPAGE", -1) and offset > 0:
+            offset = max(offset - body_height, 0)
+
+
+def _curses_install_scope(
+    curses,
+    stdscr,
+    *,
+    wizard: bool = False,
+    initial_cursor: int = 0,
+    initial_scroll: int = 0,
+    header: Sequence[str] = (),
+):
     """Scope selector with Project under the initial cursor."""
 
     labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_SCOPE_CHOICES]
@@ -1985,7 +3243,13 @@ def _curses_install_scope(curses, stdscr) -> Optional[InstallScope]:
         stdscr,
         "Installation scope  (enter=confirm, q=quit)",
         labels,
+        wizard=wizard,
+        initial_cursor=initial_cursor,
+        initial_scroll=initial_scroll,
+        header=header,
     )
+    if isinstance(selected, WizardInput):
+        return selected
     if selected is None:
         return None
     return INSTALL_SCOPE_CHOICES[selected].scope
@@ -1994,58 +3258,92 @@ def _curses_install_scope(curses, stdscr) -> Optional[InstallScope]:
 def _curses_install_mode(
     curses,
     stdscr,
-) -> Optional[Literal["copy", "symlink", "back"]]:
+    *,
+    wizard: bool = False,
+    initial_cursor: int = 0,
+    initial_scroll: int = 0,
+    header: Sequence[str] = (),
+):
     """Install-only mode selector with Copy under the initial cursor."""
 
     labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_MODE_CHOICES]
-    cursor = 0
+    cursor = min(max(initial_cursor, 0), len(labels) - 1)
+    scroll = max(initial_scroll, 0)
     backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
     while True:
-        _draw_list(
+        scroll = _draw_list(
             curses,
             stdscr,
             "Installation mode  (enter=confirm, backspace=back, q=quit)",
             labels,
             cursor,
             None,
+            header=header,
+            scroll=scroll,
         )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):
-            return None
+            return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
         if ch in backspace_keys:
-            return "back"
+            return WizardInput("back", cursor=cursor, scroll=scroll) if wizard else "back"
         if ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
         elif ch in (curses.KEY_DOWN, ord("j")):
             cursor = (cursor + 1) % len(labels)
         elif ch in (curses.KEY_ENTER, 10, 13):
-            return INSTALL_MODE_CHOICES[cursor].mode
+            return (
+                WizardInput("confirm", (cursor,), cursor, scroll)
+                if wizard
+                else INSTALL_MODE_CHOICES[cursor].mode
+            )
 
 
-def _curses_confirm_install(curses, stdscr, confirmation: InstallConfirmation) -> bool:
+def _curses_confirm_install(
+    curses,
+    stdscr,
+    confirmation: InstallConfirmation,
+    *,
+    header: Sequence[str] = (),
+):
     """Render shared confirmation facts and return true only on explicit confirmation."""
 
-    lines = render_install_confirmation(confirmation)
-    stdscr.clear()
+    lines = tuple(header) + render_install_confirmation(confirmation)
     available = max(_width(stdscr) - 1, 0)
     height = _height(stdscr)
-    for row, line in enumerate(lines):
-        if row >= max(height - 1, 0):
-            break
-        stdscr.addstr(row, 0, _ellipsize(line, available))
-    if height > 0:
-        stdscr.addstr(
-            height - 1,
-            0,
-            _ellipsize("Enter/y = install · n/q = cancel", available),
-        )
-    stdscr.refresh()
+    body_height = max(height - 1, 1)
+    max_offset = max(len(lines) - body_height, 0)
+    offset = 0
     while True:
+        stdscr.clear()
+        for row, line in enumerate(lines[offset : offset + body_height]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height > 0:
+            stdscr.addstr(
+                height - 1,
+                0,
+                _ellipsize(
+                    "↑/↓ = scroll · Enter/y = Finalize · Backspace = back · n/q = cancel",
+                    available,
+                ),
+            )
+        stdscr.refresh()
         ch = stdscr.getch()
         if ch in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
             return True
-        if ch in (ord("n"), ord("N"), ord("q"), 27):
+        if ch in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8):
+            return "back"
+        if ch in (ord("q"), 27):
+            return "quit"
+        if ch in (ord("n"), ord("N")):
             return False
+        if ch in (curses.KEY_DOWN, ord("j")) and offset < max_offset:
+            offset += 1
+        elif ch in (curses.KEY_UP, ord("k")) and offset > 0:
+            offset -= 1
+        elif ch == getattr(curses, "KEY_NPAGE", -1) and offset < max_offset:
+            offset = min(offset + body_height, max_offset)
+        elif ch == getattr(curses, "KEY_PPAGE", -1) and offset > 0:
+            offset = max(offset - body_height, 0)
 
 
 def _ellipsize(text: str, width: int) -> str:

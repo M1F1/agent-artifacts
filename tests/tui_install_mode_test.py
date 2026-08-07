@@ -172,9 +172,14 @@ class InstallModePolicyTests(unittest.TestCase):
         self.assertIn(f"Source: local:{FIXTURES} ({FIXTURES})", rendered)
         self.assertIn(f"Destination: Project — {os.path.abspath('relative-project')}", rendered)
         self.assertIn("Harnesses: claude", rendered)
+        self.assertIn("Role: User", rendered)
+        self.assertIn("Action: Install", rendered)
         self.assertIn("Requested mode: Symlink", rendered)
         self.assertIn("Projected modes: 2 linked, 2 copied", rendered)
+        self.assertIn("Selected count: 1", rendered)
         self.assertIn("Selected: backend", rendered)
+        self.assertIn("Expected mutation:", rendered)
+        self.assertIn("mixed-mode fallback", rendered)
 
 
 class TextInstallModeFlowTests(unittest.TestCase):
@@ -409,7 +414,7 @@ class CursesInstallModeTests(unittest.TestCase):
         dispatch.assert_not_called()
         self.assertIn("Cancelled; no changes were made.", output.getvalue())
 
-    def test_curses_mode_back_reopens_action_before_any_dispatch(self):
+    def test_curses_mode_back_reopens_scope_before_any_dispatch(self):
         def wrapper(callback):
             callback(object())
 
@@ -432,7 +437,7 @@ class CursesInstallModeTests(unittest.TestCase):
                 "_curses_multiselect",
                 side_effect=lambda *_args, **_kwargs: next(multis),
             ),
-            mock.patch.object(tui, "_curses_install_scope", return_value="project"),
+            mock.patch.object(tui, "_curses_install_scope", return_value="project") as scope_select,
             mock.patch.object(tui, "_curses_install_mode", side_effect=("back", "copy")),
             mock.patch.object(tui, "_curses_confirm_install", return_value=False),
             mock.patch.object(tui, "_dispatch_result") as dispatch,
@@ -440,7 +445,8 @@ class CursesInstallModeTests(unittest.TestCase):
             code = tui._run_curses(source_dir=FIXTURES)
 
         self.assertEqual(code, 0)
-        self.assertEqual(len(action_titles), 2)
+        self.assertEqual(len(action_titles), 1)
+        self.assertEqual(scope_select.call_count, 2)
         dispatch.assert_not_called()
 
     def test_remote_curses_symlink_exits_usage_before_selection(self):
@@ -529,15 +535,19 @@ class TextInstallModeLifecycleTests(unittest.TestCase):
         self.assertEqual(entry["install"]["links"][0]["target"], str(source_target))
         self.assertTrue(any("mode=symlink" in line for line in install_lines))
 
-        update_code, update_lines = self._run(["1", "1", "update", "1", "1"])
+        update_code, update_lines = self._run(["1", "1", "update", "1", "1", "y"])
 
         self.assertEqual(update_code, 0)
         self.assertTrue(destination.is_symlink())
         self.assertTrue(any("live-linked" in line for line in update_lines))
+        self.assertTrue(any("Recorded subscription:" in line for line in update_lines))
+        self.assertTrue(any("Resolved destination:" in line for line in update_lines))
 
-        uninstall_code, _uninstall_lines = self._run(["1", "1", "uninstall", "1", "1"])
+        uninstall_code, uninstall_lines = self._run(["1", "1", "uninstall", "1", "1", "y"])
 
         self.assertEqual(uninstall_code, 0)
+        self.assertTrue(any("Recorded subscription:" in line for line in uninstall_lines))
+        self.assertTrue(any("Resolved destination:" in line for line in uninstall_lines))
         self.assertFalse(os.path.lexists(destination))
         self.assertTrue((source_target / "SKILL.md").exists())
 

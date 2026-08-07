@@ -517,7 +517,7 @@ class RequestAssemblyTests(unittest.TestCase):
                     ),
                 ),
             )
-            read = _scripted_reader(["1", "1", "uninstall", "1", "1"])
+            read = _scripted_reader(["1", "1", "uninstall", "1", "1", "y"])
             write, _ = _collector()
             with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
                 rc = tui._run_text(read, write, source_dir=FIXTURES, project=project)
@@ -928,7 +928,7 @@ class SourceErrorTests(unittest.TestCase):
                 captured["req"] = request
                 return 0
 
-            read = _scripted_reader(["1", "1", "uninstall", "1", "1"])
+            read = _scripted_reader(["1", "1", "uninstall", "1", "1", "y"])
             write, _ = _collector()
             with mock.patch.object(tui, "_dispatch", side_effect=_recorder):
                 rc = tui._run_text(
