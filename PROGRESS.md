@@ -51,7 +51,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| CAS01 | Immutable content-addressed store | SRC01,P02 | in_progress | `codex/aart-1-0-cas01-content-store` | pending | Red tests being established for verified publication, references, repair, and safe GC |
+| CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / pending | Four Python 3.10/3.14 jobs pass; 1067 unit, 23 integration, E2E, 87.34% overall / 91.01% store-context coverage |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
@@ -92,8 +92,8 @@ Focused tests: 37 pass; 91.01% branch coverage across the new store context
 Files owned: new store/application/io modules, store tests/docs, TODO.md, PROGRESS.md
 Risks/migrations: no install/marketplace wiring in CAS01; deletion requires explicit execute mode;
   source/current and installed/setup references must dominate retention before any collection
-PR: pending after push
-CI: pending
+PR: #39 ready — https://github.com/M1F1/agent-artifacts/pull/39
+CI: PASS — four push/pull_request Python 3.10/3.14 quality jobs
 Merge: pending
 ```
 
@@ -112,7 +112,7 @@ Merge: pending
 | C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | pending |
+| CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -451,4 +451,11 @@ None.
 - Verified 37 focused tests and 91.01% branch coverage for the complete new store context; full
   `make quality` passes with 1067 unit tests, 23 integration tests, shell E2E, strict mypy over 104
   source files, Ruff, 87.34% global branch coverage, validation, `1.0.0a1` wheel/import, and docs.
-  All 1067 tests also pass on Python 3.14.6; CI remains pending before delivery.
+  All 1067 tests also pass on Python 3.14.6; exact PR/CI evidence follows below.
+
+### 2026-08-07 — CAS01 PR quality passed
+
+- Pushed implementation commit `cf845a1` and opened ready PR #39.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
+- Recorded the verified evidence and marked the task complete in its branch; the status becomes
+  authoritative only after the protected squash merge to `main`.
