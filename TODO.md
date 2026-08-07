@@ -49,7 +49,7 @@ Product requirements:
       scope/trust/setup gates in the marketplace, installation, and setup tasks.
 - [x] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
       concurrency control, and offline last-known-good behavior.
-- [ ] Implement the content-addressed artifact object store with digest verification, safe GC, and
+- [x] Implement the content-addressed artifact object store with digest verification, safe GC, and
       install/setup references.
 - [ ] Merge configured sources deterministically without silent shadowing and display effective
       source/trust for every artifact.

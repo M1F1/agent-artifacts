@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `CAS01`
+- **Next task:** `MKT01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -50,8 +50,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | [#35](https://github.com/M1F1/agent-artifacts/pull/35) / `15dfe61` | Four Python 3.10/3.14 CI jobs passed after a recorded Ruff drift fix; squash merge verified |
 | C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / pending | Four Python 3.10/3.14 CI jobs pass; 1030 unit, 22 integration, E2E, 87.10% overall / 95.42% new-context coverage |
-| CAS01 | Immutable content-addressed store | SRC01,P02 | pending | — | — | Safe verify/GC/reference model |
+| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| CAS01 | Immutable content-addressed store | SRC01,P02 | in_progress | `codex/aart-1-0-cas01-content-store` | pending | Red tests being established for verified publication, references, repair, and safe GC |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
@@ -80,23 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SRC01 — Local/Git source acquisition and immutable snapshots
-Branch: codex/aart-1-0-src01-source-acquisition
-Worktree: /tmp/aart-src01.umZOQT/worktree
+Task: CAS01 — Immutable content-addressed artifact store
+Branch: codex/aart-1-0-cas01-content-store
+Worktree: /tmp/aart-cas01.JmlOc2/worktree
 Started: 2026-08-07
-Bounded contexts: Pure source candidate/current/health values, sync fallback orchestration, bounded
-  local/Git snapshot readers, fixed-argv Git process port, per-source locks, and atomic current store
-Red test and expected failure: PASS — seven expected import errors because the managed
-  source/acquisition/store APIs did not exist; review regressions then failed for TOCTOU, symlink,
-  ownerless-lock, strict-pointer, hard-limit, and mirror-repair invariants before their fixes
-Focused tests: PASS — 54 local/Git/process/store/lock/validation/status/E2E tests; new context has
-  95.42% branch coverage; full quality has 1030 unit and 22 integration tests; Python 3.14 parity,
-  Ruff, mypy over 97 source files, shell E2E, validation, wheel, and docs pass
-Files owned: new sources/application/io modules, source tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: no CAS/marketplace/CLI/TUI wiring in SRC01; local test transports are explicit;
-  candidates are inert bytes and publication remains unreachable before native-source validation
-PR: #38 ready — https://github.com/M1F1/agent-artifacts/pull/38
-CI: PASS — four push/pull_request Python 3.10/3.14 quality jobs
+Bounded contexts: Pure immutable-object/reference/GC plans, digest-verifying store application,
+  private filesystem adapter, repair/status, global GC lock, and dry-run-first collection
+Red test and expected failure: PASS — six expected import errors because immutable
+  store/application/object/reference/lock APIs did not exist
+Focused tests: 37 pass; 91.01% branch coverage across the new store context
+Files owned: new store/application/io modules, store tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: no install/marketplace wiring in CAS01; deletion requires explicit execute mode;
+  source/current and installed/setup references must dominate retention before any collection
+PR: pending after push
+CI: pending
 Merge: pending
 ```
 
@@ -115,6 +112,7 @@ Merge: pending
 | C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -424,3 +422,33 @@ None.
 - All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
 - Recorded the verified evidence and marked the task complete in its branch; the status becomes
   authoritative only after the protected squash merge to `main`.
+
+### 2026-08-07 — SRC01 merged; CAS01 started
+
+- Observed all four replacement Python 3.10/3.14 jobs pass and squash-merged PR #38 as `88d764a`;
+  verified the merged PR, exact `origin/main`, and remote branch deletion.
+- Removed only the explicit SRC01 temporary worktree and created isolated CAS01 from exact
+  `88d764a`; unrelated root-worktree files remain untouched.
+- Scoped CAS01 to digest verification, safe atomic convergence/repair, immutable modes, explicit
+  references, non-following verification, and plan-before-execute garbage collection.
+
+### 2026-08-07 — CAS01 Red/Green and security review
+
+- Confirmed initial Red with six expected import errors for the absent immutable object model,
+  application orchestration, filesystem store, reference persistence, and store-lock APIs.
+- Added a strict canonical object envelope, SHA-256-bound immutable candidates, normalized tree and
+  size/count/depth limits, compiler-plan materialization, and fixed managed path identities.
+- Added private stage/flush/freeze/atomic publication, concurrent identical convergence, verified
+  read-back, safe corruption repair, explicit missing/verified/degraded status, and read-only object
+  trees that preserve executable bits.
+- Added canonical `0600` reference persistence for installed, setup, source-current, retained,
+  rollback, and transaction roots; owner/kind replacement and dry-run-first GC share one global
+  lease, and execute mode can delete only the exact unreferenced plan.
+- Repository code review captured Red regressions before fixes for forged candidate values,
+  symlinked state and intermediate managed paths, directory-to-symlink scan races, unbounded entry
+  counts, status/digest mismatch, duplicate GC receipts, and physical-delete rollback. Complete
+  tombstones are verified, restored, and re-frozen when removal fails.
+- Verified 37 focused tests and 91.01% branch coverage for the complete new store context; full
+  `make quality` passes with 1067 unit tests, 23 integration tests, shell E2E, strict mypy over 104
+  source files, Ruff, 87.34% global branch coverage, validation, `1.0.0a1` wheel/import, and docs.
+  All 1067 tests also pass on Python 3.14.6; CI remains pending before delivery.
