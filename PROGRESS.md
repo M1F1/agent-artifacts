@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `CFG01`
+- **Next task:** `CAS01`
 - **Last updated:** 2026-08-07
 
 ## Status rules
@@ -49,8 +49,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | P03 | Registry entry/lock/index schemas | P02 | complete | `codex/aart-1-0-p03-registry-protocol` | [#34](https://github.com/M1F1/agent-artifacts/pull/34) / `b7d5cc5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | C01 | Deterministic compiler pipeline | P03 | complete | `codex/aart-1-0-c01-compiler-pipeline` | [#35](https://github.com/M1F1/agent-artifacts/pull/35) / `15dfe61` | Four Python 3.10/3.14 CI jobs passed after a recorded Ruff drift fix; squash merge verified |
 | C02 | Compatibility/effects/collection graph | C01 | complete | `codex/aart-1-0-c02-graph-compiler` | [#36](https://github.com/M1F1/agent-artifacts/pull/36) / `261c5a5` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| CFG01 | Platform config and organization policy | P01,D01 | in_progress | `codex/aart-1-0-cfg01-config-policy` | pending | 36 focused tests pass with 98.45% branch coverage across the new context; full gates pass |
-| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | pending | — | — | Atomic last-known-good |
+| CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
+| SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / pending | Four Python 3.10/3.14 CI jobs pass; 1030 unit, 22 integration, E2E, 87.10% overall / 95.42% new-context coverage |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | pending | — | — | Safe verify/GC/reference model |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | pending | — | — | No silent shadowing |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
@@ -80,20 +80,23 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: CFG01 — Platform configuration and organization policy
-Branch: codex/aart-1-0-cfg01-config-policy
-Worktree: /tmp/aart-cfg01.q1cqys/worktree
+Task: SRC01 — Local/Git source acquisition and immutable snapshots
+Branch: codex/aart-1-0-src01-source-acquisition
+Worktree: /tmp/aart-src01.umZOQT/worktree
 Started: 2026-08-07
-Bounded contexts: Pure platform paths, strict user config/organization policy, effective precedence,
-  first-run/content requests, corrupt recovery plans, and atomic private filesystem persistence
-Red test and expected failure: PASS — five expected import errors because configuration,
-  application ports, and the atomic store did not exist
-Focused tests: 36 pass; 98.45% branch coverage across the configuration/application/store context
-Files owned: new configuration/application/store modules, configuration tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: no CLI/TUI wiring or Git/network access in CFG01; all tests inject fake/temp roots;
-  corrupt policy fails closed and corrupt user config cannot authorize content operations
-PR: pending after push
-CI: local quality matrix and Python 3.14.6 full suite pass; remote CI pending
+Bounded contexts: Pure source candidate/current/health values, sync fallback orchestration, bounded
+  local/Git snapshot readers, fixed-argv Git process port, per-source locks, and atomic current store
+Red test and expected failure: PASS — seven expected import errors because the managed
+  source/acquisition/store APIs did not exist; review regressions then failed for TOCTOU, symlink,
+  ownerless-lock, strict-pointer, hard-limit, and mirror-repair invariants before their fixes
+Focused tests: PASS — 54 local/Git/process/store/lock/validation/status/E2E tests; new context has
+  95.42% branch coverage; full quality has 1030 unit and 22 integration tests; Python 3.14 parity,
+  Ruff, mypy over 97 source files, shell E2E, validation, wheel, and docs pass
+Files owned: new sources/application/io modules, source tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: no CAS/marketplace/CLI/TUI wiring in SRC01; local test transports are explicit;
+  candidates are inert bytes and publication remains unreachable before native-source validation
+PR: #38 ready — https://github.com/M1F1/agent-artifacts/pull/38
+CI: PASS — four push/pull_request Python 3.10/3.14 quality jobs
 Merge: pending
 ```
 
@@ -109,7 +112,9 @@ Merge: pending
 | P02 | 26 pass | pass | pass | strict protocol pass | 878 pass | 21 pass | 11-step pass | pass | 83.77% overall; 91.09% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | P03 | 33 pass | pass | pass | strict protocol pass | 911 pass | 21 pass | 11-step pass | pass | 84.81% overall; 96.72% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | C01 | 18 pass | pass | pass | strict new contexts pass | 929 pass | 21 pass | 11-step pass | pass | 85.24% overall; 100% new context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
-| C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | pending |
+| C02 | 11 pass | 188 files pass on Ruff 0.12.2 and 0.16.2 | pass | strict compiler/protocol pass | 940 pass | 21 pass | 11-step pass | pass | 85.70% overall; 98.52% graph | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -133,6 +138,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-013 | Registry consumers resolve native references only through a matching committed lock; service declarations stay inert and parsed indexes revalidate their graph | accepted | Prevents moving refs, self-authored trust/reporting activation, stale input use, and forged collection memberships from reaching installation |
 | D-014 | Compiler Index creates an immutable candidate before Materialize, and pure phases receive no source locator/host path | accepted | Enforces plan-before-write, keeps host-specific acquisition data out of deterministic identity, and makes Publish unreachable until all candidate object/snapshot receipts match |
 | D-015 | Marketplace identity is source-alias-qualified; collection expansion and compatibility decisions are pure shared graph results | accepted | Prevents silent cross-source shadowing and keeps browse, bundles, security, and install consumers on one deterministic expansion/reason contract |
+| D-016 | Source snapshots are keyed by origin-independent content digest while pointers also bind the resolved local digest or Git commit | accepted | Converges identical local/Git bytes, permits safe concurrent publication, and preserves immutable revision provenance without path-derived identity |
 
 ## Blockers
 
@@ -381,3 +387,40 @@ None.
 - Passed the canonical local quality matrix with 976 unit-discovery tests, 21 integration tests,
   shell E2E, strict mypy over 88 source files, 86.52% global branch coverage, validation,
   `1.0.0a1` wheel/import checks, documentation checks, and no tracked mutation.
+
+### 2026-08-07 — CFG01 merged; SRC01 started
+
+- Observed all four Python 3.10/3.14 jobs pass and squash-merged PR #37 as `472340c`; verified the
+  exact PR head, merged state, `origin/main`, remote branch deletion, and clean CFG01 worktree.
+- Removed only the explicit CFG01 temporary worktree and created isolated SRC01 from exact
+  `472340c`; unrelated files in the root worktree remain untouched.
+- Scoped SRC01 around inert bounded snapshots, system-Git fixed argv, per-source serialization,
+  validation-before-publication, atomic current pointers, and explicit last-known-good outcomes.
+
+### 2026-08-07 — SRC01 Red/Green and security review
+
+- Confirmed initial Red with seven expected import errors for the absent source model, local/Git
+  acquisition, application sync, process, atomic store, and lock APIs.
+- Added origin-derived source instances, hard-bounded inert snapshots, native compatibility
+  validation, health/status projection, explicit offline/fetch last-known-good outcomes, and strict
+  canonical current pointers that bind local revisions or immutable Git commits.
+- Added fixed-argv `shell=False` system Git with sanitized environment/redacted diagnostics, bare
+  mirror init/repair/fetch, branch/tag-to-commit resolution, safe tree/archive comparison, and a
+  real system-Git integration test without Python runtime dependencies.
+- Added private staged snapshot publication, byte/digest verification before atomic `current.json`
+  replacement, convergent concurrent writers, per-source owner leases with interrupted/stale
+  recovery, and an end-to-end local sync through all production ports.
+- Repository code review captured Red regressions before fixes for file-to-symlink TOCTOU,
+  symlinked managed snapshot/mirror paths, ownerless locks, partial mirror remote configuration,
+  unbounded caller limits, cross-instance publication, and malformed durable identities.
+- Verified 54 focused tests and 95.42% branch coverage for the complete new context. The canonical
+  non-mutating quality matrix passes with 1030 unit tests, 22 integration tests, shell E2E, strict
+  mypy over 97 source files, Ruff, 87.10% global coverage, validation, `1.0.0a1` wheel/import, and
+  documentation; all 1030 tests also pass on Python 3.14.6.
+
+### 2026-08-07 — SRC01 PR quality passed
+
+- Pushed implementation commit `b5aed23` and opened ready PR #38.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
+- Recorded the verified evidence and marked the task complete in its branch; the status becomes
+  authoritative only after the protected squash merge to `main`.
