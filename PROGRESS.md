@@ -52,7 +52,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | CFG01 | Platform config and organization policy | P01,D01 | complete | `codex/aart-1-0-cfg01-config-policy` | [#37](https://github.com/M1F1/agent-artifacts/pull/37) / `472340c` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | SRC01 | Local/Git acquisition and snapshots | CFG01,C01 | complete | `codex/aart-1-0-src01-source-acquisition` | [#38](https://github.com/M1F1/agent-artifacts/pull/38) / `88d764a` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / `15304ae` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
-| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | in_progress | `codex/aart-1-0-mkt01-federated-marketplace` | pending | Qualified resolution, effective trust, source health, deterministic presentation |
+| MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `54c139a` | Four Python 3.10/3.14 implementation CI jobs passed; final ledger CI and squash merge pending |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | pending | — | — | Maintainer-only deterministic conversion |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | pending | — | — | No payload duplication |
 | REG01 | Maintainer registry commands/quality gate | IMP02 | pending | — | — | No automatic Git mutation |
@@ -93,8 +93,8 @@ Files owned: new marketplace modules/tests/docs, exact company-review policy sch
   PROGRESS.md
 Risks/migrations: no CLI/TUI/install wiring in MKT01; aliases/default ranking never grant trust or
   resolve collisions; company review requires exact policy source identity plus approved entry
-PR: pending after push
-CI: pending
+PR: https://github.com/M1F1/agent-artifacts/pull/40 (ready)
+CI: four implementation push/pull_request jobs passed on Python 3.10/3.14; final ledger rerun pending
 Merge: pending
 ```
 
@@ -114,6 +114,7 @@ Merge: pending
 | CFG01 | 36 pass | 202 files pass on Ruff 0.12.2 and 0.16.2 | pass | 88 source files pass | 976 pass | 21 pass | 11-step pass | pass | 86.52% overall; 98.45% config context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
+| MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 implementation pass; ledger rerun pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -494,3 +495,10 @@ None.
   tests, the 11-step shell E2E, strict mypy over 107 source files, Ruff over 250 files, 87.55%
   global branch coverage, validation, `1.0.0a1` wheel/import, and documentation. All 1088 tests
   also pass on Python 3.14.6; exact PR/CI evidence follows below.
+
+### 2026-08-07 — MKT01 implementation PR quality passed
+
+- Pushed implementation commit `54c139a` and opened ready PR #40.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix.
+- Recorded the verified evidence and marked the task complete in its branch; the status becomes
+  authoritative only after the protected squash merge to `main`.
