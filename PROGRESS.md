@@ -94,8 +94,8 @@ Files owned: new registry-maintenance domain/application modules and tests/docs,
 Risks/migrations: native references must never duplicate payloads; identity/ref/commit/digests must
   agree; materialized importer updates must use recorded importer/options and remain reviewed diffs;
   no service may commit or push Git changes
-PR: pending after push
-CI: pending; local `make quality` and Python 3.14.6 unit matrix pass
+PR: [#42](https://github.com/M1F1/agent-artifacts/pull/42), ready and mergeable
+CI: first four-job push/PR Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -117,7 +117,7 @@ Merge: pending
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 2× 4-job Python 3.10/3.14 pass |
 | IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 2× 4-job Python 3.10/3.14 pass |
-| IMP02 | 31 pass + 2 subtests | 281 files pass | pass | 118 source files pass | 1161 pass | 28 pass | 11-step pass | pass | 87.72% overall; 85.68% focused context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1161 pass; CI pending |
+| IMP02 | 31 pass + 2 subtests | 281 files pass | pass | 118 source files pass | 1161 pass | 28 pass | 11-step pass | pass | 87.72% overall; 85.68% focused context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1161 pass; first 4-job Python 3.10/3.14 CI matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -592,3 +592,12 @@ None.
 - `make quality` passes with 1,161 unit tests, 28 integration tests, the 11-step shell E2E, Ruff over
   281 files, mypy over 118 source files, 87.72% global branch coverage, `1.0.0a1` wheel/import,
   validation, docs, and the non-mutation check. All 1,161 tests also pass on Python 3.14.6.
+
+### 2026-08-07 — IMP02 implementation CI
+
+- Committed the reviewed implementation as `05a758c`, pushed the isolated task branch, and opened
+  ready PR #42 targeting `main` with the complete Red/Green/gate/security evidence.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
