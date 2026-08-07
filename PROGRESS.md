@@ -93,8 +93,8 @@ Files owned: new importer/application/IO modules and tests/fixtures/docs, native
   TODO.md, PROGRESS.md
 Risks/migrations: maintainer-only conversion must never execute content, follow unsafe entries,
   infer ambiguous semantics, include credentials/timestamps/local paths, or mutate before review
-PR: pending after implementation commit and push
-CI: local canonical quality and Python 3.14.6 regression pass; GitHub matrix pending
+PR: https://github.com/M1F1/agent-artifacts/pull/41 (ready)
+CI: four implementation push/pull_request jobs pass on Python 3.10/3.14; ledger rerun pending
 Merge: pending
 ```
 
@@ -115,7 +115,7 @@ Merge: pending
 | SRC01 | 54 pass | 223 files pass | pass | 97 source files pass | 1030 pass | 22 pass | 11-step pass | pass | 87.10% overall; 95.42% source context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | CAS01 | 37 pass | 239 files pass | pass | 104 source files pass | 1067 pass | 23 pass | 11-step pass | pass | 87.34% overall; 91.01% store context | `1.0.0a1` wheel/import pass | pass | 4× Python 3.10/3.14 pass |
 | MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 2× 4-job Python 3.10/3.14 pass |
-| IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; GitHub matrix pending |
+| IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 4× implementation CI pass; ledger rerun pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -545,3 +545,13 @@ None.
   coverage, deterministic `1.0.0a1` wheel packaging, and documentation checks.
 - Re-ran all 1130 unit/regression tests successfully on local Python 3.14.6. The two pre-existing
   HTTP 401 cleanup `ResourceWarning` messages remain non-failing and are unrelated to IMP01.
+
+### 2026-08-07 — IMP01 implementation CI
+
+- Committed the reviewed implementation as `4e25b46`, pushed the isolated task branch, and opened
+  ready PR #41 targeting `main`.
+- All four push/pull_request quality jobs passed on Python 3.10 and 3.14 without a CI-only code fix.
+- Corrected a malformed PR description caused by local shell backtick interpretation; the accidental
+  action only reran local quality commands and did not mutate tracked files or remote code.
+- Recorded the verified implementation evidence in this ledger. A final four-job matrix reruns on
+  this documentation-only commit before the protected squash merge.
