@@ -10,6 +10,7 @@ import importlib.util
 import pathlib
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -63,6 +64,7 @@ class InjectCommitTest(unittest.TestCase):
         self.assertTrue(rendered.endswith("\n"))
 
 
+@unittest.skipIf(sys.version_info < (3, 11), "stdlib wheel builder requires Python 3.11+")
 class BuildWheelTest(unittest.TestCase):
     def setUp(self):
         # Build against a throwaway copy of the project so the real dist/ is untouched.

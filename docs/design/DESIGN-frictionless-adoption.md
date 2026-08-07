@@ -42,7 +42,7 @@ document as a single workstream.
 
 **Finding.** With `pip install -e .`, `aart` already defaults the catalog source to the repo it
 was installed from, from any working directory. `open_source` derives it as
-`os.path.dirname(pkg_dir)` from `agent_artifacts.__file__` ([source.py:221](../../agent_artifacts/source.py:221));
+`os.path.dirname(pkg_dir)` from `agent_artifacts.__file__` ([source.py:221](../../agent_artifacts/source.py#L221));
 the editable finder makes `__file__` resolve to the real checkout, so the default root is the
 repo. Verified: `aart list` and `aart install` resolve to the repo with no `--source`, even run
 from outside it. The original "`--source` required / `list` shows nothing" symptom reproduces only
