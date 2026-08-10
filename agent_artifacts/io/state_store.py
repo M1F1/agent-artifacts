@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import fcntl
 import os
+import posixpath
+import re
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -14,18 +16,21 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.install_state.model import (
     InstallState,
+    InstallStatePaths,
     MigrationReceipt,
     RollbackReceipt,
     StateMigrationPlan,
 )
 from agent_artifacts.install_state.ports import StateMigrationPort
 from agent_artifacts.install_state.schema import parse_install_state
-from agent_artifacts.protocol.hashing import sha256_bytes
+from agent_artifacts.protocol.hashing import parse_sha256
+from agent_artifacts.protocol.json import JsonObject, parse_json
 
 STATE_IO_FAILED = DiagnosticCode("state-io-failed")
 STATE_MIGRATION_STALE = DiagnosticCode("state-migration-stale")
 STATE_MIGRATION_BUSY = DiagnosticCode("state-migration-busy")
 _MAX_STATE_BYTES = 10 * 1024 * 1024
+_JOURNAL_NAME_RE = re.compile(r"^manifest-v1-[0-9a-f]{64}(?:-[1-9][0-9]{0,3}|-10000)?\.json$")
 
 
 def _error(code: DiagnosticCode, message: str) -> Err:
@@ -156,7 +161,7 @@ def _is_current(plan: StateMigrationPlan) -> bool:
     )
 
 
-def _validate_fresh(plan: StateMigrationPlan) -> Result[None]:
+def _validate_resumable(plan: StateMigrationPlan) -> Result[None]:
     replacement = parse_install_state(plan.replacement, path=plan.destination_path)
     if isinstance(replacement, Err):
         return _error(
@@ -164,29 +169,32 @@ def _validate_fresh(plan: StateMigrationPlan) -> Result[None]:
             "reviewed migration replacement is not valid installation manifest v2",
         )
     legacy = _read_regular(Path(plan.legacy_path))
-    if legacy != plan.legacy_content or (
-        legacy is not None and sha256_bytes(legacy) != plan.expected_legacy_digest
-    ):
-        return _error(
-            STATE_MIGRATION_STALE,
-            "legacy state changed after migration review; prepare a new migration plan",
-        )
     destination = _read_regular(Path(plan.destination_path))
-    if plan.destination_path != plan.legacy_path and destination is not None:
-        return _error(
-            STATE_MIGRATION_STALE,
-            "installation state destination already exists; refusing to overwrite it",
-        )
     backup = _read_regular(Path(plan.backup_path))
-    if backup not in {None, plan.legacy_content}:
+    journal = _read_regular(Path(plan.journal_path))
+    if backup not in {None, plan.legacy_content} or journal not in {
+        None,
+        plan.journal_content,
+    }:
         return _error(
             STATE_MIGRATION_STALE,
-            "migration backup already contains different state",
+            "migration backup or journal contains a different operation",
         )
-    if _read_regular(Path(plan.journal_path)) is not None:
+    if plan.scope == "project":
+        valid = legacy in {plan.legacy_content, plan.replacement}
+        partial_requires_backup = legacy == plan.replacement or journal is not None
+    else:
+        valid = legacy in {None, plan.legacy_content} and destination in {
+            None,
+            plan.replacement,
+        }
+        partial_requires_backup = (
+            legacy is None or destination == plan.replacement or journal is not None
+        )
+    if not valid or (partial_requires_backup and backup != plan.legacy_content):
         return _error(
             STATE_MIGRATION_STALE,
-            "migration journal already contains a different operation",
+            "state changed after migration review; refusing an unsafe apply/resume",
         )
     return Ok(None)
 
@@ -285,7 +293,7 @@ class LocalStateStore(StateMigrationPort):
             with _exclusive_lock(Path(plan.lock_path)):
                 if _is_current(plan):
                     return Ok(MigrationReceipt(plan, False))
-                fresh = _validate_fresh(plan)
+                fresh = _validate_resumable(plan)
                 if isinstance(fresh, Err):
                     return fresh
                 backup = Path(plan.backup_path)
@@ -294,9 +302,11 @@ class LocalStateStore(StateMigrationPort):
                 try:
                     if _read_regular(backup) is None:
                         _write_private_atomic(backup, plan.legacy_content)
-                    _write_private_atomic(destination, plan.replacement)
-                    _write_private_atomic(journal, plan.journal_content)
-                    if plan.scope == "user":
+                    if _read_regular(journal) is None:
+                        _write_private_atomic(journal, plan.journal_content)
+                    if _read_regular(destination) != plan.replacement:
+                        _write_private_atomic(destination, plan.replacement)
+                    if plan.scope == "user" and _read_regular(Path(plan.legacy_path)) is not None:
                         _unlink(Path(plan.legacy_path))
                 except OSError as error:
                     recovery_errors = _recover_failed_apply(plan)
@@ -382,3 +392,109 @@ class LocalStateStore(StateMigrationPort):
             return _error(STATE_MIGRATION_BUSY, str(error))
         except OSError as error:
             return _error(STATE_IO_FAILED, f"state migration rollback failed: {error}")
+
+    def current_receipt(self, paths: InstallStatePaths) -> Result[MigrationReceipt | None]:
+        """Reconstruct one completed receipt without trusting filenames or following links."""
+
+        directory = Path(paths.journal_directory)
+        try:
+            if not directory.exists():
+                return Ok(None)
+            info = directory.lstat()
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                return _error(STATE_IO_FAILED, "migration journal directory is unsafe")
+            candidates: list[MigrationReceipt] = []
+            with os.scandir(directory) as scanned:
+                entries = sorted(scanned, key=lambda item: item.name)
+            if len(entries) > 10_001:
+                return _error(STATE_IO_FAILED, "migration journal directory exceeds safe bounds")
+            suspicious = False
+            for entry in entries:
+                if _JOURNAL_NAME_RE.fullmatch(entry.name) is None or not entry.is_file(
+                    follow_symlinks=False
+                ):
+                    continue
+                content = _read_regular(Path(entry.path))
+                if content is None:
+                    continue
+                parsed = parse_json(content)
+                if isinstance(parsed, Err) or not isinstance(parsed.value, JsonObject):
+                    suspicious = True
+                    continue
+                fields = dict(parsed.value.entries)
+                required = {
+                    "schema_version",
+                    "review_digest",
+                    "scope",
+                    "legacy_path",
+                    "destination_path",
+                    "backup_path",
+                    "legacy_digest",
+                    "replacement_digest",
+                }
+                if set(fields) != required or fields["schema_version"] != 1:
+                    suspicious = True
+                    continue
+                if not all(isinstance(fields[name], str) for name in required - {"schema_version"}):
+                    suspicious = True
+                    continue
+                if (
+                    fields["scope"] != paths.scope
+                    or fields["legacy_path"] != paths.legacy_path
+                    or fields["destination_path"] != paths.destination_path
+                    or posixpath.dirname(str(fields["backup_path"])) != paths.backup_directory
+                ):
+                    suspicious = True
+                    continue
+                legacy_digest = parse_sha256(str(fields["legacy_digest"]))
+                replacement_digest = parse_sha256(str(fields["replacement_digest"]))
+                review_digest = parse_sha256(str(fields["review_digest"]))
+                if (
+                    isinstance(legacy_digest, Err)
+                    or isinstance(replacement_digest, Err)
+                    or isinstance(review_digest, Err)
+                ):
+                    suspicious = True
+                    continue
+                backup = _read_regular(Path(str(fields["backup_path"])))
+                replacement = _read_regular(Path(paths.destination_path))
+                if backup is None or replacement is None:
+                    continue
+                try:
+                    plan = StateMigrationPlan(
+                        paths.scope,
+                        paths.legacy_path,
+                        paths.destination_path,
+                        str(fields["backup_path"]),
+                        str(Path(entry.path)),
+                        paths.lock_path,
+                        legacy_digest.value,
+                        replacement_digest.value,
+                        backup,
+                        replacement,
+                        content,
+                        review_digest.value,
+                    )
+                except ValueError:
+                    suspicious = True
+                    continue
+                if _is_current(plan):
+                    candidates.append(MigrationReceipt(plan, False))
+            if len(candidates) > 1:
+                return _error(
+                    STATE_MIGRATION_STALE, "multiple active migration receipts were found"
+                )
+            if candidates:
+                return Ok(candidates[0])
+            if suspicious:
+                destination = _read_regular(Path(paths.destination_path))
+                if destination is not None and isinstance(
+                    parse_install_state(destination, path=paths.destination_path), Ok
+                ):
+                    return _error(
+                        STATE_MIGRATION_STALE,
+                        "migration journal evidence is inconsistent with current v2 state",
+                    )
+            return Ok(None)
+        except OSError as error:
+            return _error(STATE_IO_FAILED, f"cannot load migration receipt: {error}")

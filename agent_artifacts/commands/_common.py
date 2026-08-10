@@ -46,7 +46,7 @@ NETWORK = 3  # network / remote failure
 CONFLICT = 4  # conflict needs --force
 CORRUPT_MANIFEST = 5
 
-# Default source-of-truth repo (compiled in; overridable via --repo / Request.repo, docs/design/DESIGN.md §17).
+# Legacy manifest identity only. It is not an implicit content source in AART 1.0.
 DEFAULT_REPO = "M1F1/agent-artifacts"
 
 _TYPES: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")

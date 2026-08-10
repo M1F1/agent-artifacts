@@ -53,6 +53,11 @@ def validate_flags(request: Request) -> Optional[Err]:
             "--all cannot be combined with named artifacts or --bundle",
             code=USAGE,
         )
+    if request.migration_action == "state" and request.rollback and request.source_mappings:
+        return Err(
+            "--source-map applies only to migration dry-run/apply, not --rollback",
+            code=USAGE,
+        )
     publisher_context = (
         request.publisher_source_id,
         request.security_registry_inputs_digest,

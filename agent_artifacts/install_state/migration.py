@@ -10,7 +10,7 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import ArtifactCoordinate
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.manifest import parse_manifest
-from agent_artifacts.model import ManifestEntry
+from agent_artifacts.model import Manifest, ManifestEntry
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import (
     JsonArray,
@@ -66,10 +66,8 @@ def _valid_legacy_structure(value: JsonValue) -> bool:
     for item in root["installed"].items:
         entry = _fields(
             item,
-            frozenset(
-                {"artifact", "type", "profile", "source", "install", "files", "installed_at"}
-            ),
-            frozenset({"bundle", "merge", "subscription"}),
+            frozenset({"artifact", "type", "profile", "source", "files", "installed_at"}),
+            frozenset({"bundle", "install", "merge", "subscription"}),
         )
         if entry is None or any(
             not isinstance(entry[name], str)
@@ -84,21 +82,29 @@ def _valid_legacy_structure(value: JsonValue) -> bool:
             for path, digest in files.entries
         ):
             return False
-        install = _fields(
-            entry["install"],
-            frozenset({"mode", "requested_mode", "links"}),
-        )
-        if (
-            install is None
-            or not isinstance(install["mode"], str)
-            or not isinstance(install["requested_mode"], str)
-            or not isinstance(install["links"], JsonArray)
-        ):
-            return False
-        for raw_link in install["links"].items:
-            link = _fields(raw_link, frozenset({"path", "target", "target_kind"}))
-            if link is None or any(not isinstance(link[name], str) for name in link):
+        if "install" in entry:
+            install = _fields(
+                entry["install"],
+                frozenset(),
+                frozenset({"mode", "requested_mode", "links"}),
+            )
+            if (
+                install is None
+                or ("mode" in install and not isinstance(install["mode"], str))
+                or ("requested_mode" in install and not isinstance(install["requested_mode"], str))
+                or ("links" in install and not isinstance(install["links"], JsonArray))
+            ):
                 return False
+            links = install.get("links", JsonArray(()))
+            assert isinstance(links, JsonArray)
+            for raw_link in links.items:
+                link = _fields(
+                    raw_link,
+                    frozenset({"path", "target"}),
+                    frozenset({"target_kind"}),
+                )
+                if link is None or any(not isinstance(link[name], str) for name in link):
+                    return False
         if "subscription" in entry:
             subscription = _fields(
                 entry["subscription"],
@@ -112,17 +118,8 @@ def _valid_legacy_structure(value: JsonValue) -> bool:
         if "merge" in entry:
             merge = _fields(
                 entry["merge"],
-                frozenset(
-                    {
-                        "file",
-                        "json_path",
-                        "mode",
-                        "value_hash",
-                        "created_file",
-                        "overwrote",
-                    }
-                ),
-                frozenset({"identity"}),
+                frozenset({"file", "json_path", "mode", "value_hash"}),
+                frozenset({"identity", "created_file", "overwrote"}),
             )
             if (
                 merge is None
@@ -130,12 +127,36 @@ def _valid_legacy_structure(value: JsonValue) -> bool:
                     not isinstance(merge[name], str)
                     for name in ("file", "json_path", "mode", "value_hash")
                 )
-                or not isinstance(merge["created_file"], bool)
-                or not isinstance(merge["overwrote"], bool)
+                or ("created_file" in merge and not isinstance(merge["created_file"], bool))
+                or ("overwrote" in merge and not isinstance(merge["overwrote"], bool))
                 or ("identity" in merge and not isinstance(merge["identity"], JsonObject))
             ):
                 return False
     return True
+
+
+def parse_legacy_manifest(legacy_content: bytes) -> Result[Manifest]:
+    """Parse the bounded 0.1 manifest dialect as strict JSON before effect inspection."""
+
+    try:
+        legacy_text = legacy_content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return _error(MIGRATION_INVALID, "legacy manifest is not valid UTF-8")
+    strict_legacy = parse_json(legacy_content)
+    if isinstance(strict_legacy, Err):
+        return _error(
+            MIGRATION_INVALID,
+            "legacy manifest must be strict JSON without duplicate keys, floats, or invalid Unicode",
+        )
+    if not _valid_legacy_structure(strict_legacy.value):
+        return _error(
+            MIGRATION_INVALID,
+            "legacy manifest shape contains missing, unknown, or incorrectly typed fields",
+        )
+    parsed = parse_manifest(legacy_text)
+    if not hasattr(parsed, "value"):
+        return _error(MIGRATION_INVALID, f"legacy manifest is invalid: {parsed.reason}")
+    return Ok(parsed.value)
 
 
 def _expected_destinations(entry: ManifestEntry) -> frozenset[str]:
@@ -150,9 +171,15 @@ def _proof_matches(entry: ManifestEntry, candidate: LegacyMigrationCandidate) ->
     if frozenset(by_destination) != _expected_destinations(entry):
         return False
     linked_paths = {link.path for link in entry.install.links}
+    if len(linked_paths) != len(entry.install.links) or not linked_paths <= set(entry.files):
+        return False
+    legacy_digests = dict(candidate.legacy_file_digests)
+    if not frozenset(legacy_digests) <= frozenset(entry.files):
+        return False
     for destination, digest in entry.files.items():
         effect = by_destination[destination]
-        if digest and str(effect.installed_digest) != digest:
+        candidate_digest = legacy_digests.get(destination, str(effect.installed_digest))
+        if digest and candidate_digest != digest:
             return False
         if destination in linked_paths and (
             effect.kind != "symlink-tree" or effect.actual_mode != "symlink"
@@ -175,12 +202,32 @@ def _proof_matches(entry: ManifestEntry, candidate: LegacyMigrationCandidate) ->
         identity = parse_json(identity_content)
         if isinstance(identity, Err):
             return False
+        if candidate.legacy_merge_value_hash is None:
+            expected_path = entry.merge.json_path
+            expected_identity = identity.value
+            legacy_value_hash = str(effect.installed_digest)
+        elif entry.merge.mode == "key":
+            parts = entry.merge.json_path.split(".")
+            if len(parts) < 2:
+                return False
+            expected_path = ".".join(parts[:-1])
+            expected_identity = JsonArray((parts[-1],))
+            legacy_value_hash = candidate.legacy_merge_value_hash
+        else:
+            expected_path = entry.merge.json_path
+            expected_identity = identity.value
+            legacy_value_hash = candidate.legacy_merge_value_hash
         if (
             effect.kind != "merge-json"
-            or effect.json_path != entry.merge.json_path
+            or effect.json_path != expected_path
             or effect.merge_mode != entry.merge.mode
-            or effect.identity_digest != json_digest(identity.value)
-            or str(effect.installed_digest) != entry.merge.value_hash
+            or effect.identity_digest != json_digest(expected_identity)
+            or (
+                effect.identity_evidence != expected_identity
+                if candidate.legacy_merge_value_hash is not None
+                else effect.identity_evidence not in {None, expected_identity}
+            )
+            or legacy_value_hash != entry.merge.value_hash
             or effect.created_destination != entry.merge.created_file
             or effect.overwrote != entry.merge.overwrote
         ):
@@ -221,27 +268,14 @@ def plan_legacy_migration(
     legacy_content: bytes,
     candidates: tuple[LegacyMigrationCandidate, ...],
     paths: InstallStatePaths,
+    *,
+    collision_index: int = 0,
 ) -> Result[StateMigrationPlan]:
     """Create an immutable dry-run plan; this function performs no IO."""
 
-    try:
-        legacy_text = legacy_content.decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
-        return _error(MIGRATION_INVALID, "legacy manifest is not valid UTF-8")
-    strict_legacy = parse_json(legacy_content)
-    if isinstance(strict_legacy, Err):
-        return _error(
-            MIGRATION_INVALID,
-            "legacy manifest must be strict JSON without duplicate keys, floats, or invalid Unicode",
-        )
-    if not _valid_legacy_structure(strict_legacy.value):
-        return _error(
-            MIGRATION_INVALID,
-            "legacy manifest shape contains missing, unknown, or incorrectly typed fields",
-        )
-    parsed = parse_manifest(legacy_text)
-    if not hasattr(parsed, "value"):
-        return _error(MIGRATION_INVALID, f"legacy manifest is invalid: {parsed.reason}")
+    parsed = parse_legacy_manifest(legacy_content)
+    if isinstance(parsed, Err):
+        return parsed
 
     records: list[InstallationRecord] = []
     for entry in parsed.value.installed:
@@ -282,7 +316,14 @@ def plan_legacy_migration(
     replacement = install_state_bytes(state)
     legacy_digest = sha256_bytes(legacy_content)
     replacement_digest = sha256_bytes(replacement)
-    suffix = legacy_digest.value
+    if (
+        not isinstance(collision_index, int)
+        or isinstance(collision_index, bool)
+        or collision_index < 0
+        or collision_index > 10_000
+    ):
+        return _error(MIGRATION_INVALID, "migration collision index is invalid")
+    suffix = legacy_digest.value + ("" if collision_index == 0 else f"-{collision_index}")
     backup_path = posixpath.join(paths.backup_directory, f"manifest-v1-{suffix}.json")
     journal_path = posixpath.join(paths.journal_directory, f"manifest-v1-{suffix}.json")
     review_value = JsonObject(

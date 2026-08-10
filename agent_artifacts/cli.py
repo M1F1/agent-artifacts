@@ -52,6 +52,12 @@ def _run_reporting(request: Request) -> int:
     return reporting.run(request)
 
 
+def _run_migrate(request: Request) -> int:
+    from .commands import migrate
+
+    return migrate.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -66,6 +72,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "registry": _run_registry,
     "security": _run_security,
     "reporting": _run_reporting,
+    "migrate": _run_migrate,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -175,13 +182,12 @@ def build_parser() -> argparse.ArgumentParser:
             "  Copy (recommended) installs an independent snapshot.\n"
             "  Symlink (--link) keeps supported directory artifacts live-linked to a local "
             "catalog.\n"
-            "Pass --source DIR only when you want a different local checkout."
+            "This legacy flag path requires an explicit --source DIR or --repo OWNER/NAME."
         ),
         epilog=(
             "Symlink mode:\n"
-            "  agent-artifacts install code-review --profile tabnine --link\n\n"
-            "  Symlink (--link) is local-only: by default it links to the local catalog used by this tool.\n"
-            "  Pass --source DIR only to link to a different local checkout.\n"
+            "  agent-artifacts install code-review --profile tabnine --source DIR --link\n\n"
+            "  Symlink (--link) is local-only and requires an explicit local --source DIR.\n"
             "  Changes propagate only when that local source changes, for example after you edit it\n"
             "  or pull upstream updates into it.\n"
             "  Supported directory artifacts are linked; unsupported explicit selections fail.\n"
@@ -380,6 +386,39 @@ def build_parser() -> argparse.ArgumentParser:
     _add_setup_scope(p_rollback)
     p_rollback.add_argument("--yes", action="store_true", help="confirm rollback")
     _add_json(p_rollback)
+
+    # migrate ------------------------------------------------------------------ #
+    p = sub.add_parser(
+        "migrate",
+        help="migrate legacy AART consumer state",
+        description=(
+            "Review, apply, or roll back an explicit 0.1.x installation-state migration. "
+            "Migration never guesses between duplicate marketplace artifacts."
+        ),
+    )
+    migration_sub = p.add_subparsers(dest="migration_action", metavar="ACTION", required=True)
+    p_state = migration_sub.add_parser("state", help="migrate 0.1.x installation state to v2")
+    p_state.add_argument(
+        "--from",
+        dest="migration_from",
+        required=True,
+        choices=("0.1",),
+        help="legacy state family (currently: 0.1)",
+    )
+    _add_project(p_state)
+    _add_scope(p_state)
+    p_state.add_argument(
+        "--source-map",
+        action="append",
+        default=[],
+        metavar="TYPE/NAME@PROFILE=ALIAS",
+        help="resolve one ambiguous legacy artifact to an enabled canonical source",
+    )
+    operation = p_state.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--dry-run", action="store_true", help="review the exact migration")
+    operation.add_argument("--apply", action="store_true", help="apply the reviewed migration")
+    operation.add_argument("--rollback", action="store_true", help="restore exact 0.1 state")
+    _add_json(p_state)
 
     # upstream ---------------------------------------------------------------- #
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
@@ -910,6 +949,10 @@ def _to_request(args: argparse.Namespace) -> Request:
         reporting_action=getattr(args, "reporting_action", None),
         reporting_input=getattr(args, "reporting_input", None),
         reporting_output=getattr(args, "reporting_output", None),
+        migration_action=getattr(args, "migration_action", None),
+        migration_from=getattr(args, "migration_from", None),
+        source_mappings=tuple(getattr(args, "source_map", ()) or ()),
+        rollback=bool(getattr(args, "rollback", False)),
     )
 
 
@@ -947,6 +990,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if problem is not None:
         print(problem.reason, file=sys.stderr)
         return problem.code
+    if args.command in {"list", "install", "update", "setup"} and (
+        request.source_dir is not None or request.repo is not None
+    ):
+        print(
+            "warning: --source/--repo use the legacy 0.1 compatibility path; "
+            "prefer the configured marketplace in the TUI before this compatibility window ends",
+            file=sys.stderr,
+        )
     return DISPATCH[args.command](request)
 
 

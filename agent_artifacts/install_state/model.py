@@ -339,13 +339,25 @@ class LegacyMigrationCandidate:
     profile_version: int
     effects: tuple[EffectProof, ...]
     setup_state_ref: str | None = None
+    # Legacy proofs deliberately stay outside InstallationRecord. 0.1.x hashed raw
+    # file bytes and repr(merge_value), while v2 hashes framed snapshots/canonical JSON.
+    legacy_file_digests: tuple[tuple[str, str], ...] = ()
+    legacy_merge_value_hash: str | None = None
 
     def __post_init__(self) -> None:
         if (
             _SLUG_RE.fullmatch(self.legacy_artifact) is None
             or self.legacy_type not in _ARTIFACT_KINDS
             or _SLUG_RE.fullmatch(self.legacy_profile) is None
-            or _LEGACY_SOURCE_RE.fullmatch(self.legacy_source) is None
+            or not (
+                _LEGACY_SOURCE_RE.fullmatch(self.legacy_source) is not None
+                or (
+                    self.legacy_source.startswith("local:")
+                    and posixpath.isabs(self.legacy_source.removeprefix("local:"))
+                    and posixpath.normpath(self.legacy_source.removeprefix("local:"))
+                    == self.legacy_source.removeprefix("local:")
+                )
+            )
             or self.artifact.identity.kind != self.legacy_type
             or self.artifact.identity.name != self.legacy_artifact
             or not isinstance(self.profile_version, int)
@@ -353,6 +365,16 @@ class LegacyMigrationCandidate:
             or self.profile_version < 1
             or self.profile_version > 2**63 - 1
             or any(not isinstance(effect, EffectProof) for effect in self.effects)
+            or any(
+                not _one_line(destination) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+                for destination, digest in self.legacy_file_digests
+            )
+            or len({destination for destination, _digest in self.legacy_file_digests})
+            != len(self.legacy_file_digests)
+            or (
+                self.legacy_merge_value_hash is not None
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", self.legacy_merge_value_hash) is None
+            )
             or (
                 self.setup_state_ref is not None
                 and _SETUP_REF_RE.fullmatch(self.setup_state_ref) is None

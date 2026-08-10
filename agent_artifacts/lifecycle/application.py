@@ -631,6 +631,11 @@ def finalize_uninstall(
 
 
 def _mutable_payload_root(record: InstallationRecord) -> str | None:
+    # A migrated package-era link can be retained as mutable-local evidence while its canonical
+    # source is now Git-backed. Its next update must transition to an immutable CAS link rather
+    # than treating the old package/environment path as a configured local source root.
+    if record.source.kind is not SourceKind.SOURCE_LOCAL:
+        return None
     roots: set[str] = set()
     for effect in record.effects:
         if effect.link_semantics != "mutable-local" or effect.link_target is None:

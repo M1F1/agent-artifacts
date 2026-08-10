@@ -6,7 +6,7 @@ from typing import Protocol
 
 from agent_artifacts.domain.result import Result
 
-from .model import MigrationReceipt, RollbackReceipt, StateMigrationPlan
+from .model import InstallStatePaths, MigrationReceipt, RollbackReceipt, StateMigrationPlan
 
 
 class StateMigrationPort(Protocol):
@@ -15,3 +15,5 @@ class StateMigrationPort(Protocol):
     def apply(self, plan: StateMigrationPlan) -> Result[MigrationReceipt]: ...
 
     def rollback(self, receipt: MigrationReceipt) -> Result[RollbackReceipt]: ...
+
+    def current_receipt(self, paths: InstallStatePaths) -> Result[MigrationReceipt | None]: ...

@@ -56,6 +56,7 @@ class TestStaticWiring(unittest.TestCase):
         "registry",
         "security",
         "reporting",
+        "migrate",
     }
 
     def test_dispatch_keys(self):
@@ -85,6 +86,7 @@ class TestStaticWiring(unittest.TestCase):
         self.assertIs(cli.DISPATCH["registry"], cli._run_registry)
         self.assertIs(cli.DISPATCH["security"], cli._run_security)
         self.assertIs(cli.DISPATCH["reporting"], cli._run_reporting)
+        self.assertIs(cli.DISPATCH["migrate"], cli._run_migrate)
 
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()
@@ -369,7 +371,7 @@ class TestFlagCombinationRules(unittest.TestCase):
             command="install",
         )
         self.assertEqual(rc, 0)
-        self.assertEqual(err, "")
+        self.assertIn("legacy 0.1 compatibility path", err)
         self.assertTrue(dispatched)
 
     def test_valid_all_alone_dispatches(self):
@@ -404,7 +406,7 @@ class TestHelpAndVersion(unittest.TestCase):
         self.assertIn("--link", out)
         self.assertIn("agent-artifacts install code-review --profile tabnine", out)
         self.assertIn("is local-only", out)
-        self.assertIn("Pass --source DIR only to link to a different local checkout", out)
+        self.assertIn("requires an explicit local --source DIR", out)
         self.assertIn("Changes propagate only when that local source changes", out)
         self.assertIn("install.mode, requested_mode, and link targets", out)
 
