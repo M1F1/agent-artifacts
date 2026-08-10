@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `SEP01`
+- **Next task:** `MIG01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -67,8 +67,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
-| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / pending | Replacement four-job Python 3.10/3.14 matrix passed after recorded formatter drift; final ledger matrix/merge pending |
-| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
+| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
+| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / pending | Public registry minimum/latest CI and replacement four-job Python 3.10/3.14 tool matrix passed; protected merge pending |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
@@ -80,23 +80,24 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: RPT01 — Implement optional registry-owned usage reporting
-Branch: codex/aart-1-0-rpt01-usage-reporting
-Worktree: /private/tmp/aart-rpt01.avmpEQ/worktree
+Task: SEP01 — Extract and prove the public reference-registry boundary
+Branch: codex/aart-1-0-sep01-reference-registry
+Worktree: /private/tmp/aart-sep01.HdStgo/worktree
 Started: 2026-08-10
-Bounded contexts: versioned redacted reporting events, effective destination policy, interactive
-  consent/preview, browser and authenticated GitHub providers, registry-owned ingestion/dashboard
-Red test and expected failure: `python -m unittest tests.reporting_model_test
-  tests.reporting_schema_test tests.reporting_application_test` failed with the expected
-  `ModuleNotFoundError: agent_artifacts.reporting`
-Focused tests: 32 reporting-context tests pass; 71 reporting/TUI/CLI/registry regressions pass
-Files owned: reporting domain/application/adapters, TUI reporting bridge, registry reporting
-  templates/workflows, focused tests and reporting documentation, TODO.md and PROGRESS.md
-Risks/migrations: no destination must mean no prompt/queue/network; destination never derives from
-  an artifact upstream; credentials, paths, repositories, logs and identifiers never enter events;
-  issue input is untrusted; provider failure cannot change install/setup exit status
-PR: https://github.com/M1F1/agent-artifacts/pull/55
-CI: replacement push/PR four-job Python 3.10/3.14 matrix passed; final ledger matrix pending
+Bounded contexts: deterministic committed-source export, explicit artifact licensing, fail-closed
+  public-tree audit, independent registry CI, and confidential-content-free registry bootstrap
+Red test and expected failure: `python -m unittest tests.public_registry_publication_test
+  tests.reference_registry_export_e2e_test` failed with the expected missing
+  `agent_artifacts.registry_publication` module and exporter script
+Focused tests: 32 importer/registry/publication/packaging/export tests pass; the exact committed
+  catalog exports twice to byte-identical 10-artifact/2-collection trees and runs outside checkout
+Files owned: legacy importer license option, public export/audit application and script, registry
+  boundary tests, reference/company registry documentation, LICENSE, TODO.md, and PROGRESS.md
+Risks/migrations: never export working-tree bytes or Git history; reject credentials, private paths,
+  absent licenses, invalid provenance, generated/cache files, symlinks, and any unexpected tree path
+PR: https://github.com/M1F1/agent-artifacts/pull/56 (ready)
+CI: public registry minimum/latest jobs and replacement four-job Python 3.10/3.14 tool matrix pass;
+  final ledger matrix pending
 Merge: pending
 ```
 
@@ -132,6 +133,7 @@ Merge: pending
 | TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; 2× replacement 4-job Python 3.10/3.14 matrices passed |
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
+| SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1268,3 +1270,86 @@ None.
 - All four replacement push/pull-request quality jobs passed on Python 3.10 and 3.14. This ledger
   update records the remote evidence and triggers the final matrix before the protected squash
   merge; RPT01's complete status becomes authoritative only on `main`.
+
+### 2026-08-10 — RPT01 merged; SEP01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #55 as `716051e`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preservation of the unrelated
+  root-worktree files.
+- Created isolated SEP01 from exact merge `716051e`, reconfirmed authenticated GitHub owner `M1F1`,
+  and confirmed that `M1F1/agent-artifacts-registry` does not exist before any remote mutation.
+- A throwaway migration probe compiled all ten public legacy artifacts and both collections with
+  canonical source-commit/input-digest provenance. Lock, build, strict frozen validation, registry
+  compatibility tests, and audit ran successfully; audit correctly exposed absent per-artifact
+  license declarations, so publication remains fail-closed while the Red/Green export contract is
+  implemented.
+
+### 2026-08-10 — SEP01 deterministic export and public audit Green slice
+
+- Added an optional, digest-bound `--license` migration input and proved that `MIT` is emitted into
+  every migrated artifact manifest without changing the legacy import default.
+- Added a pure exact-tree public policy/audit plus a non-following bounded reader. The boundary
+  fixes target/source identity, source commit/path/digest provenance, artifact/collection/license
+  allowlists, repository metadata, and the exact CI bytes; it rejects credential signatures,
+  private paths/endpoints, non-text content, unsafe/unexpected/generated paths, links, and special
+  files.
+- Added a source-only exporter that verifies the approved Git origin, resolves one exact commit,
+  initializes fresh history, migrates/formats/locks/builds, runs strict frozen/audit/minimum/latest
+  checks, and emits the audited tree digest without creating, committing, or pushing a remote.
+- Recorded the expected missing-module/script Red, then passed 32 focused importer, registry,
+  publication, packaging, and export tests. Two independent exports from exact commit `716051e`
+  are byte-identical with ten artifacts and two collections; an isolated wheel contains no
+  operational catalog and validates/tests/lists the registry from outside the tool checkout.
+- The repository `code-review` pass tightened source-origin verification, bound the approved target
+  into immutable metadata, made registry roots/CI bytes exact, and added before/open/after file
+  identity checks to the publication reader. A spoofed checkout origin now fails before creating
+  the destination. Focused branch coverage for the new publication boundary is 92.81%.
+
+### 2026-08-10 — SEP01 local gates and public reference registry passed
+
+- Final non-mutating local quality passes Ruff format/lint over 399 files, mypy over 186 source
+  modules, 1519 unit tests, 31 Python integration tests, the 11-step shell E2E, stdlib/version
+  validation, 85.83% overall branch coverage, `1.0.0a1` wheel packaging, and documentation checks.
+- Generated the sole publishable candidate from committed source `716051e`: 51 files, ten
+  artifacts, two collections, audit digest
+  `sha256:bb35e1e55df8ef97bf7fff20957ab5e05aee4ee9d78a3721e4eb0327155bcf44`, and
+  Git tree `2cdc3b5`. Created fresh history only; no tool-repository history or working-tree-only
+  file crossed the boundary.
+- Immediately before creation, reconfirmed authenticated owner `M1F1` and received HTTP 404 for
+  the exact target. Created `https://github.com/M1F1/agent-artifacts-registry` with `PUBLIC`
+  visibility and pushed sole root commit `004acd0`; GitHub reports owner `M1F1`, default branch
+  `main`, the exact local commit/tree SHAs, and one-commit history.
+- Registry Actions run `31415376543` passed both `minimum` and `latest` jobs. Each independently
+  passed format-check, strict frozen validation, lock/build checks, audit, and its compatibility
+  test against the tool's public `main`. Node-runtime deprecation annotations on upstream Actions
+  are informational and did not alter either successful job result.
+
+### 2026-08-10 — SEP01 tool CI compatibility correction
+
+- Published implementation commit `ab7bbda` and opened ready PR #56. The initial push/PR matrices
+  failed only in the new reference-export E2E fixture: Python 3.10 cannot directly run the
+  repository's Python 3.11+ stdlib wheel builder, and GitHub's detached synthetic PR-merge commit
+  was not reachable through a source ref when the exporter fetched the exact commit.
+- Kept product and publication behavior unchanged. The E2E fixture now exposes checkout `HEAD`
+  under an explicit local Git ref before exact-commit export and reuses the established
+  cross-version packaging helper, which selects the stdlib builder on Python 3.11+ and the
+  dependency-free `pip wheel --no-build-isolation` path on Python 3.10.
+- The corrected focused E2E test passes. A fresh non-PTY `make quality` passes Ruff format/lint
+  over 399 files, mypy over 186 source modules, 1519 unit tests, 31 integration tests, the
+  11-step shell E2E, validation, 85.83% overall branch coverage (92.81% publication boundary),
+  packaging, and docs. A diagnostic PTY run alone demonstrated the existing terminal-width
+  truncation behavior in two TUI snapshot assertions; official local and CI gates run without PTY.
+- The first replacement matrix then exposed GitHub Actions' shallow-checkout boundary: fetching
+  detached `HEAD` into a fresh fixture warned that shallow roots could not be updated and left no
+  `FETCH_HEAD`. The fixture now uses `--update-shallow` and a direct
+  `HEAD:refs/heads/export` refspec. This exact operation succeeds against a local detached
+  `--depth=1` clone, and both corrected reference-export E2E tests pass locally.
+
+### 2026-08-10 — SEP01 implementation CI passed
+
+- Published shallow-source correction `62c5ffe`; all four replacement push/pull-request quality
+  jobs passed on Python 3.10 and 3.14 in Actions runs `31416477266` and `31416480846`.
+- Together with public registry run `31415376543`, remote evidence now proves both the independent
+  minimum/latest registry contract and the tool's supported Python matrix. This ledger update
+  records that evidence and triggers the final tool matrix before protected squash merge; SEP01's
+  complete status becomes authoritative only on `main`.

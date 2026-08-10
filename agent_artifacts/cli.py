@@ -663,6 +663,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="version assigned to imported artifacts (default: 1.0.0)",
     )
     p_migrate.add_argument(
+        "--license",
+        dest="artifact_license",
+        metavar="SPDX",
+        help="license declared by every imported artifact (for example: MIT)",
+    )
+    p_migrate.add_argument(
         "--profile",
         action="append",
         required=True,
@@ -870,6 +876,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         display_name=getattr(args, "display_name", None),
         summary=getattr(args, "summary", None),
         artifact_version=getattr(args, "artifact_version", None),
+        artifact_license=getattr(args, "artifact_license", None),
         minimum_version=getattr(args, "minimum_version", None),
         maximum_version=getattr(args, "maximum_version", None),
         latest_version=getattr(args, "latest_version", None),

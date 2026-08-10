@@ -66,12 +66,15 @@ class RegistryCliTest(unittest.TestCase):
                     "Company Registry",
                     "--profile",
                     "generic",
+                    "--license",
+                    "MIT",
                 ]
             )
         )
         self.assertEqual(request.registry_action, "migrate")
         self.assertEqual(request.legacy_source, "/tmp/legacy")
         self.assertFalse(request.apply)
+        self.assertEqual(request.artifact_license, "MIT")
 
     def test_scaffold_install_scope_and_mode_do_not_silently_include_defaults(self) -> None:
         request = cli._to_request(

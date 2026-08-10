@@ -100,6 +100,7 @@ LEGACY_CATALOG_IMPORTER = ImporterDescriptor(
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_LICENSE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+() -]{0,99}$")
 _MAX_ENTRIES = 100_000
 _MAX_FILE_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_BYTES = 256 * 1024 * 1024
@@ -130,6 +131,7 @@ class LegacyCatalogOptions:
     platforms: tuple[str, ...]
     scopes: tuple[str, ...] = ("project", "user")
     modes: tuple[str, ...] = ("copy", "symlink")
+    license: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -148,6 +150,7 @@ class LegacyCatalogOptions:
             or not set(self.scopes) <= {"project", "user"}
             or not self.modes
             or not set(self.modes) <= {"copy", "symlink"}
+            or (self.license is not None and _LICENSE_RE.fullmatch(self.license) is None)
         ):
             raise ValueError("legacy catalog importer options are invalid")
         object.__setattr__(self, "profiles", tuple(sorted(set(self.profiles))))
@@ -157,18 +160,19 @@ class LegacyCatalogOptions:
 
 
 def _options_json(options: LegacyCatalogOptions) -> JsonObject:
-    return JsonObject(
-        (
-            ("artifact_version", str(options.artifact_version)),
-            ("display_name", options.display_name),
-            ("modes", JsonArray(options.modes)),
-            ("platforms", JsonArray(options.platforms)),
-            ("profiles", JsonArray(options.profiles)),
-            ("schema_version", 1),
-            ("scopes", JsonArray(options.scopes)),
-            ("source_id", options.source_id.value),
-        )
-    )
+    entries: list[tuple[str, JsonValue]] = [
+        ("artifact_version", str(options.artifact_version)),
+        ("display_name", options.display_name),
+        ("modes", JsonArray(options.modes)),
+        ("platforms", JsonArray(options.platforms)),
+        ("profiles", JsonArray(options.profiles)),
+        ("schema_version", 1),
+        ("scopes", JsonArray(options.scopes)),
+        ("source_id", options.source_id.value),
+    ]
+    if options.license is not None:
+        entries.append(("license", options.license))
+    return JsonObject(tuple(entries))
 
 
 def _options_from_json(value: JsonObject) -> Result[LegacyCatalogOptions]:
@@ -183,7 +187,10 @@ def _options_from_json(value: JsonObject) -> Result[LegacyCatalogOptions]:
         "scopes",
         "source_id",
     }
-    if set(entries) != expected or entries.get("schema_version") != 1:
+    if (
+        set(entries) not in {frozenset(expected), frozenset((*expected, "license"))}
+        or entries.get("schema_version") != 1
+    ):
         return _error(IMPORT_INVALID, "import plan options are malformed")
 
     def strings(name: str) -> tuple[str, ...] | None:
@@ -199,6 +206,7 @@ def _options_from_json(value: JsonObject) -> Result[LegacyCatalogOptions]:
     scopes = strings("scopes")
     modes = strings("modes")
     raw_version = entries["artifact_version"]
+    raw_license = entries.get("license")
     if (
         not isinstance(entries["source_id"], str)
         or not isinstance(entries["display_name"], str)
@@ -207,6 +215,7 @@ def _options_from_json(value: JsonObject) -> Result[LegacyCatalogOptions]:
         or platforms is None
         or scopes is None
         or modes is None
+        or (raw_license is not None and not isinstance(raw_license, str))
     ):
         return _error(IMPORT_INVALID, "import plan options have invalid types")
     version = parse_semver(raw_version)
@@ -222,6 +231,7 @@ def _options_from_json(value: JsonObject) -> Result[LegacyCatalogOptions]:
                 platforms,
                 scopes,
                 modes,
+                raw_license,
             )
         )
     except ValueError as error:
@@ -1004,7 +1014,9 @@ def materialize_legacy_catalog(
                 cast(tuple[InstallMode, ...], options.value.modes),
                 tuple(sorted(INSTALL_EFFECTS_BY_TYPE[artifact_type])),
             ),
-            setup,
+            setup=setup,
+            authors=(),
+            license=options.value.license,
         )
         provenance = Provenance(
             1,

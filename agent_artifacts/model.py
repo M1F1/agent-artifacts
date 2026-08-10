@@ -486,6 +486,7 @@ class Request:
     display_name: Optional[str] = None
     summary: Optional[str] = None
     artifact_version: Optional[str] = None
+    artifact_license: Optional[str] = None
     minimum_version: Optional[str] = None
     maximum_version: Optional[str] = None
     latest_version: Optional[str] = None

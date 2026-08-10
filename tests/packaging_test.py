@@ -115,6 +115,21 @@ class BuildWheelTest(unittest.TestCase):
         self.assertIn("aart = agent_artifacts.cli:main", eps)
         self.assertNotIn("aa = agent_artifacts.cli:main", eps)
 
+    def test_wheel_contains_no_operational_registry_or_legacy_catalog(self):
+        wheel = self._build()
+        with zipfile.ZipFile(wheel) as archive:
+            names = archive.namelist()
+        operational_roots = (
+            "artifacts/",
+            "bundles/",
+            "guidelines/",
+            "hooks/",
+            "mcp/",
+            "memory/",
+            "skills/",
+        )
+        self.assertFalse(any(name.startswith(root) for name in names for root in operational_roots))
+
     def test_metadata_has_name_version_and_zero_deps(self):
         wheel = self._build()
         with zipfile.ZipFile(wheel) as z:
