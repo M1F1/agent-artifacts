@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `RPT01`
+- **Next task:** `SEP01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -67,7 +67,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
-| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | in_progress | `codex/aart-1-0-rpt01-usage-reporting` | pending | 32 reporting tests and complete local quality matrix pass; CI/merge pending |
+| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / pending | Replacement four-job Python 3.10/3.14 matrix passed after recorded formatter drift; final ledger matrix/merge pending |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
@@ -95,8 +95,8 @@ Files owned: reporting domain/application/adapters, TUI reporting bridge, regist
 Risks/migrations: no destination must mean no prompt/queue/network; destination never derives from
   an artifact upstream; credentials, paths, repositories, logs and identifiers never enter events;
   issue input is untrusted; provider failure cannot change install/setup exit status
-PR: pending
-CI: pending
+PR: https://github.com/M1F1/agent-artifacts/pull/55
+CI: replacement push/PR four-job Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -131,6 +131,7 @@ Merge: pending
 | TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; 2× replacement 4-job Python 3.10/3.14 matrices passed |
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
+| RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1258,3 +1259,12 @@ None.
 - Initial PR #55 push/PR jobs reached only the format gate: CI Ruff 0.16.2 required parentheses
   around one multi-line test lambda that local Ruff 0.12.2 accepted. Applied the exact current-Ruff
   formatting with no product behavior change; replacement gate evidence follows after push.
+
+### 2026-08-10 — RPT01 implementation CI passed
+
+- Published implementation commit `d55d6cc`, opened ready and mergeable PR #55, and applied the
+  format-only compatibility commit `10efd27` after diagnosing the initial Ruff 0.16.2 result from
+  GitHub Actions logs.
+- All four replacement push/pull-request quality jobs passed on Python 3.10 and 3.14. This ledger
+  update records the remote evidence and triggers the final matrix before the protected squash
+  merge; RPT01's complete status becomes authoritative only on `main`.
