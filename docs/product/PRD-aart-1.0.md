@@ -1,8 +1,8 @@
 # AART 1.0 Product Requirements Document
 
-- **Status:** Proposed
+- **Status:** Released
 - **Target:** `1.0.0`
-- **Development versions:** `1.0.0aN`
+- **Stable release:** `1.0.0` (preceded by `1.0.0aN`)
 - **Tracking issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Companion technical specification:**
   [`docs/design/SPEC-aart-1.0.md`](../design/SPEC-aart-1.0.md)
@@ -538,26 +538,26 @@ registries are not pinned to one exact AART patch release.
 
 ## 17. Product acceptance criteria
 
-- [ ] A user can install from multiple direct repositories without configuring a registry.
-- [ ] A user can combine direct sources with public, company, team, and private registries.
-- [ ] An organization can recommend or require a reviewed registry without making it mandatory for
+- [x] A user can install from multiple direct repositories without configuring a registry.
+- [x] A user can combine direct sources with public, company, team, and private registries.
+- [x] An organization can recommend or require a reviewed registry without making it mandatory for
       all AART deployments.
-- [ ] The marketplace exposes source/trust and blocks ambiguous unqualified identities.
-- [ ] A native registry reference does not duplicate artifact content.
-- [ ] A foreign upstream import produces committed, deterministic, provenance-complete canonical
+- [x] The marketplace exposes source/trust and blocks ambiguous unqualified identities.
+- [x] A native registry reference does not duplicate artifact content.
+- [x] A foreign upstream import produces committed, deterministic, provenance-complete canonical
       content before consumer installation.
-- [ ] AART compiles canonical packages into each supported harness without requiring import-time
+- [x] AART compiles canonical packages into each supported harness without requiring import-time
       conversion.
-- [ ] Copy, managed Symlink, project/user scope, setup queue, and explicit outcomes work from the
+- [x] Copy, managed Symlink, project/user scope, setup queue, and explicit outcomes work from the
       source union.
-- [ ] Reporting is optional and disabled without a configured destination.
-- [ ] Every artifact can receive a zero-dependency baseline assessment, while optional out-of-
+- [x] Reporting is optional and disabled without a configured destination.
+- [x] Every artifact can receive a zero-dependency baseline assessment, while optional out-of-
       process analyzers add evidence without adding AART runtime dependencies.
-- [ ] Bundle risk reports worst/range/mean/coverage and policy never relies on the mean alone.
-- [ ] The CLI remains locally installable and is architecturally ready for later Nexus delivery.
-- [ ] The public reference registry and at least one private/company-style fixture pass the AART
+- [x] Bundle risk reports worst/range/mean/coverage and policy never relies on the mean alone.
+- [x] The CLI remains locally installable and is architecturally ready for later Nexus delivery.
+- [x] The public reference registry and at least one private/company-style fixture pass the AART
       quality gate across the supported compatibility matrix.
-- [ ] Existing 0.1.x installations have a documented, tested migration and rollback path.
+- [x] Existing 0.1.x installations have a documented, tested migration and rollback path.
 
 ## 18. Resolved decisions
 

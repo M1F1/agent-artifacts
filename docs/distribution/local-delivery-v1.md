@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-AART `1.0.0a1` is delivered from a local checkout or a local wheel. Nexus/PyPI publication,
+AART `1.0.0` is delivered from a local checkout or a local wheel. Nexus/PyPI publication,
 automatic version discovery, and automatic self-update are deliberately out of scope. The wheel
 has zero unconditional Python runtime dependencies.
 
@@ -29,7 +29,7 @@ make wheel
 python -m pip install \
   --no-index \
   --no-deps \
-  dist/agent_artifacts-1.0.0a1-py3-none-any.whl
+  dist/agent_artifacts-1.0.0-py3-none-any.whl
 ```
 
 The wheel allowlist contains executable Python modules and package resources only below
@@ -42,8 +42,8 @@ or out-of-bound archive members and unconditional `Requires-Dist` metadata.
 `aart upgrade` is an explicit local replacement boundary, not a release resolver:
 
 ```sh
-aart upgrade --wheel /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl --dry-run
-aart upgrade --wheel /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl
+aart upgrade --wheel /path/to/agent_artifacts-1.0.0-py3-none-any.whl --dry-run
+aart upgrade --wheel /path/to/agent_artifacts-1.0.0-py3-none-any.whl
 
 aart upgrade --source-checkout /path/to/agent-artifacts --dry-run
 aart upgrade --source-checkout /path/to/agent-artifacts
@@ -89,4 +89,5 @@ temporary config/data/home/project paths and never contacts an index.
 A future Nexus release may supply a wheel to an external package installer or add an explicitly
 configured, policy-controlled version resolver. That work must not change the source protocol,
 registry protocol, source configuration, snapshot/CAS layout, installation state, or managed
-Symlink semantics. Index credentials and publication automation are not implemented here.
+Symlink semantics. Index credentials and Nexus/PyPI publication automation are not implemented
+here; the GitHub release workflow only builds and attaches the reviewed local wheel.

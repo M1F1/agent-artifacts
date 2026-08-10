@@ -1,8 +1,8 @@
 # AART 1.0 Technical Specification
 
-- **Status:** Proposed
+- **Status:** Stable
 - **Protocol:** AART Source/Registry Protocol v1
-- **Target executable:** `1.0.0` after `1.0.0aN` releases
+- **Executable:** `1.0.0` (after the `1.0.0aN` implementation train)
 - **Product requirements:**
   [`docs/product/PRD-aart-1.0.md`](../product/PRD-aart-1.0.md)
 - **Tracking issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
@@ -1182,9 +1182,9 @@ package contents.
 
 ### 25.3 Executable version transition
 
-The code version stays `0.1.48` until an implementation change starts the alpha train. Documentation
-alone does not bump the package. The first breaking implementation commit uses `1.0.0a1`; subsequent
-alphas increment. Stable `1.0.0` requires all release gates.
+The code version stayed `0.1.48` until implementation started the alpha train. Documentation alone
+did not bump the package. The first breaking implementation commit used `1.0.0a1`; stable `1.0.0`
+was finalized only after all release gates passed.
 
 ## 26. Local installation and future Nexus readiness
 
@@ -1192,7 +1192,7 @@ Supported initial delivery remains explicit and local:
 
 ```text
 pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
-pip install --no-index --no-deps /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl
+pip install --no-index --no-deps /path/to/agent_artifacts-1.0.0-py3-none-any.whl
 ```
 
 The hermetic distribution smoke executes both forms in isolated tool environments from outside the
@@ -1219,8 +1219,8 @@ constructs a fixed index-free pip invocation. It never infers a repository/versi
 index. Editable replacement also disables build isolation. Local source state accepts the legacy
 `local` revision and the canonical snapshot-bound `local:<sha256>` revision during migration.
 
-Future Nexus/PyPI work may add install/upgrade documentation and release automation. It MUST NOT
-require changing the protocol, source config, managed store, or install manifest model.
+Future Nexus/PyPI work may add indexed install/upgrade documentation and publication credentials.
+It MUST NOT require changing the protocol, source config, managed store, or install manifest model.
 
 ## 27. Verification strategy
 
@@ -1281,22 +1281,22 @@ Run with both minimum supported stable AART and latest compatible stable/alpha a
 
 Stable `1.0.0` requires:
 
-- [ ] Protocol/source/artifact/registry/lock/index/config/policy/manifest schemas frozen at v1/v2 as
+- [x] Protocol/source/artifact/registry/lock/index/config/policy/manifest schemas frozen at v1/v2 as
       specified.
-- [ ] Direct-source-only use passes without registry/reporting configuration.
-- [ ] Optional public/company registry federation passes with collision/trust behavior.
-- [ ] Native references and materialized importer output pass provenance/determinism checks.
-- [ ] Managed source snapshots and CAS pass atomicity, concurrency, repair, offline, and GC tests.
-- [ ] Copy/Symlink/update/uninstall/setup semantics pass project/user/profile matrices.
-- [ ] Zero-dependency baseline, optional provider isolation, digest-bound attestations, bundle
+- [x] Direct-source-only use passes without registry/reporting configuration.
+- [x] Optional public/company registry federation passes with collision/trust behavior.
+- [x] Native references and materialized importer output pass provenance/determinism checks.
+- [x] Managed source snapshots and CAS pass atomicity, concurrency, repair, offline, and GC tests.
+- [x] Copy/Symlink/update/uninstall/setup semantics pass project/user/profile matrices.
+- [x] Zero-dependency baseline, optional provider isolation, digest-bound attestations, bundle
       aggregation, and security policy gates pass without adding runtime dependencies.
-- [ ] 0.1.x catalog and state migration/rollback pass from committed fixtures.
-- [ ] The audited public `M1F1/agent-artifacts-registry` reference registry passes minimum/latest
+- [x] 0.1.x catalog and state migration/rollback pass from committed fixtures.
+- [x] The audited public `M1F1/agent-artifacts-registry` reference registry passes minimum/latest
       AART CI.
-- [ ] Local editable and local-wheel installs work without checkout-relative operational data.
-- [ ] Deleting the Python environment leaves installed managed symlinks valid.
-- [ ] Documentation and TUI explain source, registry, default registry, trust, and importer boundaries.
-- [ ] Nexus/index publication remains unnecessary for the release.
+- [x] Local editable and local-wheel installs work without checkout-relative operational data.
+- [x] Deleting the Python environment leaves installed managed symlinks valid.
+- [x] Documentation and TUI explain source, registry, default registry, trust, and importer boundaries.
+- [x] Nexus/index publication remains unnecessary for the release.
 
 ## 29. Deferred capabilities
 

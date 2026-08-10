@@ -3,9 +3,9 @@
 - **Plan:** [PLAN.md](PLAN.md)
 - **Issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Target:** `1.0.0`
-- **Current code version:** `1.0.0a1`
-- **Execution status:** In progress
-- **Next task:** `REL01`
+- **Current code version:** `1.0.0`
+- **Execution status:** REL01 local release candidate validated; PR/CI/merge/tag pending
+- **Next task:** none — publish `v1.0.0` only after REL01 review, CI, and merge
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -15,7 +15,8 @@ Allowed task states:
 - `pending` — dependencies or execution have not started;
 - `in_progress` — the only task currently being implemented;
 - `blocked` — cannot proceed safely; blocker is recorded below;
-- `complete` — local gates passed and the task's PR is merged to `main`.
+- `complete` — local gates passed; the task record becomes authoritative only after its PR is merged
+  to `main`.
 
 At most one task may be `in_progress`. A row may be marked `complete` in its task branch immediately
 before the final commit; it becomes authoritative only when that branch is merged to `main`.
@@ -71,8 +72,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) / `b05fd42` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | [#59](https://github.com/M1F1/agent-artifacts/pull/59) | Local and initial four-job Python 3.10/3.14 matrices passed; final ledger matrix pending |
-| REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
+| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | [#59](https://github.com/M1F1/agent-artifacts/pull/59) / `5ae7310` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
+| REL01 | Stable release gates and `1.0.0` | all | complete | `codex/aart-1-0-rel01-stable-release` | pending | Provisional release-branch completion: stable `1.0.0`, docs/schema freeze, 24 focused tests and all local gates pass; PR/CI/merge/tag pending |
 
 ## Current-task template
 
@@ -80,22 +81,24 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: E2E01 — Run the complete AART 1.0 system matrix and fault injection
-Branch: codex/aart-1-0-e2e01-system-matrix
-Worktree: /private/tmp/aart-e2e01.sFlWee/worktree
+Task: REL01 — Final release gates, documentation, and stable 1.0.0
+Branch: codex/aart-1-0-rel01-stable-release
+Worktree: /private/tmp/aart-rel01.GNHrtf/worktree
 Started: 2026-08-10
-Bounded contexts: cross-context acceptance runner over Source, Marketplace, Import, Registry,
-  Installation, Setup, Security, Reporting, Migration, and Interface boundaries
-Red test and expected failure: focused runner suite produced five expected missing
-  `scripts/system_matrix.py` errors; the new three-source characterization also exposed one
-  incorrect projection-field assumption before implementation
-Focused tests: 8 pass, including one complete 13-scenario/18-acceptance-test matrix run
-Files owned: hermetic system-matrix runner/tests/fixtures, system-matrix documentation, PROGRESS.md
-Risks/migrations: runner must not access real home/keychain/credentials or external network;
-  per-scenario timeouts, deterministic receipts, recovery commands, and cleanup are mandatory
-PR: #59 — https://github.com/M1F1/agent-artifacts/pull/59
-CI: initial push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
-Merge: DIST01 `b05fd42`; E2E01 pending
+Bounded contexts: release policy/tooling, protocol/schema freeze evidence, documentation and
+  compatibility/migration acceptance, GitHub tag/release workflow
+Red test and expected failure: focused release suite produced five expected missing
+  `scripts/release.py` failures plus absent stable-finalization API/workflow gates and the expected
+  repository `1.0.0a1` versus stable `1.0.0` assertion
+Focused tests: 24 pass (release/version contracts, registry export E2E, workflow contract)
+Files owned: release/version scripts/tests/workflow, release docs/changelog/README/PRD/SPEC/TODO,
+  schema-freeze evidence, Makefile, PROGRESS.md
+Risks/migrations: stable version/tag fails closed on incomplete progress, stale schemas/index,
+  incompatible/dirty/noncurrent registry, dirty output, missing migration docs, or source not
+  proven merged into `origin/main`; final tag waits for PR review/CI/merge
+PR: pending — local completion is provisional until the reviewed PR is merged
+CI: pending — local quality pass recorded below
+Merge: E2E01 `5ae7310`; REL01 pending
 ```
 
 ## Quality-gate history
@@ -133,7 +136,8 @@ Merge: DIST01 `b05fd42`; E2E01 pending
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 | MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
 | DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
-| E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | initial 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
+| E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
+| REL01 | 24 release/version/workflow/export tests | 414 files pass | pass | 188 source files pass | 1566 pass | 40 pass | 11-step pass | stable version/schema/system matrix pass | 85.62% overall (≥82%) | `1.0.0` wheel/RECORD/import pass | pass | pending PR |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1489,3 +1493,55 @@ None.
   `31424338373` without a CI-only correction.
 - This ledger-only update records exact remote evidence and triggers the final protected-merge
   matrix; E2E01 becomes authoritative on `main` only after that matrix remains green.
+
+### 2026-08-10 — E2E01 merged; REL01 started
+
+- Observed all four final Python 3.10/3.14 jobs pass in Actions runs `31424577401` and
+  `31424582462`, then squash-merged ready PR #59 as `5ae7310`; verified the merged PR, exact
+  `origin/main`, remote branch deletion, and preservation of unrelated root-worktree files.
+- Removed only the clean E2E01 worktree and created isolated REL01 from exact merge `5ae7310`.
+  The public reference registry remains `PUBLIC` at the approved URL; its latest head `004acd0`
+  has green registry CI run `31415376543`, and current AART main passes format/strict frozen
+  validate/lock/build/audit/minimum+latest checks against a clean clone without modifying it.
+
+### 2026-08-10 — REL01 Red
+
+- Added release contracts for exact prerelease-to-stable finalization, complete progress, version
+  agreement, required migration/release documents, schema-freeze freshness, clean generated state,
+  approved registry origin, distinct registry compatibility/lock/index failures, redacted receipts,
+  tag-workflow parity, and a fresh exported-registry end-to-end release check.
+- Confirmed Red with five expected missing `scripts/release.py` failures, one absent version
+  finalization API error, one absent tag-workflow gate failure, and the expected assertion that the
+  repository was still `1.0.0a1` rather than stable `1.0.0`.
+
+### 2026-08-10 — REL01 review hardening
+
+- Independent review found that an unapproved or mutable registry could be reported as compatible,
+  and that tag workflow provenance did not prove the source was already merged into `main`.
+  New Red contracts now require a clean registry whose `HEAD` equals fetched `origin/HEAD`, suppress
+  all downstream registry claims on provenance failure, record the accepted registry commit, check
+  source/registry cleanliness before and after gates, and require the release source/tag commit to
+  be an ancestor of fetched `origin/main`.
+- The tag workflow now fetches `main` explicitly and checks tag ancestry before the release command.
+  Focused release/version/workflow/export suite: 23 pass. Full local quality passed: 414 formatted
+  files, Ruff, 188-source mypy, 1565 unit, 40 integration, 11-step E2E, strict validation,
+  85.62% coverage, `1.0.0` wheel/import, and docs. PR CI evidence follows after the hardened
+  changes are included in the release branch.
+- The complete release receipt also passed against the clean approved public reference registry at
+  `004acd06e51d63905ce12313e0c514c1a05913bd` with every source/registry/schema/system/package
+  control green. This pre-merge evidence intentionally disables only the `origin/main` ancestry and
+  source-clean checks; the CLI/tag workflow enforces both after the reviewed branch is merged.
+
+### 2026-08-10 — REL01 final review correction
+
+- Final review identified that a stale local `origin/HEAD` could still look pinned. The checker now
+  compares the local revision with the live `git ls-remote --symref origin HEAD` advertisement before
+  and after registry gates; a stale remote ref blocks all downstream registry claims. A focused Red
+  test proves the failure path. The `v1.0.0` workflow trigger is deliberately exact because the
+  release command/docs are a fixed 1.0.0 contract; later stable versions require a new contract.
+- The hardened focused suite now has 24 passing tests. The final full local quality rerun passed:
+  414 formatted files, Ruff, 188-source mypy, 1566 unit, 40 integration, 11-step E2E, strict
+  validation, 85.62% coverage, `1.0.0` wheel/RECORD/import, and docs.
+- Reran the real pre-merge receipt after remote-freshness hardening: the clean reference checkout,
+  its fetched `origin/HEAD`, and the live advertised default head all resolve to
+  `004acd06e51d63905ce12313e0c514c1a05913bd`; all eleven receipt controls pass.
