@@ -1429,6 +1429,10 @@ None.
   readable, and new synced installations retain snapshot-bound evidence.
 - The `code-review` pass removed inherited `PYTHONPATH`/`PYTHONHOME` contamination from phase
   processes and added missing wheel `RECORD`, unsafe-member, and package-directory-symlink checks.
+- The first push Python 3.14 job exposed that modern `venv` no longer bundles `setuptools`; the
+  index-free editable smoke therefore could not import its declared build backend. Added
+  `setuptools` explicitly to the development-only extra so CI supplies the build prerequisite to
+  the isolated tool directory without adding a runtime dependency or enabling an index in smoke.
 - Final local evidence: 86 focused tests pass. `make quality` passes Ruff format over 406 files,
   Ruff lint, mypy over 188 source modules, 1546 unit tests, 36 Python integration tests, the
   11-step shell E2E, strict validation/version checks, 85.54% overall branch coverage, hardened

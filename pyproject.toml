@@ -18,6 +18,9 @@ dependencies = []
 # Optional developer tooling. NOT required to run the CLI — the runtime stays
 # zero-dependency. Install with:  pip install -e ".[dev]"
 dev = [
+    # Explicit editable-build prerequisite for Python versions whose venv/ensurepip no longer
+    # bundles setuptools. It is visible only to development/CI, never runtime metadata.
+    "setuptools>=61",
     "ruff>=0.6",
     "mypy>=1.11",
     "coverage>=7.6",

@@ -784,7 +784,7 @@ The quality tools are required only for development and CI; the installed AART r
 zero-dependency. Install the dev extra to run the same gates as GitHub Actions:
 
 ```sh
-pip install -e ".[dev]"   # adds Ruff, mypy, coverage, and wheel smoke tooling
+pip install -e ".[dev]"   # adds the editable build backend and quality/smoke tooling
 make lint                 # ruff: real-bug + import-hygiene checks
 make format               # ruff: auto-format (format-check to verify only)
 make typecheck            # mypy over agent_artifacts/
