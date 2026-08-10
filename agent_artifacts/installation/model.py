@@ -37,6 +37,7 @@ from agent_artifacts.protocol.semver import parse_semver
 from agent_artifacts.store.model import ObjectCandidate, ObjectStorePaths
 
 InstallMode = Literal["copy", "symlink"]
+LinkSemantics = Literal["immutable-object", "mutable-local"]
 SnapshotKind = Literal["absent", "file", "tree", "symlink", "special"]
 EffectStatus = Literal["changed", "current", "skipped", "failed", "rolled-back"]
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -58,7 +59,15 @@ def _valid_digest(value: object) -> bool:
 
 
 def _absolute(path: str, label: str) -> str:
-    if not posixpath.isabs(path) or posixpath.normpath(path) != path or path == "/":
+    if (
+        not isinstance(path, str)
+        or not posixpath.isabs(path)
+        or posixpath.normpath(path) != path
+        or path == "/"
+        or "\x00" in path
+        or "\r" in path
+        or "\n" in path
+    ):
         raise ValueError(f"{label} must be a normalized non-root absolute path")
     return path
 
@@ -97,6 +106,7 @@ class InstallRequest:
     force: bool = False
     offline: bool = False
     memory_mode: str = "prepend"
+    mutable_local_payload_root: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -117,6 +127,19 @@ class InstallRequest:
             or not isinstance(self.force, bool)
             or not isinstance(self.offline, bool)
             or self.memory_mode not in {"replace", "prepend", "append", "skip"}
+            or (
+                self.mutable_local_payload_root is not None
+                and (
+                    self.mode != "symlink"
+                    or not posixpath.isabs(self.mutable_local_payload_root)
+                    or posixpath.normpath(self.mutable_local_payload_root)
+                    != self.mutable_local_payload_root
+                    or self.mutable_local_payload_root == "/"
+                    or "\x00" in self.mutable_local_payload_root
+                    or "\r" in self.mutable_local_payload_root
+                    or "\n" in self.mutable_local_payload_root
+                )
+            )
         ):
             raise ValueError("canonical install request is invalid")
 
@@ -187,6 +210,12 @@ def file_snapshot_digest(content: bytes, executable: bool = False) -> ObjectDige
     return sha256_bytes(b"file\0" + marker + len(content).to_bytes(8, "big") + content)
 
 
+def link_snapshot_digest(target: str) -> ObjectDigest:
+    if not target or "\x00" in target or "\r" in target or "\n" in target:
+        raise ValueError("link target must be one non-empty path")
+    return sha256_bytes(b"symlink\0" + target.encode("utf-8", errors="surrogateescape"))
+
+
 @dataclass(frozen=True, slots=True)
 class PathSnapshot:
     path: str
@@ -195,6 +224,8 @@ class PathSnapshot:
     content: bytes = b""
     executable: bool = False
     members: tuple[TreeMember, ...] = ()
+    link_target: str | None = None
+    target_exists: bool | None = None
 
     def __post_init__(self) -> None:
         _absolute(self.path, "snapshot path")
@@ -204,11 +235,15 @@ class PathSnapshot:
                 and not self.content
                 and not self.executable
                 and not self.members
+                and self.link_target is None
+                and self.target_exists is None
             )
         elif self.kind == "file":
             valid = (
                 self.digest == file_snapshot_digest(self.content, self.executable)
                 and not self.members
+                and self.link_target is None
+                and self.target_exists is None
             )
         elif self.kind == "tree":
             ordered = tuple(sorted(self.members, key=lambda member: str(member.path)))
@@ -218,9 +253,27 @@ class PathSnapshot:
                 and self.digest == tree_members_digest(ordered)
                 and not self.content
                 and not self.executable
+                and self.link_target is None
+                and self.target_exists is None
             )
-        elif self.kind in {"symlink", "special"}:
-            valid = _valid_digest(self.digest) and not self.content and not self.members
+        elif self.kind == "symlink":
+            valid = (
+                isinstance(self.link_target, str)
+                and self.digest == link_snapshot_digest(self.link_target)
+                and isinstance(self.target_exists, bool)
+                and not self.content
+                and not self.members
+                and not self.executable
+            )
+        elif self.kind == "special":
+            valid = (
+                _valid_digest(self.digest)
+                and not self.content
+                and not self.members
+                and not self.executable
+                and self.link_target is None
+                and self.target_exists is None
+            )
         else:
             valid = False
         if not valid:
@@ -244,6 +297,16 @@ class PathSnapshot:
     def tree(cls, path: str, members: tuple[TreeMember, ...]) -> PathSnapshot:
         ordered = tuple(sorted(members, key=lambda member: str(member.path)))
         return cls(path, "tree", tree_members_digest(ordered), members=ordered)
+
+    @classmethod
+    def symlink(cls, path: str, target: str, *, target_exists: bool) -> PathSnapshot:
+        return cls(
+            path,
+            "symlink",
+            link_snapshot_digest(target),
+            link_target=target,
+            target_exists=target_exists,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +357,38 @@ class WriteFileOperation:
 
 
 @dataclass(frozen=True, slots=True)
+class LinkOperation:
+    source_path: str
+    destination: str
+    absolute_destination: str
+    target: str
+    target_kind: Literal["file", "tree"]
+    semantics: LinkSemantics
+    target_content_digest: ObjectDigest
+    desired_digest: ObjectDigest
+    target_precondition: PathSnapshot
+    precondition: PathSnapshot
+    overwrote: bool = False
+
+    def __post_init__(self) -> None:
+        _safe_relative(self.source_path, "link source path")
+        _absolute(self.absolute_destination, "link destination")
+        _absolute(self.target, "link target")
+        if (
+            self.precondition.path != self.absolute_destination
+            or self.target_precondition.path != self.target
+            or self.target_precondition.kind != self.target_kind
+            or self.target_precondition.digest != self.target_content_digest
+            or self.target_kind not in {"file", "tree"}
+            or self.semantics not in {"immutable-object", "mutable-local"}
+            or not _valid_digest(self.target_content_digest)
+            or self.desired_digest != link_snapshot_digest(self.target)
+            or not isinstance(self.overwrote, bool)
+        ):
+            raise ValueError("link operation is not exactly bound")
+
+
+@dataclass(frozen=True, slots=True)
 class MergeJsonOperation:
     destination: str
     absolute_destination: str
@@ -324,7 +419,21 @@ class MergeJsonOperation:
             raise ValueError("merge-json operation is not exactly bound")
 
 
-InstallOperation: TypeAlias = CopyTreeOperation | WriteFileOperation | MergeJsonOperation
+InstallOperation: TypeAlias = (
+    CopyTreeOperation | WriteFileOperation | LinkOperation | MergeJsonOperation
+)
+
+
+def operation_is_current(operation: InstallOperation) -> bool:
+    observed = operation.precondition
+    if isinstance(operation, LinkOperation):
+        return (
+            observed.kind == "symlink"
+            and observed.digest == operation.desired_digest
+            and observed.link_target == operation.target
+            and observed.target_exists is True
+        )
+    return observed.digest == operation.desired_digest
 
 
 def _snapshot_json(snapshot: PathSnapshot) -> JsonObject:
@@ -333,6 +442,8 @@ def _snapshot_json(snapshot: PathSnapshot) -> JsonObject:
             ("path", snapshot.path),
             ("kind", snapshot.kind),
             ("digest", None if snapshot.digest is None else str(snapshot.digest)),
+            ("link_target", snapshot.link_target),
+            ("target_exists", snapshot.target_exists),
         )
     )
 
@@ -352,6 +463,22 @@ def _operation_json(operation: InstallOperation) -> JsonObject:
             (
                 ("kind", operation.effect_kind),
                 ("source_path", operation.source_path),
+                *common,
+            )
+        )
+    if isinstance(operation, LinkOperation):
+        return JsonObject(
+            (
+                (
+                    "kind",
+                    "symlink-tree" if operation.target_kind == "tree" else "symlink-file",
+                ),
+                ("source_path", operation.source_path),
+                ("target", operation.target),
+                ("target_kind", operation.target_kind),
+                ("semantics", operation.semantics),
+                ("target_content_digest", str(operation.target_content_digest)),
+                ("target_precondition", _snapshot_json(operation.target_precondition)),
                 *common,
             )
         )
@@ -386,6 +513,7 @@ def _plan_review_value(plan: InstallPlan) -> JsonObject:
             ("force", request.force),
             ("offline", request.offline),
             ("memory_mode", request.memory_mode),
+            ("mutable_local_payload_root", request.mutable_local_payload_root),
             ("source_alias", plan.source.alias.value),
             ("source_id", plan.source.declared_id.value),
             ("source_kind", plan.source.kind.value),
@@ -427,7 +555,19 @@ def _plan_review_value(plan: InstallPlan) -> JsonObject:
 
 
 def _effect_matches_operation(effect: EffectProof, operation: InstallOperation) -> bool:
-    if effect.destination != operation.destination or effect.actual_mode != "copy":
+    if effect.destination != operation.destination:
+        return False
+    if isinstance(operation, LinkOperation):
+        return (
+            effect.kind == ("symlink-tree" if operation.target_kind == "tree" else "symlink-file")
+            and effect.actual_mode == "symlink"
+            and effect.installed_digest == operation.target_content_digest
+            and effect.source_path == operation.source_path
+            and effect.link_target == operation.target
+            and effect.link_semantics == operation.semantics
+            and effect.json_path is None
+        )
+    if effect.actual_mode != "copy":
         return False
     if isinstance(operation, CopyTreeOperation):
         return (
@@ -466,6 +606,35 @@ def _replacement_record(plan: InstallPlan) -> InstallationRecord | None:
         ),
         None,
     )
+
+
+def _operations_match_artifact(plan: InstallPlan) -> bool:
+    operations = plan.operations
+    kind = plan.request.identity.kind
+    if kind == "skill":
+        return len(operations) == 1 and (
+            isinstance(operations[0], CopyTreeOperation)
+            or (isinstance(operations[0], LinkOperation) and operations[0].target_kind == "tree")
+        )
+    if kind == "guideline":
+        return len(operations) == 1 and (
+            isinstance(operations[0], WriteFileOperation)
+            or (isinstance(operations[0], LinkOperation) and operations[0].target_kind == "file")
+        )
+    if kind == "mcp":
+        return len(operations) == 1 and isinstance(operations[0], MergeJsonOperation)
+    if kind == "hook":
+        return (
+            len(operations) == 2
+            and (
+                isinstance(operations[0], CopyTreeOperation)
+                or (
+                    isinstance(operations[0], LinkOperation) and operations[0].target_kind == "tree"
+                )
+            )
+            and isinstance(operations[1], MergeJsonOperation)
+        )
+    return len(operations) == 1 and isinstance(operations[0], WriteFileOperation)
 
 
 @dataclass(frozen=True, slots=True)
@@ -517,6 +686,36 @@ class InstallPlan:
             )
             for operation in self.operations
         )
+        links = tuple(
+            operation for operation in self.operations if isinstance(operation, LinkOperation)
+        )
+        immutable_payload_root = posixpath.join(self.object_root, "payload")
+
+        def expected_link_target(operation: LinkOperation) -> str | None:
+            base = (
+                immutable_payload_root
+                if operation.semantics == "immutable-object"
+                else self.request.mutable_local_payload_root
+            )
+            if base is None:
+                return None
+            if operation.source_path == "payload":
+                return base
+            if operation.source_path.startswith("payload/"):
+                return posixpath.join(
+                    base,
+                    operation.source_path.removeprefix("payload/"),
+                )
+            return None
+
+        mutable_root_is_safe = self.request.mutable_local_payload_root is None or (
+            self.source.kind.value == "source-local"
+            and posixpath.commonpath((self.source.origin, self.request.mutable_local_payload_root))
+            == self.source.origin
+        )
+        links_are_safe = all(
+            operation.target == expected_link_target(operation) for operation in links
+        )
         if (
             self.coordinate.source != self.source.alias
             or self.coordinate.artifact != self.artifact.identity
@@ -542,8 +741,22 @@ class InstallPlan:
             or self.source_age_seconds < 0
             or self.trust not in _TRUST_CLASSES
             or not self.operations
+            or not _operations_match_artifact(self)
             or len({item.absolute_destination for item in self.operations}) != len(self.operations)
             or not destinations_are_scoped
+            or (self.request.mode == "copy" and bool(links))
+            or (self.request.mutable_local_payload_root is not None and not links)
+            or any(
+                operation.semantics
+                != (
+                    "mutable-local"
+                    if self.request.mutable_local_payload_root is not None
+                    else "immutable-object"
+                )
+                for operation in links
+            )
+            or not mutable_root_is_safe
+            or not links_are_safe
             or self.state_precondition.path != self.state_path
             or sha256_bytes(state_bytes) != self.replacement_state_digest
             or _REFERENCE_OWNER_RE.fullmatch(self.reference_owner) is None
@@ -574,6 +787,28 @@ class InstallStatus(str, Enum):
     CURRENT = "current"
     CONFLICTED = "conflicted"
     FAILED = "failed"
+
+
+class LinkStatus(str, Enum):
+    CURRENT = "current"
+    MUTABLE_LOCAL = "mutable-local"
+    BROKEN = "broken"
+    RETARGETED = "retargeted"
+    REPLACED = "replaced"
+
+
+def classify_link(effect: EffectProof, observed: PathSnapshot) -> LinkStatus:
+    if effect.kind not in {"symlink-file", "symlink-tree"} or effect.link_target is None:
+        raise ValueError("link status requires a managed link effect")
+    if observed.kind != "symlink":
+        return LinkStatus.REPLACED
+    if observed.link_target != effect.link_target:
+        return LinkStatus.RETARGETED
+    if not observed.target_exists:
+        return LinkStatus.BROKEN
+    if effect.link_semantics == "mutable-local":
+        return LinkStatus.MUTABLE_LOCAL
+    return LinkStatus.CURRENT
 
 
 @dataclass(frozen=True, slots=True)

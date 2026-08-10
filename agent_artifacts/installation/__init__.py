@@ -7,6 +7,9 @@ from .model import (
     InstallPlan,
     InstallRequest,
     InstallStatus,
+    LinkOperation,
+    LinkStatus,
+    classify_link,
 )
 
 __all__ = [
@@ -15,6 +18,9 @@ __all__ = [
     "InstallPlan",
     "InstallRequest",
     "InstallStatus",
+    "LinkOperation",
+    "LinkStatus",
+    "classify_link",
     "finalize_install",
     "prepare_install",
 ]

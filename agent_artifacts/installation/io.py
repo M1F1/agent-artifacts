@@ -1,4 +1,4 @@
-"""Local no-follow adapter for reviewed Copy installation transactions."""
+"""Local no-follow adapter for reviewed Copy and Symlink transactions."""
 
 from __future__ import annotations
 
@@ -37,10 +37,12 @@ from .model import (
     InstallOutcome,
     InstallPlan,
     InstallStatus,
+    LinkOperation,
     MergeJsonOperation,
     PathSnapshot,
     TreeMember,
     WriteFileOperation,
+    operation_is_current,
 )
 
 INSTALL_IO_FAILED = DiagnosticCode("install-io-failed")
@@ -173,8 +175,13 @@ def _inspect(path: Path) -> PathSnapshot:
     if stat.S_ISDIR(info.st_mode):
         return PathSnapshot.tree(str(path), _inspect_tree(path))
     if stat.S_ISLNK(info.st_mode):
-        target = os.readlink(path).encode("utf-8", errors="surrogateescape")
-        return PathSnapshot(str(path), "symlink", sha256_bytes(b"symlink\0" + target))
+        target = os.readlink(path)
+        resolved = Path(target) if posixpath.isabs(target) else path.parent / target
+        return PathSnapshot.symlink(
+            str(path),
+            target,
+            target_exists=os.path.exists(resolved),
+        )
     return PathSnapshot(
         str(path), "special", sha256_bytes(b"special\0" + str(info.st_mode).encode())
     )
@@ -237,6 +244,27 @@ def _write_tree(path: Path, members: tuple[TreeMember, ...]) -> None:
             shutil.rmtree(stage, ignore_errors=True)
 
 
+def _write_symlink(path: Path, target: str) -> None:
+    _safe_parent(path.parent)
+    descriptor, stage_raw = tempfile.mkstemp(prefix=".aart-link-", dir=path.parent)
+    os.close(descriptor)
+    stage = Path(stage_raw)
+    try:
+        stage.unlink()
+        os.symlink(target, stage)
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            info = None
+        if info is not None and stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+            _remove(path)
+        os.replace(stage, path)
+        _fsync_directory(path.parent)
+    finally:
+        if os.path.lexists(stage):
+            stage.unlink()
+
+
 def _restore(snapshot: PathSnapshot) -> None:
     path = Path(snapshot.path)
     if snapshot.kind == "absent":
@@ -246,6 +274,9 @@ def _restore(snapshot: PathSnapshot) -> None:
         _write_atomic(path, snapshot.content, mode=0o755 if snapshot.executable else 0o600)
     elif snapshot.kind == "tree":
         _write_tree(path, snapshot.members)
+    elif snapshot.kind == "symlink":
+        assert snapshot.link_target is not None
+        _write_symlink(path, snapshot.link_target)
     else:
         raise OSError(f"cannot restore unsafe install path kind: {snapshot.kind}")
 
@@ -273,6 +304,8 @@ def _kind(operation: InstallOperation) -> str:
         return "copy-tree"
     if isinstance(operation, WriteFileOperation):
         return operation.effect_kind
+    if isinstance(operation, LinkOperation):
+        return "symlink-tree" if operation.target_kind == "tree" else "symlink-file"
     return "merge-json"
 
 
@@ -286,6 +319,8 @@ def _apply_operation(operation: InstallOperation) -> None:
     elif isinstance(operation, MergeJsonOperation):
         _remove(path)
         _write_atomic(path, operation.content)
+    elif isinstance(operation, LinkOperation):
+        _write_symlink(path, operation.target)
     else:  # pragma: no cover - closed operation union
         raise TypeError(f"unsupported install operation: {type(operation).__name__}")
 
@@ -297,6 +332,14 @@ def _preconditions_current(plan: InstallPlan, adapter: LocalInstallAdapter) -> b
     if loaded.value.candidate != plan.object_candidate or loaded.value.root != plan.object_root:
         return False
     for operation in plan.operations:
+        if isinstance(operation, LinkOperation):
+            boundary = (
+                plan.source.origin if operation.semantics == "mutable-local" else plan.object_root
+            )
+            assert boundary is not None
+            target = adapter.inspect_link_target(operation.target, boundary)
+            if not isinstance(target, Ok) or target.value != operation.target_precondition:
+                return False
         observed = adapter.inspect_path(operation.absolute_destination)
         if not isinstance(observed, Ok) or observed.value != operation.precondition:
             return False
@@ -342,8 +385,29 @@ class LocalInstallAdapter(InstallApplyPorts):
             return _error(INSTALL_IO_FAILED, f"install inspection path is unsafe: {path}")
         try:
             return Ok(_inspect(Path(path)))
-        except OSError as error:
+        except (OSError, UnicodeError, ValueError) as error:
             return _error(INSTALL_IO_FAILED, f"cannot inspect install path {path}: {error}")
+
+    def inspect_link_target(self, path: str, boundary: str) -> Result[PathSnapshot]:
+        if any(
+            not posixpath.isabs(item) or posixpath.normpath(item) != item or item == "/"
+            for item in (path, boundary)
+        ):
+            return _error(INSTALL_IO_FAILED, "link target or boundary is unsafe")
+        try:
+            if posixpath.commonpath((boundary, path)) != boundary:
+                return _error(INSTALL_IO_FAILED, "link target escapes its reviewed boundary")
+            boundary_real = posixpath.realpath(boundary)
+            relative = posixpath.relpath(path, boundary)
+            expected_real = posixpath.normpath(posixpath.join(boundary_real, relative))
+            if posixpath.realpath(path) != expected_real:
+                return _error(
+                    INSTALL_IO_FAILED,
+                    "link target crosses an unreviewed intermediate symlink",
+                )
+        except (OSError, ValueError) as error:
+            return _error(INSTALL_IO_FAILED, f"cannot validate link target boundary: {error}")
+        return self.inspect_path(path)
 
     def apply_plan(self, plan: InstallPlan) -> Result[InstallOutcome]:
         desired_state = install_state_bytes(plan.replacement_state)
@@ -389,7 +453,7 @@ class LocalInstallAdapter(InstallApplyPorts):
                     and plan.state_precondition.content == desired_state
                 )
                 for index, operation in enumerate(plan.operations):
-                    if operation.precondition.digest == operation.desired_digest:
+                    if operation_is_current(operation):
                         outcomes.append(
                             EffectOutcome(_kind(operation), operation.destination, "current")
                         )
@@ -397,6 +461,24 @@ class LocalInstallAdapter(InstallApplyPorts):
                     attempted.append((index, operation, operation.precondition))
                     try:
                         _apply_operation(operation)
+                        if isinstance(operation, LinkOperation):
+                            boundary = (
+                                plan.source.origin
+                                if operation.semantics == "mutable-local"
+                                else plan.object_root
+                            )
+                            assert boundary is not None
+                            target = self.inspect_link_target(operation.target, boundary)
+                            installed = self.inspect_path(operation.absolute_destination)
+                            if (
+                                not isinstance(target, Ok)
+                                or target.value != operation.target_precondition
+                                or not isinstance(installed, Ok)
+                                or installed.value.kind != "symlink"
+                                or installed.value.digest != operation.desired_digest
+                                or installed.value.target_exists is not True
+                            ):
+                                raise OSError("installed link postcondition does not match Review")
                     except OSError:
                         failed_index = index
                         raise
@@ -481,7 +563,7 @@ class LocalInstallAdapter(InstallApplyPorts):
                             _kind(operation), operation.destination, "rolled-back", str(error)
                         )
                     )
-                elif operation.precondition.digest == operation.desired_digest:
+                elif operation_is_current(operation):
                     failure.append(
                         EffectOutcome(
                             _kind(operation), operation.destination, "current", str(error)
