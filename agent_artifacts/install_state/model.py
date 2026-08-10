@@ -23,7 +23,14 @@ from agent_artifacts.protocol.semver import SemVer
 
 InstallScope = Literal["project", "user"]
 InstallMode = Literal["copy", "symlink"]
-EffectKind = Literal["copy-tree", "write-file", "merge-json", "managed-block", "symlink-tree"]
+EffectKind = Literal[
+    "copy-tree",
+    "write-file",
+    "merge-json",
+    "managed-block",
+    "symlink-file",
+    "symlink-tree",
+]
 MergeMode = Literal["key", "list"]
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -34,7 +41,14 @@ _ARTIFACT_KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _LEGACY_SOURCE_RE = re.compile(r"^(?:main|pin):[A-Za-z0-9._-]+$")
 _MAX_STATE_BYTES = 10 * 1024 * 1024
 _EFFECT_KINDS = frozenset(
-    {"copy-tree", "write-file", "merge-json", "managed-block", "symlink-tree"}
+    {
+        "copy-tree",
+        "write-file",
+        "merge-json",
+        "managed-block",
+        "symlink-file",
+        "symlink-tree",
+    }
 )
 
 
@@ -152,6 +166,8 @@ class EffectProof:
     json_path: str | None = None
     merge_mode: MergeMode | None = None
     identity_digest: ObjectDigest | None = None
+    link_target: str | None = None
+    link_semantics: Literal["immutable-object", "mutable-local"] | None = None
     created_destination: bool = False
     overwrote: bool = False
 
@@ -182,11 +198,31 @@ class EffectProof:
                 raise ValueError("merge-json effect proof is incomplete")
         elif any(value is not None for value in merge_fields):
             raise ValueError("non-merge effect proof cannot contain merge fields")
-        elif self.kind in {"copy-tree", "write-file", "symlink-tree"} and self.source_path is None:
+        elif (
+            self.kind
+            in {
+                "copy-tree",
+                "write-file",
+                "symlink-file",
+                "symlink-tree",
+            }
+            and self.source_path is None
+        ):
             raise ValueError("file/tree effect proof requires a source path")
-        if self.kind == "symlink-tree" and self.actual_mode != "symlink":
-            raise ValueError("symlink-tree effect must record symlink mode")
-        if self.kind != "symlink-tree" and self.actual_mode != "copy":
+        if self.kind in {"symlink-file", "symlink-tree"}:
+            if (
+                self.actual_mode != "symlink"
+                or self.link_target is None
+                or not _one_line(self.link_target)
+                or not posixpath.isabs(self.link_target)
+                or posixpath.normpath(self.link_target) != self.link_target
+                or self.link_target == "/"
+                or self.link_semantics not in {"immutable-object", "mutable-local"}
+            ):
+                raise ValueError("symlink effect must record an absolute target and semantics")
+        elif self.link_target is not None or self.link_semantics is not None:
+            raise ValueError("non-symlink effect proof cannot contain link fields")
+        if self.kind not in {"symlink-file", "symlink-tree"} and self.actual_mode != "copy":
             raise ValueError("non-symlink effects must record copy mode")
 
     @property

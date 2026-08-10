@@ -30,6 +30,7 @@ The top-level document has exactly `schema_version: 2` and a deterministically s
 - artifact type/name, SemVer, manifest digest, payload digest, and immutable object digest;
 - harness profile/version and a non-crossing `project` or `user` scope;
 - requested mode plus the actual mode and digest proof of every individual effect;
+- for links, the exact absolute target and `immutable-object` or explicit `mutable-local` semantics;
 - merge locator/mode/identity digest where applicable; and
 - only a non-secret setup-state reference, never credentials or raw setup output.
 
@@ -40,6 +41,11 @@ installation identities, and schema versions other than `2` fail closed.
 
 Canonical output is UTF-8 JSON with sorted object keys, no insignificant whitespace, and one final
 newline. Parsing and rewriting the same value is byte-stable.
+
+Effect ownership is unique per scope, destination, and merge identity. Distinct managed JSON
+identities may share a configuration path, but two records cannot claim the same file, link, or JSON
+identity. Link targets are evidence, never moving pointers; their filesystem status is derived from
+the recorded target without following the destination during ownership checks.
 
 ## State paths
 

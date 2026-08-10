@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `INS01`
+- **Next task:** `LIFE01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -57,8 +57,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | complete | `codex/aart-1-0-imp02-native-promotion` | [#42](https://github.com/M1F1/agent-artifacts/pull/42) / `ab8ae2b` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | REG01 | Maintainer registry commands/quality gate | IMP02 | complete | `codex/aart-1-0-reg01-registry-commands` | [#43](https://github.com/M1F1/agent-artifacts/pull/43) / `7351861` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `3affea4` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `b29cc23` | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending |
-| INS02 | Durable managed Symlink | INS01 | pending | — | — | Explicit atomic retarget only |
+| INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | pending | Local gates pass; PR/CI/merge pending |
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | pending | — | — | Recorded subscription only |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | pending | — | — | Separate payload/setup outcomes |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
@@ -80,22 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: INS01 — Resolve and install canonical objects with Copy mode
-Branch: codex/aart-1-0-ins01-canonical-copy
-Worktree: /tmp/aart-ins01.jI6Zj6/worktree
+Task: INS02 — Implement durable managed Symlink and explicit retarget update
+Branch: codex/aart-1-0-ins02-managed-symlink
+Worktree: /tmp/aart-ins02.LQ3EHI/worktree
 Started: 2026-08-10
-Bounded contexts: qualified marketplace resolution; compatibility/policy install decisions; immutable
-  reviewed Copy plans; CAS-backed payload projection; atomic effect/state application
-Red test and expected failure: 2 test-module import errors for absent `agent_artifacts.installation`
-  context (`python -m unittest tests.canonical_install_planning_test
-  tests.canonical_install_application_test`)
-Focused tests: 27 pass
-Files owned: new installation domain/application/IO adapters, v2 state write integration,
-  Copy fixtures/tests/docs, TODO.md, PROGRESS.md, narrow exports where required
-Risks/migrations: Finalize must execute exactly the reviewed object/plan; offline may use only a
-  verified cached object; Copy drift/conflict/no-op and partial failure must not claim false state
-PR: #45 ready; implementation commit b29cc23
-CI: first four-job Python 3.10/3.14 matrix passed; final ledger rerun pending
+Bounded contexts: managed immutable and explicit mutable-local link planning; mixed-mode effects;
+  atomic retarget/rollback; link state classification; object reference lifecycle
+Red test and expected failure: one test-module import error because LinkOperation, LinkStatus, and
+  classify_link do not exist (`python -m unittest tests.canonical_symlink_test`)
+Focused tests: 55 pass (9 Symlink lifecycle plus 46 canonical install/state regressions)
+Files owned: installation/link domain, application and local adapter extensions, state-v2 link proof,
+  Symlink fixtures/tests/docs, TODO.md, PROGRESS.md, narrow exports where required
+Risks/migrations: managed links must target exact CAS objects outside the executable environment;
+  source sync must not retarget; foreign/replaced links must not be followed or silently removed
+PR: pending after push
+CI: local Python 3.11 and Python 3.14.6 gates pass; GitHub matrix pending
 Merge: pending
 ```
 
@@ -121,6 +120,7 @@ Merge: pending
 | REG01 | 126 pass + 206 subtests | 298 files pass | pass | 127 source files pass | 1197 pass | 28 pass | 11-step pass | pass | 86.92% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1197 pass; first 4-job Python 3.10/3.14 matrix passed |
 | STATE01 | 28 pass + 8 subtests | 309 files pass | pass | 135 source files pass | 1225 pass | 28 pass | 11-step pass | pass | 86.59% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1225 pass; first 4-job Python 3.10/3.14 matrix passed |
 | INS01 | 27 pass | 315 files pass | pass | 139 source files pass | 1243 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1243 pass; first 4-job Python 3.10/3.14 matrix passed |
+| INS02 | 55 pass | 316 files pass | pass | 139 source files pass | 1252 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1252 pass; GitHub CI pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -740,3 +740,42 @@ None.
   PR is mergeable with a clean merge state.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-10 — INS01 merged; INS02 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #45 as `314e5e0`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean INS01 temporary worktree and created isolated INS02 from exact merge
+  `314e5e0`.
+- Scoped INS02 to immutable CAS-backed file/tree symlinks, mixed copied merge effects, explicit
+  atomic retarget, broken/replaced/retargeted classification, object-reference replacement, and an
+  opt-in verified mutable-local developer link for local sources.
+
+### 2026-08-10 — INS02 Red
+
+- Added seven end-to-end application contracts for immutable CAS tree/file links, copied fallback
+  and mixed hook effects, environment deletion, source-sync stability, explicit retarget plus
+  reference replacement, link-state classification, mutable-local edits, and retarget rollback.
+- Confirmed Red with the expected import failure because the canonical installation context had no
+  LinkOperation, LinkStatus, or classifier and rejected all Symlink requests.
+
+### 2026-08-10 — INS02 Green, code review, and local gates
+
+- Implemented exact immutable-CAS file/tree link plans while keeping merge/configuration effects in
+  Copy mode; managed targets never point at a checkout, virtual environment, executable package,
+  or moving source pointer. Source refresh alone leaves installed links unchanged, and an explicit
+  reviewed update atomically retargets the link and replaces its durable installed object reference.
+- Added target and destination preconditions, atomic sibling-link replacement, state-last commit,
+  transaction references, exact rollback, and status classification for current, mutable-local,
+  broken, retargeted, and replaced links. The opt-in mutable-local mode is limited to a real path
+  inside the selected local source and rejects intermediate symlink escapes.
+- Applied the repository `code-review` skill. Review closed findings for lexical boundary escapes,
+  forged in-object targets, invalid operation topology, unsafe control characters, missing link
+  postconditions, retained-object timing, and silent adoption of a foreign retargeted link. No open
+  review findings remain.
+- Focused coverage passes 55 tests, including nine Symlink lifecycle contracts and canonical
+  install/state regressions. `make quality` passes Ruff format on 316 files, Ruff lint, mypy on 139
+  source files, 1252 unit tests, 28 integration tests, the 11-step shell E2E, validation/version
+  checks, 86.12% branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation. All
+  1252 tests also pass on Python 3.14.6; two pre-existing HTTP cleanup ResourceWarnings are nonfatal.

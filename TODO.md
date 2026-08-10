@@ -71,8 +71,12 @@ Product requirements:
 - [x] Apply canonical file, tree, managed-block, and JSON merge effects transactionally; pin
       manifest-v2 evidence and a durable installed-object reference with structured no-op,
       conflict, failure, and rollback outcomes.
+- [x] Add durable managed file/tree Symlinks to exact immutable CAS payloads, mixed copied merges,
+      explicit atomic retarget/reference replacement, link-state evidence, and opt-in verified
+      `mutable-local` developer links, documented in
+      [`canonical-symlink-v1.md`](docs/installation/canonical-symlink-v1.md).
 - [ ] Resolve Install/Update from qualified source subscriptions and immutable objects.
-- [ ] Keep Copy as default and make managed Symlink target immutable store content; sync alone must
+- [x] Keep Copy as default and make managed Symlink target immutable store content; sync alone must
       not retarget installed artifacts.
 - [ ] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
       setup state, and structured outcomes to manifest v2.
@@ -113,7 +117,7 @@ Product requirements:
       collision, trust, offline, concurrency, Copy/Symlink, setup, and reporting fixtures.
 - [ ] Test local editable and local-wheel installation without an embedded operational registry or
       checkout-relative runtime data.
-- [ ] Prove deleting/recreating the Python environment does not break managed artifact symlinks.
+- [x] Prove deleting/recreating the Python environment does not break managed artifact symlinks.
 - [ ] Run registry CI with the minimum supported and latest compatible AART versions.
 
 ## Completed 0.1.x TUI and installation UX

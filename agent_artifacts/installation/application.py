@@ -9,7 +9,7 @@ from typing import Mapping, Protocol, cast
 
 from agent_artifacts import model as legacy
 from agent_artifacts.compiler.graph import CompatibilityTarget, evaluate_compatibility
-from agent_artifacts.configuration.model import git_location_parts
+from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import EffectiveConfiguration
 from agent_artifacts.configuration.schema import organization_policy_bytes
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
@@ -62,18 +62,20 @@ from .model import (
     InstallProvenance,
     InstallRequest,
     InstallStatus,
+    LinkOperation,
     MergeJsonOperation,
     PathSnapshot,
     TreeMember,
     WriteFileOperation,
     file_snapshot_digest,
+    link_snapshot_digest,
+    operation_is_current,
     tree_members_digest,
 )
 
 INSTALL_OBJECT_UNAVAILABLE = DiagnosticCode("install-object-unavailable")
 INSTALL_OBJECT_EVIDENCE_INVALID = DiagnosticCode("install-object-evidence-invalid")
 INSTALL_POLICY_DENIED = DiagnosticCode("install-policy-denied")
-INSTALL_MODE_UNSUPPORTED = DiagnosticCode("install-mode-unsupported")
 INSTALL_CONFLICT = DiagnosticCode("install-conflict")
 INSTALL_INVALID = DiagnosticCode("install-invalid")
 INSTALL_REVIEW_MISMATCH = DiagnosticCode("install-review-mismatch")
@@ -97,6 +99,8 @@ class InstallReadPorts(Protocol):
     def read_state(self, path: str) -> Result[InstallState | None]: ...
 
     def inspect_path(self, path: str) -> Result[PathSnapshot]: ...
+
+    def inspect_link_target(self, path: str, boundary: str) -> Result[PathSnapshot]: ...
 
 
 class InstallApplyPorts(InstallReadPorts, Protocol):
@@ -621,6 +625,8 @@ def _convert_actions(
     stored: StoredObject,
     location: InstallLocation,
     snapshots: Mapping[str, PathSnapshot],
+    ports: InstallReadPorts,
+    link_boundary: str,
 ) -> Result[tuple[InstallOperation, ...]]:
     payload = _payload_members(stored)
     if isinstance(payload, Err):
@@ -638,39 +644,113 @@ def _convert_actions(
             return destination
         logical, absolute = destination.value
         snapshot = snapshots[target_path]
+        operation: InstallOperation
         if isinstance(action, legacy.CopyTree):
             desired = tree_members_digest(payload.value)
-            operation: InstallOperation = CopyTreeOperation(
-                "payload",
-                logical,
-                absolute,
-                payload.value,
-                desired,
-                snapshot,
-                snapshot.kind != "absent" and snapshot.digest != desired,
-            )
+            if request.mode == "symlink":
+                payload_root = request.mutable_local_payload_root or posixpath.join(
+                    stored.root, "payload"
+                )
+                target_snapshot = ports.inspect_link_target(payload_root, link_boundary)
+                if isinstance(target_snapshot, Err):
+                    return target_snapshot
+                if target_snapshot.value.kind != "tree" or target_snapshot.value.digest != desired:
+                    return _error(
+                        INSTALL_CONFLICT,
+                        "link payload tree changed, is missing, or is not a real directory",
+                    )
+                operation = LinkOperation(
+                    "payload",
+                    logical,
+                    absolute,
+                    payload_root,
+                    "tree",
+                    (
+                        "mutable-local"
+                        if request.mutable_local_payload_root is not None
+                        else "immutable-object"
+                    ),
+                    desired,
+                    link_snapshot_digest(payload_root),
+                    target_snapshot.value,
+                    snapshot,
+                    snapshot.kind != "absent"
+                    and not (
+                        snapshot.kind == "symlink"
+                        and snapshot.link_target == payload_root
+                        and snapshot.target_exists
+                    ),
+                )
+            else:
+                operation = CopyTreeOperation(
+                    "payload",
+                    logical,
+                    absolute,
+                    payload.value,
+                    desired,
+                    snapshot,
+                    snapshot.kind != "absent" and snapshot.digest != desired,
+                )
         elif isinstance(action, legacy.WriteFile):
             source_path = "payload"
             executable = False
             if isinstance(primary, Ok):
                 source_path, _source_content, executable = primary.value
             desired = file_snapshot_digest(action.content, executable)
-            operation = WriteFileOperation(
-                source_path,
-                logical,
-                absolute,
-                action.content,
-                executable,
-                desired,
-                snapshot,
-                effect_kind=(
-                    "managed-block"
-                    if request.identity.kind == "memory"
-                    and request.memory_mode in {"prepend", "append"}
-                    else "write-file"
-                ),
-                overwrote=snapshot.kind != "absent" and snapshot.digest != desired,
-            )
+            pure_file_link = request.mode == "symlink" and request.identity.kind == "guideline"
+            if pure_file_link:
+                relative = source_path.removeprefix("payload/")
+                payload_root = request.mutable_local_payload_root or posixpath.join(
+                    stored.root, "payload"
+                )
+                link_target = posixpath.join(payload_root, relative)
+                target_snapshot = ports.inspect_link_target(link_target, link_boundary)
+                if isinstance(target_snapshot, Err):
+                    return target_snapshot
+                if target_snapshot.value.kind != "file" or target_snapshot.value.digest != desired:
+                    return _error(
+                        INSTALL_CONFLICT,
+                        "link payload file changed, is missing, or is not a regular file",
+                    )
+                operation = LinkOperation(
+                    source_path,
+                    logical,
+                    absolute,
+                    link_target,
+                    "file",
+                    (
+                        "mutable-local"
+                        if request.mutable_local_payload_root is not None
+                        else "immutable-object"
+                    ),
+                    desired,
+                    link_snapshot_digest(link_target),
+                    target_snapshot.value,
+                    snapshot,
+                    snapshot.kind != "absent"
+                    and not (
+                        snapshot.kind == "symlink"
+                        and snapshot.link_target == link_target
+                        and snapshot.target_exists
+                    ),
+                )
+            else:
+                operation = WriteFileOperation(
+                    source_path,
+                    logical,
+                    absolute,
+                    action.content,
+                    executable,
+                    desired,
+                    snapshot,
+                    effect_kind=(
+                        "managed-block"
+                        if request.identity.kind == "memory"
+                        and request.memory_mode in {"prepend", "append"}
+                        else "write-file"
+                    ),
+                    overwrote=snapshot.kind != "absent" and snapshot.digest != desired,
+                )
         elif isinstance(action, legacy.MergeJson):
             identity_evidence = _merge_identity_evidence(action)
             if isinstance(identity_evidence, Err):
@@ -714,6 +794,8 @@ def _operation_kind(operation: InstallOperation) -> str:
         return "copy-tree"
     if isinstance(operation, WriteFileOperation):
         return operation.effect_kind
+    if isinstance(operation, LinkOperation):
+        return "symlink-tree" if operation.target_kind == "tree" else "symlink-file"
     return "merge-json"
 
 
@@ -744,12 +826,24 @@ def _conflicts(
     conflicts: list[str] = []
     for operation in operations:
         current = operation.precondition
-        if current.kind == "absent" or current.digest == operation.desired_digest:
+        if current.kind == "absent" or operation_is_current(operation):
             continue
         if isinstance(operation, MergeJsonOperation):
             continue
         previous = _previous_effect(state, request, coordinate, operation.destination)
-        if previous is None or previous.installed_digest != current.digest:
+        previous_owns = previous is not None and (
+            (
+                previous.actual_mode == "symlink"
+                and current.kind == "symlink"
+                and current.link_target == previous.link_target
+            )
+            or (
+                previous.actual_mode == "copy"
+                and current.kind in {"file", "tree"}
+                and previous.installed_digest == current.digest
+            )
+        )
+        if not previous_owns:
             conflicts.append(operation.destination)
     return tuple(conflicts)
 
@@ -773,6 +867,18 @@ def _proof(operation: InstallOperation) -> EffectProof:
             "copy",
             operation.desired_digest,
             source_path=(operation.source_path if operation.effect_kind == "write-file" else None),
+            created_destination=created,
+            overwrote=operation.overwrote,
+        )
+    if isinstance(operation, LinkOperation):
+        return EffectProof(
+            "symlink-tree" if operation.target_kind == "tree" else "symlink-file",
+            operation.destination,
+            "symlink",
+            operation.target_content_digest,
+            source_path=operation.source_path,
+            link_target=operation.target,
+            link_semantics=operation.semantics,
             created_destination=created,
             overwrote=operation.overwrote,
         )
@@ -848,11 +954,6 @@ def prepare_install(
 ) -> Result[InstallPlan]:
     """Resolve and prepare one immutable plan without applying any effect."""
 
-    if request.mode != "copy":
-        return _error(
-            INSTALL_MODE_UNSUPPORTED,
-            "canonical Symlink installation is introduced by INS02; select Copy for INS01",
-        )
     resolved = resolve_artifact(
         catalog,
         ArtifactQuery(request.identity, request.source, request.version),
@@ -871,6 +972,22 @@ def prepare_install(
         return _error(
             INSTALL_INVALID, "resolved marketplace source is no longer configured/current"
         )
+    if request.mutable_local_payload_root is not None:
+        try:
+            within_source = (
+                source_config.kind is SourceKind.SOURCE_LOCAL
+                and posixpath.commonpath(
+                    (source_config.location, request.mutable_local_payload_root)
+                )
+                == source_config.location
+            )
+        except ValueError:
+            within_source = False
+        if not within_source:
+            return _error(
+                INSTALL_POLICY_DENIED,
+                "mutable-local links require an explicit payload root inside the selected local source",
+            )
     allowed = _policy_allows(request, item.trust.kind.value, effective)
     if isinstance(allowed, Err):
         return allowed
@@ -915,7 +1032,9 @@ def prepare_install(
         observed = ports.inspect_path(destination.value[1])
         if isinstance(observed, Err):
             return observed
-        if observed.value.kind in {"symlink", "special"}:
+        if observed.value.kind == "special" or (
+            observed.value.kind == "symlink" and request.mode == "copy"
+        ):
             return _error(
                 INSTALL_CONFLICT,
                 f"install destination has an unsafe existing type: {destination.value[1]}",
@@ -928,7 +1047,15 @@ def prepare_install(
         code = INSTALL_CONFLICT if getattr(legacy, "code", 1) == 4 else INSTALL_INVALID
         return _error(code, getattr(legacy, "reason", "legacy install planning failed"))
     actions = legacy.value
-    converted = _convert_actions(actions, request, stored, location, snapshots)
+    converted = _convert_actions(
+        actions,
+        request,
+        stored,
+        location,
+        snapshots,
+        ports,
+        source_config.location if request.mutable_local_payload_root is not None else stored.root,
+    )
     if isinstance(converted, Err):
         return converted
     state_paths = install_state_paths(
@@ -1152,6 +1279,16 @@ def finalize_install(
     ):
         return Ok(_conflicted_outcome(plan, "reviewed immutable object changed or disappeared"))
     for operation in plan.operations:
+        if isinstance(operation, LinkOperation):
+            boundary = (
+                plan.source.origin if operation.semantics == "mutable-local" else plan.object_root
+            )
+            assert boundary is not None
+            target = ports.inspect_link_target(operation.target, boundary)
+            if isinstance(target, Err):
+                return target
+            if target.value != operation.target_precondition:
+                return Ok(_conflicted_outcome(plan, "link target changed after review"))
         current = ports.inspect_path(operation.absolute_destination)
         if isinstance(current, Err):
             return current

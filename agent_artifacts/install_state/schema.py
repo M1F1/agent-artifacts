@@ -192,6 +192,8 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
             "json_path",
             "merge_mode",
             "identity_digest",
+            "link_target",
+            "link_semantics",
             "created_destination",
             "overwrote",
         }
@@ -220,7 +222,7 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
     if isinstance(installed, Err):
         return installed
     optional_strings: dict[str, str | None] = {}
-    for name in ("source_path", "json_path", "merge_mode"):
+    for name in ("source_path", "json_path", "merge_mode", "link_target", "link_semantics"):
         if name not in fields.value:
             optional_strings[name] = None
             continue
@@ -259,6 +261,8 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
                 json_path=optional_strings["json_path"],
                 merge_mode=optional_strings["merge_mode"],  # type: ignore[arg-type]
                 identity_digest=identity,
+                link_target=optional_strings["link_target"],
+                link_semantics=optional_strings["link_semantics"],  # type: ignore[arg-type]
                 created_destination=flags["created_destination"],
                 overwrote=flags["overwrote"],
             )
@@ -422,6 +426,10 @@ def _effect_json(effect: EffectProof) -> JsonObject:
         fields.append(("merge_mode", effect.merge_mode))
     if effect.identity_digest is not None:
         fields.append(("identity_digest", str(effect.identity_digest)))
+    if effect.link_target is not None:
+        fields.append(("link_target", effect.link_target))
+    if effect.link_semantics is not None:
+        fields.append(("link_semantics", effect.link_semantics))
     fields.extend(
         (
             ("created_destination", effect.created_destination),

@@ -287,7 +287,7 @@ class CanonicalInstallPlanningTest(unittest.TestCase):
             _MemoryReads(None),
         )
         assert isinstance(symlink, Err)
-        self.assertEqual(symlink.diagnostics[0].code.value, "install-mode-unsupported")
+        self.assertEqual(symlink.diagnostics[0].code.value, "artifact-incompatible")
 
     def test_user_scope_minimum_trust_and_compatibility_are_enforced(self) -> None:
         candidate = _candidate("skill")
