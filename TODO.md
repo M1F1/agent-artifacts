@@ -91,6 +91,11 @@ Product requirements:
       Review/Finalize requests, verified registry security evidence, persistent cart navigation,
       and explicit no-op/partial/offline/setup outcomes, documented in
       [`consumer-marketplace-v1.md`](docs/tui/consumer-marketplace-v1.md).
+- [x] Migrate canonical Maintainer TUI actions to digest-bound local-checkout plans for registry
+      init/scaffold, native promotion/update, controlled foreign conversion, lock/build,
+      validate/audit/diff, and explicit outcomes; retain the legacy catalog workflow without
+      automatic commit/push or consumer-store writes, documented in
+      [`maintainer-curation-v1.md`](docs/tui/maintainer-curation-v1.md).
 - [x] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests, retain the
       exact CAS object, execute custom code from a verified private copy, and preserve separate
       payload/setup outcomes, documented in
