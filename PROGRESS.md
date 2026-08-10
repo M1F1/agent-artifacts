@@ -65,8 +65,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
-| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / pending merge | First replacement four-job Python 3.10/3.14 CI matrix passed after the recorded platform-fixture fix; final ledger matrix pending |
-| TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
+| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
+| TUI03 | Maintainer curation/security UX | TUI02,REG01 | in_progress | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / pending merge | First four-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
@@ -80,26 +80,24 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: TUI02 — Migrate consumer marketplace/cart/review/outcomes
-Branch: codex/aart-1-0-tui02-consumer-marketplace
-Worktree: /private/tmp/aart-tui02.y4oij2/worktree
+Task: TUI03 — Migrate Maintainer curation and security workflows
+Branch: codex/aart-1-0-tui03-maintainer-curation
+Worktree: /private/tmp/aart-tui03.IK2qfr/worktree
 Started: 2026-08-10
-Bounded contexts: federated consumer marketplace projection, qualified cart selection, review
-  evidence, canonical install/lifecycle application requests, structured terminal outcomes
-Red test and expected failure: `python -m unittest tests.tui_marketplace_test` failed with the
-  expected `ModuleNotFoundError: agent_artifacts.tui_marketplace`; review later exposed a second Red
-  case where a selected external registry reference had no CAS object and no pinned acquisition
-  path; both are now covered by regression tests
-Focused tests: 36 consumer/marketplace/frontend tests and 167 discovered TUI/consumer tests pass;
-  the complete local quality wrapper passes on the implementation tree
-Files owned: consumer TUI read model/application adapter, user text/curses frontends, focused tests
-  and TUI documentation, TODO.md and PROGRESS.md
-Risks/migrations: source union must replace the one-source legacy bridge without unqualified
-  shadowing; no command-stdout parsing; basket/back state and Review/Finalize proof remain exact;
-  external registry objects resolve lazily only from a matching committed lock and exact digest
-PR: #53 ready and mergeable
-CI: first replacement four-job Python 3.10/3.14 matrix passed after the recorded test-only
-  platform-fixture fix; final ledger matrix pending
+Bounded contexts: local registry-workspace curation, scaffold/native promotion/foreign import,
+  upstream refresh, deterministic lock/build/audit/security previews, structured outcomes
+Red test and expected failure: `python -m unittest tests.curation_model_test
+  tests.curation_runtime_test tests.tui_curation_test` failed with the expected
+  `ModuleNotFoundError: agent_artifacts.curation`
+Focused tests: 57 curation/legacy Maintainer/wizard/curses tests pass; focused curation model/runtime
+  coverage is 91.19%; complete local quality wrapper passes
+Files owned: Maintainer application/read model and TUI stages, focused tests, Maintainer
+  documentation, TODO.md and PROGRESS.md
+Risks/migrations: all mutations require a verified local checkout and one reviewed Finalize apply;
+  conversion warnings and diffs must remain exact; no automatic commit/push; consumer managed
+  snapshots and content-addressed objects remain read-only; recovery commands must be explicit
+PR: #54 ready and mergeable
+CI: first four-job Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -132,7 +130,8 @@ Merge: pending
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
-| TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; first replacement 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
+| TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; 2× replacement 4-job Python 3.10/3.14 matrices passed |
+| TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1175,3 +1174,42 @@ None.
   platform-fixture fix; no product behavior changed in the CI correction.
 - PR #53 is ready and mergeable with the reviewed implementation diff. This ledger commit records
   the remote evidence, and a final four-job matrix reruns before the protected squash merge.
+
+### 2026-08-10 — TUI02 merged; TUI03 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #53 as `d37feb8`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preservation of the unrelated
+  root-worktree files.
+- Removed only the clean TUI02 temporary worktree and created isolated TUI03 from exact merge
+  `d37feb8`.
+- Scoped TUI03 to a canonical Maintainer application and wizard for local-checkout scaffold,
+  promotion/import, upstream, lock/build/audit/security previews and structured outcomes. Finalize
+  is the only apply boundary; the flow never commits, pushes, or mutates consumer managed stores.
+
+### 2026-08-10 — TUI03 canonical curation Red/Green slices
+
+- Recorded the expected missing `agent_artifacts.curation` package Red before production edits.
+- Added immutable curation request/review/check/change/outcome values and deterministic renderers.
+  The local runtime prepares exact registry workspace or registry-input plans, verifies an explicit
+  writable Git checkout before every mutation preview, and finalizes only the displayed digest.
+- Added canonical init/scaffold, approved native promotion, one-reference upstream refresh,
+  controlled `legacy-catalog-v1` conversion with warnings, lock/build, validate, audit/security
+  evidence, and read-only diff. Exact follow-up commands never commit or push, and a boundary test
+  prevents consumer store/state writers from entering the runtime.
+- Routed canonical/empty Git workspaces through the new text and curses Maintainer action path while
+  preserving legacy catalogs unchanged. Back keeps entered values and reuses an unchanged prepared
+  plan; detailed curses work starts after teardown; structured outcomes distinguish applied,
+  no-op, read-only observed drift, and failed quality checks.
+- The code-review skill identified four edge contracts before publication. Tightened native
+  mutation Finalize against the complete displayed workspace snapshot (including unrelated managed
+  workflow changes), rejected registry-entry identity/path mismatches, made recovery commands
+  action-aware, and ensured canonical Maintainer-to-User transitions load the canonical consumer
+  runtime in both text and curses paths. A final audit also preserved that exact loaded service
+  across curses teardown and Finalize. Regression tests cover each case.
+- Final local evidence: 57 focused tests pass with 91.19% curation model/runtime coverage; the full
+  quality wrapper passes Ruff format/lint over 375 files, mypy over 175 source modules, 1472 unit
+  tests, 29 integration tests, 11-step E2E, stdlib-only validation, 86.06% overall coverage,
+  `1.0.0a1` packaging, and docs validation.
+- Published ready and mergeable PR #54 from commit `98a0c93`; all four initial push/PR quality jobs
+  passed on Python 3.10 and 3.14. This ledger update records that remote evidence and triggers the
+  final matrix before the protected squash merge.

@@ -130,8 +130,10 @@ use flag mode with `--source DIR --link` to choose a durable local checkout.
 Install, Update, Uninstall, Status, and Maintainer paths all end at a separate **Review** stage.
 `Finalize` is the only wizard decision that can dispatch the reviewed request. Back/edit, quit,
 cursor movement, source reads, validation, and Maintainer dry-run previews do not apply changes.
-For Maintainer add/import/update, Review records a successful `validate -> dry-run` preview;
-Finalize then performs exactly one apply and validates the resulting catalog again.
+For a canonical registry, Review shows the exact snapshot/review digest, managed-file diff,
+quality/security evidence, conversion warnings, and recovery commands. Finalize rechecks that
+exact plan and applies it once. Legacy Maintainer add/import/update retains its established
+`validate -> dry-run -> apply -> validate` compatibility flow. Neither path commits or pushes.
 
 Every completed action ends with an explicit outcome summary in command mode and both TUI
 frontends. A successful no-op is not silent and is distinct from an empty selection:
@@ -371,6 +373,23 @@ uninstalls do not touch your hand-written notes in the same instruction file. Us
 ---
 
 ## Maintainer Mode: Curate The Catalog
+
+Canonical AART 1.0 registries and empty Git checkouts use the digest-bound Maintainer workflow.
+The TUI offers init, scaffold, native promotion, controlled legacy conversion, one-reference
+upstream update, lock, build, validate, audit/security evidence, and deterministic diff. Mutating
+actions are rejected before preview unless the displayed absolute path is a writable local Git
+checkout. Review binds the exact snapshot, changed paths, and plan digest; Finalize fails stale
+instead of silently rebuilding a different plan. Read-only validate/audit/diff also recheck their
+snapshot and never require a checkout.
+
+Detailed forms run in the plain terminal after the curses action selector closes, so Git/network
+diagnostics and full diffs stay visible. Conversion always identifies the built-in importer and
+shows warnings. Outcomes distinguish applied paths, no-op, failed checks, and read-only observed
+drift, then print exact `git diff`, registry validate, and audit commands. AART never commits,
+pushes, or writes consumer managed snapshots/CAS from this path. See
+[`maintainer-curation-v1.md`](docs/tui/maintainer-curation-v1.md).
+
+The following section documents the retained 0.1.x catalog compatibility workflow.
 
 Maintainer mode is for people editing the source-of-truth catalog repo itself. In this repo,
 you add or edit artifacts under `skills/`, `guidelines/`, `mcp/`, `hooks/`, and `memory/`,
@@ -647,6 +666,11 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 | `aart upstream import` | yes | Batch-vendor selected GitHub artifacts and optionally create/update a bundle |
 | `aart upstream check` | yes | Check tracked vendored artifact origins |
 | `aart upstream update` | yes | Import tracked upstream changes into the catalog repo |
+
+Canonical registry commands surfaced by the AART 1.0 Maintainer wizard are documented in
+[`maintainer-commands-v1.md`](docs/registry/maintainer-commands-v1.md). They operate only on the
+explicit registry checkout and share the same pure plans and exact-digest apply boundary as the
+flag-mode registry command family.
 
 **Context-dependent options:** Instead of exposing every option globally, `agent-artifacts`
 strictly attaches options only to the commands that consume them.

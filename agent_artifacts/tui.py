@@ -49,6 +49,13 @@ from .consumer import (
     render_consumer_outcome,
     render_consumer_review,
 )
+from .curation.model import (
+    CurationAction,
+    CurationRequest,
+    render_curation_outcome,
+    render_curation_review,
+)
+from .curation.runtime import CurationService, PreparedCuration
 from .domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from .domain.identifiers import SourceAlias
 from .domain.result import Err as DomainErr
@@ -142,6 +149,20 @@ MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("user", "Enter User workflows"),
 )
 
+CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
+    ("validate", "Validate canonical registry protocol and generated evidence"),
+    ("scaffold", "Scaffold one native artifact package for review"),
+    ("promote-native", "Promote one reviewed native Git reference"),
+    ("import-foreign", "Convert a pinned legacy catalog with explicit warnings"),
+    ("update-upstream", "Check and review one locked native upstream update"),
+    ("lock", "Resolve approved references into the committed lock"),
+    ("build", "Build the payload-free marketplace index"),
+    ("audit", "Audit review, provenance, setup, license, and security evidence"),
+    ("diff", "Preview deterministic canonical-format diff without writing"),
+    ("init", "Initialize an empty registry checkout"),
+    ("user", "Enter User workflows; AART never commits or pushes Maintainer changes"),
+)
+
 # Canonical artifact-type display order (matches commands.list / docs/design/DESIGN.md §4).
 _TYPE_ORDER: Tuple[ArtifactType, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 _TYPE_ATTR = {
@@ -158,6 +179,7 @@ SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
+CurationServiceFactory = Callable[[str], DomainResult[CurationService]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2218,6 +2240,7 @@ def _run_text(
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int:
     """Persistent onboarding/role wizard shared by the fallback and headless tests."""
 
@@ -2324,6 +2347,7 @@ def _run_text(
                 source_finalizer=source_finalizer,
                 consumer_service_factory=consumer_service_factory,
                 consumer_configuration=selected_source.request.after,
+                curation_service_factory=curation_service_factory,
             )
             if isinstance(result, WizardSession):
                 session = result
@@ -2356,6 +2380,437 @@ def _prompt_role(
         write("Please enter 1 (User), 2 (Maintainer), or 'q' to quit.")
 
 
+def _is_canonical_maintainer_workspace(root: str) -> bool:
+    """Recognize a registry or an empty Git checkout without reclassifying legacy catalogs."""
+
+    if os.path.isfile(os.path.join(root, "aart-registry.json")):
+        return True
+    git = os.path.join(root, ".git")
+    if not (os.path.isdir(git) or os.path.isfile(git)):
+        return False
+    legacy_markers = (
+        "bundles.json",
+        "upstreams.json",
+        "skills",
+        "guidelines",
+        "mcp",
+        "hooks",
+        "memory",
+    )
+    return not any(os.path.exists(os.path.join(root, marker)) for marker in legacy_markers)
+
+
+def _default_curation_service_factory(root: str) -> DomainResult[CurationService]:
+    from .curation.runtime import load_local_curation_service
+
+    return load_local_curation_service(root)
+
+
+def _write_domain_diagnostics(result: DomainErr, write: WriteFn) -> None:
+    for diagnostic in result.diagnostics:
+        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+        for remediation in diagnostic.remediation:
+            write(f"  remediation: {remediation}")
+
+
+def _prompt_wizard_csv(
+    read: ReadFn,
+    write: WriteFn,
+    prompt: str,
+    *,
+    current: Tuple[str, ...] = (),
+    default: Tuple[str, ...] = (),
+) -> Tuple[str, ...] | WizardInput:
+    while True:
+        line = _read_line(read, prompt)
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip()
+        if answer.lower() in ("q", "quit"):
+            return WizardInput("quit")
+        if answer.lower() in ("b", "back"):
+            return WizardInput("back")
+        if not answer:
+            return current or default
+        values = tuple(item.strip() for item in answer.split(",") if item.strip())
+        if values:
+            return values
+        write("Enter one or more comma-separated values, 'b' to go back, or 'q' to quit.")
+
+
+def _prompt_curation_request(
+    action: CurationAction,
+    workspace: str,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    existing: Optional[CurationRequest],
+) -> CurationRequest | WizardInput:
+    def value(
+        prompt: str,
+        field: str,
+        *,
+        required: bool = True,
+        default: Optional[str] = None,
+    ) -> str | None | WizardInput:
+        current = getattr(existing, field) if existing is not None else default
+        return _prompt_wizard_value(
+            read,
+            write,
+            prompt,
+            current=current,
+            required=required,
+        )
+
+    if action is CurationAction.INIT:
+        source_id = value("Registry/source ID: ", "source_id")
+        if isinstance(source_id, WizardInput):
+            return source_id
+        display_name = value("Registry display name: ", "display_name")
+        if isinstance(display_name, WizardInput):
+            return display_name
+        minimum = value("Minimum AART version [1.0.0]: ", "minimum_version", default="1.0.0")
+        if isinstance(minimum, WizardInput):
+            return minimum
+        maximum = value(
+            "Maximum AART version (exclusive) [2.0.0]: ", "maximum_version", default="2.0.0"
+        )
+        if isinstance(maximum, WizardInput):
+            return maximum
+        return CurationRequest(
+            action,
+            workspace,
+            source_id=source_id,
+            display_name=display_name,
+            minimum_version=minimum or "1.0.0",
+            maximum_version=maximum or "2.0.0",
+        )
+
+    if action is CurationAction.SCAFFOLD:
+        kind = value("Artifact kind (skill/guideline/mcp/hook/memory): ", "kind")
+        if isinstance(kind, WizardInput):
+            return kind
+        name = value("Artifact name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        summary = value("One-line value description: ", "summary")
+        if isinstance(summary, WizardInput):
+            return summary
+        version = value("Artifact version [1.0.0]: ", "artifact_version", default="1.0.0")
+        if isinstance(version, WizardInput):
+            return version
+        profiles = _prompt_wizard_csv(
+            read,
+            write,
+            "Harness profiles (comma-separated): ",
+            current=existing.profiles if existing else (),
+        )
+        if isinstance(profiles, WizardInput):
+            return profiles
+        platforms = _prompt_wizard_csv(
+            read,
+            write,
+            "Platforms (comma-separated): ",
+            current=existing.platforms if existing else (),
+        )
+        if isinstance(platforms, WizardInput):
+            return platforms
+        scopes = _prompt_wizard_csv(
+            read,
+            write,
+            "Install scopes [project]: ",
+            current=existing.scopes if existing else (),
+            default=("project",),
+        )
+        if isinstance(scopes, WizardInput):
+            return scopes
+        modes = _prompt_wizard_csv(
+            read,
+            write,
+            "Install modes [copy]: ",
+            current=existing.modes if existing else (),
+            default=("copy",),
+        )
+        if isinstance(modes, WizardInput):
+            return modes
+        return CurationRequest(
+            action,
+            workspace,
+            kind=kind,
+            name=name,
+            summary=summary,
+            artifact_version=version or "1.0.0",
+            profiles=profiles,
+            platforms=platforms,
+            scopes=scopes,
+            modes=modes,
+        )
+
+    if action is CurationAction.PROMOTE_NATIVE:
+        kind = value("Artifact kind: ", "kind")
+        if isinstance(kind, WizardInput):
+            return kind
+        name = value("Artifact name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        url = value("Credential-free Git URL: ", "url")
+        if isinstance(url, WizardInput):
+            return url
+        ref = value("Git ref [main]: ", "ref", default="main")
+        if isinstance(ref, WizardInput):
+            return ref
+        path = value("Canonical package path: ", "path")
+        if isinstance(path, WizardInput):
+            return path
+        policy = value(
+            "Review policy [manual-review-v1]: ",
+            "review_policy",
+            default="manual-review-v1",
+        )
+        if isinstance(policy, WizardInput):
+            return policy
+        return CurationRequest(
+            action,
+            workspace,
+            kind=kind,
+            name=name,
+            url=url,
+            ref=ref or "main",
+            path=path,
+            review_policy=policy or "manual-review-v1",
+        )
+
+    if action is CurationAction.UPDATE_UPSTREAM:
+        kind = value("Locked artifact kind: ", "kind")
+        if isinstance(kind, WizardInput):
+            return kind
+        name = value("Locked artifact name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        return CurationRequest(action, workspace, kind=kind, name=name)
+
+    if action is CurationAction.IMPORT_FOREIGN:
+        legacy = value("Pinned legacy Git URL or local checkout: ", "legacy_source")
+        if isinstance(legacy, WizardInput):
+            return legacy
+        origin = value(
+            "Origin URL for a local checkout (blank for remote): ",
+            "origin_url",
+            required=False,
+        )
+        if isinstance(origin, WizardInput):
+            return origin
+        ref = value("Legacy Git ref [HEAD]: ", "ref", default="HEAD")
+        if isinstance(ref, WizardInput):
+            return ref
+        source_id = value("New registry/source ID: ", "source_id")
+        if isinstance(source_id, WizardInput):
+            return source_id
+        display_name = value("New registry display name: ", "display_name")
+        if isinstance(display_name, WizardInput):
+            return display_name
+        version = value("Imported artifact version [1.0.0]: ", "artifact_version", default="1.0.0")
+        if isinstance(version, WizardInput):
+            return version
+        profiles = _prompt_wizard_csv(
+            read,
+            write,
+            "Harness profiles (comma-separated): ",
+            current=existing.profiles if existing else (),
+        )
+        if isinstance(profiles, WizardInput):
+            return profiles
+        platforms = _prompt_wizard_csv(
+            read,
+            write,
+            "Platforms [darwin]: ",
+            current=existing.platforms if existing else (),
+            default=("darwin",),
+        )
+        if isinstance(platforms, WizardInput):
+            return platforms
+        return CurationRequest(
+            action,
+            workspace,
+            legacy_source=legacy,
+            origin_url=origin,
+            ref=ref or "HEAD",
+            source_id=source_id,
+            display_name=display_name,
+            artifact_version=version or "1.0.0",
+            profiles=profiles,
+            platforms=platforms,
+        )
+
+    return CurationRequest(action, workspace)
+
+
+def _run_canonical_maintainer_text(
+    session: WizardSession,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    workspace: str,
+    project: Optional[str],
+    user_home: Optional[str],
+    source_finalizer: Optional[SourceFinalizeFn],
+    consumer_service_factory: Optional[ConsumerServiceFactory],
+    consumer_configuration: Optional[UserConfiguration],
+    curation_service_factory: Optional[CurationServiceFactory],
+) -> int | WizardSession:
+    factory = curation_service_factory or _default_curation_service_factory
+    loaded = factory(workspace)
+    if isinstance(loaded, DomainErr):
+        _write_domain_diagnostics(loaded, write)
+        return 2
+    service = loaded.value
+    request: Optional[CurationRequest] = None
+    prepared: Optional[PreparedCuration] = None
+    while True:
+        if session.current == "role":
+            return session
+        _write_wizard_header(session, write)
+        if session.current == "maintainer_action":
+            write(f"Canonical registry checkout: {workspace}")
+            write("Maintainer action:")
+            for index, (_action, label) in enumerate(CANONICAL_MAINTAINER_ACTIONS, start=1):
+                write(f"  {index:>2}. {label}")
+            selected = _prompt_maintainer_action_wizard(
+                read,
+                write,
+                CANONICAL_MAINTAINER_ACTIONS,
+            )
+            if isinstance(selected, WizardInput):
+                if selected.kind == "back":
+                    return wizard_back(session)
+                return _cancel(write)
+            session = replace(session, basket=(), notices=())
+            session = wizard_select(session, "maintainer_action", selected)
+            session = wizard_advance(session)
+            request = None
+            prepared = None
+            if selected == "user":
+                consumer_service: Optional[ConsumerApplicationService] = None
+                active_consumer_factory = consumer_service_factory
+                if active_consumer_factory is None and consumer_configuration is not None:
+                    from .consumer.runtime import load_local_consumer_service
+
+                    def active_consumer_factory(
+                        configuration: UserConfiguration,
+                    ) -> DomainResult[ConsumerApplicationService]:
+                        return load_local_consumer_service(
+                            project=project,
+                            user_home=user_home,
+                            configuration=configuration,
+                        )
+
+                if active_consumer_factory is not None and consumer_configuration is not None:
+                    loaded_consumer = active_consumer_factory(consumer_configuration)
+                    if isinstance(loaded_consumer, DomainErr):
+                        _write_domain_diagnostics(loaded_consumer, write)
+                        session = wizard_back(session)
+                        continue
+                    consumer_service = loaded_consumer.value
+                result = _run_user_text_wizard(
+                    session,
+                    read,
+                    write,
+                    source_factory=open_source,
+                    source_dir=workspace,
+                    repo=None,
+                    project=project,
+                    user_home=user_home,
+                    source_finalizer=source_finalizer,
+                    consumer_service=consumer_service,
+                )
+                if isinstance(result, WizardSession):
+                    session = result
+                    continue
+                return result
+            continue
+
+        action_name = session.maintainer_action
+        assert action_name is not None and action_name != "user"
+        action = CurationAction(action_name)
+        if session.current == "upstream_details":
+            previous_request = request
+            try:
+                prompted = _prompt_curation_request(
+                    action,
+                    workspace,
+                    read,
+                    write,
+                    existing=request,
+                )
+            except ValueError as error:
+                write(f"error: {error}")
+                continue
+            if isinstance(prompted, WizardInput):
+                if prompted.kind == "back":
+                    session = wizard_back(session)
+                    continue
+                if _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            request = prompted
+            label = (
+                f"{request.kind}/{request.name}"
+                if request.kind is not None and request.name is not None
+                else action.value
+            )
+            session = replace(
+                session,
+                basket=(BasketItem("upstream", label, label),),
+                revision=session.revision + 1,
+            )
+            session = wizard_advance(session)
+            if request != previous_request:
+                prepared = None
+            continue
+
+        if session.current != "review":
+            return 2
+        if request is None:
+            request = CurationRequest(action, workspace)
+        if prepared is None:
+            planned = service.prepare(request)
+            if isinstance(planned, DomainErr):
+                _write_domain_diagnostics(planned, write)
+                write("Preview failed; no registry changes were applied.")
+                return 2
+            prepared = planned.value
+        for line in render_curation_review(prepared.review):
+            write(line)
+        finalized_line = _read_line(
+            read, "Finalize exact reviewed action? [y/N] (b=back, q=quit): "
+        )
+        answer = "q" if finalized_line is None else finalized_line.strip().lower()
+        if answer in ("b", "back"):
+            session = wizard_back(session)
+            continue
+        if answer in ("q", "quit"):
+            if _confirm_wizard_quit(session, read, write):
+                return _cancel(write)
+            continue
+        if answer not in ("y", "yes", "f", "finalize"):
+            write("Review not finalized; no changes were made.")
+            continue
+        if not can_finalize(session, revision=session.revision):
+            write("Wizard state changed; review it again before Finalize.")
+            continue
+        source_code = _finalize_source_selection(session, source_finalizer, write)
+        if source_code is not None:
+            return source_code
+        finalized = service.finalize(prepared, prepared.review.review_digest)
+        if isinstance(finalized, DomainErr):
+            _write_domain_diagnostics(finalized, write)
+            write("Finalize failed; use the remediation above and rerun the same reviewed action.")
+            return 2
+        for rendered in render_curation_outcome(finalized.value):
+            write(rendered)
+        return 2 if finalized.value.status == "failed" else 0
+
+
 def _run_maintainer_text(
     session: WizardSession,
     read: ReadFn,
@@ -2369,12 +2824,26 @@ def _run_maintainer_text(
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
     consumer_configuration: Optional[UserConfiguration] = None,
+    curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int | WizardSession:
     """Drive Maintainer stages and expose apply only at the Review Finalize boundary."""
     del source_factory  # maintainer source resolution belongs to the upstream command core
     from .commands import upstream
 
     catalog_root = os.path.abspath(source_dir or ".")
+    if _is_canonical_maintainer_workspace(catalog_root):
+        return _run_canonical_maintainer_text(
+            session,
+            read,
+            write,
+            workspace=catalog_root,
+            project=project,
+            user_home=user_home,
+            source_finalizer=source_finalizer,
+            consumer_service_factory=consumer_service_factory,
+            consumer_configuration=consumer_configuration,
+            curation_service_factory=curation_service_factory,
+        )
     context_request = Request(
         command="upstream",
         upstream_action="validate",
@@ -2572,7 +3041,11 @@ def _run_maintainer_text(
         return _dispatch(request)
 
 
-def _prompt_maintainer_action_wizard(read: ReadFn, write: WriteFn) -> str | WizardInput:
+def _prompt_maintainer_action_wizard(
+    read: ReadFn,
+    write: WriteFn,
+    actions: Tuple[Tuple[str, str], ...] = MAINTAINER_ACTIONS,
+) -> str | WizardInput:
     while True:
         line = _read_line(read, "Maintainer action (b=back, q=quit): ")
         if line is None:
@@ -2582,12 +3055,12 @@ def _prompt_maintainer_action_wizard(read: ReadFn, write: WriteFn) -> str | Wiza
             return WizardInput("quit")
         if answer in ("b", "back"):
             return WizardInput("back")
-        by_name = {name: name for name, _label in MAINTAINER_ACTIONS}
+        by_name = {name: name for name, _label in actions}
         if answer in by_name:
             return by_name[answer]
-        if answer.isdigit() and 1 <= int(answer) <= len(MAINTAINER_ACTIONS):
-            return MAINTAINER_ACTIONS[int(answer) - 1][0]
-        write(f"Please enter 1-{len(MAINTAINER_ACTIONS)}, 'b', or 'q'.")
+        if answer.isdigit() and 1 <= int(answer) <= len(actions):
+            return actions[int(answer) - 1][0]
+        write(f"Please enter 1-{len(actions)}, 'b', or 'q'.")
 
 
 def _prompt_wizard_value(
@@ -3585,6 +4058,7 @@ def _run_curses(
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int:
     """Collect a persistent wizard session and dispatch only after curses teardown."""
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
@@ -3702,32 +4176,39 @@ def _run_curses(
                     user_home=user_home,
                     consumer_service=active_consumer_service,
                 )
+                if selection.get("consumer_review") is not None:
+                    selection["active_consumer_service"] = active_consumer_service
                 if selection:
                     return
                 if session.current in ("role", "source"):
                     continue
                 return
 
-            from .commands import upstream
-
             catalog_root = os.path.abspath(active_source_dir or ".")
-            context_result = upstream.load_maintainer_context(
-                Request(
-                    command="upstream",
-                    upstream_action="validate",
-                    source_dir=catalog_root,
-                    repo=active_repo,
+            canonical_curation = _is_canonical_maintainer_workspace(catalog_root)
+            context_result = None
+            maintainer_actions = CANONICAL_MAINTAINER_ACTIONS
+            if not canonical_curation:
+                from .commands import upstream
+
+                context_result = upstream.load_maintainer_context(
+                    Request(
+                        command="upstream",
+                        upstream_action="validate",
+                        source_dir=catalog_root,
+                        repo=active_repo,
+                    )
                 )
-            )
-            if isinstance(context_result, Err):
-                selection["error"] = (context_result.reason, context_result.code)
-                return
+                if isinstance(context_result, Err):
+                    selection["error"] = (context_result.reason, context_result.code)
+                    return
+                maintainer_actions = MAINTAINER_ACTIONS
             while session.current == "maintainer_action":
                 event = _curses_single_event(
                     curses,
                     stdscr,
                     f"Maintainer - {catalog_root}  (enter=confirm, q=quit)",
-                    tuple(label for _action, label in MAINTAINER_ACTIONS),
+                    tuple(label for _action, label in maintainer_actions),
                     session,
                 )
                 if event.kind == "back":
@@ -3736,13 +4217,26 @@ def _run_curses(
                 if event.kind == "quit":
                     selection["cancelled"] = True
                     return
-                action = MAINTAINER_ACTIONS[event.selected[0]][0]
+                action = maintainer_actions[event.selected[0]][0]
                 session = wizard_select(session, "maintainer_action", action)
                 session = wizard_advance(session)
                 if action == "user":
                     maintainer_consumer_service = consumer_service
-                    if consumer_service_factory is not None:
-                        loaded_consumer = consumer_service_factory(
+                    active_consumer_factory = consumer_service_factory
+                    if active_consumer_factory is None and canonical_curation:
+                        from .consumer.runtime import load_local_consumer_service
+
+                        def active_consumer_factory(
+                            configuration: UserConfiguration,
+                        ) -> DomainResult[ConsumerApplicationService]:
+                            return load_local_consumer_service(
+                                project=project,
+                                user_home=user_home,
+                                configuration=configuration,
+                            )
+
+                    if active_consumer_factory is not None:
+                        loaded_consumer = active_consumer_factory(
                             selected_source_value.request.after
                         )
                         if isinstance(loaded_consumer, DomainErr):
@@ -3763,13 +4257,18 @@ def _run_curses(
                         user_home=user_home,
                         consumer_service=maintainer_consumer_service,
                     )
+                    if selection.get("consumer_review") is not None:
+                        selection["active_consumer_service"] = maintainer_consumer_service
                     if selection or session.current != "maintainer_action":
                         return
                     continue
                 selection["maintainer_action"] = action
-                selection["maintainer_context"] = context_result.value
+                if context_result is not None:
+                    assert not isinstance(context_result, Err)
+                    selection["maintainer_context"] = context_result.value
                 selection["maintainer_session"] = session
                 selection["source_arguments"] = (active_source_dir, active_repo)
+                selection["consumer_configuration"] = selected_source_value.request.after
                 return
 
     try:
@@ -3784,6 +4283,7 @@ def _run_curses(
             source_finalizer=source_finalizer,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
+            curation_service_factory=curation_service_factory,
         )
 
     if "error" in selection:
@@ -3812,7 +4312,11 @@ def _run_curses(
             source_dir=active_source_dir,
             repo=active_repo,
             project=project,
+            user_home=user_home,
             source_finalizer=source_finalizer,
+            consumer_service_factory=consumer_service_factory,
+            consumer_configuration=selection.get("consumer_configuration"),
+            curation_service_factory=curation_service_factory,
         )
         return _cancel(print) if isinstance(result, WizardSession) else result
     if "request" not in selection:
@@ -3830,8 +4334,9 @@ def _run_curses(
         return source_code
     consumer_review = selection.get("consumer_review")
     if consumer_review is not None:
-        assert consumer_service is not None
-        finalized = consumer_service.finalize(
+        active_consumer_service = selection.get("active_consumer_service", consumer_service)
+        assert active_consumer_service is not None
+        finalized = active_consumer_service.finalize(
             consumer_review,
             consumer_review.review_digest,
         )
@@ -3842,7 +4347,7 @@ def _run_curses(
         for line in render_consumer_outcome(finalized.value):
             print(line)
         return _run_canonical_setup_queue(
-            consumer_service,
+            active_consumer_service,
             consumer_review,
             finalized.value,
             read=input,

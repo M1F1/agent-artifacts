@@ -219,6 +219,16 @@ class FilesystemRegistryWorkspace:
         )
         return isinstance(verified, Ok) and verified.value.stdout.strip() == b"true"
 
+    def verify_mutation_target(self) -> Result[None]:
+        """Prove that reviewed writes would target an explicit writable local Git checkout."""
+
+        if not self._writable_checkout():
+            return _error(
+                REGISTRY_WORKSPACE_INVALID,
+                "registry mutation requires a writable local Git checkout",
+            )
+        return Ok(None)
+
     def _write(self, path: SafeRelativePath, content: bytes, executable: bool) -> Result[None]:
         target = _safe_path(self.root, path)
         if isinstance(target, Err):
@@ -311,11 +321,9 @@ class FilesystemRegistryWorkspace:
         return Ok(None)
 
     def apply(self, command: RegistryApplyCommand) -> Result[RegistryApplyReceipt]:
-        if not self._writable_checkout():
-            return _error(
-                REGISTRY_WORKSPACE_INVALID,
-                "registry mutation requires a writable local Git checkout",
-            )
+        target = self.verify_mutation_target()
+        if isinstance(target, Err):
+            return target
         descriptor: int | None = None
         try:
             descriptor = os.open(self.root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))

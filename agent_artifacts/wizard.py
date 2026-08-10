@@ -123,9 +123,16 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     action = session.maintainer_action
     if action is None:
         return maintainer
-    if action in ("health", "validate"):
+    if action in ("health", "validate", "audit", "diff", "lock", "build"):
         return maintainer + ("review",)
-    if action == "add":
+    if action in (
+        "add",
+        "init",
+        "scaffold",
+        "promote-native",
+        "import-foreign",
+        "update-upstream",
+    ):
         return maintainer + ("upstream_details", "review")
     if action == "import":
         return maintainer + ("upstream_details", "artifacts", "review")
