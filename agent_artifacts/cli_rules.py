@@ -48,6 +48,13 @@ def validate_flags(request: Request) -> Optional[Err]:
             "(a local checkout has no ref to resolve)",
             code=USAGE,
         )
+    if request.command == "upgrade" and any(
+        value is not None for value in (request.repo, request.source_dir, request.version)
+    ):
+        return Err(
+            "upgrade accepts only an explicit local --wheel or --source-checkout",
+            code=USAGE,
+        )
     if request.all and (request.names or request.bundles):
         return Err(
             "--all cannot be combined with named artifacts or --bundle",

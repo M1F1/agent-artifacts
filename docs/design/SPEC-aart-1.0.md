@@ -1188,24 +1188,36 @@ alphas increment. Stable `1.0.0` requires all release gates.
 
 ## 26. Local installation and future Nexus readiness
 
-Supported initial delivery remains local, for example:
+Supported initial delivery remains explicit and local:
 
 ```text
-pip install -e /path/to/agent-artifacts
+pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
+pip install --no-index --no-deps /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl
 ```
 
-Verified local `pipx`/`uv tool` and local-wheel flows may be added. The wheel contains:
+The hermetic distribution smoke executes both forms in isolated tool environments from outside the
+checkout. It syncs a native source, installs Copy and immutable managed Symlink targets, deletes
+and recreates the executable environment, resumes status/uninstall/reinstall, and verifies that
+managed links survive both environment removals. The wheel contains:
 
 - executable Python package;
 - schemas;
 - built-in harness profiles;
 - built-in source importers;
 - scaffold templates;
-- minimal test/reference fixtures only when required.
+
+Package resources are allowlisted to schemas/profiles/importers/templates. Operational registries,
+artifact payloads, unexpected package data, duplicate/unsafe archive paths, and unconditional
+runtime dependencies fail the packaging gate.
 
 The wheel MUST NOT contain the public/company operational registry. Runtime config, mirrors,
 snapshots, CAS objects, and state MUST live outside the environment. Deleting and recreating the
 Python environment MUST NOT break managed object symlinks.
+
+`aart upgrade` requires exactly one reviewed local `--wheel FILE` or `--source-checkout DIR` and
+constructs a fixed index-free pip invocation. It never infers a repository/version or contacts an
+index. Editable replacement also disables build isolation. Local source state accepts the legacy
+`local` revision and the canonical snapshot-bound `local:<sha256>` revision during migration.
 
 Future Nexus/PyPI work may add install/upgrade documentation and release automation. It MUST NOT
 require changing the protocol, source config, managed store, or install manifest model.

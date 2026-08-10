@@ -144,6 +144,17 @@ class InstallStateSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "local source origin"):
             replace(source, resolved_commit="a" * 40)
 
+    def test_local_source_accepts_snapshot_bound_revision(self) -> None:
+        source = SourceEvidence(
+            SourceAlias("local"),
+            SourceId("local-artifacts"),
+            SourceKind.SOURCE_LOCAL,
+            "/work/artifacts",
+            "local:" + "a" * 64,
+        )
+
+        self.assertEqual(source.resolved_commit, "local:" + "a" * 64)
+
     def test_state_rejects_duplicate_installation_identity(self) -> None:
         with self.assertRaisesRegex(ValueError, "unique"):
             InstallState(2, (_record(), _record()))

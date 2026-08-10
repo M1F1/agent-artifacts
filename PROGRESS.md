@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `MIG01`
+- **Next task:** `E2E01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -69,8 +69,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) | Local gates and initial four-job Python 3.10/3.14 CI matrix pass; final ledger matrix pending |
-| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
+| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
+| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | pending | Local gates pass; PR/CI/merge pending |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
 
@@ -80,28 +80,25 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: MIG01 — Complete legacy catalog/command/config migration and compatibility window
-Branch: codex/aart-1-0-mig01-compatibility-migration
-Worktree: /private/tmp/aart-mig01.hzETM7/worktree
+Task: DIST01 — Prove local editable/local-wheel and future Nexus readiness
+Branch: codex/aart-1-0-dist01-distribution
+Worktree: /private/tmp/aart-dist01.BUUQhs/worktree
 Started: 2026-08-10
-Bounded contexts: explicit 0.1 state migration orchestration, canonical evidence resolution,
-  deterministic recovery/rollback, and bounded command/config compatibility adapters
-Red test and expected failure: `python -m unittest tests.install_state_migration_test
-  tests.state_migration_store_test tests.state_migration_orchestration_test
-  tests.migrate_cli_test` failed on missing separate 0.1 proof fields, collision planning,
-  durable receipts, process-restart recovery, migration orchestration/module, public parser/dispatch,
-  legacy default removal, and deprecation output
-Focused tests: 84 passed + 46 subtests across migration planner/store/orchestration/CLI/fixture and
-  legacy CLI regressions
-Files owned: application/legacy_state_migration.py, application/state_migration.py,
-  install_state migration model/ports/planner, io/state_store.py, commands/migrate.py, CLI request/
-  parser/rules/dispatch, source compatibility adapter, lifecycle symlink transition, committed 0.1
-  project/user fixtures and migration tests, README/SPEC/state docs, PROGRESS.md
-Risks/migrations: never infer ambiguous sources or effects; preserve exact old bytes and behavior on
-  failure; no default package-catalog fallback after successful migration
-PR: #57 — https://github.com/M1F1/agent-artifacts/pull/57
-CI: initial push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
-Merge: pending
+Bounded contexts: distribution wheel/resources, isolated local install smoke runner, documented
+  local editable/wheel and future-index upgrade boundary
+Red test and expected failure: `python -m unittest tests.upgrade_test tests.packaging_test
+  tests.distribution_e2e_test` produced the expected missing `plan_upgrade`, missing hermetic
+  `scripts/distribution_smoke.py`, and absent wheel-resource allowlist failures
+Focused tests: 86 pass across upgrade/CLI rules, install-state schema, wheel packaging, and the
+  editable-to-wheel lifecycle smoke
+Files owned: upgrade command/parser/request/rules, local source revision evidence, wheel builder
+  and packaging checker, distribution smoke/test, README/distribution/SPEC docs, PROGRESS.md
+Risks/migrations: no real index/home/network; wheel cannot contain operational registry/state;
+  environment recreation does not invalidate immutable managed object Symlinks; legacy `local`
+  state remains readable alongside snapshot-bound `local:<sha256>` evidence
+PR: pending
+CI: pending
+Merge: MIG01 `e70ec62`; DIST01 pending
 ```
 
 ## Quality-gate history
@@ -137,7 +134,8 @@ Merge: pending
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
-| MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | initial 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
+| MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
+| DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1403,3 +1401,35 @@ None.
   `31420310320`.
 - This ledger update records the remote evidence and triggers the final matrix before protected
   squash merge; MIG01's complete status becomes authoritative only on `main`.
+
+### 2026-08-10 — MIG01 merged; DIST01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #57 as `e70ec62`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preservation of the unrelated
+  root-worktree files.
+- Removed only the clean MIG01 temporary worktree/branch and created isolated DIST01 from exact
+  merge `e70ec62`. Distribution work remains local and hermetic: no Nexus/PyPI publication or real
+  user home, index, credentials, registry, or network is in scope.
+
+### 2026-08-10 — DIST01 implementation and local gates complete
+
+- Replaced implicit remote self-update with an explicit typed local upgrade plan. Exactly one real
+  wheel or checkout is required; fixed pip argv always contains `--no-index --no-deps`, editable
+  mode disables build isolation, dry-run invokes no runner, and virtualenv `sys.executable` is kept
+  intact rather than resolving through its symlink to a base interpreter.
+- Added an independent wheel allowlist and packaging audit for normalized regular members, exact
+  distribution identity, complete SHA-256/size-bound `RECORD`, zero unconditional runtime
+  dependencies, and exclusion of operational artifact/registry content and symlinked package data.
+- Added a hermetic editable-to-wheel lifecycle runner. From outside the checkout it syncs a native
+  source, installs Copy and immutable-object Symlink targets, removes the editable environment,
+  resumes status/uninstall/reinstall from the local wheel, removes that environment, and proves the
+  managed link survives both removals without an index or real user paths.
+- The lifecycle exposed and fixed a domain mismatch: source synchronization emits
+  `local:<snapshot-sha256>`, while installation state accepted only legacy `local`. Both remain
+  readable, and new synced installations retain snapshot-bound evidence.
+- The `code-review` pass removed inherited `PYTHONPATH`/`PYTHONHOME` contamination from phase
+  processes and added missing wheel `RECORD`, unsafe-member, and package-directory-symlink checks.
+- Final local evidence: 86 focused tests pass. `make quality` passes Ruff format over 406 files,
+  Ruff lint, mypy over 188 source modules, 1546 unit tests, 36 Python integration tests, the
+  11-step shell E2E, strict validation/version checks, 85.54% overall branch coverage, hardened
+  `1.0.0a1` packaging, and documentation checks.

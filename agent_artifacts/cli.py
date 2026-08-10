@@ -316,10 +316,25 @@ def build_parser() -> argparse.ArgumentParser:
     # upgrade ----------------------------------------------------------------- #
     p = sub.add_parser(
         "upgrade",
-        help="reinstall the tool itself from the source (offline-capable)",
+        help="reinstall AART from one explicit local wheel or checkout",
+        description=(
+            "Replace this AART executable from one reviewed local input. "
+            "AART 1.0 never discovers an index or source repository implicitly."
+        ),
     )
-    _add_repo(p)
-    _add_version(p)
+    upgrade_source = p.add_mutually_exclusive_group(required=True)
+    upgrade_source.add_argument(
+        "--wheel",
+        dest="upgrade_wheel",
+        metavar="FILE",
+        help="install an exact local agent_artifacts wheel without an index",
+    )
+    upgrade_source.add_argument(
+        "--source-checkout",
+        dest="upgrade_source_checkout",
+        metavar="DIR",
+        help="reinstall editable from an exact local AART checkout without an index",
+    )
     p.add_argument(
         "--dry-run", action="store_true", help="print the pip invocation; install nothing"
     )
@@ -953,6 +968,8 @@ def _to_request(args: argparse.Namespace) -> Request:
         migration_from=getattr(args, "migration_from", None),
         source_mappings=tuple(getattr(args, "source_map", ()) or ()),
         rollback=bool(getattr(args, "rollback", False)),
+        upgrade_wheel=getattr(args, "upgrade_wheel", None),
+        upgrade_source_checkout=getattr(args, "upgrade_source_checkout", None),
     )
 
 

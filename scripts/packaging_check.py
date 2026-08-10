@@ -3,15 +3,22 @@
 
 from __future__ import annotations
 
+import base64
+import csv
+import hashlib
+import io
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
+_RESOURCE_ROOTS = frozenset({"schemas", "profiles", "importers", "templates"})
+_DIST_INFO_FILES = frozenset({"METADATA", "WHEEL", "entry_points.txt", "RECORD", "top_level.txt"})
 
 
 def _copy_project(source: Path, target: Path) -> None:
@@ -46,6 +53,7 @@ def _build_wheel(source_copy: Path, wheel_dir: Path) -> None:
             "pip",
             "wheel",
             "--disable-pip-version-check",
+            "--no-index",
             "--no-deps",
             "--no-build-isolation",
             "--wheel-dir",
@@ -57,6 +65,66 @@ def _build_wheel(source_copy: Path, wheel_dir: Path) -> None:
     )
 
 
+def _safe_archive_name(name: str) -> bool:
+    path = PurePosixPath(name)
+    encoded_parts = tuple(name.split("/"))
+    return (
+        bool(name)
+        and "\x00" not in name
+        and "\\" not in name
+        and not name.startswith("/")
+        and not name.endswith("/")
+        and tuple(path.parts) == encoded_parts
+        and all(part not in {".", ".."} for part in path.parts)
+    )
+
+
+def _allowed_package_member(name: str) -> bool:
+    parts = PurePosixPath(name).parts
+    if len(parts) < 2 or parts[0] != "agent_artifacts":
+        return False
+    if name.endswith(".py"):
+        return True
+    return len(parts) >= 3 and parts[1] in _RESOURCE_ROOTS
+
+
+def _allowed_dist_info_member(name: str, info: str) -> bool:
+    parts = PurePosixPath(name).parts
+    if len(parts) == 2 and parts[0] == info:
+        return parts[1] in _DIST_INFO_FILES
+    return len(parts) >= 3 and parts[0] == info and parts[1] == "licenses"
+
+
+def _regular_archive_members(archive: zipfile.ZipFile) -> tuple[str, ...]:
+    rejected = []
+    for item in archive.infolist():
+        file_type = stat.S_IFMT(item.external_attr >> 16)
+        if file_type not in {0, stat.S_IFREG}:
+            rejected.append(item.filename)
+    return tuple(rejected)
+
+
+def _validate_record(archive: zipfile.ZipFile, names: list[str], record_name: str) -> None:
+    try:
+        rows = tuple(csv.reader(io.StringIO(archive.read(record_name).decode("utf-8"))))
+    except (KeyError, UnicodeDecodeError, csv.Error) as error:
+        raise ValueError("wheel RECORD is unreadable") from error
+    if any(len(row) != 3 for row in rows):
+        raise ValueError("wheel RECORD rows must have three fields")
+    recorded = tuple(row[0] for row in rows)
+    if len(recorded) != len(set(recorded)) or set(recorded) != set(names):
+        raise ValueError("wheel RECORD does not list every member exactly once")
+    for name, digest, raw_size in rows:
+        if name == record_name:
+            if digest or raw_size:
+                raise ValueError("wheel RECORD self-entry must omit digest and size")
+            continue
+        content = archive.read(name)
+        expected = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode()
+        if digest != f"sha256={expected}" or raw_size != str(len(content)):
+            raise ValueError(f"wheel RECORD evidence mismatch: {name}")
+
+
 def _validate_wheel(wheel: Path, install_root: Path) -> None:
     if not zipfile.is_zipfile(wheel):
         raise ValueError(f"not a wheel zip: {wheel.name}")
@@ -65,10 +133,29 @@ def _validate_wheel(wheel: Path, install_root: Path) -> None:
         if corrupt:
             raise ValueError(f"corrupt wheel member: {corrupt}")
         names = archive.namelist()
+        if len(names) != len(set(names)):
+            raise ValueError("wheel contains duplicate archive members")
+        unsafe = tuple(name for name in names if not _safe_archive_name(name))
+        if unsafe:
+            raise ValueError(f"wheel contains unsafe archive members: {unsafe}")
+        special = _regular_archive_members(archive)
+        if special:
+            raise ValueError(f"wheel contains non-regular archive members: {special}")
         records = [name for name in names if name.endswith(".dist-info/RECORD")]
         if len(records) != 1:
             raise ValueError(f"expected one RECORD, found {records}")
         info = records[0].split("/")[0]
+        expected_info = wheel.name.removesuffix("-py3-none-any.whl") + ".dist-info"
+        if info != expected_info:
+            raise ValueError(f"wheel filename and dist-info identity disagree: {info}")
+        rejected = tuple(
+            name
+            for name in names
+            if not _allowed_package_member(name) and not _allowed_dist_info_member(name, info)
+        )
+        if rejected:
+            raise ValueError(f"wheel member allowlist rejects: {rejected}")
+        _validate_record(archive, names, records[0])
         metadata = archive.read(f"{info}/METADATA").decode("utf-8")
         requirements = tuple(
             line.removeprefix("Requires-Dist:").strip()

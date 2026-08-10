@@ -1,305 +1,120 @@
-"""Tests for ``agent_artifacts.commands.upgrade`` (WP-17).
-
-stdlib only — ``unittest`` + ``tempfile``. The injectable ``runner`` and ``opener`` ensure
-no live network calls or real pip invocations happen.
-"""
+"""Explicit, index-free local upgrade boundary for AART 1.0."""
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import sys
 import tempfile
 import unittest
-from io import StringIO
-from typing import List
+from pathlib import Path
 
-from agent_artifacts.commands.upgrade import _upgrade
-from agent_artifacts.model import Ok, Request
-
-
-def _request(*, dry_run: bool = False, version: str | None = None) -> Request:
-    return Request(command="upgrade", dry_run=dry_run, version=version)
+from agent_artifacts.commands.upgrade import plan_upgrade, run
+from agent_artifacts.domain.result import Err, Ok
+from agent_artifacts.model import Request
 
 
-class _FakeRunner:
-    """Records the argv it was called with and returns a configurable exit code."""
+class UpgradePlanningTest(unittest.TestCase):
+    def test_wheel_plan_is_explicit_absolute_and_index_free(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel.write_bytes(b"fixture")
 
-    def __init__(self, rc: int = 0) -> None:
-        self.calls: List[List[str]] = []
-        self.rc = rc
+            result = plan_upgrade(sys.executable, wheel=str(wheel), source_checkout=None)
 
-    def __call__(self, argv: List[str]) -> int:
-        self.calls.append(list(argv))
-        return self.rc
+            self.assertIsInstance(result, Ok)
+            self.assertEqual(result.value.source_kind, "wheel")
+            self.assertEqual(result.value.argv[:4], (sys.executable, "-m", "pip", "install"))
+            self.assertIn("--no-index", result.value.argv)
+            self.assertIn("--no-deps", result.value.argv)
+            self.assertNotIn("--index-url", result.value.argv)
+            self.assertEqual(result.value.argv[-1], str(wheel))
 
+    def test_editable_plan_requires_a_real_checkout_and_disables_index_access(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = Path(raw, "source")
+            checkout.mkdir()
+            (checkout / "agent_artifacts").mkdir()
+            (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
 
-def _never_opener(_req):
-    raise AssertionError("opener must not be called in local-wheel tests")
-
-
-class TestLocalWheelDryRun(unittest.TestCase):
-    """Dry-run with a local wheel: prints pip argv, never calls runner or opener."""
-
-    def setUp(self) -> None:
-        self.tmpdir = tempfile.mkdtemp()
-        self.dist_dir = os.path.join(self.tmpdir, "dist")
-        os.makedirs(self.dist_dir)
-        self.wheel = os.path.join(self.dist_dir, "agent_artifacts-0.1.0-py3-none-any.whl")
-        with open(self.wheel, "wb") as f:
-            f.write(b"fake wheel")
-
-    def test_dry_run_prints_argv_and_does_not_run(self) -> None:
-        runner = _FakeRunner()
-        # Capture stdout.
-        import contextlib
-
-        buf = StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = _upgrade(
-                _request(dry_run=True),
-                runner=runner,
-                opener=_never_opener,
-                dist_dir=self.dist_dir,
-            )
-        output = buf.getvalue()
-
-        # Exit OK.
-        self.assertEqual(rc, 0)
-        # Runner was NOT called (dry-run).
-        self.assertEqual(len(runner.calls), 0)
-        # Printed line contains the expected pip tokens.
-        self.assertIn("pip", output)
-        self.assertIn("install", output)
-        self.assertIn("--no-index", output)
-        self.assertIn("--force-reinstall", output)
-        self.assertIn("agent_artifacts-0.1.0-py3-none-any.whl", output)
-        # NEVER references PyPI or an index URL.
-        self.assertNotIn("pypi", output.lower())
-        self.assertNotIn("--index-url", output)
-        self.assertNotIn("--extra-index-url", output)
-
-    def test_opener_never_called(self) -> None:
-        """With a local wheel, opener must not be invoked even on non-dry-run."""
-        runner = _FakeRunner()
-        import contextlib
-
-        buf = StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = _upgrade(
-                _request(dry_run=False),
-                runner=runner,
-                opener=_never_opener,
-                dist_dir=self.dist_dir,
-            )
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(runner.calls), 1)
-
-
-class TestLocalWheelExecute(unittest.TestCase):
-    """Execute path (non-dry-run) with a local wheel: calls runner, returns correct exit code."""
-
-    def setUp(self) -> None:
-        self.tmpdir = tempfile.mkdtemp()
-        self.dist_dir = os.path.join(self.tmpdir, "dist")
-        os.makedirs(self.dist_dir)
-        self.wheel = os.path.join(self.dist_dir, "agent_artifacts-0.1.0-py3-none-any.whl")
-        with open(self.wheel, "wb") as f:
-            f.write(b"fake wheel")
-
-    def test_execute_success(self) -> None:
-        runner = _FakeRunner(rc=0)
-        import contextlib
-
-        buf = StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = _upgrade(
-                _request(dry_run=False),
-                runner=runner,
-                opener=_never_opener,
-                dist_dir=self.dist_dir,
-            )
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(runner.calls), 1)
-
-        argv = runner.calls[0]
-        # Starts with sys.executable -m pip install --no-index ...
-        self.assertEqual(argv[0], sys.executable)
-        self.assertEqual(argv[1:5], ["-m", "pip", "install", "--no-index"])
-        self.assertIn("--force-reinstall", argv)
-        self.assertTrue(argv[-1].endswith(".whl"))
-        # Index-free assertion.
-        self.assertNotIn("--index-url", argv)
-        self.assertNotIn("--extra-index-url", argv)
-
-    def test_execute_failure(self) -> None:
-        runner = _FakeRunner(rc=1)
-        import contextlib
-
-        buf = StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = _upgrade(
-                _request(dry_run=False),
-                runner=runner,
-                opener=_never_opener,
-                dist_dir=self.dist_dir,
-            )
-        # Runner failure → ERROR (1).
-        self.assertEqual(rc, 1)
-
-
-class TestRemotePath(unittest.TestCase):
-    """Remote path (no local wheel): resolve_ref → ensure_snapshot → pip install snapshot."""
-
-    def setUp(self) -> None:
-        # Empty dist dir — forces the remote path.
-        self.tmpdir = tempfile.mkdtemp()
-        self.dist_dir = os.path.join(self.tmpdir, "dist")
-        os.makedirs(self.dist_dir)  # exists but no wheel
-
-    def test_remote_dry_run(self) -> None:
-        """Remote dry-run: resolves ref, ensures snapshot, prints argv, does not run."""
-        runner = _FakeRunner()
-        fake_sha = "abc123def456"
-        snapshot_dir = os.path.join(self.tmpdir, "snapshot")
-        os.makedirs(snapshot_dir, exist_ok=True)
-
-        import contextlib
-        from unittest.mock import patch
-
-        buf = StringIO()
-        with (
-            patch("agent_artifacts.commands.upgrade.resolve_ref", return_value=Ok(fake_sha)),
-            patch("agent_artifacts.commands.upgrade.ensure_snapshot", return_value=snapshot_dir),
-            patch("agent_artifacts.commands.upgrade.fetch_tarball"),
-            contextlib.redirect_stdout(buf),
-        ):
-            rc = _upgrade(
-                _request(dry_run=True),
-                runner=runner,
-                dist_dir=self.dist_dir,
+            result = plan_upgrade(
+                sys.executable,
+                wheel=None,
+                source_checkout=str(checkout),
             )
 
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(runner.calls), 0)
-        output = buf.getvalue()
-        self.assertIn("pip", output)
-        self.assertIn("--no-index", output)
-        self.assertIn("--no-build-isolation", output)
-        self.assertIn("--force-reinstall", output)
-        self.assertIn(snapshot_dir, output)
-        self.assertNotIn("pypi", output.lower())
-        self.assertNotIn("--index-url", output)
+            self.assertIsInstance(result, Ok)
+            self.assertEqual(result.value.source_kind, "editable")
+            self.assertIn("--editable", result.value.argv)
+            self.assertIn("--no-build-isolation", result.value.argv)
+            self.assertIn("--no-index", result.value.argv)
+            self.assertEqual(result.value.argv[-1], str(checkout))
 
-    def test_remote_execute(self) -> None:
-        runner = _FakeRunner(rc=0)
-        fake_sha = "abc123def456"
-        snapshot_dir = os.path.join(self.tmpdir, "snapshot")
-        os.makedirs(snapshot_dir, exist_ok=True)
+    def test_missing_ambiguous_and_unsafe_sources_fail_before_pip(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel.write_bytes(b"fixture")
+            checkout = Path(raw, "source")
+            checkout.mkdir()
+            (checkout / "agent_artifacts").mkdir()
+            (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+            linked = Path(raw, "linked.whl")
+            linked.symlink_to(wheel)
 
-        import contextlib
-        from unittest.mock import patch
-
-        buf = StringIO()
-        with (
-            patch("agent_artifacts.commands.upgrade.resolve_ref", return_value=Ok(fake_sha)),
-            patch("agent_artifacts.commands.upgrade.ensure_snapshot", return_value=snapshot_dir),
-            patch("agent_artifacts.commands.upgrade.fetch_tarball"),
-            contextlib.redirect_stdout(buf),
-        ):
-            rc = _upgrade(
-                _request(dry_run=False),
-                runner=runner,
-                dist_dir=self.dist_dir,
+            cases = (
+                plan_upgrade(sys.executable, wheel=None, source_checkout=None),
+                plan_upgrade(
+                    sys.executable,
+                    wheel=str(wheel),
+                    source_checkout=str(checkout),
+                ),
+                plan_upgrade(sys.executable, wheel=str(linked), source_checkout=None),
+                plan_upgrade(
+                    sys.executable,
+                    wheel=str(Path(raw, "wrong.whl")),
+                    source_checkout=None,
+                ),
             )
 
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(runner.calls), 1)
-        argv = runner.calls[0]
-        self.assertEqual(argv[0], sys.executable)
-        self.assertEqual(argv[1:5], ["-m", "pip", "install", "--no-index"])
-        self.assertIn("--no-build-isolation", argv)
-        self.assertIn("--force-reinstall", argv)
-        self.assertEqual(argv[-1], snapshot_dir)
+            self.assertTrue(all(isinstance(result, Err) for result in cases))
 
-    def test_network_failure_returns_network_code(self) -> None:
-        """resolve_ref returning Err → prints reason, returns NETWORK (3)."""
-        from agent_artifacts.model import Err
 
-        runner = _FakeRunner()
+class UpgradeCommandTest(unittest.TestCase):
+    def test_dry_run_quotes_paths_and_never_invokes_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wheel = Path(raw, "wheel dir", "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel.parent.mkdir()
+            wheel.write_bytes(b"fixture")
+            calls: list[tuple[str, ...]] = []
+            output = io.StringIO()
 
-        import contextlib
-        from unittest.mock import patch
+            with contextlib.redirect_stdout(output):
+                result = run(
+                    Request(command="upgrade", upgrade_wheel=str(wheel), dry_run=True),
+                    runner=lambda argv: calls.append(tuple(argv)) or 0,
+                )
 
-        buf = StringIO()
-        with (
-            patch(
-                "agent_artifacts.commands.upgrade.resolve_ref",
-                return_value=Err("connection refused", code=3),
-            ),
-            contextlib.redirect_stdout(buf),
-        ):
-            rc = _upgrade(
-                _request(dry_run=False),
-                runner=runner,
-                dist_dir=self.dist_dir,
+            self.assertEqual(result, 0)
+            self.assertEqual(calls, [])
+            self.assertIn("'" + str(wheel) + "'", output.getvalue())
+            self.assertNotIn("pypi", output.getvalue().casefold())
+
+    def test_apply_uses_reviewed_fixed_argv_and_propagates_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel.write_bytes(b"fixture")
+            calls: list[tuple[str, ...]] = []
+
+            result = run(
+                Request(command="upgrade", upgrade_wheel=str(wheel)),
+                runner=lambda argv: calls.append(tuple(argv)) or 9,
             )
 
-        self.assertEqual(rc, 3)
-        self.assertEqual(len(runner.calls), 0)
-        self.assertIn("connection refused", buf.getvalue())
-
-
-class TestWheelSelection(unittest.TestCase):
-    """When multiple wheels exist, the latest (sorted last) is chosen."""
-
-    def test_picks_latest_wheel(self) -> None:
-        tmpdir = tempfile.mkdtemp()
-        dist_dir = os.path.join(tmpdir, "dist")
-        os.makedirs(dist_dir)
-        for ver in ("0.1.0", "0.2.0", "0.3.0"):
-            with open(os.path.join(dist_dir, f"agent_artifacts-{ver}-py3-none-any.whl"), "wb") as f:
-                f.write(b"fake")
-
-        runner = _FakeRunner()
-        import contextlib
-
-        buf = StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = _upgrade(
-                _request(dry_run=True),
-                runner=runner,
-                opener=_never_opener,
-                dist_dir=dist_dir,
-            )
-        self.assertEqual(rc, 0)
-        self.assertIn("0.3.0", buf.getvalue())
-
-
-class TestRunEntryPoint(unittest.TestCase):
-    """``run(request)`` delegates to ``_upgrade``."""
-
-    def test_run_delegates(self) -> None:
-        from agent_artifacts.commands.upgrade import run
-
-        tmpdir = tempfile.mkdtemp()
-        dist_dir = os.path.join(tmpdir, "dist")
-        os.makedirs(dist_dir)
-        with open(os.path.join(dist_dir, "agent_artifacts-1.0.0-py3-none-any.whl"), "wb") as f:
-            f.write(b"fake")
-
-        import contextlib
-        from unittest.mock import patch
-
-        buf = StringIO()
-        with (
-            contextlib.redirect_stdout(buf),
-            patch("agent_artifacts.commands.upgrade._find_local_wheel") as mock_find,
-        ):
-            mock_find.return_value = os.path.join(
-                dist_dir, "agent_artifacts-1.0.0-py3-none-any.whl"
-            )
-            rc = run(_request(dry_run=True))
-        self.assertEqual(rc, 0)
+            self.assertEqual(result, 1)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][-1], str(wheel))
+            self.assertEqual(calls[0][0], os.path.abspath(sys.executable))
 
 
 if __name__ == "__main__":

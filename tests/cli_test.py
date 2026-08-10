@@ -209,9 +209,13 @@ class TestRequestMapping(unittest.TestCase):
         self.assertTrue(req.json)
 
     def test_upgrade_dry_run(self):
-        rc, req = _dispatch(["upgrade", "--version", "main", "--dry-run"], command="upgrade")
+        rc, req = _dispatch(
+            ["upgrade", "--wheel", "/tmp/agent_artifacts-1.0.0a1-py3-none-any.whl", "--dry-run"],
+            command="upgrade",
+        )
         self.assertEqual(rc, 0)
-        self.assertEqual(req.version, "main")
+        self.assertEqual(req.upgrade_wheel, "/tmp/agent_artifacts-1.0.0a1-py3-none-any.whl")
+        self.assertIsNone(req.upgrade_source_checkout)
         self.assertTrue(req.dry_run)
 
     def test_status_minimal(self):
@@ -319,7 +323,15 @@ class TestUsageErrors(unittest.TestCase):
         self.assertIn("unrecognized arguments: --source", err)
 
     def test_upgrade_rejects_project(self):
-        rc, err = self._run_argparse_error(["upgrade", "--project", "./app"])
+        rc, err = self._run_argparse_error(
+            [
+                "upgrade",
+                "--wheel",
+                "/tmp/agent_artifacts-1.0.0a1-py3-none-any.whl",
+                "--project",
+                "./app",
+            ]
+        )
         self.assertEqual(rc, 2)
         self.assertIn("unrecognized arguments: --project", err)
 

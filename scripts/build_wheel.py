@@ -22,6 +22,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+_RESOURCE_ROOTS = frozenset({"schemas", "profiles", "importers", "templates"})
 
 
 def load_project() -> dict:
@@ -71,12 +72,25 @@ def entry_points_text(scripts: dict) -> str:
     return "[console_scripts]\n" + "".join(f"{k} = {v}\n" for k, v in scripts.items())
 
 
-def collect_package_files() -> dict:
+def _allowed_package_member(arcname: str) -> bool:
+    parts = tuple(Path(arcname).parts)
+    if len(parts) < 2 or parts[0] != "agent_artifacts":
+        return False
+    if arcname.endswith(".py"):
+        return True
+    return len(parts) >= 3 and parts[1] in _RESOURCE_ROOTS
+
+
+def collect_package_files() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     for path in sorted((ROOT / "agent_artifacts").rglob("*")):
+        arc = str(path.relative_to(ROOT)).replace(os.sep, "/")
+        if path.is_symlink():
+            raise ValueError(f"wheel resource allowlist rejects: {arc}")
         if path.is_dir() or path.suffix == ".pyc" or "__pycache__" in path.parts:
             continue
-        arc = str(path.relative_to(ROOT)).replace(os.sep, "/")
+        if not path.is_file() or not _allowed_package_member(arc):
+            raise ValueError(f"wheel resource allowlist rejects: {arc}")
         files[arc] = path.read_bytes()
     return files
 
