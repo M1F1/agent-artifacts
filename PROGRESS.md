@@ -68,7 +68,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | in_progress | `codex/aart-1-0-sep01-reference-registry` | pending | Public registry created from one audited root commit; minimum/latest registry CI passed; tool PR pending |
+| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | in_progress | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / pending | Public registry created from one audited root commit; minimum/latest registry CI passed; replacement tool CI pending |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
@@ -95,8 +95,9 @@ Files owned: legacy importer license option, public export/audit application and
   boundary tests, reference/company registry documentation, LICENSE, TODO.md, and PROGRESS.md
 Risks/migrations: never export working-tree bytes or Git history; reject credentials, private paths,
   absent licenses, invalid provenance, generated/cache files, symlinks, and any unexpected tree path
-PR: pending
-CI: pending
+PR: https://github.com/M1F1/agent-artifacts/pull/56 (ready)
+CI: initial matrix exposed Python 3.10 wheel-builder and detached PR-merge fixture assumptions;
+  test-only compatibility fix passes the complete local quality wrapper; replacement matrix pending
 Merge: pending
 ```
 
@@ -1321,3 +1322,19 @@ None.
   passed format-check, strict frozen validation, lock/build checks, audit, and its compatibility
   test against the tool's public `main`. Node-runtime deprecation annotations on upstream Actions
   are informational and did not alter either successful job result.
+
+### 2026-08-10 — SEP01 tool CI compatibility correction
+
+- Published implementation commit `ab7bbda` and opened ready PR #56. The initial push/PR matrices
+  failed only in the new reference-export E2E fixture: Python 3.10 cannot directly run the
+  repository's Python 3.11+ stdlib wheel builder, and GitHub's detached synthetic PR-merge commit
+  was not reachable through a source ref when the exporter fetched the exact commit.
+- Kept product and publication behavior unchanged. The E2E fixture now exposes checkout `HEAD`
+  under an explicit local Git ref before exact-commit export and reuses the established
+  cross-version packaging helper, which selects the stdlib builder on Python 3.11+ and the
+  dependency-free `pip wheel --no-build-isolation` path on Python 3.10.
+- The corrected focused E2E test passes. A fresh non-PTY `make quality` passes Ruff format/lint
+  over 399 files, mypy over 186 source modules, 1519 unit tests, 31 integration tests, the
+  11-step shell E2E, validation, 85.83% overall branch coverage (92.81% publication boundary),
+  packaging, and docs. A diagnostic PTY run alone demonstrated the existing terminal-width
+  truncation behavior in two TUI snapshot assertions; official local and CI gates run without PTY.

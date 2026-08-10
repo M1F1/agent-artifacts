@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +12,7 @@ from pathlib import Path
 from tests.packaging_test import _load_script
 
 ROOT = Path(__file__).resolve().parents[1]
+APPROVED_ORIGIN = "https://github.com/M1F1/agent-artifacts.git"
 
 
 def _tree(root: Path) -> tuple[tuple[str, bytes], ...]:
@@ -23,11 +23,32 @@ def _tree(root: Path) -> tuple[tuple[str, bytes], ...]:
     )
 
 
+def _committed_source(root: Path) -> tuple[Path, str]:
+    """Expose checkout HEAD under a ref, including GitHub's detached PR merge commit."""
+
+    source = root / "committed-source"
+    source.mkdir()
+    subprocess.run(("git", "-C", str(source), "init", "-q"), check=True)
+    subprocess.run(("git", "-C", str(source), "fetch", "-q", str(ROOT), "HEAD"), check=True)
+    commit = subprocess.run(
+        ("git", "-C", str(source), "rev-parse", "FETCH_HEAD"),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ("git", "-C", str(source), "update-ref", "refs/heads/export", commit), check=True
+    )
+    subprocess.run(
+        ("git", "-C", str(source), "remote", "add", "origin", APPROVED_ORIGIN), check=True
+    )
+    return source, commit
+
+
 class ReferenceRegistryExportE2ETest(unittest.TestCase):
     def test_export_rejects_a_checkout_that_claims_an_unapproved_origin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            source = Path(temporary) / "source"
-            subprocess.run(("git", "clone", "-q", "--no-local", str(ROOT), str(source)), check=True)
+            source, commit = _committed_source(Path(temporary))
             subprocess.run(
                 (
                     "git",
@@ -40,12 +61,6 @@ class ReferenceRegistryExportE2ETest(unittest.TestCase):
                 ),
                 check=True,
             )
-            commit = subprocess.run(
-                ("git", "-C", str(source), "rev-parse", "HEAD"),
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
             destination = Path(temporary) / "destination"
             result = subprocess.run(
                 (
@@ -68,14 +83,8 @@ class ReferenceRegistryExportE2ETest(unittest.TestCase):
     def test_exact_committed_source_exports_deterministically_and_works_outside_checkout(
         self,
     ) -> None:
-        commit = subprocess.run(
-            ("git", "rev-parse", "HEAD"),
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
         with tempfile.TemporaryDirectory() as temporary:
+            source, commit = _committed_source(Path(temporary))
             first = Path(temporary) / "first"
             second = Path(temporary) / "second"
             for destination in (first, second):
@@ -84,7 +93,7 @@ class ReferenceRegistryExportE2ETest(unittest.TestCase):
                         sys.executable,
                         str(ROOT / "scripts/prepare_reference_registry.py"),
                         "--source-checkout",
-                        str(ROOT),
+                        str(source),
                         "--source-commit",
                         commit,
                         "--destination",
@@ -103,17 +112,13 @@ class ReferenceRegistryExportE2ETest(unittest.TestCase):
             self.assertEqual(_tree(first), _tree(second))
 
             build_root = Path(temporary) / "wheel-source"
-            shutil.copytree(
-                ROOT / "agent_artifacts",
-                build_root / "agent_artifacts",
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-            )
-            shutil.copy2(ROOT / "pyproject.toml", build_root / "pyproject.toml")
-            shutil.copy2(ROOT / "README.md", build_root / "README.md")
-            build = _load_script("build_wheel")
-            build.ROOT = build_root
-            self.assertEqual(build.main(), 0)
-            wheel = next((build_root / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+            build_root.mkdir()
+            wheel_root = Path(temporary) / "wheel"
+            wheel_root.mkdir()
+            packaging = _load_script("packaging_check")
+            packaging._copy_project(ROOT, build_root)
+            packaging._build_wheel(build_root, wheel_root)
+            wheel = next(wheel_root.glob("agent_artifacts-*-py3-none-any.whl"))
             with zipfile.ZipFile(wheel) as archive:
                 names = archive.namelist()
             for operational_root in (
