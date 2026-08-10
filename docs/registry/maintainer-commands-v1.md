@@ -67,9 +67,10 @@ mismatch, compiles registry-owned packages and references, and writes no payload
 `aart.index.json`.
 
 An entry whose review status is not `approved` cannot be locked and fails `audit`. Audit warnings
-are evidence gaps, not safety claims: missing license/provenance and the not-yet-available
-installation-risk assessment are reported explicitly while the zero-dependency baseline remains
-in place. Later security tasks can add evidence providers without changing this command boundary.
+are evidence gaps, not installation-risk conclusions: missing license/provenance and absent
+per-object assessment evidence are reported explicitly. The stdlib-only baseline is documented in
+[`baseline-v1.md`](../security/baseline-v1.md); later security tasks wire assessment caches,
+attestations, policy, and CLI commands into this existing registry command boundary.
 
 ## Migration
 
