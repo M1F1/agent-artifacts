@@ -69,7 +69,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | pending | Local gates pass: explicit dry-run/apply/durable rollback, strict source/effect resolution, committed all-type project/user fixtures, restart/fault/collision recovery, and disclosed legacy adapters |
+| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) | Local gates and initial four-job Python 3.10/3.14 CI matrix pass; final ledger matrix pending |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
@@ -99,8 +99,8 @@ Files owned: application/legacy_state_migration.py, application/state_migration.
   project/user fixtures and migration tests, README/SPEC/state docs, PROGRESS.md
 Risks/migrations: never infer ambiguous sources or effects; preserve exact old bytes and behavior on
   failure; no default package-catalog fallback after successful migration
-PR: pending
-CI: pending
+PR: #57 — https://github.com/M1F1/agent-artifacts/pull/57
+CI: initial push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -137,7 +137,7 @@ Merge: pending
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
-| MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | pending |
+| MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | initial 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1395,3 +1395,11 @@ None.
   404 files, Ruff lint, mypy over 188 source modules, 1545 unit tests, 35 Python integration tests,
   the 11-step shell E2E, strict validation/version checks, 85.58% overall branch coverage,
   `1.0.0a1` packaging, and documentation checks.
+
+### 2026-08-10 — MIG01 implementation CI passed
+
+- Published implementation commit `223a457` and opened ready PR #57. All four initial push and
+  pull-request quality jobs passed on Python 3.10 and 3.14 in Actions runs `31420263209` and
+  `31420310320`.
+- This ledger update records the remote evidence and triggers the final matrix before protected
+  squash merge; MIG01's complete status becomes authoritative only on `main`.
