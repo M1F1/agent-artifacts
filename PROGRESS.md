@@ -94,9 +94,10 @@ Files owned: wizard/source-stage domain, TUI source projections and frontends, f
   TODO.md and PROGRESS.md
 Risks/migrations: registry must remain optional unless policy requires it; source mutations must be
   deferred until Finalize; explicit legacy catalog arguments must remain compatible
-PR: pending
+PR: [#52](https://github.com/M1F1/agent-artifacts/pull/52)
 CI: local canonical quality passes on Python 3.11; Python 3.14.6 passes 1423 unit tests, 28
-  integration tests, validation/version, packaging, and docs; remote matrix pending
+  integration tests, validation/version, packaging, and docs; first remote matrix exposed and the
+  branch fixes a Ruff 0.16.2-only format drift; replacement matrix pending
 Merge: pending
 ```
 
@@ -128,7 +129,7 @@ Merge: pending
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
-| TUI01 | 45 pass; 138 TUI pass | 356 files pass | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; remote matrix pending |
+| TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; replacement remote matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1073,3 +1074,14 @@ None.
   package import. With the repository supplied explicitly through `PYTHONPATH`, validation,
   version, packaging, and docs passed. The isolated CI matrix supplies the full developer-tool
   proof on Python 3.10 and 3.14.
+
+### 2026-08-10 — TUI01 initial CI format fix
+
+- Published implementation commit `041e551` plus local-gate ledger commit `37c4b16`, and opened
+  ready PR #52 referencing the 1.0 umbrella issue without closing it.
+- Both Python 3.10/3.14 push jobs and both pull-request jobs stopped at the same format check before
+  tests: CI resolved Ruff 0.16.2 while the canonical local environment uses Ruff 0.12.2, and the
+  newer formatter parenthesizes two multiline test lambdas differently.
+- Applied only the mechanical formatter delta reported by CI. The focused 23-test source-stage
+  module passes, and all 356 files now pass format/lint under both Ruff 0.12.2 and exact 0.16.2 in a
+  temporary isolated environment. A replacement four-job matrix reruns on the fix commit.

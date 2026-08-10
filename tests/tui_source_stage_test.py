@@ -710,17 +710,19 @@ class SourceFrontendTests(unittest.TestCase):
         with mock.patch.object(
             tui,
             "_dispatch_result",
-            side_effect=lambda request: events.append(("dispatch", request.command))
-            or tui.CommandOutcome(0, tui.ActionSummary(action=request.command)),
+            side_effect=lambda request: (
+                events.append(("dispatch", request.command))
+                or tui.CommandOutcome(0, tui.ActionSummary(action=request.command))
+            ),
         ):
             code = tui._run_text(
                 read,
                 writes.append,
                 source_stage_view=self._view(),
-                source_finalizer=lambda request: events.append(
-                    ("save", tuple(item.kind.value for item in request.operations))
-                )
-                or Ok(object()),
+                source_finalizer=lambda request: (
+                    events.append(("save", tuple(item.kind.value for item in request.operations)))
+                    or Ok(object())
+                ),
             )
 
         self.assertEqual(code, 0)
