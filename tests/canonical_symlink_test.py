@@ -70,8 +70,10 @@ def _fixture(
     *,
     version: SemVer = _V1,
     skill_content: bytes = b"# Installed v1\n",
+    memory_content: bytes = b"Remember reviews.\n",
     source_kind: SourceKind = SourceKind.SOURCE_GIT,
     resolved_revision: str = "a" * 40,
+    scopes: tuple[str, ...] = ("project",),
 ):
     payloads = {
         "skill": (("payload/SKILL.md", skill_content, False),),
@@ -91,12 +93,14 @@ def _fixture(
                 False,
             ),
         ),
+        "memory": (("payload/review.md", memory_content, False),),
     }
     effects = {
         "skill": ("copy-tree",),
         "guideline": ("write-file",),
         "hook": ("copy-tree", "merge-json"),
         "mcp": ("merge-json",),
+        "memory": ("managed-block",),
     }[kind]
     manifest = ArtifactManifest(
         1,
@@ -105,7 +109,7 @@ def _fixture(
         "Use review to improve agent work.",
         PayloadSpec(_path("payload"), PAYLOAD_FORMAT_BY_TYPE[kind]),  # type: ignore[index]
         CompatibilitySpec(("claude",), ("darwin",)),
-        InstallSpec(("project",), ("copy", "symlink"), effects),  # type: ignore[arg-type]
+        InstallSpec(scopes, ("copy", "symlink"), effects),  # type: ignore[arg-type]
     )
     entries = (
         SnapshotEntry(
@@ -146,7 +150,7 @@ def _fixture(
         payload_digest=payload.value,
         object_digest=candidate.digest,
         compatibility=CompatibilitySpec(("claude",), ("darwin",)),
-        install=InstallSpec(("project",), ("copy", "symlink"), effects),
+        install=InstallSpec(scopes, ("copy", "symlink"), effects),  # type: ignore[arg-type]
     )
     effective = effective_configuration((source,))
     catalog_result = build_marketplace(

@@ -75,9 +75,13 @@ Product requirements:
       explicit atomic retarget/reference replacement, link-state evidence, and opt-in verified
       `mutable-local` developer links, documented in
       [`canonical-symlink-v1.md`](docs/installation/canonical-symlink-v1.md).
-- [ ] Resolve Install/Update from qualified source subscriptions and immutable objects.
+- [x] Resolve Install/Update from qualified source subscriptions and immutable objects.
 - [x] Keep Copy as default and make managed Symlink target immutable store content; sync alone must
       not retarget installed artifacts.
+- [x] Add canonical local status, fetch-free check, recorded-subscription update, explicit upstream
+      prune, proven-effect uninstall, per-selection outcomes, scope isolation, and CAS-reference
+      release, documented in
+      [`canonical-lifecycle-v1.md`](docs/installation/canonical-lifecycle-v1.md).
 - [ ] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
       setup state, and structured outcomes to manifest v2.
 - [ ] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,

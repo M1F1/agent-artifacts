@@ -71,8 +71,8 @@ pure classifier reports:
 - `retargeted` — destination is a symlink to another target;
 - `replaced` — destination is absent or no longer a symlink.
 
-LIFE01 will expose these values through status/check/update/uninstall and apply their force policy;
-INS02 supplies the state evidence and pure classification without prematurely changing commands.
+The canonical lifecycle boundary exposes these values through status/check/update/uninstall and
+applies their force policy; see [`canonical-lifecycle-v1.md`](canonical-lifecycle-v1.md).
 
 ## Explicit mutable-local developer links
 

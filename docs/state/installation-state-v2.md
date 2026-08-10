@@ -30,8 +30,9 @@ The top-level document has exactly `schema_version: 2` and a deterministically s
 - artifact type/name, SemVer, manifest digest, payload digest, and immutable object digest;
 - harness profile/version and a non-crossing `project` or `user` scope;
 - requested mode plus the actual mode and digest proof of every individual effect;
+- the chosen memory composition mode for new memory installs (older records default to `prepend`);
 - for links, the exact absolute target and `immutable-object` or explicit `mutable-local` semantics;
-- merge locator/mode/identity digest where applicable; and
+- merge locator/mode plus digest-bound identity evidence where available; and
 - only a non-secret setup-state reference, never credentials or raw setup output.
 
 Project destinations are canonical relative paths. User destinations are normalized absolute
@@ -46,6 +47,11 @@ Effect ownership is unique per scope, destination, and merge identity. Distinct 
 identities may share a configuration path, but two records cannot claim the same file, link, or JSON
 identity. Link targets are evidence, never moving pointers; their filesystem status is derived from
 the recorded target without following the destination during ownership checks.
+
+Canonical lifecycle installs persist `identity_evidence` for each JSON merge and require its
+canonical digest to equal `identity_digest`. The field remains optional at the parser boundary for
+already-written schema-v2 state; lifecycle removal fails closed when an older merge record lacks
+enough evidence to identify only its owned value.
 
 ## State paths
 

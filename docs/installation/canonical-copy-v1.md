@@ -90,7 +90,8 @@ credentials, raw setup output, CAS host paths, nor copied payload bytes.
 
 - Managed Symlink and explicit atomic retarget are defined in
   [`canonical-symlink-v1.md`](canonical-symlink-v1.md).
-- Status, update, check, uninstall, and reference release belong to LIFE01.
+- Status, update, check, uninstall, and reference release are defined in
+  [`canonical-lifecycle-v1.md`](canonical-lifecycle-v1.md).
 - Setup recipe execution remains a separate post-payload result and belongs to SET01.
 - CLI/TUI adoption occurs only after the lifecycle services are complete, so legacy commands are
   not silently reinterpreted during this slice.

@@ -21,6 +21,7 @@ from agent_artifacts.install_state.model import (
     InstallationRecord,
     InstallScope,
     InstallState,
+    MemoryMode,
     SourceEvidence,
 )
 from agent_artifacts.install_state.schema import install_state_bytes
@@ -105,7 +106,7 @@ class InstallRequest:
     mode: InstallMode = "copy"
     force: bool = False
     offline: bool = False
-    memory_mode: str = "prepend"
+    memory_mode: MemoryMode = "prepend"
     mutable_local_payload_root: str | None = None
 
     def __post_init__(self) -> None:
@@ -591,6 +592,7 @@ def _effect_matches_operation(effect: EffectProof, operation: InstallOperation) 
         and effect.json_path == operation.json_path
         and effect.merge_mode == operation.merge_mode
         and effect.identity_digest == operation.identity_digest
+        and effect.identity_evidence == operation.identity_evidence
     )
 
 
@@ -766,6 +768,8 @@ class InstallPlan:
             or replacement.artifact != self.artifact
             or replacement.profile_version != self.request.profile_version
             or replacement.requested_mode != self.request.mode
+            or replacement.memory_mode
+            != (self.request.memory_mode if self.request.identity.kind == "memory" else None)
             or len(replacement.effects) != len(self.operations)
             or not all(
                 _effect_matches_operation(effect, operation)
