@@ -71,7 +71,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) / `b05fd42` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | pending | Local 13-scenario hermetic matrix and complete quality gates passed; merge pending |
+| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | [#59](https://github.com/M1F1/agent-artifacts/pull/59) | Local and initial four-job Python 3.10/3.14 matrices passed; final ledger matrix pending |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
 
 ## Current-task template
@@ -93,8 +93,8 @@ Focused tests: 8 pass, including one complete 13-scenario/18-acceptance-test mat
 Files owned: hermetic system-matrix runner/tests/fixtures, system-matrix documentation, PROGRESS.md
 Risks/migrations: runner must not access real home/keychain/credentials or external network;
   per-scenario timeouts, deterministic receipts, recovery commands, and cleanup are mandatory
-PR: pending
-CI: local Python 3.11 complete quality matrix passed; remote matrix pending
+PR: #59 — https://github.com/M1F1/agent-artifacts/pull/59
+CI: initial push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: DIST01 `b05fd42`; E2E01 pending
 ```
 
@@ -133,7 +133,7 @@ Merge: DIST01 `b05fd42`; E2E01 pending
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 | MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
 | DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
-| E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | local Python 3.11 complete quality matrix passed; remote matrix pending |
+| E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | initial 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1481,3 +1481,11 @@ None.
   Ruff lint, mypy over 188 source modules, 1553 unit tests, 39 Python integration tests, the 11-step
   shell E2E, validation/version checks, 85.56% branch coverage, hardened `1.0.0a1` packaging, and
   documentation checks.
+
+### 2026-08-10 — E2E01 implementation CI passed
+
+- Published implementation commit `f094eaf` and opened ready PR #59. All four initial push and
+  pull-request quality jobs passed on Python 3.10 and 3.14 in Actions runs `31424301741` and
+  `31424338373` without a CI-only correction.
+- This ledger-only update records exact remote evidence and triggers the final protected-merge
+  matrix; E2E01 becomes authoritative on `main` only after that matrix remains green.
