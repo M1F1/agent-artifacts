@@ -5,6 +5,16 @@ from __future__ import annotations
 import unittest
 from dataclasses import FrozenInstanceError
 
+from agent_artifacts.configuration.model import (
+    ConfiguredSource,
+    OrganizationPolicy,
+    SourceKind,
+    UserConfiguration,
+    default_user_configuration,
+)
+from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.result import Ok
+from agent_artifacts.tui_sources import build_source_stage, plan_source_management
 from agent_artifacts.wizard import (
     BasketItem,
     WizardPosition,
@@ -18,6 +28,29 @@ from agent_artifacts.wizard import (
     select,
     stages_for,
 )
+
+
+def source_selection():
+    baseline = default_user_configuration()
+    source = ConfiguredSource(
+        SourceAlias("test-source"),
+        SourceKind.SOURCE_LOCAL,
+        "/test/source",
+        None,
+        True,
+    )
+    configuration = UserConfiguration(
+        1,
+        (source,),
+        None,
+        baseline.sync,
+        baseline.reporting,
+    )
+    view = build_source_stage(configuration, OrganizationPolicy(1), {})
+    assert isinstance(view, Ok)
+    planned = plan_source_management(view.value, (source.alias,))
+    assert isinstance(planned, Ok)
+    return planned.value
 
 
 class WizardStageGraphTests(unittest.TestCase):
@@ -42,6 +75,7 @@ class WizardStageGraphTests(unittest.TestCase):
             (
                 "onboarding",
                 "role",
+                "source",
                 "profiles",
                 "action",
                 "scope",
@@ -78,6 +112,8 @@ class WizardTransitionTests(unittest.TestCase):
         session = initial_session()
         session = advance(session)
         session = select(session, "role", "user")
+        session = advance(session)
+        session = select(session, "source", source_selection())
         session = advance(session)
         session = select(session, "profiles", ("claude",))
         session = advance(session)

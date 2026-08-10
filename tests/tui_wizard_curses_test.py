@@ -22,6 +22,7 @@ from agent_artifacts.wizard import (
 from agent_artifacts.wizard import (
     select as wizard_select,
 )
+from tests.wizard_state_test import source_selection
 
 FIXTURES = str(pathlib.Path(__file__).resolve().parent / "fixtures")
 
@@ -115,6 +116,8 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
     def test_narrow_wizard_keeps_stage_basket_controls_and_a_visible_row(self):
         session = wizard_advance(initial_session())
         session = wizard_select(session, "role", "user")
+        session = wizard_advance(session)
+        session = wizard_select(session, "source", source_selection())
         session = wizard_advance(session)
         session = wizard_select(session, "profiles", ("claude",))
         session = wizard_advance(session)

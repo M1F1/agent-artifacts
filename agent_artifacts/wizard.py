@@ -6,6 +6,8 @@ import textwrap
 from dataclasses import dataclass, replace
 from typing import Literal, Mapping, Optional, Tuple
 
+from agent_artifacts.tui_sources import SourceSelection
+
 WizardStage = Literal[
     "onboarding",
     "role",
@@ -30,7 +32,7 @@ _STAGE_LABELS: Mapping[WizardStage, str] = {
     "profiles": "Harness",
     "action": "Action",
     "scope": "Scope",
-    "source": "Source",
+    "source": "Sources",
     "mode": "Mode",
     "artifacts": "Artifacts",
     "upstream_details": "Upstream details",
@@ -81,6 +83,7 @@ class WizardSession:
     install_mode: str = "copy"
     source_label: str = ""
     source_root: str = ""
+    source_selection: Optional[SourceSelection] = None
     basket: Tuple[BasketItem, ...] = ()
     positions: Tuple[WizardPosition, ...] = ()
     notices: Tuple[WizardNotice, ...] = ()
@@ -114,9 +117,9 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     if session.role is None:
         return common
     if session.role == "user":
-        return _user_stages(session, prefix=common)
+        return _user_stages(session, prefix=common + ("source",))
 
-    maintainer = common + ("maintainer_action",)
+    maintainer = common + ("source", "maintainer_action")
     action = session.maintainer_action
     if action is None:
         return maintainer
@@ -142,6 +145,8 @@ def _stage_ready(session: WizardSession, stage: WizardStage) -> bool:
         return session.role is not None
     if stage == "maintainer_action":
         return session.maintainer_action is not None
+    if stage == "source":
+        return session.source_selection is not None
     if stage == "profiles":
         return bool(session.profiles)
     if stage == "action":
@@ -186,9 +191,9 @@ def select(session: WizardSession, stage: WizardStage, value: object) -> WizardS
             return session
         changed = replace(session, basket=tuple(value))
     elif stage == "source":
-        if not isinstance(value, (tuple, list)) or len(value) != 2:
+        if not isinstance(value, SourceSelection):
             return session
-        changed = replace(session, source_label=str(value[0]), source_root=str(value[1]))
+        changed = replace(session, source_selection=value)
     else:
         return session
     if changed == session:
@@ -378,7 +383,7 @@ def render_header(
         lines += _fit(f"Basket: {len(session.basket)} selected", width)
     for notice in session.notices:
         lines += _fit(f"Removed {notice.value}: {notice.reason}", width)
-    multi = session.current in ("profiles", "artifacts")
+    multi = session.current in ("source", "profiles", "artifacts")
     if frontend == "curses":
         action = "Space = toggle · Enter = continue" if multi else "Enter = choose"
         navigation = "Backspace = back · q = quit"

@@ -84,7 +84,7 @@ The first screen explains the controls. Every later screen starts with a text ma
 progress is still clear without color and in narrow terminals:
 
 ```text
-[x] How it works -> [x] Role -> [x] Harness -> [●] Action
+[x] How it works -> [x] Role -> [x] Sources -> [x] Harness -> [●] Action
 [ ] Scope -> [ ] Mode -> [ ] Artifacts -> [ ] Review
 Stage: Action
 Enter = choose · b / back = previous · q / quit = quit
@@ -94,6 +94,15 @@ Use Backspace in the full-screen TUI or `b`/`back` in the fallback to move back 
 applicable stage. Confirmed choices, the artifact/bundle basket, and the curses cursor/scroll
 position are retained. If an earlier edit makes only some basket rows invalid, the wizard removes
 only those rows and prints the reason. Quitting with a non-empty basket asks before discarding it.
+
+The **Sources** stage reads the user configuration and managed source pointers without fetching or
+writing. It shows registry/direct/local kind, enabled/default state, current/stale/offline/invalid/
+incompatible health, organization-required or recommended status, and exact locally derived
+company review. Registry use remains optional unless organization policy names a required source;
+an unconfigured user may continue without sources and exit cleanly. Toggling sources creates an
+immutable enable/disable/default request. That request is saved only with the final reviewed
+`Finalize`, never while browsing or moving back. See
+[`source-management-v1.md`](docs/tui/source-management-v1.md).
 
 Artifact and bundle selectors explain every choice in one line. In the full-screen selector,
 press `?` to open the complete description for the highlighted row. In the plain-text fallback,

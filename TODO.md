@@ -84,8 +84,9 @@ Product requirements:
       [`canonical-lifecycle-v1.md`](docs/installation/canonical-lifecycle-v1.md).
 - [ ] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
       setup state, and structured outcomes to manifest v2.
-- [ ] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
-      Review/Finalize, descriptions, modes, scopes, and explicit outcomes.
+- [x] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
+      Review/Finalize, descriptions, modes, scopes, and explicit outcomes, documented in
+      [`source-management-v1.md`](docs/tui/source-management-v1.md).
 - [x] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests, retain the
       exact CAS object, execute custom code from a verified private copy, and preserve separate
       payload/setup outcomes, documented in

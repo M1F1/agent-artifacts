@@ -13,6 +13,7 @@ from agent_artifacts.wizard import (
     render_stepper,
     select,
 )
+from tests.wizard_state_test import source_selection
 
 
 class WizardOnboardingTests(unittest.TestCase):
@@ -42,6 +43,8 @@ class WizardStepperTests(unittest.TestCase):
         session = advance(session)
         session = select(session, "role", "user")
         session = advance(session)
+        session = select(session, "source", source_selection())
+        session = advance(session)
         session = select(session, "profiles", ("claude",))
         session = advance(session)
         session = select(session, "action", "install")
@@ -53,6 +56,7 @@ class WizardStepperTests(unittest.TestCase):
 
         self.assertIn("[x] How it works", rendered)
         self.assertIn("[x] Role", rendered)
+        self.assertIn("[x] Sources", rendered)
         self.assertIn("[x] Harness", rendered)
         self.assertIn("[x] Action", rendered)
         self.assertIn("[●] Scope", rendered)

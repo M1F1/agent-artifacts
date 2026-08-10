@@ -90,6 +90,7 @@ class FirstRunOptions:
 
 @dataclass(frozen=True, slots=True)
 class LoadedConfiguration:
+    user_configuration: UserConfiguration
     effective: EffectiveConfiguration
     first_run: FirstRunOptions | None
     recovery: ConfigRecoveryPlan | None
@@ -205,7 +206,15 @@ def load_configuration(
             "this content operation requires at least one enabled source",
             "aart source add",
         )
-    return Ok(LoadedConfiguration(effective.value, first_run, recovery, diagnostics))
+    return Ok(
+        LoadedConfiguration(
+            configuration,
+            effective.value,
+            first_run,
+            recovery,
+            diagnostics,
+        )
+    )
 
 
 def save_user_configuration(
