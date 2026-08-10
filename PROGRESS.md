@@ -4,7 +4,7 @@
 - **Issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0`
-- **Execution status:** REL01 local release candidate validated; PR/CI/merge/tag pending
+- **Execution status:** REL01 initial CI passed; final CI/merge/tag pending
 - **Next task:** none — publish `v1.0.0` only after REL01 review, CI, and merge
 - **Last updated:** 2026-08-10
 
@@ -73,7 +73,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) / `b05fd42` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | [#59](https://github.com/M1F1/agent-artifacts/pull/59) / `5ae7310` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| REL01 | Stable release gates and `1.0.0` | all | complete | `codex/aart-1-0-rel01-stable-release` | pending | Provisional release-branch completion: stable `1.0.0`, docs/schema freeze, 24 focused tests and all local gates pass; PR/CI/merge/tag pending |
+| REL01 | Stable release gates and `1.0.0` | all | complete | `codex/aart-1-0-rel01-stable-release` | [#60](https://github.com/M1F1/agent-artifacts/pull/60) / pending | Stable `1.0.0`, docs/schema freeze, 24 focused tests and all local gates pass; initial four-job Python 3.10/3.14 push/PR CI passed; final CI/merge/tag pending |
 
 ## Current-task template
 
@@ -96,8 +96,8 @@ Files owned: release/version scripts/tests/workflow, release docs/changelog/READ
 Risks/migrations: stable version/tag fails closed on incomplete progress, stale schemas/index,
   incompatible/dirty/noncurrent registry, dirty output, missing migration docs, or source not
   proven merged into `origin/main`; final tag waits for PR review/CI/merge
-PR: pending — local completion is provisional until the reviewed PR is merged
-CI: pending — local quality pass recorded below
+PR: #60 ready — local completion is provisional until the reviewed PR is merged
+CI: initial push/PR matrix passed in Actions runs 31431386048 and 31431428569; final matrix pending
 Merge: E2E01 `5ae7310`; REL01 pending
 ```
 
@@ -1545,3 +1545,12 @@ None.
 - Reran the real pre-merge receipt after remote-freshness hardening: the clean reference checkout,
   its fetched `origin/HEAD`, and the live advertised default head all resolve to
   `004acd06e51d63905ce12313e0c514c1a05913bd`; all eleven receipt controls pass.
+
+### 2026-08-10 — REL01 initial CI passed
+
+- Published `f2791ea` and opened ready PR [#60](https://github.com/M1F1/agent-artifacts/pull/60).
+  All four initial push/pull-request quality jobs passed on Python 3.10 and 3.14 in Actions runs
+  `31431386048` and `31431428569`; the Node.js runtime deprecation annotations are informational.
+- This ledger-only update records the remote evidence and triggers the final protected-merge
+  matrix. The release becomes authoritative only after that matrix is green and the reviewed PR is
+  squash-merged into `main`.
