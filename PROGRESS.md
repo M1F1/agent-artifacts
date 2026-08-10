@@ -6,7 +6,7 @@
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
 - **Next task:** `REG01`
-- **Last updated:** 2026-08-07
+- **Last updated:** 2026-08-10
 
 ## Status rules
 
@@ -54,8 +54,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | CAS01 | Immutable content-addressed store | SRC01,P02 | complete | `codex/aart-1-0-cas01-content-store` | [#39](https://github.com/M1F1/agent-artifacts/pull/39) / `15304ae` | Four Python 3.10/3.14 CI jobs passed; squash merge and branch deletion verified |
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `85a5a5f` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | complete | `codex/aart-1-0-imp01-legacy-importer` | [#41](https://github.com/M1F1/agent-artifacts/pull/41) / `e3157d3` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| IMP02 | Native references/promotion/upstream locks | IMP01,P03 | complete | `codex/aart-1-0-imp02-native-promotion` | pending | Local gates pass; no payload duplication or automatic Git mutation |
-| REG01 | Maintainer registry commands/quality gate | IMP02 | pending | — | — | No automatic Git mutation |
+| IMP02 | Native references/promotion/upstream locks | IMP01,P03 | complete | `codex/aart-1-0-imp02-native-promotion` | [#42](https://github.com/M1F1/agent-artifacts/pull/42) / `ab8ae2b` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| REG01 | Maintainer registry commands/quality gate | IMP02 | in_progress | `codex/aart-1-0-reg01-registry-commands` | pending | No automatic Git mutation |
 | STATE01 | Manifest v2 and state migration | REG01 | pending | — | — | Backup/dry-run/rollback |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | pending | — | — | Immutable reviewed plan |
 | INS02 | Durable managed Symlink | INS01 | pending | — | — | Explicit atomic retarget only |
@@ -80,22 +80,22 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: IMP02 — Native references, promotion, and locked upstream updates
-Branch: codex/aart-1-0-imp02-native-promotion
-Worktree: /tmp/aart-imp02.22GGIK/worktree
+Task: REG01 — Maintainer registry commands and quality gate
+Branch: codex/aart-1-0-reg01-registry-commands
+Worktree: /tmp/aart-reg01.oiGhEu/worktree
 Started: 2026-08-07
-Bounded contexts: Pure registry mutation/promotion/update plans; immutable native acquisition proof;
-  lock/index regeneration; exact recorded-importer upstream checks; injected reviewed apply port
-Red test and expected failure: five expected import errors because registry-maintenance models,
-  planning, and application services do not exist; two dependency-boundary tests pass
-Focused tests: 31 pass plus 2 subtests; deterministic add/promotion/no-op/update, review transition,
-  stale-state, owned-package, collection, and recorded-importer cases pass
-Files owned: new registry-maintenance domain/application modules and tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: native references must never duplicate payloads; identity/ref/commit/digests must
-  agree; materialized importer updates must use recorded importer/options and remain reviewed diffs;
-  no service may commit or push Git changes
-PR: [#42](https://github.com/M1F1/agent-artifacts/pull/42), ready and mergeable
-CI: first four-job push/PR Python 3.10/3.14 matrix passed; final ledger matrix pending
+Bounded contexts: Registry command/query plans; deterministic templates and compatibility/audit
+  reports; explicit local-workspace filesystem adapter; CLI mapping and structured outcomes
+Red test and expected failure: four missing-module collection errors plus three CLI failures because
+  registry command/planning/IO modules, actions, Request fields, and dispatch do not exist; two
+  dependency/no-Git-mutation boundary tests pass
+Focused tests: 126 pass + 206 subtests
+Files owned: new registry command/application/IO modules, CLI/Request wiring, registry templates,
+  CI template, tests/docs, TODO.md, PROGRESS.md
+Risks/migrations: check/diff must remain read-only; mutation must reject managed consumer snapshots,
+  symlinks, non-Git/non-writable targets, and stale review plans; no code may commit or push Git
+PR: pending after push
+CI: pending after push; local Python 3.11 and 3.14 gates pass
 Merge: pending
 ```
 
@@ -118,6 +118,7 @@ Merge: pending
 | MKT01 | 47 pass | 250 files pass | pass | 107 source files pass | 1088 pass | 24 pass | 11-step pass | pass | 87.55% overall; 97.56% marketplace/config contexts | `1.0.0a1` wheel/import pass | pass | 2× 4-job Python 3.10/3.14 pass |
 | IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 2× 4-job Python 3.10/3.14 pass |
 | IMP02 | 31 pass + 2 subtests | 281 files pass | pass | 118 source files pass | 1161 pass | 28 pass | 11-step pass | pass | 87.72% overall; 85.68% focused context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1161 pass; first 4-job Python 3.10/3.14 CI matrix passed |
+| REG01 | 126 pass + 206 subtests | 298 files pass | pass | 127 source files pass | 1197 pass | 28 pass | 11-step pass | pass | 86.92% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1197 pass; CI pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -601,3 +602,38 @@ None.
   PR is mergeable with a clean merge state.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-07 — IMP02 merged; REG01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #42 as `ab8ae2b`; verified the
+  merged PR, exact `origin/main`, and remote branch deletion.
+- Removed only the clean IMP02 temporary worktree and created the isolated REG01 worktree from
+  exact `ab8ae2b`; unrelated root-worktree files remain untouched.
+- Scoped REG01 to deterministic registry init/scaffold/format/validate/lock/build/audit/test/diff/
+  migrate commands, a review-before-apply local workspace adapter, compatibility/CI templates, and
+  explicit rejection of managed or non-writable mutation targets without any Git commit/push.
+
+### 2026-08-07 — REG01 Red
+
+- Added contract tests for deterministic init and CI templates, valid artifact scaffolding,
+  canonical format checks, lock/build projections, validation/audit/minimum-latest compatibility,
+  legacy migration, filesystem preconditions, all ten CLI actions, and dependency boundaries.
+- Confirmed Red with four expected missing-module collection errors and three CLI failures because
+  the registry command context, workspace adapter, Request mapping, parser actions, and dispatch do
+  not exist. Both no-IO functional-core and no-commit/push boundary tests already pass.
+
+### 2026-08-10 — REG01 Green, code review, and local gates
+
+- Implemented pure plans and application services for `registry init`, `scaffold`, `format`,
+  `validate`, `lock`, `build`, `audit`, `test`, `diff`, and reviewed legacy `migrate`, including
+  deterministic protocol/CI templates and minimum/latest compatibility fixtures.
+- Added a bounded local-workspace adapter that requires a real writable Git checkout, rejects
+  managed consumer snapshots, symlinks, special files, stale reviews, and concurrent writers, and
+  atomically rolls back partial mutations without invoking Git commit or push.
+- Code review added regression coverage for exact receipt/review digests, no-op races, lock-held
+  writers, rollback cleanup, custom-root and workflow overwrite refusal, byte-stable payloads,
+  pending-ref network boundaries, provenance/lock agreement, forged indexes, migration identity,
+  and credential-free local AART installation in the generated registry workflow.
+- Passed the complete local quality gate: Ruff format on 298 files, Ruff lint, mypy on 127 source
+  files, 1197 unit tests, 28 integration tests, 11-step E2E, validation/version checks, 86.92%
+  branch coverage, wheel build/import, docs checks, and a second 1197-test run on Python 3.14.

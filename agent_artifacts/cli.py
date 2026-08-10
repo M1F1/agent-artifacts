@@ -34,6 +34,12 @@ def _run_upstream(request: Request) -> int:
     return upstream.run(request)
 
 
+def _run_registry(request: Request) -> int:
+    from .commands import registry
+
+    return registry.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -45,6 +51,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "upgrade": upgrade.run,
     "upstream": _run_upstream,
     "setup": setup.run,
+    "registry": _run_registry,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -470,6 +477,193 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("--force", action="store_true", help="replace existing catalog entries")
     _add_json(p_import)
 
+    # registry ---------------------------------------------------------------- #
+    p = sub.add_parser(
+        "registry",
+        formatter_class=_HELP_FORMATTER,
+        help="initialize, compile, audit, and migrate an AART registry",
+        description=(
+            "Maintain a writable AART registry checkout. Read/check commands never mutate it; "
+            "mutation commands only write reviewed managed files and never commit or push."
+        ),
+    )
+    registry_sub = p.add_subparsers(dest="registry_action", metavar="ACTION", required=True)
+
+    def _add_registry_source(target: argparse.ArgumentParser) -> None:
+        _add_source(target, "registry checkout or read-only registry snapshot")
+
+    def _add_check(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--check",
+            action="store_true",
+            help="report drift without writing; return non-zero when generated files differ",
+        )
+
+    p_init = registry_sub.add_parser("init", help="initialize a canonical registry checkout")
+    _add_registry_source(p_init)
+    p_init.add_argument(
+        "--source-id", required=True, metavar="SLUG", help="stable registry/source identity"
+    )
+    p_init.add_argument(
+        "--display-name", required=True, metavar="TEXT", help="human-readable registry name"
+    )
+    p_init.add_argument(
+        "--minimum-version",
+        default="1.0.0",
+        metavar="VERSION",
+        help="minimum supported AART version (default: 1.0.0)",
+    )
+    p_init.add_argument(
+        "--maximum-version",
+        default="2.0.0",
+        metavar="VERSION",
+        help="exclusive maximum AART version (default: 2.0.0)",
+    )
+    _add_json(p_init)
+
+    p_scaffold = registry_sub.add_parser(
+        "scaffold", help="create one canonical native artifact package"
+    )
+    _add_registry_source(p_scaffold)
+    p_scaffold.add_argument("type_filter", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_scaffold.add_argument("names", nargs=1, metavar="NAME")
+    p_scaffold.add_argument(
+        "--summary", required=True, metavar="TEXT", help="one-line artifact description"
+    )
+    p_scaffold.add_argument(
+        "--artifact-version",
+        default="1.0.0",
+        metavar="VERSION",
+        help="initial artifact version (default: 1.0.0)",
+    )
+    p_scaffold.add_argument(
+        "--profile",
+        action="append",
+        required=True,
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
+    p_scaffold.add_argument(
+        "--platform",
+        action="append",
+        required=True,
+        metavar="PLATFORM",
+        help="supported platform (repeatable)",
+    )
+    p_scaffold.add_argument(
+        "--install-scope",
+        action="append",
+        choices=_INSTALL_SCOPES,
+        dest="registry_scopes",
+        default=[],
+        help="supported install scope (repeatable; default: project)",
+    )
+    p_scaffold.add_argument(
+        "--install-mode",
+        action="append",
+        choices=("copy", "symlink"),
+        dest="registry_modes",
+        default=[],
+        help="supported install mode (repeatable; default: copy)",
+    )
+    _add_json(p_scaffold)
+
+    p_format = registry_sub.add_parser("format", help="canonicalize registry JSON files")
+    _add_registry_source(p_format)
+    _add_check(p_format)
+    _add_json(p_format)
+
+    p_validate = registry_sub.add_parser("validate", help="validate registry protocol content")
+    _add_registry_source(p_validate)
+    p_validate.add_argument(
+        "--strict", action="store_true", help="require committed generated outputs"
+    )
+    p_validate.add_argument(
+        "--frozen", action="store_true", help="reject a missing or stale lock/index pair"
+    )
+    _add_json(p_validate)
+
+    for action in ("lock", "build"):
+        target = registry_sub.add_parser(
+            action,
+            help=f"{'resolve authored references' if action == 'lock' else 'compile the index'}",
+        )
+        _add_registry_source(target)
+        _add_check(target)
+        _add_json(target)
+
+    p_audit = registry_sub.add_parser(
+        "audit", help="audit review, provenance, setup, and available security metadata"
+    )
+    _add_registry_source(p_audit)
+    _add_json(p_audit)
+
+    p_test = registry_sub.add_parser("test", help="run a compatibility validation fixture")
+    _add_registry_source(p_test)
+    p_test.add_argument(
+        "--compatibility",
+        choices=("minimum", "latest", "all"),
+        default="all",
+        help="compatibility point to validate (default: all)",
+    )
+    p_test.add_argument(
+        "--latest-version",
+        default="1.0.0",
+        metavar="VERSION",
+        help="latest compatible AART version under test (default: 1.0.0)",
+    )
+    _add_json(p_test)
+
+    p_diff = registry_sub.add_parser("diff", help="show deterministic managed-file drift")
+    _add_registry_source(p_diff)
+    _add_json(p_diff)
+
+    p_migrate = registry_sub.add_parser(
+        "migrate", help="preview or apply migration from an immutable legacy catalog"
+    )
+    _add_registry_source(p_migrate)
+    p_migrate.add_argument(
+        "--legacy-source",
+        required=True,
+        metavar="GIT-URL-OR-DIR",
+        help="immutable legacy catalog Git source",
+    )
+    p_migrate.add_argument(
+        "--origin-url",
+        metavar="HTTPS-GIT-URL",
+        help="recorded origin when --legacy-source is a local Git checkout",
+    )
+    p_migrate.add_argument(
+        "--ref", default="HEAD", metavar="REF", help="legacy source Git ref (default: HEAD)"
+    )
+    p_migrate.add_argument(
+        "--source-id", required=True, metavar="SLUG", help="identity for the migrated registry"
+    )
+    p_migrate.add_argument(
+        "--display-name", required=True, metavar="TEXT", help="migrated registry display name"
+    )
+    p_migrate.add_argument(
+        "--artifact-version",
+        default="1.0.0",
+        metavar="VERSION",
+        help="version assigned to imported artifacts (default: 1.0.0)",
+    )
+    p_migrate.add_argument(
+        "--profile",
+        action="append",
+        required=True,
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
+    p_migrate.add_argument(
+        "--platform",
+        action="append",
+        default=[],
+        help="supported platform (repeatable; default: darwin)",
+    )
+    p_migrate.add_argument("--apply", action="store_true", help="apply the reviewed migration")
+    _add_json(p_migrate)
+
     return parser
 
 
@@ -527,6 +721,33 @@ def _to_request(args: argparse.Namespace) -> Request:
         interactive=bool(getattr(args, "interactive", False)),
         setup_action=getattr(args, "setup_action", None),
         stop_on_failure=bool(getattr(args, "stop_on_failure", False)),
+        registry_action=getattr(args, "registry_action", None),
+        check=bool(getattr(args, "check", False)),
+        apply=bool(getattr(args, "apply", False)),
+        strict=bool(getattr(args, "strict", False)),
+        frozen=bool(getattr(args, "frozen", False)),
+        legacy_source=getattr(args, "legacy_source", None),
+        origin_url=getattr(args, "origin_url", None),
+        source_id=getattr(args, "source_id", None),
+        display_name=getattr(args, "display_name", None),
+        summary=getattr(args, "summary", None),
+        artifact_version=getattr(args, "artifact_version", None),
+        minimum_version=getattr(args, "minimum_version", None),
+        maximum_version=getattr(args, "maximum_version", None),
+        latest_version=getattr(args, "latest_version", None),
+        compatibility=getattr(args, "compatibility", None),
+        registry_scopes=tuple(
+            getattr(args, "registry_scopes", ())
+            or (("project",) if getattr(args, "registry_action", None) == "scaffold" else ())
+        ),
+        registry_modes=tuple(
+            getattr(args, "registry_modes", ())
+            or (("copy",) if getattr(args, "registry_action", None) == "scaffold" else ())
+        ),
+        registry_platforms=tuple(
+            getattr(args, "platform", ())
+            or (("darwin",) if getattr(args, "registry_action", None) == "migrate" else ())
+        ),
     )
 
 

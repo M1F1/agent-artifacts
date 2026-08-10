@@ -7,6 +7,14 @@ from .configuration import (
     load_configuration,
 )
 from .importers import finalize_legacy_import, prepare_legacy_import
+from .registry_commands import (
+    finalize_registry_workspace,
+    prepare_artifact_scaffold,
+    prepare_registry_build,
+    prepare_registry_format,
+    prepare_registry_init,
+    prepare_registry_lock,
+)
 from .registry_maintenance import finalize_registry_mutation, prepare_native_promotion
 from .sources import (
     SourceStatusRequest,
@@ -38,11 +46,17 @@ __all__ = [
     "collect_garbage",
     "finalize_legacy_import",
     "finalize_registry_mutation",
+    "finalize_registry_workspace",
     "object_status",
     "compile_sources",
     "load_configuration",
     "prepare_legacy_import",
     "prepare_native_promotion",
+    "prepare_artifact_scaffold",
+    "prepare_registry_build",
+    "prepare_registry_format",
+    "prepare_registry_init",
+    "prepare_registry_lock",
     "source_status",
     "replace_references",
     "sync_source",

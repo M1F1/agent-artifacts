@@ -17,6 +17,8 @@ from .planning import (
     plan_native_promotion,
     plan_registry_entry_add,
     project_registry_mutation,
+    registry_native_content,
+    resolve_native_acquisition,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "plan_native_promotion",
     "plan_registry_entry_add",
     "project_registry_mutation",
+    "registry_native_content",
+    "resolve_native_acquisition",
 ]

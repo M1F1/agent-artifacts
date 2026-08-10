@@ -1,13 +1,1 @@
-{
-  "schema_version": 1,
-  "protocol_version": 1,
-  "source_id": "reference-registry",
-  "display_name": "Reference Registry",
-  "requires_aart": {
-    "min_inclusive": "1.0.0",
-    "max_exclusive": "2.0.0"
-  },
-  "required_capabilities": ["artifact-manifest-v1"],
-  "artifact_roots": ["artifacts"],
-  "collection_roots": ["collections"]
-}
+{"artifact_roots":["artifacts"],"collection_roots":["collections"],"display_name":"Reference Registry","protocol_version":1,"required_capabilities":["artifact-manifest-v1"],"requires_aart":{"max_exclusive":"2.0.0","min_inclusive":"1.0.0"},"schema_version":1,"source_id":"reference-registry"}
