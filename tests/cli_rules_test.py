@@ -93,8 +93,11 @@ class AcceptedGlobals(unittest.TestCase):
             validate_flags(_req("check", repo="o/r", project="./app", version="main"))
         )
 
-    def test_upgrade_accepts_repo_and_version(self):
-        self.assertIsNone(validate_flags(_req("upgrade", repo="o/r", version="main")))
+    def test_upgrade_rejects_implicit_remote_source_fields(self):
+        error = validate_flags(_req("upgrade", repo="o/r", version="main"))
+
+        self.assertIsInstance(error, Err)
+        self.assertIn("explicit local", error.reason)
 
     def test_list_accepts_repo_source_version(self):
         # ... but not both repo and source at once; here only source + version-less.

@@ -130,6 +130,32 @@ class BuildWheelTest(unittest.TestCase):
         )
         self.assertFalse(any(name.startswith(root) for name in names for root in operational_roots))
 
+    def test_builder_rejects_package_data_outside_the_distribution_allowlist(self):
+        forbidden = self.tmp / "agent_artifacts" / "artifacts" / "private.json"
+        forbidden.parent.mkdir()
+        forbidden.write_text('{"secret":"must-not-ship"}', encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "wheel resource allowlist"):
+            self.build.collect_package_files()
+
+    def test_builder_rejects_symlinked_package_directories(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        linked = self.tmp / "agent_artifacts" / "templates"
+        linked.symlink_to(outside, target_is_directory=True)
+
+        with self.assertRaisesRegex(ValueError, "wheel resource allowlist"):
+            self.build.collect_package_files()
+
+    def test_packaging_gate_rejects_an_unrecorded_allowed_member(self):
+        wheel = self._build()
+        with zipfile.ZipFile(wheel, "a") as archive:
+            archive.writestr("agent_artifacts/unrecorded.py", b"value = 1\n")
+        packaging = _load_script("packaging_check")
+
+        with self.assertRaisesRegex(ValueError, "RECORD does not list every member"):
+            packaging._validate_wheel(wheel, self.tmp / "inspect")
+
     def test_metadata_has_name_version_and_zero_deps(self):
         wheel = self._build()
         with zipfile.ZipFile(wheel) as z:

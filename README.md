@@ -1,9 +1,9 @@
 # agent-artifacts (`aart`)
 
 > [!IMPORTANT]
-> The current implementation is `0.1.x` and still uses the monolithic tool-plus-catalog model
-> documented below. The approved AART 1.0 direction separates the compiler from federated artifact
-> sources and optional registries. See the
+> The current implementation is the `1.0.0a1` development train. It separates the compiler from
+> federated artifact sources and optional registries; the retained 0.1 compatibility sections are
+> marked below. See the
 > [AART 1.0 PRD](docs/product/PRD-aart-1.0.md),
 > [technical specification](docs/design/SPEC-aart-1.0.md), and
 > [implementation plan](PLAN.md) with its [progress ledger](PROGRESS.md), plus the
@@ -17,12 +17,12 @@ is never embedded in the AART wheel. See the
 [publication boundary](docs/registry/publication-boundary-v1.md) and
 [company-registry bootstrap](docs/registry/company-bootstrap-v1.md).
 
-**One catalog of AI artifacts. Every agentic harness on your team, in sync.**
+**One artifact protocol. Any reviewed source. Every supported agentic harness in sync.**
 
-`agent-artifacts` installs your team's **skills, guidelines, MCP servers, hooks, and memory
-files** from a single source-of-truth repo into whichever AI coding harness each developer
-uses — Tabnine, Claude Code, OpenCode, or Vibe — translating one definition into each
-harness's native file layout.
+`agent-artifacts` compiles and installs **skills, guidelines, MCP servers, hooks, and memory
+files** from zero or more native sources and optional registries into whichever AI coding harness
+each developer uses — Tabnine, Claude Code, OpenCode, or Vibe — translating one canonical
+definition into each harness's native file layout.
 
 Write a skill once. Ship it everywhere. Then *check for drift* and re-sync on demand.
 
@@ -33,7 +33,7 @@ Zero runtime dependencies (Python stdlib only). Works fully offline.
 ## Requirements
 
 - Python 3.10 or newer.
-- `pip`, `pip3`, or `pipx` to install the CLI.
+- `pip` to install the local editable checkout or prebuilt wheel.
 - Nothing else is required to run `aart`: no extra Python packages, Node packages, services, or
   network access.
 
@@ -43,41 +43,37 @@ The CLI uses only the Python standard library after installation.
 
 ## Quick Start
 
-From this catalog repo, install the CLI:
+Install a local checkout without consulting a package index:
 
 ```sh
-pip install -e .
+python -m pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
 ```
 
-If `pip` or `pip3` is unavailable in your environment, try an editable `pipx` install:
+Or build and install the zero-runtime-dependency wheel:
 
 ```sh
-pipx install -e .
+cd /path/to/agent-artifacts
+make wheel
+python -m pip install --no-index --no-deps dist/agent_artifacts-1.0.0a1-py3-none-any.whl
 ```
 
-If you changed this repo and need to rebuild the installed `aart` tool, prefer:
+An installed AART replaces itself only from an explicit reviewed local input. Preview first:
 
 ```sh
-aart upgrade
+aart upgrade --source-checkout /path/to/agent-artifacts --dry-run
+aart upgrade --source-checkout /path/to/agent-artifacts
+# or: aart upgrade --wheel /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl
 ```
 
-You can force a reinstall with your package manager, but `aart upgrade` is the intended refresh
-path for an already installed local tool.
+These paths always pass `--no-index --no-deps` to pip. Editable replacement also disables build
+isolation. AART 1.0 does not infer a repository, contact PyPI/Nexus, or update itself automatically.
+See [local delivery and environment recreation](docs/distribution/local-delivery-v1.md).
 
-Then install the onboarding skill into your project harness:
+Then open the TUI, configure and sync one or more source repositories, and install from the local
+marketplace:
 
 ```sh
 cd /path/to/your/project
-aart install agent-artifacts --profile tabnine
-```
-
-This installs the onboarding skill into your harness, for example
-`.tabnine/agent/skills/agent-artifacts/` for Tabnine. For another harness, replace
-`tabnine` with `claude`, `opencode`, or `vibe`, or pass a comma-separated list.
-
-Prefer the interactive flow?
-
-```sh
 aart
 ```
 
@@ -125,16 +121,16 @@ scope-specific state or choices:
 For Install, both frontends then ask for an installation mode before artifact selection:
 
 - **Copy (recommended)** installs an independent snapshot and remains the default.
-- **Symlink** live-links supported skill and hook directories to a local catalog. Copy-only
-  individual rows are disabled with a reason; mixed bundles disclose projected linked/copied
-  counts and keep file/merge artifacts in Copy mode.
+- **Symlink** links supported skill and hook directories to immutable managed objects outside the
+  Python environment. Copy-only individual rows are disabled with a reason; mixed bundles disclose
+  projected linked/copied counts and keep file/merge artifacts in Copy mode.
 
 Before applying an Install, the confirmation view shows the catalog source, selected scope,
 resolved destination paths, harnesses, requested mode, selected rows, projected mode counts, and
 the ordered setup queue for setup-capable artifacts.
-User destinations are absolute. Symlink is rejected for a remote source before artifact selection;
-the configured marketplace can link a local source, while the bounded 0.1 CLI path requires an
-explicit `--source DIR --link`.
+User destinations are absolute. The canonical marketplace materializes verified source content in
+the managed object store before linking it. The bounded 0.1 CLI path still requires an explicit
+local `--source DIR --link`.
 
 Install, Update, Uninstall, Status, and Maintainer paths all end at a separate **Review** stage.
 `Finalize` is the only wizard decision that can dispatch the reviewed request. Back/edit, quit,
@@ -178,8 +174,8 @@ confirmation, and then run the right commands.
 ## User Mode: Install Artifacts Into A Project Or User Profile
 
 User mode is for developers configuring an application repo or their harness-wide user profile.
-You install the `aart` tool, then use the reviewed artifact catalog shipped inside that tool. You
-should not need to know where the catalog repo lives or pass catalog source flags for normal use.
+You install the `aart` tool, configure the reviewed sources or registries you want, and use their
+compiled union as a local marketplace. The wheel never ships an operational registry.
 
 ### What You Can Install
 
@@ -328,24 +324,24 @@ canonical source alias.
 Bundles are curated sets such as "base" or "backend". They can include multiple artifact types
 and can extend other bundles, so team setup is one command instead of a pile of paths.
 
-### Live-Link From A Local Catalog Checkout
+### Managed Symlink Installation
 
-Choose **Symlink** when you want supported artifacts installed into your project to stay connected
-to a configured local source instead of using the default **Copy** snapshot. In the bounded legacy
-flag mode, spell it `--link` and name the checkout explicitly.
+Choose **Symlink** when you want supported artifact trees installed without copying their payload
+bytes into every harness destination. Canonical AART links the destination to an immutable object
+under its user data directory, never to the Python environment and never directly to a moving Git
+checkout. Source sync/update publishes and selects a new immutable object; deleting or recreating
+the editable/wheel environment leaves existing links valid.
+
+The bounded legacy flag mode retains its local-checkout `--link` behavior:
 
 ```sh
 aart install code-review --profile tabnine --source /path/to/catalog --link
 ```
 
-`--link` is opt-in and local-only. Canonical installs link to the managed local source/object
-boundary shown in Review; the executable environment is never the artifact source.
-
-Copy remains the recommended default install mode. With Symlink/`--link`, changes propagate only when the local
-source path changes, for example after local edits, `git pull`, branch switches, or
-`aart upstream update` in the catalog. Use `aart status --json` to see whether an installed
-artifact is `copy` or `symlink` and where a link points. The legacy flag path requires
-`--source DIR`; the TUI uses the selected configured local source.
+Copy remains the recommended default. Canonical Symlink changes only after a reviewed AART update;
+editing or pulling the original source does not silently change an installed artifact. Use
+`aart status` to see the recorded mode and link health. The legacy flag path requires
+`--source DIR` and remains explicitly outside this immutable-object guarantee.
 
 ### Check, Update, And Uninstall
 
@@ -366,7 +362,7 @@ aart uninstall --all --profile tabnine --dry-run
 
 `aart status` is local and uses no network. `aart check` tells you whether the installed tool
 or installed artifacts are behind the reviewed source. Each installed manifest entry records its
-catalog subscription (the packaged catalog, a local checkout, or a GitHub repo/ref), so a later
+source identity (a configured local checkout or Git repository/ref), so a later
 `aart update` reopens the correct reviewed source without asking you to enter the repository
 again. One project may update entries from several recorded subscriptions in one safely planned
 operation. An explicit `--source` or `--repo` overrides and replaces the recorded subscription for
@@ -653,15 +649,16 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 
 | Command | Network | Does |
 |---------|:------:|------|
-| `aart list` | no | List artifacts shipped with the installed tool (`--type`, `--bundle`, `--json`) |
-| `aart install` | no | Install shipped artifacts/bundles into one or more profiles |
+| `aart list` | no | List artifacts in the configured local marketplace (`--type`, `--bundle`, `--json`) |
+| `aart install` | no | Install selected marketplace artifacts/collections into one or more profiles |
 | `aart status` | no | Show installed artifacts, install mode, link state, and local drift |
 | `aart check` | yes | Compare installed/CLI commit against the source |
 | `aart update` | no by default | Re-apply reviewed artifacts; `--prune`, `--force` |
 | `aart uninstall` | no | Reverse installed files and merge entries |
 | `aart setup` | no by default | Review/run/retry/status/rollback declarative artifact setup |
 | `aart migrate state` | no | Dry-run/apply/rollback explicit 0.1 installation state |
-| `aart upgrade` | offline-capable | Reinstall the CLI itself |
+| `aart upgrade --wheel FILE` | no | Reinstall the CLI from one exact local wheel, index-free |
+| `aart upgrade --source-checkout DIR` | no | Reinstall editable from one exact local checkout, index-free |
 
 ### Maintainer Commands
 
@@ -689,8 +686,9 @@ strictly attaches options only to the commands that consume them.
 contains no implicit operational catalog. Legacy `list/install/update/setup --source DIR` and
 `--repo OWNER/NAME` remain explicit 0.1 compatibility adapters and print a deprecation warning.
 They are mutually exclusive and are never reinterpreted as canonical aliases. `--source` cannot be
-combined with `--version` since a local checkout has no ref to resolve. Remote-only commands like
-`check` and `upgrade` accept `--repo`/`--version` but not `--source`.
+combined with `--version` since a local checkout has no ref to resolve. The retained remote
+compatibility path for `check` accepts `--repo`/`--version`. `upgrade` accepts neither: it requires
+exactly one local `--wheel` or `--source-checkout`.
 
 **Installation-state migration** — Review before applying, and use the durable receipt to roll
 back from a later process:
@@ -775,6 +773,7 @@ make quality          # canonical non-mutating local/CI gate suite
 make test             # broad Python regression suite + bash E2E compatibility alias
 make validate         # catalog integrity + zero-runtime-dependency import gate
 make packaging-check  # build/import a wheel in a throwaway source copy
+python scripts/distribution_smoke.py --json  # editable -> wheel -> recreated environment lifecycle
 make wheel            # release build: stamps the commit and writes dist/*.whl
 make version-check    # validate source version consistency and stable-release policy
 make version-show     # print the current canonical version
@@ -785,7 +784,7 @@ The quality tools are required only for development and CI; the installed AART r
 zero-dependency. Install the dev extra to run the same gates as GitHub Actions:
 
 ```sh
-pip install -e ".[dev]"   # adds Ruff, mypy, coverage, and wheel smoke tooling
+pip install -e ".[dev]"   # adds the editable build backend and quality/smoke tooling
 make lint                 # ruff: real-bug + import-hygiene checks
 make format               # ruff: auto-format (format-check to verify only)
 make typecheck            # mypy over agent_artifacts/

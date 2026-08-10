@@ -515,3 +515,5 @@ class Request:
     migration_from: Optional[str] = None
     source_mappings: Tuple[str, ...] = ()
     rollback: bool = False
+    upgrade_wheel: Optional[str] = None
+    upgrade_source_checkout: Optional[str] = None

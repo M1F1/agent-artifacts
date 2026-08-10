@@ -37,6 +37,7 @@ MemoryMode = Literal["replace", "prepend", "append", "skip"]
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+_LOCAL_REVISION_RE = re.compile(r"^local(?::[0-9a-f]{64})?$")
 _SETUP_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
 _ARTIFACT_KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _LEGACY_SOURCE_RE = re.compile(r"^(?:main|pin):[A-Za-z0-9._-]+$")
@@ -128,7 +129,7 @@ class SourceEvidence:
             if (
                 not posixpath.isabs(self.origin)
                 or posixpath.normpath(self.origin) != self.origin
-                or self.resolved_commit != "local"
+                or _LOCAL_REVISION_RE.fullmatch(self.resolved_commit) is None
                 or self.subscription_ref is not None
             ):
                 raise ValueError("local source origin must be a normalized absolute path")
