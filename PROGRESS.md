@@ -59,7 +59,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `3affea4` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / `0940566` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
-| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | in_progress | `codex/aart-1-0-life01-lifecycle` | pending | Recorded subscription only |
+| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | in_progress | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / pending | Recorded subscription only |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | pending | — | — | Separate payload/setup outcomes |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
 | SEC02 | Optional out-of-process analyzers | SEC01 | pending | — | — | No auto-install/runtime deps |
@@ -93,8 +93,8 @@ Files owned: lifecycle domain/application/local adapter, merge identity state pr
   lifecycle tests/docs, TODO.md, PROGRESS.md, narrow exports/integration where required
 Risks/migrations: no same-name source fallback; fetch remains separate; user/foreign content and
   cross-scope state must survive; partial failures cannot release live object references
-PR: pending after push
-CI: local Python 3.11 full quality and Python 3.14 runtime gates pass; remote pending
+PR: #47 ready and mergeable
+CI: local gates and first four-job Python 3.10/3.14 GitHub matrix pass
 Merge: pending
 ```
 
@@ -834,3 +834,12 @@ None.
   Python 3.14 requires `PYTHONPATH=.` when the worktree is not installed; with the same import
   context as CI it passes validation, packaging, and docs. Two pre-existing HTTP cleanup
   ResourceWarnings remain nonfatal.
+
+### 2026-08-10 — LIFE01 implementation CI
+
+- Published reviewed implementation commit `258895b` and opened ready PR #47 referencing the 1.0
+  umbrella issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
