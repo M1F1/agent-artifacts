@@ -9,7 +9,8 @@ import shutil
 import stat
 import subprocess
 import sys
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable, Mapping, Optional, Sequence
 
@@ -390,6 +391,32 @@ def _file_hash(path: str) -> str:
     return digest.hexdigest()
 
 
+def _read_custom_entrypoint(path: str, expected_hash: object) -> bytes:
+    """Read one executable without following links and bind the bytes before copying."""
+
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or not bool(info.st_mode & 0o111):
+            raise RuntimeError("custom setup entrypoint must be an executable regular file")
+        chunks = []
+        remaining = 1024 * 1024 + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        content = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+    if len(content) > 1024 * 1024:
+        raise RuntimeError("custom setup entrypoint exceeds immutable copy limit")
+    if not isinstance(expected_hash, str) or hashlib.sha256(content).hexdigest() != expected_hash:
+        raise RuntimeError("custom setup entrypoint hash changed before immutable run copy")
+    return content
+
+
 def _validate_custom_result(path: str, expected: str) -> dict:
     if os.path.islink(path) or not os.path.isfile(path):
         raise RuntimeError("custom setup did not create a regular result file")
@@ -485,10 +512,13 @@ def _custom_receipt(
     plan: SetupPlan,
     run_dir: str,
     applied: Mapping[str, object],
+    *,
+    script_source: str,
 ) -> dict:
     return {
         "module": effect.module,
         "script": effect.target,
+        "script_source": script_source,
         "script_hash": effect.config["script_hash"],
         "run_dir": run_dir,
         "plan_hash": plan.plan_hash,
@@ -499,17 +529,36 @@ def _custom_receipt(
 
 
 def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -> tuple[dict, bool]:
-    run_dir = os.path.join(
+    runs_root = os.path.join(
         plan.run_root,
         ".agent-artifacts",
         "setup-runs",
-        plan.plan_hash[:16],
     )
-    os.makedirs(run_dir, mode=0o700, exist_ok=True)
+    os.makedirs(runs_root, mode=0o700, exist_ok=True)
+    os.chmod(runs_root, 0o700)
+    run_dir = tempfile.mkdtemp(prefix=f"{plan.plan_hash[:16]}-", dir=runs_root)
     os.chmod(run_dir, 0o700)
+    source_script = effect.target
+    try:
+        content = _read_custom_entrypoint(source_script, effect.config["script_hash"])
+    except (OSError, RuntimeError):
+        shutil.rmtree(run_dir)
+        raise
+    copied_script = os.path.join(run_dir, os.path.basename(source_script))
+    try:
+        fs.write_atomic(copied_script, content)
+        os.chmod(copied_script, 0o700)
+    except (OSError, RuntimeError):
+        shutil.rmtree(run_dir)
+        raise
+    run_effect = replace(
+        effect,
+        target=copied_script,
+        argv=(copied_script,),
+    )
     before = set(os.listdir(run_dir))
     planned = _custom_phase(
-        effect,
+        run_effect,
         runtime,
         phase="plan",
         plan_hash=plan.plan_hash,
@@ -522,7 +571,7 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         raise RuntimeError("custom plan mutated the controlled run directory")
     try:
         applied = _custom_phase(
-            effect,
+            run_effect,
             runtime,
             phase="apply",
             plan_hash=plan.plan_hash,
@@ -530,14 +579,16 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         )
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
         receipt_path = os.path.join(run_dir, "custom-receipt.json")
-        partial_receipt = _custom_receipt(effect, plan, run_dir, {})
+        partial_receipt = _custom_receipt(
+            run_effect, plan, run_dir, {}, script_source=source_script
+        )
         fs.write_atomic(
             receipt_path,
             json.dumps({"plan_hash": plan.plan_hash, "apply": {}}).encode("utf-8"),
         )
         try:
             _custom_phase(
-                effect,
+                run_effect,
                 runtime,
                 phase="rollback",
                 plan_hash=plan.plan_hash,
@@ -552,14 +603,16 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         raise exc
     if set(os.listdir(run_dir)) != after_plan | {"apply-result.json"}:
         receipt_path = os.path.join(run_dir, "custom-receipt.json")
-        partial_receipt = _custom_receipt(effect, plan, run_dir, applied)
+        partial_receipt = _custom_receipt(
+            run_effect, plan, run_dir, applied, script_source=source_script
+        )
         fs.write_atomic(
             receipt_path,
             json.dumps({"plan_hash": plan.plan_hash, "apply": applied}).encode("utf-8"),
         )
         try:
             _custom_phase(
-                effect,
+                run_effect,
                 runtime,
                 phase="rollback",
                 plan_hash=plan.plan_hash,
@@ -575,7 +628,7 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         raise RuntimeError("custom apply mutated the controlled run directory")
     try:
         verified = _custom_phase(
-            effect,
+            run_effect,
             runtime,
             phase="verify",
             plan_hash=plan.plan_hash,
@@ -583,14 +636,16 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         )
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
         receipt_path = os.path.join(run_dir, "custom-receipt.json")
-        partial_receipt = _custom_receipt(effect, plan, run_dir, applied)
+        partial_receipt = _custom_receipt(
+            run_effect, plan, run_dir, applied, script_source=source_script
+        )
         fs.write_atomic(
             receipt_path,
             json.dumps({"plan_hash": plan.plan_hash, "apply": applied}).encode("utf-8"),
         )
         try:
             _custom_phase(
-                effect,
+                run_effect,
                 runtime,
                 phase="rollback",
                 plan_hash=plan.plan_hash,
@@ -606,14 +661,16 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
     expected_files = after_plan | {"apply-result.json", "verify-result.json"}
     if set(os.listdir(run_dir)) != expected_files:
         receipt_path = os.path.join(run_dir, "custom-receipt.json")
-        partial_receipt = _custom_receipt(effect, plan, run_dir, applied)
+        partial_receipt = _custom_receipt(
+            run_effect, plan, run_dir, applied, script_source=source_script
+        )
         fs.write_atomic(
             receipt_path,
             json.dumps({"plan_hash": plan.plan_hash, "apply": applied}).encode("utf-8"),
         )
         try:
             _custom_phase(
-                effect,
+                run_effect,
                 runtime,
                 phase="rollback",
                 plan_hash=plan.plan_hash,
@@ -627,7 +684,13 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
             ) from rollback_exc
         shutil.rmtree(run_dir)
         raise RuntimeError("custom verify mutated the controlled run directory")
-    return _custom_receipt(effect, plan, run_dir, applied) | {
+    return _custom_receipt(
+        run_effect,
+        plan,
+        run_dir,
+        applied,
+        script_source=source_script,
+    ) | {
         "planned": planned,
         "verified": verified,
     }, True
@@ -971,4 +1034,12 @@ def rollback_record(record: SetupStateRecord, runtime: SetupRuntime) -> SetupSta
         rollback_command="" if ok else record.rollback_command,
         receipt_path=record.receipt_path,
         receipt=() if ok else record.receipt,
+        object_digest=record.object_digest,
+        recipe_digest=record.recipe_digest,
+        trust=record.trust,
+        trust_evidence_digest=record.trust_evidence_digest,
+        policy_digest=record.policy_digest,
+        capability_plan_digest=record.capability_plan_digest,
+        canonical_review_digest=record.canonical_review_digest,
+        setup_state_ref=record.setup_state_ref,
     )

@@ -60,6 +60,33 @@ class SetupStateTests(unittest.TestCase):
             "/fake-home/.agent-artifacts/setup-state.json",
         )
 
+    def test_canonical_evidence_is_all_or_nothing_and_strictly_typed(self):
+        incomplete = SetupState(
+            (
+                SetupStateRecord(
+                    "mcp",
+                    "atlassian",
+                    "tabnine",
+                    "user",
+                    "configured",
+                    "Configured",
+                    object_digest="sha256:" + "a" * 64,
+                ),
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "evidence"):
+            dump_setup_state(incomplete)
+
+        malformed = (
+            '{"version":1,"records":[{"artifact_type":"mcp",'
+            '"artifact_name":"atlassian","profile":"tabnine","scope":"user",'
+            '"status":"configured","object_digest":"token=synthetic-canary"}]}'
+        )
+        parsed = parse_setup_state(malformed)
+        self.assertEqual(parsed.code, 5)
+        self.assertIn("evidence", parsed.reason)
+        self.assertNotIn("synthetic-canary", parsed.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

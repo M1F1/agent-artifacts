@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `LIFE01`
+- **Next task:** `SEC01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -59,8 +59,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `3affea4` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / `0940566` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
-| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | in_progress | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / pending | Recorded subscription only |
-| SET01 | Setup trust/digest/policy integration | LIFE01 | pending | — | — | Separate payload/setup outcomes |
+| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | complete | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / `e23c726` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
+| SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / pending | First two four-job Python 3.10/3.14 CI matrices passed; final ledger matrix pending before merge |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
 | SEC02 | Optional out-of-process analyzers | SEC01 | pending | — | — | No auto-install/runtime deps |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | pending | — | — | Worst/range/mean/coverage |
@@ -80,20 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: LIFE01 — Migrate status, update, check, and uninstall lifecycle
-Branch: codex/aart-1-0-life01-lifecycle
-Worktree: /tmp/aart-life01.Ppf7AK/worktree
+Task: SET01 — Bind reviewed setup to canonical objects, trust, and policy
+Branch: codex/aart-1-0-set01-setup
+Worktree: /tmp/aart-set01.6WrrHk/worktree
 Started: 2026-08-10
-Bounded contexts: manifest-v2 status/check, recorded-subscription update, upstream removal/prune,
-  proven-effect uninstall, structured per-selection outcomes, installed-object reference release
-Red test and expected failure: lifecycle module import error plus identity-evidence constructor
-  errors because canonical lifecycle services and complete merge ownership proof do not exist
-Focused tests: 53 pass across lifecycle, state-v2, canonical install/Symlink, and IO-boundary suites
-Files owned: lifecycle domain/application/local adapter, merge identity state proof, canonical
-  lifecycle tests/docs, TODO.md, PROGRESS.md, narrow exports/integration where required
-Risks/migrations: no same-name source fallback; fetch remains separate; user/foreign content and
-  cross-scope state must survive; partial failures cannot release live object references
-PR: #47 ready and mergeable
+Bounded contexts: canonical-object setup selection, trust/policy overlay, immutable reviewed run
+  materialization, sequential queue outcomes, setup state/reference evidence, secret redaction
+Red test and expected failure: canonical setup module import error plus an immutable-run-copy
+  assertion that proved the legacy runtime still executed the source checkout path
+Focused tests: 62 pass across canonical setup, legacy setup/runtime/security/state, command/E2E,
+  and TUI setup suites
+Files owned: setup canonical integration/model/application/adapter/tests/docs, installation setup
+  references where required, TODO.md, PROGRESS.md, narrow exports only
+Risks/migrations: setup must remain post-payload and separately reported; unreviewed/direct sources
+  cannot gain execution authority; secrets cannot enter argv/env/state/receipts/analytics/output
+PR: #48 ready and mergeable
 CI: local gates and first four-job Python 3.10/3.14 GitHub matrix pass
 Merge: pending
 ```
@@ -121,6 +122,8 @@ Merge: pending
 | STATE01 | 28 pass + 8 subtests | 309 files pass | pass | 135 source files pass | 1225 pass | 28 pass | 11-step pass | pass | 86.59% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1225 pass; first 4-job Python 3.10/3.14 matrix passed |
 | INS01 | 27 pass | 315 files pass | pass | 139 source files pass | 1243 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1243 pass; first 4-job Python 3.10/3.14 matrix passed |
 | INS02 | 55 pass | 316 files pass | pass | 139 source files pass | 1252 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1252 pass; first 4-job Python 3.10/3.14 matrix passed |
+| LIFE01 | 53 pass | 322 files pass | pass | 143 source files pass | 1285 pass | 28 pass | 11-step pass | pass | 85.86% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1285 pass; 2× 4-job Python 3.10/3.14 pass |
+| SET01 | 62 pass | 327 files pass | pass | 147 source files pass | 1303 pass | 28 pass | 11-step pass | pass | 85.91% overall; 90.94% new setup context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1303 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -147,6 +150,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-016 | Source snapshots are keyed by origin-independent content digest while pointers also bind the resolved local digest or Git commit | accepted | Converges identical local/Git bytes, permits safe concurrent publication, and preserves immutable revision provenance without path-derived identity |
 | D-017 | Effective marketplace trust is a local policy overlay bound to source, snapshot, object, review, provenance, and policy evidence | accepted | Prevents source self-claims, aliases, and default ranking from granting reviewed trust and makes evidence changes invalidate the decision |
 | D-018 | Native registry references retain upstream source identity and promotion is a reviewed three-file projection | accepted | Preserves marketplace qualification, avoids payload duplication, and confines mutations to entry/lock/index without commit or push |
+| D-019 | Setup authority is a reviewed digest-bound plan over exact object, recipe, trust, policy, platform, and destination evidence | accepted | Prevents source drift or trust changes from gaining execution authority; custom code runs only from a verified private copy and setup remains independently reportable/rollbackable |
 
 ## Blockers
 
@@ -838,6 +842,47 @@ None.
 ### 2026-08-10 — LIFE01 implementation CI
 
 - Published reviewed implementation commit `258895b` and opened ready PR #47 referencing the 1.0
+  umbrella issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
+
+### 2026-08-10 — LIFE01 merged; SET01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #47 as `e23c726`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean LIFE01 temporary worktree and created isolated SET01 from exact merge
+  `e23c726`.
+- Scoped SET01 to canonical-object recipe and plan binding, effective trust and organization-policy
+  enforcement, immutable run copies, sequential stop/retry/rollback outcomes, separate payload and
+  setup results, durable non-secret setup evidence, and the existing macOS/Keychain boundary.
+
+### 2026-08-10 — SET01 Red, Green, review, and local gates
+
+- Confirmed Red first through the missing canonical setup module and a regression demonstrating
+  that custom setup still executed its mutable source path instead of an immutable reviewed copy.
+- Added an IO-free canonical setup model/application boundary. Review and finalization now bind the
+  exact installed object, marketplace identity, recipe, platform, destination, effective trust,
+  organization policy, capabilities, and explicit authority for untrusted/custom execution.
+- Added transactional setup-state and CAS-reference persistence, sequential stop/retry/rollback
+  outcomes, independent payload/setup statuses, allowlisted reporting, and execution of custom
+  setup only from a digest-verified private `0700` run copy. No credential value is persisted or
+  emitted by the canonical boundary.
+- Applied the repository `code-review` skill and closed findings for managed-root containment,
+  durable rollback evidence, exact receipt validation, current-state/reference verification, and
+  review-bound platform selection. No open review findings remain.
+- Focused setup coverage passes 62 tests with 90.94% line coverage in the new setup context.
+  `make quality` passes Ruff format on 327 files, Ruff lint, mypy on 147 source files, 1303 unit
+  tests, 28 integration tests, the 11-step shell E2E, validation/version checks, 85.91% overall
+  branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation.
+- The full 1303-test suite, integration tests, validation, packaging, docs, and shell E2E also pass
+  on Python 3.14.6. Pre-existing nonfatal HTTP cleanup ResourceWarnings remain unchanged.
+
+### 2026-08-10 — SET01 implementation CI
+
+- Published reviewed implementation commit `378004c` and opened ready PR #48 referencing the 1.0
   umbrella issue without closing it.
 - All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
   PR is mergeable with a clean merge state.

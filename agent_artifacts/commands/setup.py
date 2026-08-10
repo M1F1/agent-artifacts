@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from dataclasses import replace
-from typing import Callable, Mapping, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ..io import fs
 from ..model import (
@@ -24,6 +24,7 @@ from ..setup import (
     mark_unstarted_skipped,
     parse_setup_state,
     plan_setup,
+    receipt_matches_plan,
     recovery_messages,
     render_setup_review,
     setup_state_path,
@@ -323,46 +324,6 @@ def _confirm_effect(effect, read: ReadFn, write: WriteFn) -> bool:
     return answer in ("y", "yes")
 
 
-def _receipt_matches_plan(receipt: Mapping[str, object], plan) -> bool:
-    step_id = receipt.get("step_id")
-    effect = next((candidate for candidate in plan.effects if candidate.step_id == step_id), None)
-    if effect is None or receipt.get("module") != effect.module:
-        return False
-    if "path" in receipt and receipt.get("path") != effect.target:
-        return False
-    if effect.module == "macos-keychain.store@1":
-        return receipt.get("service") == effect.config.get("service") and receipt.get(
-            "account"
-        ) == effect.config.get("account")
-    if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
-        return receipt.get("marker") == effect.config.get("marker")
-    if effect.module == "json.managed-merge@1":
-        configured_path = effect.config.get("path")
-        return (
-            receipt.get("json_path") == list(configured_path)
-            if isinstance(configured_path, tuple)
-            else False
-        )
-    if effect.module == "directory.create@1":
-        return receipt.get("path") == effect.target
-    if effect.module == "docker.pull@1":
-        return receipt.get("image") == effect.target
-    if effect.module == "custom.install@1":
-        run_dir = str(receipt.get("run_dir", ""))
-        expected_runs = os.path.join(plan.run_root, ".agent-artifacts", "setup-runs")
-        try:
-            inside_runs = os.path.commonpath((expected_runs, run_dir)) == expected_runs
-        except ValueError:
-            inside_runs = False
-        return (
-            receipt.get("script") == effect.target
-            and receipt.get("script_hash") == effect.config.get("script_hash")
-            and receipt.get("plan_hash") == plan.plan_hash
-            and inside_runs
-        )
-    return effect.module in ("restart.notice@1", "command.verify@1")
-
-
 def _validate_rollback_records(
     request: Request,
     records: Sequence[SetupStateRecord],
@@ -392,7 +353,7 @@ def _validate_rollback_records(
             record.source_label != plan.item.source_label
             or record.installer_hash != plan.item.installer.descriptor_hash
             or record.plan_hash != plan.plan_hash
-            or not all(_receipt_matches_plan(receipt, plan) for receipt in record.receipt)
+            or not all(receipt_matches_plan(receipt, plan) for receipt in record.receipt)
         ):
             return Err(
                 f"rollback receipt no longer matches the reviewed plan for "
