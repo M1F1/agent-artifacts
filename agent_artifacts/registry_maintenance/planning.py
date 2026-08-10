@@ -366,6 +366,23 @@ def _acquired_package(
     return Ok((packages[0], candidate.value, provenance_digest, loaded.value.manifest.source_id))
 
 
+def resolve_native_acquisition(
+    entry: RegistryEntry,
+    acquisition: NativeReferenceAcquisition,
+    *,
+    executable_version: SemVer,
+    available_capabilities: tuple[Capability, ...],
+) -> Result[tuple[NativeArtifactPackage, ObjectCandidate, ObjectDigest | None, SourceId]]:
+    """Validate and resolve one immutable native acquisition for registry tooling."""
+
+    return _acquired_package(
+        entry,
+        acquisition,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
+
+
 def _collections_without_index(
     files: dict[str, SnapshotEntry],
 ) -> Result[tuple[CollectionManifest, ...]]:
@@ -465,6 +482,25 @@ def _native_registry_content(
             )
         )
     return Ok((tuple(artifacts), loaded.value.collections))
+
+
+def registry_native_content(
+    snapshot: SourceSnapshot,
+    files: dict[str, SnapshotEntry],
+    manifest: RegistryManifest,
+    *,
+    executable_version: SemVer,
+    available_capabilities: tuple[Capability, ...],
+) -> Result[tuple[tuple[IndexArtifact, ...], tuple[CollectionManifest, ...]]]:
+    """Compile registry-owned native packages and collections for maintainer commands."""
+
+    return _native_registry_content(
+        snapshot,
+        files,
+        manifest,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
 
 
 def _locked_index_agrees(
