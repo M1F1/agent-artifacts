@@ -24,21 +24,30 @@ def _tree(root: Path) -> tuple[tuple[str, bytes], ...]:
 
 
 def _committed_source(root: Path) -> tuple[Path, str]:
-    """Expose checkout HEAD under a ref, including GitHub's detached PR merge commit."""
+    """Expose checkout HEAD under a ref, including shallow detached CI commits."""
 
     source = root / "committed-source"
     source.mkdir()
     subprocess.run(("git", "-C", str(source), "init", "-q"), check=True)
-    subprocess.run(("git", "-C", str(source), "fetch", "-q", str(ROOT), "HEAD"), check=True)
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(source),
+            "fetch",
+            "-q",
+            "--update-shallow",
+            str(ROOT),
+            "HEAD:refs/heads/export",
+        ),
+        check=True,
+    )
     commit = subprocess.run(
-        ("git", "-C", str(source), "rev-parse", "FETCH_HEAD"),
+        ("git", "-C", str(source), "rev-parse", "refs/heads/export"),
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
-    subprocess.run(
-        ("git", "-C", str(source), "update-ref", "refs/heads/export", commit), check=True
-    )
     subprocess.run(
         ("git", "-C", str(source), "remote", "add", "origin", APPROVED_ORIGIN), check=True
     )

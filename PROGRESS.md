@@ -1338,3 +1338,8 @@ None.
   11-step shell E2E, validation, 85.83% overall branch coverage (92.81% publication boundary),
   packaging, and docs. A diagnostic PTY run alone demonstrated the existing terminal-width
   truncation behavior in two TUI snapshot assertions; official local and CI gates run without PTY.
+- The first replacement matrix then exposed GitHub Actions' shallow-checkout boundary: fetching
+  detached `HEAD` into a fresh fixture warned that shallow roots could not be updated and left no
+  `FETCH_HEAD`. The fixture now uses `--update-shallow` and a direct
+  `HEAD:refs/heads/export` refspec. This exact operation succeeds against a local detached
+  `--depth=1` clone, and both corrected reference-export E2E tests pass locally.
