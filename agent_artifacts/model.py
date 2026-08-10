@@ -193,6 +193,16 @@ class SetupStateRecord:
     rollback_command: str = ""
     receipt_path: str = ""
     receipt: Tuple[Mapping[str, object], ...] = ()
+    # Canonical SET01 evidence. Empty values preserve the 0.1.x setup-state reader while new
+    # executions bind their receipt to one installed object, trust/policy decision, and Review.
+    object_digest: str = ""
+    recipe_digest: str = ""
+    trust: str = ""
+    trust_evidence_digest: str = ""
+    policy_digest: str = ""
+    capability_plan_digest: str = ""
+    canonical_review_digest: str = ""
+    setup_state_ref: str = ""
 
 
 @dataclass(frozen=True, slots=True)

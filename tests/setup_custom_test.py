@@ -75,7 +75,7 @@ class CustomProtocolTests(unittest.TestCase):
     def test_plan_apply_verify_use_fixed_argv_minimal_environment_and_private_run_dir(self):
         fake = FakeCustomProcess()
         with tempfile.TemporaryDirectory() as source, tempfile.TemporaryDirectory() as target:
-            plan, _script = custom_plan(source, target)
+            plan, script = custom_plan(source, target)
             runtime = SetupRuntime(
                 process=fake,
                 platform="darwin",
@@ -91,6 +91,12 @@ class CustomProtocolTests(unittest.TestCase):
             run_dirs = list(pathlib.Path(target, ".agent-artifacts", "setup-runs").iterdir())
             self.assertEqual(len(run_dirs), 1)
             self.assertEqual(run_dirs[0].stat().st_mode & 0o777, 0o700)
+            executed = pathlib.Path(custom_calls[0][0])
+            self.assertNotEqual(executed, script)
+            self.assertEqual(executed.parent, run_dirs[0])
+            self.assertEqual(executed.read_bytes(), script.read_bytes())
+            self.assertEqual(executed.stat().st_mode & 0o777, 0o700)
+            self.assertTrue(all(pathlib.Path(call[0]) == executed for call in custom_calls))
             self.assertNotIn("do-not-forward", repr(fake.calls) + repr(result))
 
     def test_hash_drift_is_rejected_before_custom_execution(self):

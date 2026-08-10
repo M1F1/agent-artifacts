@@ -91,6 +91,25 @@ _ARTIFACT_KEY = re.compile(r"^(skill|hook|mcp)/[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)\b(token|password|passwd|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+"
 )
+_CANONICAL_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SETUP_STATE_REF = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
+_TRUST_CLASSES = {
+    "unverified",
+    "local",
+    "direct-source",
+    "registry-reviewed",
+    "company-reviewed",
+}
+_CANONICAL_EVIDENCE_FIELDS = (
+    "object_digest",
+    "recipe_digest",
+    "trust",
+    "trust_evidence_digest",
+    "policy_digest",
+    "capability_plan_digest",
+    "canonical_review_digest",
+    "setup_state_ref",
+)
 
 
 class _Invalid(ValueError):
@@ -733,6 +752,52 @@ def rollback_command(item: SetupQueueItem) -> str:
     )
 
 
+def receipt_matches_plan(receipt: Mapping[str, object], plan: SetupPlan) -> bool:
+    """Validate every rollback locator against one exact reviewed non-secret effect plan."""
+
+    step_id = receipt.get("step_id")
+    effect = next((candidate for candidate in plan.effects if candidate.step_id == step_id), None)
+    if effect is None or receipt.get("module") != effect.module:
+        return False
+    if "path" in receipt and receipt.get("path") != effect.target:
+        return False
+    if effect.module == "macos-keychain.store@1":
+        return receipt.get("service") == effect.config.get("service") and receipt.get(
+            "account"
+        ) == effect.config.get("account")
+    if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
+        return receipt.get("marker") == effect.config.get("marker")
+    if effect.module == "json.managed-merge@1":
+        configured_path = effect.config.get("path")
+        return (
+            receipt.get("json_path") == list(configured_path)
+            if isinstance(configured_path, tuple)
+            else False
+        )
+    if effect.module == "directory.create@1":
+        return receipt.get("path") == effect.target
+    if effect.module == "docker.pull@1":
+        return receipt.get("image") == effect.target
+    if effect.module == "custom.install@1":
+        run_dir = str(receipt.get("run_dir", ""))
+        expected_runs = os.path.join(plan.run_root, ".agent-artifacts", "setup-runs")
+        script = str(receipt.get("script", ""))
+        try:
+            inside_runs = (
+                os.path.commonpath((expected_runs, run_dir)) == expected_runs
+                and os.path.commonpath((run_dir, script)) == run_dir
+            )
+        except ValueError:
+            inside_runs = False
+        return (
+            receipt.get("script_source") == effect.target
+            and receipt.get("script_hash") == effect.config.get("script_hash")
+            and receipt.get("plan_hash") == plan.plan_hash
+            and inside_runs
+        )
+    return effect.module in ("restart.notice@1", "command.verify@1")
+
+
 def mark_unstarted_skipped(
     items: Sequence[SetupQueueItem], *, detail: str
 ) -> Tuple[SetupStateRecord, ...]:
@@ -784,7 +849,10 @@ def _redact(value: object) -> object:
 
 
 def _record_to_dict(record: SetupStateRecord) -> dict:
-    return {
+    evidence = tuple(getattr(record, key) for key in _CANONICAL_EVIDENCE_FIELDS)
+    if any(evidence) and not _valid_canonical_evidence(record):
+        raise ValueError("canonical setup evidence is incomplete or invalid")
+    value = {
         "artifact_type": record.artifact_type,
         "artifact_name": record.artifact_name,
         "profile": record.profile,
@@ -806,6 +874,27 @@ def _record_to_dict(record: SetupStateRecord) -> dict:
         "receipt_path": record.receipt_path,
         "receipt": _redact(record.receipt),
     }
+    for key in _CANONICAL_EVIDENCE_FIELDS:
+        field_value = getattr(record, key)
+        if field_value:
+            value[key] = field_value
+    return value
+
+
+def _valid_canonical_evidence(record: SetupStateRecord) -> bool:
+    digests = (
+        record.object_digest,
+        record.recipe_digest,
+        record.trust_evidence_digest,
+        record.policy_digest,
+        record.capability_plan_digest,
+        record.canonical_review_digest,
+    )
+    return (
+        all(_CANONICAL_DIGEST.fullmatch(value) is not None for value in digests)
+        and record.trust in _TRUST_CLASSES
+        and _SETUP_STATE_REF.fullmatch(record.setup_state_ref) is not None
+    )
 
 
 def dump_setup_state(state: SetupState) -> str:
@@ -856,30 +945,40 @@ def parse_setup_state(text: str) -> Result:
             frozen_receipts = tuple(_freeze(x) for x in receipt_raw)
             if not all(isinstance(x, Mapping) for x in frozen_receipts):
                 raise _Invalid("setup receipt entries must be immutable objects")
-            records.append(
-                SetupStateRecord(
-                    artifact_type=artifact_type,
-                    artifact_name=str(entry.get("artifact_name", "")),
-                    profile=str(entry.get("profile", "")),
-                    scope=scope,
-                    status=status,
-                    detail=str(entry.get("detail", "")),
-                    source_label=str(entry.get("source_label", "")),
-                    installer_path=str(entry.get("installer_path", "")),
-                    installer_hash=str(entry.get("installer_hash", "")),
-                    custom_hash=str(entry.get("custom_hash", "")),
-                    schema_version=int(entry.get("schema_version", 1)),
-                    protocol_version=int(entry.get("protocol_version", 1)),
-                    plan_hash=str(entry.get("plan_hash", "")),
-                    started_at=str(entry.get("started_at", "")),
-                    finished_at=str(entry.get("finished_at", "")),
-                    exit_status=entry.get("exit_status"),
-                    retry_command=str(entry.get("retry_command", "")),
-                    rollback_command=str(entry.get("rollback_command", "")),
-                    receipt_path=str(entry.get("receipt_path", "")),
-                    receipt=frozen_receipts,  # type: ignore[arg-type]
-                )
+            record = SetupStateRecord(
+                artifact_type=artifact_type,
+                artifact_name=str(entry.get("artifact_name", "")),
+                profile=str(entry.get("profile", "")),
+                scope=scope,
+                status=status,
+                detail=str(entry.get("detail", "")),
+                source_label=str(entry.get("source_label", "")),
+                installer_path=str(entry.get("installer_path", "")),
+                installer_hash=str(entry.get("installer_hash", "")),
+                custom_hash=str(entry.get("custom_hash", "")),
+                schema_version=int(entry.get("schema_version", 1)),
+                protocol_version=int(entry.get("protocol_version", 1)),
+                plan_hash=str(entry.get("plan_hash", "")),
+                started_at=str(entry.get("started_at", "")),
+                finished_at=str(entry.get("finished_at", "")),
+                exit_status=entry.get("exit_status"),
+                retry_command=str(entry.get("retry_command", "")),
+                rollback_command=str(entry.get("rollback_command", "")),
+                receipt_path=str(entry.get("receipt_path", "")),
+                receipt=frozen_receipts,  # type: ignore[arg-type]
+                object_digest=str(entry.get("object_digest", "")),
+                recipe_digest=str(entry.get("recipe_digest", "")),
+                trust=str(entry.get("trust", "")),
+                trust_evidence_digest=str(entry.get("trust_evidence_digest", "")),
+                policy_digest=str(entry.get("policy_digest", "")),
+                capability_plan_digest=str(entry.get("capability_plan_digest", "")),
+                canonical_review_digest=str(entry.get("canonical_review_digest", "")),
+                setup_state_ref=str(entry.get("setup_state_ref", "")),
             )
+            evidence = tuple(getattr(record, key) for key in _CANONICAL_EVIDENCE_FIELDS)
+            if any(evidence) and not _valid_canonical_evidence(record):
+                raise _Invalid("canonical setup evidence is incomplete or invalid")
+            records.append(record)
         return Ok(SetupState(tuple(records)))
     except (json.JSONDecodeError, _Invalid, TypeError, ValueError) as exc:
         return Err(f"corrupt setup state: {exc}", code=5)

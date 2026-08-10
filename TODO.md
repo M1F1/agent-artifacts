@@ -55,7 +55,7 @@ Product requirements:
       capabilities, minimum user-scope trust, custom setup, and reporting destinations.
 - [x] Extend policy and marketplace consumption with exact company-reviewed source identity and
       effective trust evidence.
-- [ ] Enforce operation-specific scope/trust/setup gates in the installation and setup tasks.
+- [x] Enforce operation-specific scope/trust/setup gates in the installation and setup tasks.
 - [x] Implement Git mirrors, immutable validated snapshots, atomic current pointers, health/doctor,
       concurrency control, and offline last-known-good behavior.
 - [x] Implement the content-addressed artifact object store with digest verification, safe GC, and
@@ -86,7 +86,10 @@ Product requirements:
       setup state, and structured outcomes to manifest v2.
 - [ ] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
       Review/Finalize, descriptions, modes, scopes, and explicit outcomes.
-- [ ] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests.
+- [x] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests, retain the
+      exact CAS object, execute custom code from a verified private copy, and preserve separate
+      payload/setup outcomes, documented in
+      [`canonical-setup-v1.md`](docs/installation/canonical-setup-v1.md).
 - [ ] Keep reporting disabled without an explicit destination and route configured reports only to
       the policy-approved repository.
 
