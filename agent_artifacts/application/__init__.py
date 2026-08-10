@@ -16,6 +16,10 @@ from .registry_commands import (
     prepare_registry_lock,
 )
 from .registry_maintenance import finalize_registry_mutation, prepare_native_promotion
+from .source_management import (
+    SourceManagementReceipt,
+    finalize_source_management,
+)
 from .sources import (
     SourceStatusRequest,
     SourceSyncPorts,
@@ -41,6 +45,7 @@ __all__ = [
     "SourceSyncPorts",
     "SourceSyncRequest",
     "SourceStatusRequest",
+    "SourceManagementReceipt",
     "ReferenceUpdatePorts",
     "ReferenceUpdateRequest",
     "StoreGcPorts",
@@ -49,6 +54,7 @@ __all__ = [
     "finalize_legacy_import",
     "finalize_registry_mutation",
     "finalize_registry_workspace",
+    "finalize_source_management",
     "object_status",
     "compile_sources",
     "load_configuration",

@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `SEC03`
+- **Next task:** `TUI02`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -63,8 +63,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / `7a4b045` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / `655ac46` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | in_progress | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / pending merge | First four-job CI matrix passed; digest-bound cache/index, trust/freshness, worst/unknown policy, CLI and registry audit |
-| TUI01 | First-run source management/health | MKT01,REG01,SEC03 | pending | — | — | Registry remains optional |
+| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | pending | Registry remains optional; source health and first-run policy are explicit |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | pending | — | — | Source/trust/security visible |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
@@ -80,22 +80,24 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SEC03 — Add security attestations, bundle aggregation, policy gates, and UI data
-Branch: codex/aart-1-0-sec03-attestations-policy
-Worktree: /private/tmp/aart-sec03.JI3B16/worktree
+Task: TUI01 — Add first-run source management and health stages
+Branch: codex/aart-1-0-tui01-source-health
+Worktree: /private/tmp/aart-tui01.hXSUvp/worktree
 Started: 2026-08-10
-Bounded contexts: security cache/attestation/index identity and freshness, registry evidence trust,
-  deduplicated collection summary, installation-risk policy, CLI security views and UI projections
-Red test and expected failure: missing attestation/cache, aggregation/policy, projections/suites,
-  CLI wiring/commands, and registry security-index verification contracts all failed before Green
-Focused tests: 159 pass across baseline/analyzers/attestations/cache/aggregation/policy/CLI,
-  registry audit, CLI wiring, and semantic flag validation
-Files owned: security attestations/aggregation/policy/application/IO/commands/tests/docs, CLI/model
-  request wiring, TODO.md, PROGRESS.md, narrow marketplace/registry projections only
-Risks/migrations: evidence trust must derive from local source policy; unknown/stale/high cannot be
-  hidden by averages; optional analyzer absence remains supported; cache inputs require exact match
-PR: #51 ready; implementation commit e3eae01
-CI: first four push/pull-request jobs pass on Python 3.10/3.14; final ledger matrix pending
+Bounded contexts: interface wizard state, first-run source selection, source-health projection,
+  organization policy presentation, deferred source-management requests
+Red test and expected failure: first-run recommended/direct/no-source, source management,
+  health/offline/incompatible, organization restrictions, and text/curses Backspace preservation;
+  failed before the source-stage values/module and wizard transition existed
+Focused tests: 45 source/wizard tests pass; 138 discovered TUI tests pass
+Files owned: wizard/source-stage domain, TUI source projections and frontends, focused tests/docs,
+  TODO.md and PROGRESS.md
+Risks/migrations: registry must remain optional unless policy requires it; source mutations must be
+  deferred until Finalize; explicit legacy catalog arguments must remain compatible
+PR: [#52](https://github.com/M1F1/agent-artifacts/pull/52)
+CI: local canonical quality passes on Python 3.11; Python 3.14.6 passes 1423 unit tests, 28
+  integration tests, validation/version, packaging, and docs; four Python 3.10/3.14 implementation
+  jobs pass after the recorded Ruff/XDG fixes; final ledger matrix pending
 Merge: pending
 ```
 
@@ -127,6 +129,7 @@ Merge: pending
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
+| TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1027,3 +1030,71 @@ None.
   PR is mergeable with a clean implementation diff.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-10 — SEC03 merged; TUI01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #51 as `feecf26`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean SEC03 temporary worktree and created isolated TUI01 from exact merge
+  `feecf26`.
+- Scoped TUI01 to a source-management stage shared by User and Maintainer, durable health/policy
+  facts, immutable deferred requests, Backspace state, and one Finalize write boundary. Registry
+  use remains optional, while TUI02 retains ownership of federated artifact consumption.
+
+### 2026-08-10 — TUI01 Red, Green, review, and local gates
+
+- Confirmed Red through the missing source-stage values/module and missing User/Maintainer wizard
+  transition before implementing the recommended/direct/no-source, enable/disable/default,
+  health, policy, and text/curses Backspace contracts.
+- Added pure frozen source rows, selections, operations, and deferred requests. They distinguish
+  registry/direct/local origin; current/stale/offline/invalid/incompatible/missing/disabled health;
+  required/recommended/default state; and exact locally policy-derived company review without
+  exposing Git credentials or trusting aliases/source claims.
+- Added Sources after Role in both frontends. Navigation retains selections and cursor/scroll;
+  explicit legacy catalog arguments never modify global configuration; first-run fallback remains
+  visible only for a genuinely absent user configuration; no registry is forced; configuration is
+  written only after the final reviewed action and artifact dispatch is blocked on save failure.
+- Kept the TUI01-to-TUI02 migration boundary explicit: the existing consumer bridge accepts one
+  local source or one `github.com` direct source on `main`; registry, multi-source, other-host, and
+  other-ref consumption fail visibly until TUI02 supplies the federated marketplace view.
+- Applied the repository `code-review` skill. Review found that a policy reporting overlay could be
+  accidentally persisted while toggling a source. The application load result now exposes the raw
+  user configuration separately from its effective policy projection; planning validates policy
+  but stores and writes only exact user values. A regression proves reporting locks are not copied
+  into the user document. No open review findings remain.
+- Verified 45 focused source/wizard tests and 138 discovered TUI tests. New-context branch coverage
+  is 96.45% for source-stage values and 100% for the finalizer. `make quality` passes Ruff format on
+  356 files, Ruff lint, mypy on 166 source files, 1423 unit tests, 28 integration tests, the 11-step
+  shell E2E, stdlib-only validation, 86.26% overall branch coverage, `1.0.0a1` wheel/import, docs,
+  and repository non-mutation.
+- The first Python 3.14.6 full-wrapper attempt stopped before tests because that interpreter lacks
+  the optional Ruff package; no global dependency was installed. Its targeted run then passed all
+  1423 tests and 28 integration tests but direct-script validation initially lacked an editable
+  package import. With the repository supplied explicitly through `PYTHONPATH`, validation,
+  version, packaging, and docs passed. The isolated CI matrix supplies the full developer-tool
+  proof on Python 3.10 and 3.14.
+
+### 2026-08-10 — TUI01 initial CI format fix
+
+- Published implementation commit `041e551` plus local-gate ledger commit `37c4b16`, and opened
+  ready PR #52 referencing the 1.0 umbrella issue without closing it.
+- Both Python 3.10/3.14 push jobs and both pull-request jobs stopped at the same format check before
+  tests: CI resolved Ruff 0.16.2 while the canonical local environment uses Ruff 0.12.2, and the
+  newer formatter parenthesizes two multiline test lambdas differently.
+- Applied only the mechanical formatter delta reported by CI. The focused 23-test source-stage
+  module passes, and all 356 files now pass format/lint under both Ruff 0.12.2 and exact 0.16.2 in a
+  temporary isolated environment.
+- The next matrix passed format, lint, and type checking, then exposed three runtime-context test
+  failures caused by ambient GitHub-runner `XDG_*` values. The tests wrote beneath their temporary
+  home defaults while the production resolver correctly honored XDG, so they observed an empty
+  first-run configuration. The fixture now pins config/data/cache XDG roots to the same temporary
+  home layout, preserving real path semantics and preventing host-environment leakage. A new
+  replacement four-job matrix reruns on this hermetic test fix.
+
+### 2026-08-10 — TUI01 implementation CI
+
+- All four replacement push/pull-request quality jobs passed on Python 3.10 and 3.14 after the
+  formatter and ambient-XDG test-isolation fixes; no product behavior changed in either CI fix.
+- PR #52 is ready and mergeable with the complete implementation diff. This ledger commit records
+  the remote evidence, and a final four-job matrix reruns before the protected squash merge.

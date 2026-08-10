@@ -32,6 +32,19 @@ from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from .catalog import resolve_bundle
 from .compatibility import check_profile_compatibility
+from .configuration.model import (
+    ConfiguredSource,
+    OrganizationPolicy,
+    SourceKind,
+    UserConfiguration,
+    default_user_configuration,
+    git_location_parts,
+)
+from .domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from .domain.identifiers import SourceAlias
+from .domain.result import Err as DomainErr
+from .domain.result import Ok as DomainOk
+from .domain.result import Result as DomainResult
 from .install_modes import supports_symlink
 from .model import (
     Artifact,
@@ -53,6 +66,15 @@ from .profiles.loader import load_profiles
 from .profiles.scope import profile_for_scope
 from .setup import build_queue, recovery_messages
 from .source import open_source
+from .sources.model import HealthStatus, SourceHealth
+from .tui_sources import (
+    SourceManagementRequest,
+    SourceSelection,
+    SourceStageView,
+    build_source_stage,
+    plan_source_management,
+    render_source_row,
+)
 from .wizard import (
     BasketItem,
     WizardInput,
@@ -124,6 +146,7 @@ ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]
 SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
+SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1094,6 +1117,370 @@ def _run_user_text(
     )
 
 
+def _legacy_source_stage_view(
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+) -> SourceStageView:
+    """Describe the exact legacy catalog source while TUI02 migrates marketplace consumption."""
+
+    if source_dir is not None:
+        source = ConfiguredSource(
+            SourceAlias("explicit-local"),
+            SourceKind.SOURCE_LOCAL,
+            os.path.abspath(source_dir),
+            None,
+            True,
+        )
+    elif repo is not None:
+        source = ConfiguredSource(
+            SourceAlias("explicit-git"),
+            SourceKind.SOURCE_GIT,
+            f"https://github.com/{repo.removesuffix('.git')}.git",
+            "main",
+            True,
+        )
+    else:
+        import agent_artifacts
+
+        package_root = os.path.dirname(os.path.dirname(os.path.abspath(agent_artifacts.__file__)))
+        source = ConfiguredSource(
+            SourceAlias("bundled-legacy"),
+            SourceKind.SOURCE_LOCAL,
+            package_root,
+            None,
+            True,
+        )
+    baseline = default_user_configuration()
+    configuration = UserConfiguration(
+        baseline.schema_version,
+        (source,),
+        None,
+        baseline.sync,
+        baseline.reporting,
+    )
+    projected = build_source_stage(
+        configuration,
+        OrganizationPolicy(1),
+        {source.alias: SourceHealth(HealthStatus.MISSING, None, None)},
+        first_run=True,
+    )
+    assert isinstance(projected, DomainOk)
+    return projected.value
+
+
+def _runtime_source_stage_context(
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+    user_home: Optional[str],
+) -> DomainResult[Tuple[SourceStageView, Optional[SourceFinalizeFn]]]:
+    """Load configured sources and current managed health at the imperative TUI boundary."""
+
+    if source_dir is not None or repo is not None:
+        return DomainOk(
+            (
+                _legacy_source_stage_view(source_dir=source_dir, repo=repo),
+                None,
+            )
+        )
+
+    import sys
+    import time
+
+    from .application.configuration import (
+        ConfigurationPorts,
+        ConfigurationRequest,
+        load_configuration,
+        save_user_configuration,
+    )
+    from .application.source_management import finalize_source_management
+    from .application.sources import SourceStatusRequest, source_status
+    from .configuration.paths import Platform, resolve_config_paths
+    from .configuration.policy import RuntimeOverrides
+    from .io.config_store import (
+        read_configuration,
+        recover_configuration,
+        write_configuration,
+    )
+    from .io.source_store import read_current_source
+    from .sources.model import CurrentSourceRequest, source_instance_id, source_store_paths
+
+    platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
+    home = os.path.abspath(user_home or os.path.expanduser("~"))
+    paths = resolve_config_paths(
+        platform,
+        home=home,
+        xdg_config_home=os.environ.get("XDG_CONFIG_HOME"),
+        xdg_data_home=os.environ.get("XDG_DATA_HOME"),
+        xdg_cache_home=os.environ.get("XDG_CACHE_HOME"),
+    )
+    ports = ConfigurationPorts(
+        read_configuration,
+        write_configuration,
+        recover_configuration,
+    )
+    loaded = load_configuration(
+        ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
+        ports,
+    )
+    if isinstance(loaded, DomainErr):
+        return loaded
+    configuration = loaded.value.user_configuration
+    policy = loaded.value.effective.policy
+    if (
+        loaded.value.first_run is not None
+        and not configuration.sources
+        and not policy.recommended_sources
+        and not policy.required_sources
+    ):
+        # Preserve the installed-checkout alpha transition on a genuinely unconfigured first run.
+        # Explicitly saving an empty configuration disables this compatibility fallback.
+        return DomainOk((_legacy_source_stage_view(source_dir=None, repo=None), None))
+
+    now = int(time.time())
+    health = {}
+    for source in configuration.sources:
+        store_paths = source_store_paths(paths.data_root, source_instance_id(source))
+        health[source.alias] = source_status(
+            SourceStatusRequest(
+                CurrentSourceRequest(store_paths, source.alias),
+                now,
+                configuration.sync.max_age_seconds,
+            ),
+            read_current_source,
+        )
+    projected = build_source_stage(
+        configuration,
+        policy,
+        health,
+        first_run=loaded.value.first_run is not None,
+    )
+    if isinstance(projected, DomainErr):
+        return projected
+
+    def finalize(request: SourceManagementRequest) -> DomainResult[object]:
+        refreshed = load_configuration(
+            ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
+            ports,
+        )
+        if isinstance(refreshed, DomainErr):
+            return refreshed
+        if (
+            refreshed.value.user_configuration != request.before
+            or refreshed.value.effective.policy != request.policy
+        ):
+            return DomainErr(
+                (
+                    Diagnostic(
+                        DiagnosticCode("source-selection-invalid"),
+                        Severity.ERROR,
+                        "source configuration or organization policy changed after Review",
+                        remediation=("return to Sources and review the latest values",),
+                    ),
+                )
+            )
+        return finalize_source_management(
+            request,
+            lambda desired, active_policy: save_user_configuration(
+                desired,
+                active_policy,
+                paths,
+                ports,
+            ),
+        )
+
+    return DomainOk((projected.value, finalize))
+
+
+def _automatic_source_selection(view: SourceStageView) -> SourceSelection:
+    aliases = tuple(row.source.alias for row in view.rows if row.source.enabled)
+    planned = plan_source_management(view, aliases, no_source=not aliases)
+    assert isinstance(planned, DomainOk)
+    return planned.value
+
+
+def _source_choice_rows(view: SourceStageView) -> Tuple[_Choice, ...]:
+    rows = tuple(
+        _Choice(
+            "profile",
+            row.source.alias.value,
+            None,
+            render_source_row(row),
+            description=(
+                "Use this source in the marketplace. "
+                + (row.reason if row.reason else "Its health and policy facts are shown above.")
+            ),
+            enabled=row.selectable,
+            reason=row.reason,
+        )
+        for row in view.rows
+    )
+    if view.allow_no_source:
+        rows += (
+            _Choice(
+                "profile",
+                "no-source",
+                None,
+                "Continue without sources — exit cleanly without installing artifacts.",
+                description="Do not force a registry or direct source during this run.",
+            ),
+        )
+    return rows
+
+
+def _source_selection_from_indices(
+    view: SourceStageView,
+    indices: Sequence[int],
+) -> DomainErr | SourceSelection:
+    no_source_index = len(view.rows)
+    no_source = view.allow_no_source and no_source_index in indices
+    aliases = tuple(
+        view.rows[index].source.alias for index in indices if 0 <= index < len(view.rows)
+    )
+    planned = plan_source_management(view, aliases, no_source=no_source)
+    return planned if isinstance(planned, DomainErr) else planned.value
+
+
+def _prompt_source_stage_text(
+    session: WizardSession,
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardInput | SourceSelection:
+    write(
+        "Choose enabled artifact sources. Registries are optional unless organization policy "
+        "marks one as required."
+    )
+    choices = _source_choice_rows(view)
+    for index, choice in enumerate(choices, start=1):
+        write(f"  {index:>2}. {choice.label}")
+    if not view.rows:
+        write("No sources are configured. Add one with: aart source add")
+    if view.unconfigured_recommended:
+        write(
+            "Organization-recommended aliases needing configuration: "
+            + ", ".join(alias.value for alias in view.unconfigured_recommended)
+        )
+    if view.unconfigured_required:
+        write(
+            "Organization-required aliases needing configuration: "
+            + ", ".join(alias.value for alias in view.unconfigured_required)
+        )
+    selected_aliases = (
+        set() if session.source_selection is None else set(session.source_selection.enabled_aliases)
+    )
+    selected = tuple(
+        index for index, row in enumerate(view.rows) if row.source.alias in selected_aliases
+    )
+    if session.source_selection is not None and session.source_selection.no_source:
+        selected += (len(view.rows),)
+    elif session.source_selection is None:
+        selected = tuple(index for index, row in enumerate(view.rows) if row.source.enabled)
+    write(f"Selected: {len(selected)} source option(s)")
+    while True:
+        event = _prompt_wizard_indices(
+            read,
+            write,
+            "Source(s) (b=back, q=quit): ",
+            choices,
+            selected=selected,
+        )
+        if event.kind != "confirm":
+            return event
+        planned = _source_selection_from_indices(view, event.selected)
+        if isinstance(planned, DomainErr):
+            for diagnostic in planned.diagnostics:
+                write(f"{diagnostic.severity.value}: {diagnostic.message}")
+            continue
+        return planned
+
+
+def _selected_legacy_source_arguments(
+    view: SourceStageView,
+    selection: SourceSelection,
+    *,
+    source_dir: Optional[str],
+    repo: Optional[str],
+) -> DomainResult[Tuple[Optional[str], Optional[str]]]:
+    """Bridge one selected source to the 0.1 command core until TUI02 owns source unions."""
+
+    if len(selection.enabled_aliases) != 1:
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-selection-invalid"),
+                    Severity.ERROR,
+                    "the current consumer view accepts one source; select one source before "
+                    "continuing to artifact choices",
+                    remediation=("use aart source commands to manage the wider source set",),
+                ),
+            )
+        )
+    selected = selection.enabled_aliases[0]
+    row = next((row for row in view.rows if row.source.alias == selected), None)
+    if row is None:
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-selection-invalid"),
+                    Severity.ERROR,
+                    "selected source is absent from the reviewed source view",
+                ),
+            )
+        )
+    if row.source.kind is SourceKind.SOURCE_LOCAL:
+        return DomainOk((row.source.location, None))
+    if row.source.kind is SourceKind.REGISTRY_GIT:
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-incompatible"),
+                    Severity.ERROR,
+                    f"registry {selected} is ready for source management, but artifact browsing "
+                    "requires the federated marketplace view",
+                ),
+            )
+        )
+    parts = git_location_parts(row.source.location)
+    if parts is not None and parts[0] == "github.com" and row.source.ref == "main":
+        return DomainOk((None, parts[1]))
+    return DomainErr(
+        (
+            Diagnostic(
+                DiagnosticCode("source-incompatible"),
+                Severity.ERROR,
+                f"source {selected} requires its managed snapshot before this consumer view can "
+                "open its Git host",
+                remediation=("sync the source and retry",),
+            ),
+        )
+    )
+
+
+def _finalize_source_selection(
+    session: WizardSession,
+    source_finalizer: Optional[SourceFinalizeFn],
+    write: WriteFn,
+) -> Optional[int]:
+    selected = session.source_selection
+    if selected is None or not selected.request.operations:
+        return None
+    if source_finalizer is None:
+        write("error: source configuration cannot be saved by this TUI runtime")
+        write("No artifact action was dispatched.")
+        return 2
+    finalized = source_finalizer(selected.request)
+    if isinstance(finalized, DomainErr):
+        for diagnostic in finalized.diagnostics:
+            write(f"{diagnostic.severity.value}: {diagnostic.message}")
+        write("No artifact action was dispatched.")
+        return 2
+    count = len(selected.request.operations)
+    write(f"Sources: applied {count} reviewed configuration change(s).")
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class _UserWizardReadModel:
     catalog: Catalog
@@ -1410,12 +1797,13 @@ def _run_user_text_wizard(
     repo: Optional[str],
     project: Optional[str],
     user_home: Optional[str],
+    source_finalizer: Optional[SourceFinalizeFn] = None,
 ) -> int | WizardSession:
     read_model: Optional[_UserWizardReadModel] = None
     read_key: Optional[tuple] = None
     profile_names = tuple(sorted(load_profiles(project)))
     while True:
-        if session.current in ("role", "maintainer_action"):
+        if session.current in ("role", "source", "maintainer_action"):
             return session
         _write_wizard_header(session, write)
         if session.current == "profiles":
@@ -1614,6 +2002,9 @@ def _run_user_text_wizard(
             if not can_finalize(session, revision=session.revision):
                 write("Wizard state changed; review it again before Finalize.")
                 continue
+            source_code = _finalize_source_selection(session, source_finalizer, write)
+            if source_code is not None:
+                return source_code
             outcome = _dispatch_result(request)
             code = _render_result(outcome, write)
             if code != 0 or confirmation is None:
@@ -1636,11 +2027,19 @@ def _run_text(
     repo: Optional[str] = None,
     project: Optional[str] = None,
     user_home: Optional[str] = None,
+    source_stage_view: Optional[SourceStageView] = None,
+    source_finalizer: Optional[SourceFinalizeFn] = None,
 ) -> int:
     """Persistent onboarding/role wizard shared by the fallback and headless tests."""
 
     session = initial_session()
     buffered_role: Optional[str] = None
+    legacy_source_dir = source_dir
+    legacy_repo = repo
+    stage_view = source_stage_view or _legacy_source_stage_view(
+        source_dir=source_dir,
+        repo=repo,
+    )
     while True:
         if session.current == "onboarding":
             for line in onboarding_lines("text"):
@@ -1663,7 +2062,41 @@ def _run_text(
                 continue
             session = wizard_select(session, "role", role)
             session = wizard_advance(session)
-            if role == "user":
+            continue
+        if session.current == "source":
+            if source_stage_view is None:
+                selected_source: WizardInput | SourceSelection = _automatic_source_selection(
+                    stage_view
+                )
+            else:
+                _write_wizard_header(session, write)
+                selected_source = _prompt_source_stage_text(session, stage_view, read, write)
+            if isinstance(selected_source, WizardInput):
+                if selected_source.kind == "back":
+                    session = wizard_back(session)
+                elif _confirm_wizard_quit(session, read, write):
+                    return _cancel(write)
+                continue
+            session = wizard_select(session, "source", selected_source)
+            session = wizard_advance(session)
+            if selected_source.no_source:
+                return _cancel(
+                    write,
+                    "No sources selected; no registry was forced and no changes were made.",
+                )
+            source_arguments = _selected_legacy_source_arguments(
+                stage_view,
+                selected_source,
+                source_dir=legacy_source_dir,
+                repo=legacy_repo,
+            )
+            if isinstance(source_arguments, DomainErr):
+                for diagnostic in source_arguments.diagnostics:
+                    write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                session = wizard_back(session)
+                continue
+            source_dir, repo = source_arguments.value
+            if session.role == "user":
                 result = _run_user_text_wizard(
                     session,
                     read,
@@ -1673,6 +2106,7 @@ def _run_text(
                     repo=repo,
                     project=project,
                     user_home=user_home,
+                    source_finalizer=source_finalizer,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -1686,6 +2120,7 @@ def _run_text(
                 source_dir=source_dir,
                 repo=repo,
                 project=project,
+                source_finalizer=source_finalizer,
             )
             if isinstance(result, WizardSession):
                 session = result
@@ -1727,6 +2162,7 @@ def _run_maintainer_text(
     source_dir: Optional[str],
     repo: Optional[str],
     project: Optional[str],
+    source_finalizer: Optional[SourceFinalizeFn] = None,
 ) -> int | WizardSession:
     """Drive Maintainer stages and expose apply only at the Review Finalize boundary."""
     del source_factory  # maintainer source resolution belongs to the upstream command core
@@ -1776,6 +2212,7 @@ def _run_maintainer_text(
                     repo=repo,
                     project=project,
                     user_home=None,
+                    source_finalizer=source_finalizer,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -1911,6 +2348,9 @@ def _run_maintainer_text(
         if not can_finalize(session, revision=session.revision):
             write("Wizard state changed; review it again before Finalize.")
             continue
+        source_code = _finalize_source_selection(session, source_finalizer, write)
+        if source_code is not None:
+            return source_code
         if is_mutation:
             return _apply_maintainer_mutation(request, write)
         return _dispatch(request)
@@ -2465,6 +2905,43 @@ def _curses_multi_event(
     return WizardInput("confirm", picked, cursor, scroll)
 
 
+def _curses_source_event(
+    curses,
+    stdscr,
+    session: WizardSession,
+    view: SourceStageView,
+) -> Tuple[WizardInput, Optional[SourceSelection], Optional[DomainErr]]:
+    choices = _source_choice_rows(view)
+    selected_aliases = (
+        set() if session.source_selection is None else set(session.source_selection.enabled_aliases)
+    )
+    selected = tuple(
+        index for index, row in enumerate(view.rows) if row.source.alias in selected_aliases
+    )
+    if session.source_selection is not None and session.source_selection.no_source:
+        selected += (len(view.rows),)
+    elif session.source_selection is None:
+        selected = tuple(index for index, row in enumerate(view.rows) if row.source.enabled)
+    missing = view.unconfigured_required or view.unconfigured_recommended
+    suffix = "" if not missing else " · configure: " + ",".join(item.value for item in missing)
+    event = _curses_multi_event(
+        curses,
+        stdscr,
+        f"Sources (space=toggle, enter=confirm, q=quit){suffix}",
+        tuple(choice.label for choice in choices),
+        session,
+        selected=selected,
+        details=tuple(choice.description for choice in choices),
+        disabled=tuple(not choice.enabled for choice in choices),
+    )
+    if event.kind != "confirm":
+        return event, None, None
+    planned = _source_selection_from_indices(view, event.selected)
+    if isinstance(planned, DomainErr):
+        return event, None, planned
+    return event, planned, None
+
+
 def _curses_confirm_discard(curses, stdscr, session: WizardSession) -> bool:
     if request_quit(session) == "quit":
         return True
@@ -2550,7 +3027,7 @@ def _run_user_curses_wizard(
     profile_names = tuple(sorted(load_profiles(project)))
     read_model: Optional[_UserWizardReadModel] = None
     read_key: Optional[tuple] = None
-    while session.current not in ("role", "maintainer_action"):
+    while session.current not in ("role", "source", "maintainer_action"):
         if session.current == "profiles":
             selected = tuple(
                 index for index, name in enumerate(profile_names) if name in session.profiles
@@ -2716,10 +3193,6 @@ def _run_user_curses_wizard(
                     return session
                 read_model = loaded
                 read_key = key
-                if loaded.source_label:
-                    session = wizard_select(
-                        session, "source", (loaded.source_label, loaded.source_root)
-                    )
             if not read_model.choices:
                 selection["empty"] = (session.action or "selection", session.profiles)
                 return session
@@ -2843,6 +3316,7 @@ def _run_user_curses_wizard(
                 return session
             selection["request"] = request
             selection["confirmation"] = confirmation
+            selection["wizard_session"] = session
             return session
 
     return session
@@ -2854,6 +3328,8 @@ def _run_curses(
     repo: Optional[str] = None,
     project: Optional[str] = None,
     user_home: Optional[str] = None,
+    source_stage_view: Optional[SourceStageView] = None,
+    source_finalizer: Optional[SourceFinalizeFn] = None,
 ) -> int:
     """Collect a persistent wizard session and dispatch only after curses teardown."""
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
@@ -2862,6 +3338,10 @@ def _run_curses(
         print("No profiles available.")
         return 0
     selection: dict = {}
+    stage_view = source_stage_view or _legacy_source_stage_view(
+        source_dir=source_dir,
+        repo=repo,
+    )
 
     def _ui(stdscr) -> None:
         curses.curs_set(0)
@@ -2871,51 +3351,104 @@ def _run_curses(
             selection["cancelled"] = True
             return
         session = wizard_advance(session)
-        while session.current == "role":
-            event = _curses_single_event(
-                curses,
-                stdscr,
-                "Choose how you want to use aart  (enter=confirm, q=quit)",
-                tuple(f"{role.label} - {role.description}" for role in ROLES),
-                session,
-            )
-            session = remember_position(session, "role", cursor=event.cursor, scroll=event.scroll)
-            if event.kind == "back":
-                onboarding = _curses_onboarding(curses, stdscr)
-                if onboarding.kind == "quit":
+        while session.current in ("role", "source"):
+            if session.current == "role":
+                event = _curses_single_event(
+                    curses,
+                    stdscr,
+                    "Choose how you want to use aart  (enter=confirm, q=quit)",
+                    tuple(f"{role.label} - {role.description}" for role in ROLES),
+                    session,
+                )
+                session = remember_position(
+                    session, "role", cursor=event.cursor, scroll=event.scroll
+                )
+                if event.kind == "back":
+                    onboarding = _curses_onboarding(curses, stdscr)
+                    if onboarding.kind == "quit":
+                        selection["cancelled"] = True
+                        return
+                    continue
+                if event.kind == "quit":
                     selection["cancelled"] = True
                     return
-                continue
-            if event.kind == "quit":
-                selection["cancelled"] = True
-                return
-            role = ROLES[event.selected[0]].name
-            session = wizard_select(session, "role", role)
+                role = ROLES[event.selected[0]].name
+                session = wizard_select(session, "role", role)
+                session = wizard_advance(session)
+
+            assert session.current == "source"
+            if source_stage_view is None:
+                selected_source_value = _automatic_source_selection(stage_view)
+            else:
+                event, maybe_selected_source, source_error = _curses_source_event(
+                    curses,
+                    stdscr,
+                    session,
+                    stage_view,
+                )
+                session = remember_position(
+                    session, "source", cursor=event.cursor, scroll=event.scroll
+                )
+                if event.kind == "back":
+                    session = wizard_back(session)
+                    continue
+                if event.kind == "quit":
+                    selection["cancelled"] = True
+                    return
+                if source_error is not None:
+                    selection["error"] = (
+                        "; ".join(item.message for item in source_error.diagnostics),
+                        2,
+                    )
+                    return
+                assert maybe_selected_source is not None
+                selected_source_value = maybe_selected_source
+            session = wizard_select(session, "source", selected_source_value)
             session = wizard_advance(session)
-            if role == "user":
+            if selected_source_value.no_source:
+                selection["no_source"] = True
+                return
+            source_arguments = _selected_legacy_source_arguments(
+                stage_view,
+                selected_source_value,
+                source_dir=source_dir,
+                repo=repo,
+            )
+            if isinstance(source_arguments, DomainErr):
+                selection["error"] = (
+                    "; ".join(item.message for item in source_arguments.diagnostics),
+                    2,
+                )
+                return
+            active_source_dir, active_repo = source_arguments.value
+            selected_role = session.role
+            assert selected_role is not None
+            if selected_role == "user":
                 session = _run_user_curses_wizard(
                     curses,
                     stdscr,
                     session,
                     selection,
-                    source_dir=source_dir,
-                    repo=repo,
+                    source_dir=active_source_dir,
+                    repo=active_repo,
                     project=project,
                     user_home=user_home,
                 )
-                if selection or session.current != "role":
+                if selection:
                     return
-                continue
+                if session.current in ("role", "source"):
+                    continue
+                return
 
             from .commands import upstream
 
-            catalog_root = os.path.abspath(source_dir or ".")
+            catalog_root = os.path.abspath(active_source_dir or ".")
             context_result = upstream.load_maintainer_context(
                 Request(
                     command="upstream",
                     upstream_action="validate",
                     source_dir=catalog_root,
-                    repo=repo,
+                    repo=active_repo,
                 )
             )
             if isinstance(context_result, Err):
@@ -2944,8 +3477,8 @@ def _run_curses(
                         stdscr,
                         session,
                         selection,
-                        source_dir=source_dir,
-                        repo=repo,
+                        source_dir=active_source_dir,
+                        repo=active_repo,
                         project=project,
                         user_home=user_home,
                     )
@@ -2955,6 +3488,7 @@ def _run_curses(
                 selection["maintainer_action"] = action
                 selection["maintainer_context"] = context_result.value
                 selection["maintainer_session"] = session
+                selection["source_arguments"] = (active_source_dir, active_repo)
                 return
 
     try:
@@ -2965,6 +3499,8 @@ def _run_curses(
             repo=repo,
             project=project,
             user_home=user_home,
+            source_stage_view=source_stage_view,
+            source_finalizer=source_finalizer,
         )
 
     if "error" in selection:
@@ -2975,15 +3511,25 @@ def _run_curses(
         action, profiles = selection["empty"]
         print(_empty_choices_message(action, profiles))
         return _render_result(CommandOutcome(0, ActionSummary(action=action)), print)
+    if "no_source" in selection:
+        return _cancel(
+            print,
+            "No sources selected; no registry was forced and no changes were made.",
+        )
     if "maintainer_action" in selection:
+        active_source_dir, active_repo = selection.get(
+            "source_arguments",
+            (source_dir, repo),
+        )
         result = _run_maintainer_text(
             selection["maintainer_session"],
             input,
             print,
             source_factory=open_source,
-            source_dir=source_dir,
-            repo=repo,
+            source_dir=active_source_dir,
+            repo=active_repo,
             project=project,
+            source_finalizer=source_finalizer,
         )
         return _cancel(print) if isinstance(result, WizardSession) else result
     if "request" not in selection:
@@ -2992,6 +3538,13 @@ def _run_curses(
         return _cancel(print)
 
     request = selection["request"]
+    source_code = _finalize_source_selection(
+        selection["wizard_session"],
+        source_finalizer,
+        print,
+    )
+    if source_code is not None:
+        return source_code
     outcome = _dispatch_result(request)
     code = _render_result(outcome, print)
     confirmation = selection.get("confirmation")
@@ -3426,6 +3979,16 @@ def run(
     quit (no selection) returns 0. ``source_dir`` / ``repo`` / ``project`` default to ``None``
     so the standard source resolution (default repo, or env/flags handled upstream) applies.
     """
+    source_context = _runtime_source_stage_context(
+        source_dir=source_dir,
+        repo=repo,
+        user_home=user_home,
+    )
+    if isinstance(source_context, DomainErr):
+        for diagnostic in source_context.diagnostics:
+            print(f"{diagnostic.severity.value}: {diagnostic.message}")
+        return 2
+    source_stage_view, source_finalizer = source_context.value
     try:
         import curses  # noqa: F401  (presence check only)
         import sys
@@ -3438,6 +4001,8 @@ def run(
             repo=repo,
             project=project,
             user_home=user_home,
+            source_stage_view=source_stage_view,
+            source_finalizer=source_finalizer,
         )
 
     try:
@@ -3446,6 +4011,8 @@ def run(
             repo=repo,
             project=project,
             user_home=user_home,
+            source_stage_view=source_stage_view,
+            source_finalizer=source_finalizer,
         )
     except Exception:  # pragma: no cover - last-resort guard around the curses path
         return _run_text(
@@ -3453,4 +4020,6 @@ def run(
             repo=repo,
             project=project,
             user_home=user_home,
+            source_stage_view=source_stage_view,
+            source_finalizer=source_finalizer,
         )
