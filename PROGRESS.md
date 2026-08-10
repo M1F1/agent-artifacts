@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `TUI03`
+- **Next task:** `RPT01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -66,8 +66,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
-| TUI03 | Maintainer curation/security UX | TUI02,REG01 | in_progress | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / pending merge | First four-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
-| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
+| TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
+| RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | in_progress | `codex/aart-1-0-rpt01-usage-reporting` | pending | 32 reporting tests and complete local quality matrix pass; CI/merge pending |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
@@ -80,24 +80,23 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: TUI03 — Migrate Maintainer curation and security workflows
-Branch: codex/aart-1-0-tui03-maintainer-curation
-Worktree: /private/tmp/aart-tui03.IK2qfr/worktree
+Task: RPT01 — Implement optional registry-owned usage reporting
+Branch: codex/aart-1-0-rpt01-usage-reporting
+Worktree: /private/tmp/aart-rpt01.avmpEQ/worktree
 Started: 2026-08-10
-Bounded contexts: local registry-workspace curation, scaffold/native promotion/foreign import,
-  upstream refresh, deterministic lock/build/audit/security previews, structured outcomes
-Red test and expected failure: `python -m unittest tests.curation_model_test
-  tests.curation_runtime_test tests.tui_curation_test` failed with the expected
-  `ModuleNotFoundError: agent_artifacts.curation`
-Focused tests: 57 curation/legacy Maintainer/wizard/curses tests pass; focused curation model/runtime
-  coverage is 91.19%; complete local quality wrapper passes
-Files owned: Maintainer application/read model and TUI stages, focused tests, Maintainer
-  documentation, TODO.md and PROGRESS.md
-Risks/migrations: all mutations require a verified local checkout and one reviewed Finalize apply;
-  conversion warnings and diffs must remain exact; no automatic commit/push; consumer managed
-  snapshots and content-addressed objects remain read-only; recovery commands must be explicit
-PR: #54 ready and mergeable
-CI: first four-job Python 3.10/3.14 matrix passed; final ledger matrix pending
+Bounded contexts: versioned redacted reporting events, effective destination policy, interactive
+  consent/preview, browser and authenticated GitHub providers, registry-owned ingestion/dashboard
+Red test and expected failure: `python -m unittest tests.reporting_model_test
+  tests.reporting_schema_test tests.reporting_application_test` failed with the expected
+  `ModuleNotFoundError: agent_artifacts.reporting`
+Focused tests: 32 reporting-context tests pass; 71 reporting/TUI/CLI/registry regressions pass
+Files owned: reporting domain/application/adapters, TUI reporting bridge, registry reporting
+  templates/workflows, focused tests and reporting documentation, TODO.md and PROGRESS.md
+Risks/migrations: no destination must mean no prompt/queue/network; destination never derives from
+  an artifact upstream; credentials, paths, repositories, logs and identifiers never enter events;
+  issue input is untrusted; provider failure cannot change install/setup exit status
+PR: pending
+CI: pending
 Merge: pending
 ```
 
@@ -1213,3 +1212,46 @@ None.
 - Published ready and mergeable PR #54 from commit `98a0c93`; all four initial push/PR quality jobs
   passed on Python 3.10 and 3.14. This ledger update records that remote evidence and triggers the
   final matrix before the protected squash merge.
+
+### 2026-08-10 — TUI03 merged; RPT01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #54 as `7089147`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preservation of the unrelated
+  root-worktree files.
+- Removed only the clean TUI03 temporary worktree and created isolated RPT01 from exact merge
+  `7089147`.
+- Reconciled PLAN/PRD/SPEC with superseded issue #24: registry advertisements remain inert; an
+  effective destination must be explicitly configured/policy-owned, report events omit source
+  repositories/aliases, paths, logs, credentials, and user/machine identifiers, and GitHub issue
+  bodies remain untrusted ingestion input.
+- Added the first reporting model/schema/application contracts and recorded the expected missing
+  `agent_artifacts.reporting` package Red before production edits.
+
+### 2026-08-10 — RPT01 Red/Green, security review, and local gates
+
+- Added a versioned, allowlisted usage-session event and strict untrusted issue-body parser. Events
+  contain only artifact/profile/scope/mode/outcome categories, bounded setup installer digests, and
+  coarse failure facts; paths, source aliases/repositories, logs, credentials, and user/machine
+  identifiers cannot enter the model.
+- Resolved reporting only from the explicit effective registry and its inert `usage_reporting`
+  service advertisement. Disabled mode returns before source reads, prompts, queues, or network;
+  provider or configuration failures are warnings and cannot alter consumer/setup exit status.
+- Added separate consent-and-preview browser submission and opt-in authenticated `gh` submission.
+  The browser prefill carries raw JSON for the Issue Form's `render: json` field, automatic mode
+  never constructs a bounded browser URL, provider exceptions are redacted, and `gh` uses fixed
+  argv, `shell=False`, stdin issue bodies, and host-specific authentication checks.
+- Added registry-owned inert Issue Form plus validation and scheduled dashboard workflows, and
+  offline CLI commands to validate events/issues and aggregate a bounded `body,createdAt` export
+  into escaped static HTML and canonical JSON. Registry initialization does not activate a
+  reporting destination; a maintainer must explicitly author a compatible service.
+- The repository `code-review` pass captured and fixed browser field double-fencing, automatic-mode
+  URL coupling, provider exception escape, unbounded slugs/codes/payloads, impossible timestamps,
+  incomplete setup failure categories, a defensive setup-plan lookup, and premature form labeling
+  that could have made an unvalidated issue look validated. Regression tests cover each externally
+  observable contract; no open review findings remain.
+- Final local evidence: 32 reporting-context tests and 71 cross-context reporting/TUI/CLI/registry
+  tests pass. Noninteractive `make quality` passes Ruff format/lint over 395 files, mypy over 185
+  source modules, 1506 unit tests, 29 integration tests, the 11-step shell E2E, stdlib-only runtime
+  and version validation, 85.74% overall branch coverage, `1.0.0a1` wheel packaging, and docs.
+  An intentionally PTY-bound trial shortened responsive TUI descriptions at 80 columns and failed
+  two pre-existing full-width text assertions; the canonical non-PTY gate and all product tests pass.

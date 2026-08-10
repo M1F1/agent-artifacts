@@ -8,7 +8,7 @@ workflow after the command succeeds.
 
 | Command | Effect | Purpose |
 |---|---|---|
-| `init` | writes | Add protocol markers and the minimum/latest GitHub Actions workflow |
+| `init` | writes | Add protocol markers, registry CI, and inert optional-reporting templates |
 | `scaffold` | writes | Add one canonical native artifact manifest and starter payload |
 | `format` | writes, or reads with `--check` | Canonicalize every managed JSON document |
 | `validate` | reads | Validate protocol, compatibility, lock/index, native packages, and graph |
@@ -44,6 +44,11 @@ that local checkout with `pip --no-deps`; it does not require PyPI or Nexus. `AA
 `M1F1/agent-artifacts` at `main`. It then runs format, strict/frozen validation, lock, build, audit,
 and minimum/latest compatibility checks. The workflow has read-only repository permissions and
 contains no commit or push step.
+
+Initialization also adds the inert usage-report Issue Form, validation workflow, and aggregation/
+Pages workflow. They do not enable client reporting: an effective AART configuration must still
+select this registry alias and choose `prompt` or `automatic`. Their untrusted-input and privacy
+contract is documented in [`optional usage reporting v1`](../reporting/usage-reporting-v1.md).
 
 Create a package with an explicit compatibility and installation contract:
 
@@ -95,5 +100,5 @@ aart registry migrate --legacy-source /path/to/legacy-checkout \
 ```
 
 The destination must contain no managed registry files. Migration emits canonical packages,
-collections, provenance, registry markers, and the CI workflow; it deliberately does not create a
-lock or index. Run `lock` and `build` after reviewing any authored external entries.
+collections, provenance, registry markers, CI, and inert reporting templates; it deliberately does
+not create a lock or index. Run `lock` and `build` after reviewing any authored external entries.

@@ -46,6 +46,12 @@ def _run_security(request: Request) -> int:
     return security.run(request)
 
 
+def _run_reporting(request: Request) -> int:
+    from .commands import reporting
+
+    return reporting.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -59,6 +65,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "setup": setup.run,
     "registry": _run_registry,
     "security": _run_security,
+    "reporting": _run_reporting,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -774,6 +781,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_security = security_sub.add_parser("suites", help="list built-in analyzer suites")
     _add_json(p_security)
 
+    # reporting -------------------------------------------------------------- #
+    p = sub.add_parser(
+        "reporting",
+        help="validate and aggregate registry-owned redacted usage reports",
+    )
+    reporting_sub = p.add_subparsers(dest="reporting_action", metavar="ACTION", required=True)
+    for action in ("validate-event", "validate-issue"):
+        target = reporting_sub.add_parser(
+            action, help=f"validate one {action.removeprefix('validate-')}"
+        )
+        target.add_argument("reporting_input", metavar="FILE", help="input path or - for stdin")
+    target = reporting_sub.add_parser("aggregate", help="build a static dashboard from gh JSON")
+    target.add_argument("reporting_input", metavar="FILE", help="issue export path or - for stdin")
+    target.add_argument(
+        "--output",
+        dest="reporting_output",
+        required=True,
+        metavar="DIR",
+        help="directory for index.html and usage.json",
+    )
+
     return parser
 
 
@@ -872,6 +900,9 @@ def _to_request(args: argparse.Namespace) -> Request:
         publisher_source_id=getattr(args, "publisher_source_id", None),
         security_registry_inputs_digest=getattr(args, "security_registry_inputs_digest", None),
         publisher_trust=getattr(args, "publisher_trust", None),
+        reporting_action=getattr(args, "reporting_action", None),
+        reporting_input=getattr(args, "reporting_input", None),
+        reporting_output=getattr(args, "reporting_output", None),
     )
 
 

@@ -142,6 +142,9 @@ def _managed_path(path: SafeRelativePath) -> bool:
         "aart.lock.json",
         "aart.index.json",
         ".github/workflows/aart-registry.yml",
+        ".github/ISSUE_TEMPLATE/usage-report.yml",
+        ".github/workflows/aart-usage-dashboard.yml",
+        ".github/workflows/aart-usage-validate.yml",
     }:
         return True
     return path.parts[0] in {"entries", "artifacts", "collections"}

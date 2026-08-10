@@ -76,7 +76,7 @@ from .model import (
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
-from .templates import REGISTRY_CI_WORKFLOW
+from .templates import REGISTRY_CI_WORKFLOW, REPORTING_TEMPLATES
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
@@ -246,13 +246,18 @@ def plan_registry_init(
     } & files.value.keys()
     if occupied:
         return _error("registry init refuses an existing registry workspace")
-    workflow = files.value.get(".github/workflows/aart-registry.yml")
-    if workflow is not None and (
-        workflow.kind is not SnapshotEntryKind.FILE
-        or workflow.content != REGISTRY_CI_WORKFLOW
-        or workflow.executable
-    ):
-        return _error("registry init refuses to overwrite an existing CI workflow")
+    templates = (
+        (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
+        *REPORTING_TEMPLATES,
+    )
+    for path, expected in templates:
+        existing = files.value.get(path)
+        if existing is not None and (
+            existing.kind is not SnapshotEntryKind.FILE
+            or existing.content != expected
+            or existing.executable
+        ):
+            return _error(f"registry init refuses to overwrite an existing template: {path}")
     bounds = VersionBounds(options.minimum_aart, options.maximum_aart_exclusive)
     registry = RegistryManifest(
         1,
@@ -284,11 +289,7 @@ def plan_registry_init(
         RegistryOperation.INIT,
         snapshot,
         (
-            (
-                ".github/workflows/aart-registry.yml",
-                REGISTRY_CI_WORKFLOW,
-                False,
-            ),
+            *((path, content, False) for path, content in templates),
             (
                 "aart-registry.json",
                 canonical_json_bytes(registry_manifest_to_json(registry)),

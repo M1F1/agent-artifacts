@@ -100,8 +100,10 @@ Product requirements:
       exact CAS object, execute custom code from a verified private copy, and preserve separate
       payload/setup outcomes, documented in
       [`canonical-setup-v1.md`](docs/installation/canonical-setup-v1.md).
-- [ ] Keep reporting disabled without an explicit destination and route configured reports only to
-      the policy-approved repository.
+- [x] Keep reporting disabled without an explicit destination; route configured reports only to
+      the policy-approved registry service; preview exact redacted events; isolate provider
+      failures; and supply bounded registry validation/aggregation/dashboard templates, documented
+      in [`usage-reporting-v1.md`](docs/reporting/usage-reporting-v1.md).
 
 ### Installation-risk assessment
 

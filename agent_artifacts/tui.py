@@ -31,6 +31,7 @@ import textwrap
 from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
+from . import __version__
 from .catalog import resolve_bundle
 from .compatibility import check_profile_compatibility
 from .configuration.model import (
@@ -80,6 +81,9 @@ from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
 from .planners import install_target_paths
 from .profiles.loader import load_profiles
 from .profiles.scope import profile_for_scope
+from .reporting.application import ReportingApplicationService
+from .reporting.model import UsageReport
+from .reporting.projection import SetupReportState, usage_report_from_consumer
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
@@ -179,6 +183,7 @@ SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
+ReportingServiceFactory = Callable[[UserConfiguration], DomainResult[ReportingApplicationService]]
 CurationServiceFactory = Callable[[str], DomainResult[CurationService]]
 
 
@@ -908,18 +913,36 @@ def _run_post_install_setup(
     return 1
 
 
-def _run_canonical_setup_queue(
+@dataclass(frozen=True, slots=True)
+class _CanonicalSetupRun:
+    exit_code: int
+    reporting: Tuple[SetupReportState, ...]
+
+
+def _setup_reporting_failure(status: str) -> Tuple[str, str] | None:
+    if status in {"configured", "already-configured", "not-required"}:
+        return None
+    if status == "verification-failed":
+        return ("verification", "setup-verification-failed")
+    if status in {"rollback-incomplete", "rolled-back"}:
+        return ("rollback", f"setup-{status}")
+    if status in {"queue-declined", "planning-failed"}:
+        return ("queue", f"setup-{status}")
+    return ("setup-installer", f"setup-{status}")
+
+
+def _canonical_setup_run(
     service: ConsumerApplicationService,
     review: ConsumerReview,
     outcome: ConsumerOutcome,
     *,
     read: ReadFn,
     write: WriteFn,
-) -> int:
+) -> _CanonicalSetupRun:
     """Prepare, separately review, and sequentially execute canonical post-payload setup."""
 
     if not any(item.setup_status == "pending" for item in outcome.items):
-        return 0
+        return _CanonicalSetupRun(0, ())
     queue = service.setup_queue(review, outcome)
     if queue.failures and all("authoriz" in item.detail.casefold() for item in queue.failures):
         write("Setup needs explicit permission for untrusted/custom source capabilities.")
@@ -935,7 +958,16 @@ def _run_canonical_setup_queue(
         write(f"Setup planning failed for {failure.key}: {failure.detail}")
         write(f"  Retry: aart setup retry --artifact {failure.key.split('#', 1)[0]}")
     if not queue.plans:
-        return 1 if queue.failures else 0
+        plan_failures = tuple(
+            SetupReportState(
+                failure.key,
+                "planning-failed",
+                failure_phase="queue",
+                failure_code="setup-planning-failed",
+            )
+            for failure in queue.failures
+        )
+        return _CanonicalSetupRun(1 if queue.failures else 0, plan_failures)
     write("Review setup queue (runs sequentially after installed payloads):")
     for plan in queue.plans:
         write(
@@ -950,7 +982,26 @@ def _run_canonical_setup_queue(
     answer = _read_line(read, "Finalize this setup queue? [y/N]: ")
     if answer is None or answer.strip().lower() not in ("y", "yes"):
         write("Setup remains pending; installed payloads were not rolled back.")
-        return 1
+        declined = tuple(
+            SetupReportState(
+                f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}",
+                "queue-declined",
+                plan.recipe_digest,
+                "queue",
+                "setup-queue-declined",
+            )
+            for plan in queue.plans
+        )
+        planning = tuple(
+            SetupReportState(
+                failure.key,
+                "planning-failed",
+                failure_phase="queue",
+                failure_code="setup-planning-failed",
+            )
+            for failure in queue.failures
+        )
+        return _CanonicalSetupRun(1, (*declined, *planning))
 
     def consent(effect) -> bool:
         write(
@@ -972,7 +1023,115 @@ def _run_canonical_setup_queue(
         )
         if not item.successful:
             write(f"    Retry: aart setup retry --artifact {item.coordinate}")
-    return 0 if setup_outcome.incomplete == 0 and not queue.failures else 1
+    plan_by_key = {
+        f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}": plan
+        for plan in queue.plans
+    }
+    reported_states: List[SetupReportState] = []
+    for item in setup_outcome.items:
+        key = f"{item.coordinate}#{item.profile}/{item.scope}"
+        status = item.setup_status.value
+        failure_spec = _setup_reporting_failure(status)
+        setup_plan = plan_by_key.get(key)
+        reported_states.append(
+            SetupReportState(
+                key,
+                status,
+                None if setup_plan is None else setup_plan.recipe_digest,
+                None if failure_spec is None else failure_spec[0],
+                None if failure_spec is None else failure_spec[1],
+            )
+        )
+    reported_states.extend(
+        SetupReportState(
+            queue_failure.key,
+            "planning-failed",
+            failure_phase="queue",
+            failure_code="setup-planning-failed",
+        )
+        for queue_failure in queue.failures
+    )
+    return _CanonicalSetupRun(
+        0 if setup_outcome.incomplete == 0 and not queue.failures else 1,
+        tuple(reported_states),
+    )
+
+
+def _run_canonical_setup_queue(
+    service: ConsumerApplicationService,
+    review: ConsumerReview,
+    outcome: ConsumerOutcome,
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> int:
+    return _canonical_setup_run(service, review, outcome, read=read, write=write).exit_code
+
+
+def _offer_usage_report(
+    service: ReportingApplicationService | None,
+    event: UsageReport,
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> None:
+    """Offer/submit after terminal outcomes; every failure is warning-only."""
+
+    if service is None:
+        return
+    prepared = service.prepare(event)
+    if isinstance(prepared, DomainErr):
+        write("warning: usage report could not be prepared; the artifact outcome is unchanged")
+        return
+    plan = prepared.value
+    if plan is None:
+        return
+    if plan.destination.mode.value == "prompt":
+        answer = _read_line(read, "Share this redacted usage report? [y/N]: ")
+        if answer is None or answer.strip().lower() not in ("y", "yes"):
+            write("Usage report was not submitted.")
+            return
+    write("Exact redacted usage report payload:")
+    write(plan.payload.decode("utf-8").strip())
+    if plan.destination.mode.value == "prompt":
+        answer = _read_line(read, "Open the prefilled GitHub issue? [y/N]: ")
+        if answer is None or answer.strip().lower() not in ("y", "yes"):
+            write("Usage report was not submitted.")
+            return
+    submitted = service.submit(plan)
+    if isinstance(submitted, DomainErr):
+        write("warning: usage report submission failed; the artifact outcome is unchanged")
+        return
+    write(
+        "Usage report opened in the browser."
+        if submitted.value.status == "browser-opened"
+        else "Usage report submitted."
+    )
+
+
+def _complete_canonical_consumer_action(
+    consumer: ConsumerApplicationService,
+    review: ConsumerReview,
+    outcome: ConsumerOutcome,
+    reporting: ReportingApplicationService | None,
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> int:
+    setup = _canonical_setup_run(consumer, review, outcome, read=read, write=write)
+    try:
+        event = usage_report_from_consumer(
+            review,
+            outcome,
+            setup.reporting,
+            aart_version=__version__,
+            interface="tui",
+        )
+    except ValueError:
+        write("warning: usage report projection failed; the artifact outcome is unchanged")
+        return setup.exit_code
+    _offer_usage_report(reporting, event, read=read, write=write)
+    return setup.exit_code
 
 
 def _render_result(result: CommandOutcome, write: WriteFn) -> int:
@@ -1962,6 +2121,7 @@ def _run_user_text_wizard(
     user_home: Optional[str],
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
+    reporting_service: Optional[ReportingApplicationService] = None,
 ) -> int | WizardSession:
     read_model: Optional[_UserWizardReadModel] = None
     read_key: Optional[tuple] = None
@@ -2207,10 +2367,11 @@ def _run_user_text_wizard(
                     return 2
                 for line in render_consumer_outcome(finalized.value):
                     write(line)
-                return _run_canonical_setup_queue(
+                return _complete_canonical_consumer_action(
                     consumer_service,  # type: ignore[arg-type]
                     canonical_review,
                     finalized.value,
+                    reporting_service,
                     read=read,
                     write=write,
                 )
@@ -2240,6 +2401,8 @@ def _run_text(
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    reporting_service: Optional[ReportingApplicationService] = None,
+    reporting_service_factory: Optional[ReportingServiceFactory] = None,
     curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int:
     """Persistent onboarding/role wizard shared by the fallback and headless tests."""
@@ -2297,6 +2460,7 @@ def _run_text(
                     "No sources selected; no registry was forced and no changes were made.",
                 )
             active_consumer_service = consumer_service
+            active_reporting_service = reporting_service
             if consumer_service_factory is not None and session.role == "user":
                 loaded_consumer = consumer_service_factory(selected_source.request.after)
                 if isinstance(loaded_consumer, DomainErr):
@@ -2305,6 +2469,16 @@ def _run_text(
                     session = wizard_back(session)
                     continue
                 active_consumer_service = loaded_consumer.value
+            if reporting_service_factory is not None and session.role == "user":
+                loaded_reporting = reporting_service_factory(selected_source.request.after)
+                if isinstance(loaded_reporting, DomainErr):
+                    write(
+                        "warning: usage reporting is unavailable; artifact installation remains "
+                        "available"
+                    )
+                    active_reporting_service = None
+                else:
+                    active_reporting_service = loaded_reporting.value
             if active_consumer_service is None or session.role != "user":
                 source_arguments = _selected_legacy_source_arguments(
                     stage_view,
@@ -2330,6 +2504,7 @@ def _run_text(
                     user_home=user_home,
                     source_finalizer=source_finalizer,
                     consumer_service=active_consumer_service,
+                    reporting_service=active_reporting_service,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -2346,6 +2521,7 @@ def _run_text(
                 user_home=user_home,
                 source_finalizer=source_finalizer,
                 consumer_service_factory=consumer_service_factory,
+                reporting_service_factory=reporting_service_factory,
                 consumer_configuration=selected_source.request.after,
                 curation_service_factory=curation_service_factory,
             )
@@ -2655,6 +2831,7 @@ def _run_canonical_maintainer_text(
     user_home: Optional[str],
     source_finalizer: Optional[SourceFinalizeFn],
     consumer_service_factory: Optional[ConsumerServiceFactory],
+    reporting_service_factory: Optional[ReportingServiceFactory],
     consumer_configuration: Optional[UserConfiguration],
     curation_service_factory: Optional[CurationServiceFactory],
 ) -> int | WizardSession:
@@ -2691,6 +2868,7 @@ def _run_canonical_maintainer_text(
             prepared = None
             if selected == "user":
                 consumer_service: Optional[ConsumerApplicationService] = None
+                reporting_service: Optional[ReportingApplicationService] = None
                 active_consumer_factory = consumer_service_factory
                 if active_consumer_factory is None and consumer_configuration is not None:
                     from .consumer.runtime import load_local_consumer_service
@@ -2711,6 +2889,15 @@ def _run_canonical_maintainer_text(
                         session = wizard_back(session)
                         continue
                     consumer_service = loaded_consumer.value
+                if reporting_service_factory is not None and consumer_configuration is not None:
+                    loaded_reporting = reporting_service_factory(consumer_configuration)
+                    if isinstance(loaded_reporting, DomainErr):
+                        write(
+                            "warning: usage reporting is unavailable; artifact installation "
+                            "remains available"
+                        )
+                    else:
+                        reporting_service = loaded_reporting.value
                 result = _run_user_text_wizard(
                     session,
                     read,
@@ -2722,6 +2909,7 @@ def _run_canonical_maintainer_text(
                     user_home=user_home,
                     source_finalizer=source_finalizer,
                     consumer_service=consumer_service,
+                    reporting_service=reporting_service,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -2823,6 +3011,7 @@ def _run_maintainer_text(
     user_home: Optional[str] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    reporting_service_factory: Optional[ReportingServiceFactory] = None,
     consumer_configuration: Optional[UserConfiguration] = None,
     curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int | WizardSession:
@@ -2841,6 +3030,7 @@ def _run_maintainer_text(
             user_home=user_home,
             source_finalizer=source_finalizer,
             consumer_service_factory=consumer_service_factory,
+            reporting_service_factory=reporting_service_factory,
             consumer_configuration=consumer_configuration,
             curation_service_factory=curation_service_factory,
         )
@@ -2879,6 +3069,7 @@ def _run_maintainer_text(
             previewed = None
             if selected == "user":
                 consumer_service: Optional[ConsumerApplicationService] = None
+                reporting_service: Optional[ReportingApplicationService] = None
                 if consumer_service_factory is not None and consumer_configuration is not None:
                     loaded_consumer = consumer_service_factory(consumer_configuration)
                     if isinstance(loaded_consumer, DomainErr):
@@ -2887,6 +3078,15 @@ def _run_maintainer_text(
                         session = wizard_back(session)
                         continue
                     consumer_service = loaded_consumer.value
+                if reporting_service_factory is not None and consumer_configuration is not None:
+                    loaded_reporting = reporting_service_factory(consumer_configuration)
+                    if isinstance(loaded_reporting, DomainErr):
+                        write(
+                            "warning: usage reporting is unavailable; artifact installation "
+                            "remains available"
+                        )
+                    else:
+                        reporting_service = loaded_reporting.value
                 result = _run_user_text_wizard(
                     session,
                     read,
@@ -2898,6 +3098,7 @@ def _run_maintainer_text(
                     user_home=user_home,
                     source_finalizer=source_finalizer,
                     consumer_service=consumer_service,
+                    reporting_service=reporting_service,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -4058,6 +4259,8 @@ def _run_curses(
     source_finalizer: Optional[SourceFinalizeFn] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    reporting_service: Optional[ReportingApplicationService] = None,
+    reporting_service_factory: Optional[ReportingServiceFactory] = None,
     curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int:
     """Collect a persistent wizard session and dispatch only after curses teardown."""
@@ -4140,6 +4343,8 @@ def _run_curses(
             selected_role = session.role
             assert selected_role is not None
             active_consumer_service = consumer_service
+            active_reporting_service = reporting_service
+            active_reporting_failed = False
             if consumer_service_factory is not None and selected_role == "user":
                 loaded_consumer = consumer_service_factory(selected_source_value.request.after)
                 if isinstance(loaded_consumer, DomainErr):
@@ -4149,6 +4354,13 @@ def _run_curses(
                     )
                     return
                 active_consumer_service = loaded_consumer.value
+            if reporting_service_factory is not None and selected_role == "user":
+                loaded_reporting = reporting_service_factory(selected_source_value.request.after)
+                if isinstance(loaded_reporting, DomainErr):
+                    active_reporting_service = None
+                    active_reporting_failed = True
+                else:
+                    active_reporting_service = loaded_reporting.value
             active_source_dir, active_repo = source_dir, repo
             if active_consumer_service is None or selected_role != "user":
                 source_arguments = _selected_legacy_source_arguments(
@@ -4178,6 +4390,9 @@ def _run_curses(
                 )
                 if selection.get("consumer_review") is not None:
                     selection["active_consumer_service"] = active_consumer_service
+                    selection["active_reporting_service"] = active_reporting_service
+                    if active_reporting_failed:
+                        selection["reporting_warning"] = True
                 if selection:
                     return
                 if session.current in ("role", "source"):
@@ -4222,6 +4437,8 @@ def _run_curses(
                 session = wizard_advance(session)
                 if action == "user":
                     maintainer_consumer_service = consumer_service
+                    maintainer_reporting_service = reporting_service
+                    maintainer_reporting_failed = False
                     active_consumer_factory = consumer_service_factory
                     if active_consumer_factory is None and canonical_curation:
                         from .consumer.runtime import load_local_consumer_service
@@ -4246,6 +4463,15 @@ def _run_curses(
                             )
                             return
                         maintainer_consumer_service = loaded_consumer.value
+                    if reporting_service_factory is not None:
+                        loaded_reporting = reporting_service_factory(
+                            selected_source_value.request.after
+                        )
+                        if isinstance(loaded_reporting, DomainErr):
+                            maintainer_reporting_service = None
+                            maintainer_reporting_failed = True
+                        else:
+                            maintainer_reporting_service = loaded_reporting.value
                     session = _run_user_curses_wizard(
                         curses,
                         stdscr,
@@ -4259,6 +4485,9 @@ def _run_curses(
                     )
                     if selection.get("consumer_review") is not None:
                         selection["active_consumer_service"] = maintainer_consumer_service
+                        selection["active_reporting_service"] = maintainer_reporting_service
+                        if maintainer_reporting_failed:
+                            selection["reporting_warning"] = True
                     if selection or session.current != "maintainer_action":
                         return
                     continue
@@ -4283,6 +4512,8 @@ def _run_curses(
             source_finalizer=source_finalizer,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
+            reporting_service=reporting_service,
+            reporting_service_factory=reporting_service_factory,
             curation_service_factory=curation_service_factory,
         )
 
@@ -4315,6 +4546,7 @@ def _run_curses(
             user_home=user_home,
             source_finalizer=source_finalizer,
             consumer_service_factory=consumer_service_factory,
+            reporting_service_factory=reporting_service_factory,
             consumer_configuration=selection.get("consumer_configuration"),
             curation_service_factory=curation_service_factory,
         )
@@ -4346,10 +4578,15 @@ def _run_curses(
             return 2
         for line in render_consumer_outcome(finalized.value):
             print(line)
-        return _run_canonical_setup_queue(
+        if selection.get("reporting_warning"):
+            print(
+                "warning: usage reporting is unavailable; artifact installation remains available"
+            )
+        return _complete_canonical_consumer_action(
             active_consumer_service,
             consumer_review,
             finalized.value,
+            selection.get("active_reporting_service", reporting_service),
             read=input,
             write=print,
         )
@@ -4799,6 +5036,8 @@ def run(
     source_stage_view, source_finalizer = source_context.value
     consumer_service: Optional[ConsumerApplicationService] = None
     consumer_service_factory: Optional[ConsumerServiceFactory] = None
+    reporting_service: Optional[ReportingApplicationService] = None
+    reporting_service_factory: Optional[ReportingServiceFactory] = None
     legacy_aliases = {"bundled-legacy", "explicit-local", "explicit-git"}
     if (
         source_dir is None
@@ -4806,6 +5045,7 @@ def run(
         and not any(row.source.alias.value in legacy_aliases for row in source_stage_view.rows)
     ):
         from .consumer.runtime import load_local_consumer_service
+        from .reporting.runtime import load_local_reporting_service
 
         def runtime_consumer_service(
             configuration: UserConfiguration,
@@ -4817,6 +5057,16 @@ def run(
             )
 
         consumer_service_factory = runtime_consumer_service
+
+        def runtime_reporting_service(
+            configuration: UserConfiguration,
+        ) -> DomainResult[ReportingApplicationService]:
+            return load_local_reporting_service(
+                user_home=user_home,
+                configuration=configuration,
+            )
+
+        reporting_service_factory = runtime_reporting_service
     try:
         import curses  # noqa: F401  (presence check only)
 
@@ -4832,6 +5082,8 @@ def run(
             source_finalizer=source_finalizer,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
+            reporting_service=reporting_service,
+            reporting_service_factory=reporting_service_factory,
         )
 
     try:
@@ -4844,6 +5096,8 @@ def run(
             source_finalizer=source_finalizer,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
+            reporting_service=reporting_service,
+            reporting_service_factory=reporting_service_factory,
         )
     except Exception:  # pragma: no cover - last-resort guard around the curses path
         return _run_text(
@@ -4855,4 +5109,6 @@ def run(
             source_finalizer=source_finalizer,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
+            reporting_service=reporting_service,
+            reporting_service_factory=reporting_service_factory,
         )

@@ -507,3 +507,6 @@ class Request:
     publisher_source_id: Optional[str] = None
     security_registry_inputs_digest: Optional[str] = None
     publisher_trust: Optional[str] = None
+    reporting_action: Optional[str] = None
+    reporting_input: Optional[str] = None
+    reporting_output: Optional[str] = None

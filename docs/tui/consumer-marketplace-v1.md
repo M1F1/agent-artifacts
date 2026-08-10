@@ -91,3 +91,8 @@ status is explicit:
 The curses frontend collects and reviews the same immutable values inside the terminal screen, but
 performs Finalize only after curses teardown. The text fallback uses the same application service
 and produces equivalent evidence and outcomes.
+
+After payload and setup terminal outcomes, the TUI may offer the independently configured,
+registry-owned redacted usage event. Disabled reporting is silent; provider failure is warning-only
+and preserves the action exit code. Exact consent, destination, schema, and privacy rules are in
+[`optional usage reporting v1`](../reporting/usage-reporting-v1.md).

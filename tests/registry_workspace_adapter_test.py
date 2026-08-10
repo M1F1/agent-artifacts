@@ -154,7 +154,7 @@ class RegistryWorkspaceAdapterTest(unittest.TestCase):
 
             self.assertIsInstance(applied, Err)
             self.assertEqual(
-                (root / ".github/workflows/aart-registry.yml").read_bytes(),
+                root.joinpath(*plan.value.changes[0].path.parts).read_bytes(),
                 b"concurrent maintainer content\n",
             )
 
