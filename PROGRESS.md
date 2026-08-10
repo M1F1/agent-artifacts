@@ -97,7 +97,7 @@ Risks/migrations: registry must remain optional unless policy requires it; sourc
 PR: [#52](https://github.com/M1F1/agent-artifacts/pull/52)
 CI: local canonical quality passes on Python 3.11; Python 3.14.6 passes 1423 unit tests, 28
   integration tests, validation/version, packaging, and docs; first remote matrix exposed and the
-  branch fixes a Ruff 0.16.2-only format drift; replacement matrix pending
+  branch fixes Ruff 0.16.2 format drift and ambient-XDG test isolation; replacement matrix pending
 Merge: pending
 ```
 
@@ -1084,4 +1084,10 @@ None.
   newer formatter parenthesizes two multiline test lambdas differently.
 - Applied only the mechanical formatter delta reported by CI. The focused 23-test source-stage
   module passes, and all 356 files now pass format/lint under both Ruff 0.12.2 and exact 0.16.2 in a
-  temporary isolated environment. A replacement four-job matrix reruns on the fix commit.
+  temporary isolated environment.
+- The next matrix passed format, lint, and type checking, then exposed three runtime-context test
+  failures caused by ambient GitHub-runner `XDG_*` values. The tests wrote beneath their temporary
+  home defaults while the production resolver correctly honored XDG, so they observed an empty
+  first-run configuration. The fixture now pins config/data/cache XDG roots to the same temporary
+  home layout, preserving real path semantics and preventing host-environment leakage. A new
+  replacement four-job matrix reruns on this hermetic test fix.

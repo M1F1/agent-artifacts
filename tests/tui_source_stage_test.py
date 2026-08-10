@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 import tempfile
@@ -782,10 +783,18 @@ class SourceFrontendTests(unittest.TestCase):
 
 class RuntimeSourceContextTests(unittest.TestCase):
     def _context(self, home: pathlib.Path, paths, *, policy: bytes | None = None):
-        with mock.patch(
-            "agent_artifacts.io.config_store.read_configuration",
-            side_effect=lambda request: (
-                Ok(policy) if request.path == paths.policy_file else read_configuration(request)
+        xdg_defaults = {
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local" / "share"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+        }
+        with (
+            mock.patch.dict(os.environ, xdg_defaults),
+            mock.patch(
+                "agent_artifacts.io.config_store.read_configuration",
+                side_effect=lambda request: (
+                    Ok(policy) if request.path == paths.policy_file else read_configuration(request)
+                ),
             ),
         ):
             return tui._runtime_source_stage_context(
