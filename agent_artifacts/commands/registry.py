@@ -531,6 +531,7 @@ def _run_migrate(request: Request, workspace: FilesystemRegistryWorkspace) -> in
             version.value,
             request.profiles,
             request.registry_platforms,
+            license=request.artifact_license,
         )
     except ValueError as error:
         return _emit_error(request, "migrate", _error(str(error)))

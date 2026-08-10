@@ -9,6 +9,14 @@
 > [implementation plan](PLAN.md) with its [progress ledger](PROGRESS.md), plus the
 > [tracking issue #27](https://github.com/M1F1/agent-artifacts/issues/27).
 
+The `1.0.0a1` migration now provides the canonical compiler, federated sources, registry quality
+gate, and a fail-closed public export boundary. The operational reference marketplace lives in the
+independently versioned
+[`M1F1/agent-artifacts-registry`](https://github.com/M1F1/agent-artifacts-registry) repository; it
+is never embedded in the AART wheel. See the
+[publication boundary](docs/registry/publication-boundary-v1.md) and
+[company-registry bootstrap](docs/registry/company-bootstrap-v1.md).
+
 **One catalog of AI artifacts. Every agentic harness on your team, in sync.**
 
 `agent-artifacts` installs your team's **skills, guidelines, MCP servers, hooks, and memory

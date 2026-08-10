@@ -125,13 +125,13 @@ Product requirements:
 
 ### Repositories, migration, and verification
 
-- [ ] Create the public `M1F1/agent-artifacts-registry` reference marketplace during SEP01, only
+- [x] Create the public `M1F1/agent-artifacts-registry` reference marketplace during SEP01, only
       after the deterministic export and public-content preflight pass.
 - [x] Provide a confidential-content-free `aart registry init` bootstrap and minimum/latest CI
       template for a company registry.
 - [x] Provide deterministic, reviewable conversion of the current top-level 0.1.x catalog into a
       canonical native source.
-- [ ] Promote the converted top-level 0.1.x catalog into the canonical registry layout during the
+- [x] Promote the converted top-level 0.1.x catalog into the canonical registry layout during the
       reviewed SEP01 migration.
 - [x] Add reviewed dry-run/apply/backup/rollback migration primitives for existing 0.1.x
       installation state; MIG01 supplies the final public compatibility orchestration.
@@ -140,7 +140,7 @@ Product requirements:
 - [ ] Test local editable and local-wheel installation without an embedded operational registry or
       checkout-relative runtime data.
 - [x] Prove deleting/recreating the Python environment does not break managed artifact symlinks.
-- [ ] Run registry CI with the minimum supported and latest compatible AART versions.
+- [x] Run registry CI with the minimum supported and latest compatible AART versions.
 
 ## Completed 0.1.x TUI and installation UX
 

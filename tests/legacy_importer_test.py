@@ -19,17 +19,36 @@ from agent_artifacts.protocol.semver import SemVer
 from tests.importer_fixtures import FIXTURE_ROOT, importer_input
 
 
-def options(*, display_name: str = "Imported legacy catalog") -> LegacyCatalogOptions:
+def options(
+    *, display_name: str = "Imported legacy catalog", license: str | None = None
+) -> LegacyCatalogOptions:
     return LegacyCatalogOptions(
         SourceId("legacy-catalog"),
         display_name,
         SemVer(1, 0, 0),
         ("claude", "opencode", "tabnine", "vibe"),
         ("darwin", "linux"),
+        license=license,
     )
 
 
 class LegacyImporterTest(unittest.TestCase):
+    def test_explicit_import_license_is_written_to_every_artifact_manifest(self) -> None:
+        request = importer_input()
+        scanned = scan_legacy_catalog(request)
+        assert isinstance(scanned, Ok), scanned
+        planned = plan_legacy_catalog(scanned.value, options(license="MIT"))
+        assert isinstance(planned, Ok), planned
+        materialized = materialize_legacy_catalog(request, planned.value)
+        assert isinstance(materialized, Ok), materialized
+        manifests = tuple(
+            entry.content
+            for entry in materialized.value.snapshot.entries
+            if str(entry.path).endswith("/artifact.json")
+        )
+        self.assertTrue(manifests)
+        self.assertTrue(all(b'"license":"MIT"' in content for content in manifests))
+
     def test_complete_legacy_catalog_materializes_as_valid_canonical_source(self) -> None:
         request = importer_input()
         scanned = scan_legacy_catalog(request)

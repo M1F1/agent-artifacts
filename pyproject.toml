@@ -29,7 +29,8 @@ agent-artifacts = "agent_artifacts.cli:main"
 aart = "agent_artifacts.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/org/agent-artifacts"
+Homepage = "https://github.com/M1F1/agent-artifacts"
+Repository = "https://github.com/M1F1/agent-artifacts"
 
 [tool.setuptools.packages.find]
 where = ["."]
