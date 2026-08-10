@@ -1,5 +1,23 @@
 """Zero-dependency installation-risk evidence and baseline rules."""
 
+from .analyzers import (
+    ANALYZER_INVALID,
+    PROTOCOL,
+    AnalyzerCommand,
+    AnalyzerDescriptor,
+    AnalyzerInput,
+    AnalyzerProcessKind,
+    AnalyzerProcessOutcome,
+    AnalyzerProcessRequest,
+    AnalyzerScanAttempt,
+    handshake_request_bytes,
+    parse_handshake,
+    parse_scan_result,
+    run_protocol_analyzer,
+    scan_request_bytes,
+    to_security_assessment,
+)
+from .application import analyzer_input_from_stored_object
 from .baseline import (
     BASELINE_RULES_DIGEST,
     BaselineScanRequest,
@@ -17,21 +35,49 @@ from .model import (
     SecurityFinding,
 )
 from .schema import assessment_bytes, assessment_value, parse_assessment
+from .tool_adapters import (
+    BUILTIN_TOOL_ADAPTERS,
+    BuiltInToolAdapter,
+    DiscoveredToolAdapter,
+    discover_tool_adapters,
+    run_tool_adapter,
+)
 
 __all__ = [
+    "ANALYZER_INVALID",
     "BASELINE_RULES_DIGEST",
+    "BUILTIN_TOOL_ADAPTERS",
+    "PROTOCOL",
+    "AnalyzerCommand",
+    "AnalyzerDescriptor",
+    "AnalyzerInput",
+    "AnalyzerProcessKind",
+    "AnalyzerProcessOutcome",
+    "AnalyzerProcessRequest",
+    "AnalyzerScanAttempt",
     "AssessmentCoverage",
     "AssessmentStatus",
     "BaselineScanRequest",
+    "BuiltInToolAdapter",
+    "DiscoveredToolAdapter",
     "FindingSeverity",
     "InstallationRisk",
     "ProviderAssessment",
     "SecurityAssessment",
     "SecurityFinding",
     "assess_installation_risk",
+    "analyzer_input_from_stored_object",
     "assessment_bytes",
     "assessment_value",
+    "discover_tool_adapters",
+    "handshake_request_bytes",
     "mark_assessment_stale",
     "not_scanned_assessment",
+    "parse_handshake",
+    "parse_scan_result",
     "parse_assessment",
+    "run_protocol_analyzer",
+    "run_tool_adapter",
+    "scan_request_bytes",
+    "to_security_assessment",
 ]

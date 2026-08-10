@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `SEC02`
+- **Next task:** `SEC03`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -61,8 +61,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / `0940566` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | complete | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / `e23c726` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / `7a4b045` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / pending | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending before merge |
-| SEC02 | Optional out-of-process analyzers | SEC01 | pending | — | — | No auto-install/runtime deps |
+| SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / `655ac46` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / pending | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | pending | — | — | Worst/range/mean/coverage |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | pending | — | — | Registry remains optional |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | pending | — | — | Source/trust/security visible |
@@ -80,20 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SEC01 — Add the zero-dependency installation-risk baseline
-Branch: codex/aart-1-0-sec01-risk-baseline
-Worktree: /tmp/aart-sec01.2jkH9l/worktree
+Task: SEC02 — Add out-of-process optional security analyzer providers
+Branch: codex/aart-1-0-sec02-analyzers
+Worktree: /tmp/aart-sec02.aRYQLr/worktree
 Started: 2026-08-10
-Bounded contexts: normalized security assessment/finding/coverage values, exact object and rules
-  digest binding, pure baseline metadata/capability/content rules, deterministic canonical evidence
-Red test and expected failure: missing `agent_artifacts.security` import made every assessment
-  contract unreachable before implementation
-Focused tests: 46 pass across baseline model/rules/schema and registry audit/CLI regressions
-Files owned: security baseline model/rules/schema/tests/docs, TODO.md, PROGRESS.md, narrow exports only
-Risks/migrations: evidence must say installation risk rather than safe/secure; bounded scans must
-  expose skipped/unknown coverage; no network, optional imports, process execution, or secret echo
-PR: #49 ready and mergeable
-CI: local gates and first four-job Python 3.10/3.14 GitHub matrix pass
+Bounded contexts: analyzer discovery/handshake/scan protocol, fixed subprocess request/adapter,
+  provider output normalization, built-in tool adapters, absence/failure/coverage outcomes
+Red test and expected failure: new protocol, process-boundary, and tool-adapter tests could not
+  import the absent analyzer modules before implementation
+Focused tests: 43 pass; 94.91% branch coverage across analyzer protocol/application/IO/adapters
+Files owned: security analyzer model/protocol/application/adapters/IO/tests/docs, TODO.md,
+  PROGRESS.md, narrow exports only
+Risks/migrations: optional tools are trusted processes rather than sandboxes; no auto-install or
+  in-process import; minimal environment, time/output bounds, network consent, no secret echo
+PR: #50 ready and mergeable
+CI: local gates, Python 3.14.6 runtime gates, and first four-job Python 3.10/3.14 matrix pass
 Merge: pending
 ```
 
@@ -123,6 +124,7 @@ Merge: pending
 | LIFE01 | 53 pass | 322 files pass | pass | 143 source files pass | 1285 pass | 28 pass | 11-step pass | pass | 85.86% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1285 pass; 2× 4-job Python 3.10/3.14 pass |
 | SET01 | 62 pass | 327 files pass | pass | 147 source files pass | 1303 pass | 28 pass | 11-step pass | pass | 85.91% overall; 90.94% new setup context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1303 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
+| SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -151,6 +153,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-018 | Native registry references retain upstream source identity and promotion is a reviewed three-file projection | accepted | Preserves marketplace qualification, avoids payload duplication, and confines mutations to entry/lock/index without commit or push |
 | D-019 | Setup authority is a reviewed digest-bound plan over exact object, recipe, trust, policy, platform, and destination evidence | accepted | Prevents source drift or trust changes from gaining execution authority; custom code runs only from a verified private copy and setup remains independently reportable/rollbackable |
 | D-020 | Installation-risk evidence binds the exact object and a canonical baseline rules descriptor; incomplete coverage remains unknown unless observed high/critical facts dominate | accepted | Keeps stdlib-only evidence deterministic and explainable without turning a completed heuristic scan into a certification or hiding serious observations behind skipped coverage |
+| D-021 | Optional analyzers are trusted bounded processes with object-bound evidence; built-ins disable ambient config and normalize secret-free native output | accepted | Preserves a zero-dependency runtime and explicit unknown coverage without claiming OS sandboxing or letting tools choose commands, install packages, or rebind results to another object |
 
 ## Blockers
 
@@ -926,6 +929,50 @@ None.
 ### 2026-08-10 — SEC01 implementation CI
 
 - Published reviewed implementation commit `01761f7` and opened ready PR #49 referencing the 1.0
+  umbrella issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
+
+### 2026-08-10 — SEC01 merged; SEC02 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #49 as `655ac46`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean SEC01 temporary worktree and created isolated SEC02 from exact merge
+  `655ac46`.
+- Scoped SEC02 to explicit discovery, versioned JSON handshake/scan, fixed argv with minimal
+  environment, timeout/crash/malformed-output handling, network declaration/consent, duplicate
+  fingerprint rejection, and reviewed output adapters for independently installed analyzers.
+
+### 2026-08-10 — SEC02 local gates complete
+
+- Confirmed Red because the analyzer protocol, process boundary, application mapping, and reviewed
+  tool adapters did not exist; implemented a canonical `security-analyzer-v1` handshake/scan
+  contract whose attempts and assessments bind the exact immutable CAS object and rules digest.
+- Added fixed-argv subprocess execution with a minimal credential-free environment, one combined
+  hard output cap, timeout handling, executable identity checks, no shell, and generic secret-free
+  failure outcomes. Optional packages remain separately installed trusted code, never runtime
+  dependencies or claimed sandboxes.
+- Added deterministic discovery and native-output adapters for Ruff, Bandit, detect-secrets,
+  pip-audit, and ShellCheck. Ambient config and network verification are disabled where supported;
+  pip-audit alone requires network consent and receives only canonical pinned direct requirements
+  over stdin, never artifact-selected options, includes, URLs, paths, or package resolution.
+- Code review captured regressions for unbounded combined subprocess output, inherited open pipes,
+  unsafe resolver identity, dynamic argv overflow, policy-incomplete rules digests, false pip
+  locations, untrusted requirements input, and object-evidence rebinding before the fixes landed.
+- Verified 43 focused tests and 94.91% branch coverage for the analyzer contexts. `make quality`
+  passes Ruff format on 339 files, Ruff lint, mypy on 155 source files, 1374 unit tests, 28
+  integration tests, the 11-step shell E2E, stdlib-only validation, 86.45% overall branch coverage,
+  `1.0.0a1` wheel/import, docs, and repository non-mutation.
+- Python 3.14.6 passes all 1374 tests, integration, shell E2E, validation, packaging, and docs. Its
+  first full-wrapper attempt stopped at the absent optional Ruff package, so no global dependency
+  was installed; the static developer gates remain proven by the canonical environment and CI.
+
+### 2026-08-10 — SEC02 implementation CI
+
+- Published reviewed implementation commit `7519147` and opened ready PR #50 referencing the 1.0
   umbrella issue without closing it.
 - All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
   PR is mergeable with a clean merge state.

@@ -77,5 +77,6 @@ assessment = assess_installation_risk(
 
 A reviewed external artifact with provenance requires a matching `LockedArtifact`. Native/direct
 objects can still be assessed without a registry; absence or state of review remains visible as
-evidence. CLI scan/show, optional analyzer composition, cache attestations, bundle aggregation, and
-policy enforcement belong to SEC02/SEC03 and do not change this pure baseline contract.
+evidence. Optional analyzer execution is specified in
+[`analyzers-v1.md`](analyzers-v1.md). CLI scan/show, cache attestations, bundle aggregation, and
+policy enforcement belong to SEC03 and do not change this pure baseline contract.
