@@ -63,7 +63,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / `7a4b045` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / `655ac46` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | in_progress | `codex/aart-1-0-sec03-attestations-policy` | pending | Local gates pass: digest-bound cache/index, trust/freshness, worst/unknown policy, CLI and registry audit |
+| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | in_progress | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / pending merge | First four-job CI matrix passed; digest-bound cache/index, trust/freshness, worst/unknown policy, CLI and registry audit |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | pending | — | — | Registry remains optional |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | pending | — | — | Source/trust/security visible |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
@@ -94,8 +94,8 @@ Files owned: security attestations/aggregation/policy/application/IO/commands/te
   request wiring, TODO.md, PROGRESS.md, narrow marketplace/registry projections only
 Risks/migrations: evidence trust must derive from local source policy; unknown/stale/high cannot be
   hidden by averages; optional analyzer absence remains supported; cache inputs require exact match
-PR: pending after reviewed local gates
-CI: pending; local Python 3.11 and Python 3.14.6 suites pass
+PR: #51 ready; implementation commit e3eae01
+CI: first four push/pull-request jobs pass on Python 3.10/3.14; final ledger matrix pending
 Merge: pending
 ```
 
@@ -126,7 +126,7 @@ Merge: pending
 | SET01 | 62 pass | 327 files pass | pass | 147 source files pass | 1303 pass | 28 pass | 11-step pass | pass | 85.91% overall; 90.94% new setup context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1303 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
-| SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; CI pending |
+| SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1018,3 +1018,12 @@ None.
   86.29% overall branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation.
 - Python 3.14.6 also passes all 1400 tests, validation, version, packaging, and docs gates. Two
   pre-existing nonfatal HTTP cleanup ResourceWarnings remain unchanged.
+
+### 2026-08-10 — SEC03 implementation CI
+
+- Published reviewed implementation commit `e3eae01` and opened ready PR #51 referencing the 1.0
+  umbrella issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean implementation diff.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
