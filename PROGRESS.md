@@ -60,8 +60,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / `0940566` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | complete | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / `e23c726` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
-| SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / pending | First two four-job Python 3.10/3.14 CI matrices passed; final ledger matrix pending before merge |
-| SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
+| SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / `7a4b045` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | in_progress | `codex/aart-1-0-sec01-risk-baseline` | pending | Evidence, never a “safe” claim |
 | SEC02 | Optional out-of-process analyzers | SEC01 | pending | — | — | No auto-install/runtime deps |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | pending | — | — | Worst/range/mean/coverage |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | pending | — | — | Registry remains optional |
@@ -80,22 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SET01 — Bind reviewed setup to canonical objects, trust, and policy
-Branch: codex/aart-1-0-set01-setup
-Worktree: /tmp/aart-set01.6WrrHk/worktree
+Task: SEC01 — Add the zero-dependency installation-risk baseline
+Branch: codex/aart-1-0-sec01-risk-baseline
+Worktree: /tmp/aart-sec01.2jkH9l/worktree
 Started: 2026-08-10
-Bounded contexts: canonical-object setup selection, trust/policy overlay, immutable reviewed run
-  materialization, sequential queue outcomes, setup state/reference evidence, secret redaction
-Red test and expected failure: canonical setup module import error plus an immutable-run-copy
-  assertion that proved the legacy runtime still executed the source checkout path
-Focused tests: 62 pass across canonical setup, legacy setup/runtime/security/state, command/E2E,
-  and TUI setup suites
-Files owned: setup canonical integration/model/application/adapter/tests/docs, installation setup
-  references where required, TODO.md, PROGRESS.md, narrow exports only
-Risks/migrations: setup must remain post-payload and separately reported; unreviewed/direct sources
-  cannot gain execution authority; secrets cannot enter argv/env/state/receipts/analytics/output
-PR: #48 ready and mergeable
-CI: local gates and first four-job Python 3.10/3.14 GitHub matrix pass
+Bounded contexts: normalized security assessment/finding/coverage values, exact object and rules
+  digest binding, pure baseline metadata/capability/content rules, deterministic canonical evidence
+Red test and expected failure: missing `agent_artifacts.security` import made every assessment
+  contract unreachable before implementation
+Focused tests: 46 pass across baseline model/rules/schema and registry audit/CLI regressions
+Files owned: security baseline model/rules/schema/tests/docs, TODO.md, PROGRESS.md, narrow exports only
+Risks/migrations: evidence must say installation risk rather than safe/secure; bounded scans must
+  expose skipped/unknown coverage; no network, optional imports, process execution, or secret echo
+PR: pending after local gates
+CI: pending
 Merge: pending
 ```
 
@@ -151,6 +149,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-017 | Effective marketplace trust is a local policy overlay bound to source, snapshot, object, review, provenance, and policy evidence | accepted | Prevents source self-claims, aliases, and default ranking from granting reviewed trust and makes evidence changes invalidate the decision |
 | D-018 | Native registry references retain upstream source identity and promotion is a reviewed three-file projection | accepted | Preserves marketplace qualification, avoids payload duplication, and confines mutations to entry/lock/index without commit or push |
 | D-019 | Setup authority is a reviewed digest-bound plan over exact object, recipe, trust, policy, platform, and destination evidence | accepted | Prevents source drift or trust changes from gaining execution authority; custom code runs only from a verified private copy and setup remains independently reportable/rollbackable |
+| D-020 | Installation-risk evidence binds the exact object and a canonical baseline rules descriptor; incomplete coverage remains unknown unless observed high/critical facts dominate | accepted | Keeps stdlib-only evidence deterministic and explainable without turning a completed heuristic scan into a certification or hiding serious observations behind skipped coverage |
 
 ## Blockers
 
@@ -888,3 +887,37 @@ None.
   PR is mergeable with a clean merge state.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-10 — SET01 merged; SEC01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #48 as `7a4b045`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean SET01 temporary worktree and created isolated SEC01 from exact merge
+  `7a4b045`.
+- Scoped SEC01 to deterministic, bounded, stdlib-only installation-risk evidence bound to the exact
+  object and rules digests, including metadata/lock/provenance, declared effects/capabilities,
+  credential, Python AST, MCP/JSON, shell, transport, and pinning observations.
+
+### 2026-08-10 — SEC01 Red, Green, review, and local gates
+
+- Confirmed Red first with the expected missing `agent_artifacts.security` import before any
+  assessment state, digest binding, rule, or canonical evidence path was reachable.
+- Added frozen assessment/provider/coverage/finding values and strict canonical JSON. Fingerprints,
+  status, maximum severity, installation risk, finding counts, provider state, object digest, and
+  rules digest are mutually validated; object/rules changes produce explicit stale evidence.
+- Added a pure stdlib baseline over exact object/index/manifest/payload/provenance/lock agreement,
+  review state, effects, setup capabilities/custom code, conservative credential patterns, Python
+  AST, strict JSON/MCP, bounded shell patterns, plaintext transport, and unpinned references.
+- Findings contain only generic observed facts and remediation; matched credential values and raw
+  importer warnings are never emitted. Text, AST, shell, assessment input, provider, and finding
+  limits turn missing coverage into partial/unknown evidence instead of unbounded work.
+- Applied the repository `code-review` skill. Review closed findings for forged fingerprint/risk/
+  status fields, oversized assessment arrays/input, pre-normalization finding growth, and rules
+  digest coverage of engine limits/revision. No open review findings remain.
+- Focused coverage passes 46 tests with 93.87% branch coverage across the new security context.
+  `make quality` passes Ruff format on 332 files, Ruff lint, mypy on 151 source files, 1331 unit
+  tests, 28 integration tests, the 11-step shell E2E, validation/runtime-dependency checks, 86.15%
+  overall branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation.
+- The full 1331-test suite, integration tests, validation, packaging, docs, and shell E2E also pass
+  on Python 3.14.6. Two pre-existing nonfatal HTTP cleanup ResourceWarnings remain unchanged.

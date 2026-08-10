@@ -815,7 +815,7 @@ def audit_registry_workspace(snapshot: SourceSnapshot) -> Result[RegistryQuality
                 diagnostics.append(_diagnostic(f"declared setup recipe is missing: {recipe}"))
     diagnostics.append(
         _diagnostic(
-            "installation-risk assessment is not yet available; no safety claim was made",
+            "no per-object installation-risk evidence was supplied to registry audit",
             warning=True,
         )
     )
