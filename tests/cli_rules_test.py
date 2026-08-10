@@ -58,6 +58,29 @@ class Class1SilentPrecedence(unittest.TestCase):
         # A remote repo legitimately resolves an explicit ref.
         self.assertIsNone(validate_flags(_req("install", repo="o/r", version="v2")))
 
+    def test_security_publisher_trust_context_is_all_or_none(self):
+        incomplete = validate_flags(
+            _req(
+                "security",
+                security_action="verify",
+                publisher_source_id="company",
+                publisher_trust="company-reviewed",
+            )
+        )
+        self.assertIsInstance(incomplete, Err)
+        self.assertIn("must be provided together", incomplete.reason)
+        self.assertIsNone(
+            validate_flags(
+                _req(
+                    "security",
+                    security_action="verify",
+                    publisher_source_id="company",
+                    security_registry_inputs_digest="sha256:" + "1" * 64,
+                    publisher_trust="company-reviewed",
+                )
+            )
+        )
+
 
 class AcceptedGlobals(unittest.TestCase):
     """Globals each command *does* consume stay valid (the happy paths)."""

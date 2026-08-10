@@ -40,6 +40,12 @@ def _run_registry(request: Request) -> int:
     return registry.run(request)
 
 
+def _run_security(request: Request) -> int:
+    from .commands import security
+
+    return security.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -52,6 +58,7 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "upstream": _run_upstream,
     "setup": setup.run,
     "registry": _run_registry,
+    "security": _run_security,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -664,6 +671,109 @@ def build_parser() -> argparse.ArgumentParser:
     p_migrate.add_argument("--apply", action="store_true", help="apply the reviewed migration")
     _add_json(p_migrate)
 
+    # security --------------------------------------------------------------- #
+    p = sub.add_parser(
+        "security",
+        help="inspect explainable installation-risk evidence",
+        description=(
+            "Scan immutable artifacts, inspect assessment evidence, and discover optional "
+            "analyzers. Assessments reduce uncertainty; they are not safety guarantees."
+        ),
+    )
+    security_sub = p.add_subparsers(dest="security_action", metavar="ACTION", required=True)
+
+    p_security = security_sub.add_parser(
+        "scan", help="run the zero-dependency baseline over an immutable object envelope"
+    )
+    p_security.add_argument("security_input", metavar="OBJECT")
+    p_security.add_argument(
+        "--index",
+        dest="registry_index",
+        required=True,
+        metavar="FILE",
+        help="canonical registry index that binds the selected artifact object",
+    )
+    p_security.add_argument(
+        "--artifact",
+        dest="security_artifact",
+        required=True,
+        metavar="KIND/NAME",
+        help="exact artifact identity from the registry index",
+    )
+    p_security.add_argument(
+        "--lock",
+        dest="registry_lock",
+        metavar="FILE",
+        help="optional canonical registry lock for external provenance evidence",
+    )
+    p_security.add_argument(
+        "--cache", dest="security_cache", metavar="DIR", help="publish canonical local attestation"
+    )
+    _add_json(p_security)
+
+    p_security = security_sub.add_parser("show", help="show a canonical assessment or attestation")
+    p_security.add_argument("security_input", metavar="EVIDENCE")
+    _add_json(p_security)
+
+    p_security = security_sub.add_parser(
+        "verify", help="verify canonical attestation identity, freshness, and locally derived trust"
+    )
+    p_security.add_argument("security_input", metavar="ATTESTATION")
+    p_security.add_argument(
+        "--object-digest",
+        dest="security_object_digest",
+        metavar="SHA256",
+        help="expected immutable object digest; a mismatch marks evidence stale",
+    )
+    p_security.add_argument(
+        "--rules-digest",
+        dest="security_rules_digest",
+        metavar="SHA256",
+        help="expected analyzer rules digest; a mismatch marks evidence stale",
+    )
+    p_security.add_argument(
+        "--options-digest",
+        dest="security_options_digest",
+        metavar="SHA256",
+        help="expected analyzer options digest; a mismatch marks evidence stale",
+    )
+    p_security.add_argument(
+        "--policy-digest",
+        dest="security_policy_digest",
+        metavar="SHA256",
+        help="expected effective policy digest; a mismatch marks evidence stale",
+    )
+    p_security.add_argument(
+        "--provider-version",
+        dest="security_provider_version",
+        metavar="VERSION",
+        help="expected provider version; a mismatch marks evidence stale",
+    )
+    p_security.add_argument(
+        "--publisher-source-id",
+        metavar="SLUG",
+        help="locally configured publisher identity used to derive trust",
+    )
+    p_security.add_argument(
+        "--registry-inputs-digest",
+        dest="security_registry_inputs_digest",
+        metavar="SHA256",
+        help="exact locally resolved registry inputs digest used to derive trust",
+    )
+    p_security.add_argument(
+        "--publisher-trust",
+        choices=("unverified", "registry-reviewed", "company-reviewed"),
+        help="local trust classification for the exact publisher and registry inputs",
+    )
+    _add_json(p_security)
+
+    p_security = security_sub.add_parser(
+        "analyzers", help="list reviewed optional analyzer adapters and local availability"
+    )
+    _add_json(p_security)
+    p_security = security_sub.add_parser("suites", help="list built-in analyzer suites")
+    _add_json(p_security)
+
     return parser
 
 
@@ -748,6 +858,20 @@ def _to_request(args: argparse.Namespace) -> Request:
             getattr(args, "platform", ())
             or (("darwin",) if getattr(args, "registry_action", None) == "migrate" else ())
         ),
+        security_action=getattr(args, "security_action", None),
+        security_input=getattr(args, "security_input", None),
+        security_artifact=getattr(args, "security_artifact", None),
+        registry_index=getattr(args, "registry_index", None),
+        registry_lock=getattr(args, "registry_lock", None),
+        security_cache=getattr(args, "security_cache", None),
+        security_object_digest=getattr(args, "security_object_digest", None),
+        security_rules_digest=getattr(args, "security_rules_digest", None),
+        security_options_digest=getattr(args, "security_options_digest", None),
+        security_policy_digest=getattr(args, "security_policy_digest", None),
+        security_provider_version=getattr(args, "security_provider_version", None),
+        publisher_source_id=getattr(args, "publisher_source_id", None),
+        security_registry_inputs_digest=getattr(args, "security_registry_inputs_digest", None),
+        publisher_trust=getattr(args, "publisher_trust", None),
     )
 
 

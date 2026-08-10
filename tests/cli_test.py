@@ -54,6 +54,7 @@ class TestStaticWiring(unittest.TestCase):
         "upstream",
         "setup",
         "registry",
+        "security",
     }
 
     def test_dispatch_keys(self):
@@ -81,6 +82,7 @@ class TestStaticWiring(unittest.TestCase):
         self.assertIs(cli.DISPATCH["upstream"], cli._run_upstream)
         self.assertIs(cli.DISPATCH["setup"], setup.run)
         self.assertIs(cli.DISPATCH["registry"], cli._run_registry)
+        self.assertIs(cli.DISPATCH["security"], cli._run_security)
 
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()
@@ -213,6 +215,58 @@ class TestRequestMapping(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(req.command, "status")
         self.assertTrue(req.json)
+
+    def test_security_scan_maps_evidence_inputs(self):
+        rc, req = _dispatch(
+            [
+                "security",
+                "scan",
+                "object.json",
+                "--index",
+                "aart.index.json",
+                "--artifact",
+                "skill/review",
+                "--lock",
+                "aart.lock.json",
+                "--cache",
+                "/tmp/aart-security",
+                "--json",
+            ],
+            command="security",
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(req.security_action, "scan")
+        self.assertEqual(req.security_input, "object.json")
+        self.assertEqual(req.registry_index, "aart.index.json")
+        self.assertEqual(req.registry_lock, "aart.lock.json")
+        self.assertEqual(req.security_artifact, "skill/review")
+        self.assertEqual(req.security_cache, "/tmp/aart-security")
+        self.assertTrue(req.json)
+
+    def test_security_verify_maps_expected_identity_and_trust(self):
+        rc, req = _dispatch(
+            [
+                "security",
+                "verify",
+                "attestation.json",
+                "--object-digest",
+                "sha256:" + "1" * 64,
+                "--publisher-source-id",
+                "company",
+                "--registry-inputs-digest",
+                "sha256:" + "2" * 64,
+                "--publisher-trust",
+                "company-reviewed",
+            ],
+            command="security",
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(req.security_action, "verify")
+        self.assertEqual(req.security_input, "attestation.json")
+        self.assertEqual(req.security_object_digest, "sha256:" + "1" * 64)
+        self.assertEqual(req.publisher_source_id, "company")
+        self.assertEqual(req.security_registry_inputs_digest, "sha256:" + "2" * 64)
+        self.assertEqual(req.publisher_trust, "company-reviewed")
 
 
 class TestProfileSplitting(unittest.TestCase):

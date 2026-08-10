@@ -68,9 +68,12 @@ mismatch, compiles registry-owned packages and references, and writes no payload
 
 An entry whose review status is not `approved` cannot be locked and fails `audit`. Audit warnings
 are evidence gaps, not installation-risk conclusions: missing license/provenance and absent
-per-object assessment evidence are reported explicitly. The stdlib-only baseline is documented in
-[`baseline-v1.md`](../security/baseline-v1.md); later security tasks wire assessment caches,
-attestations, policy, and CLI commands into this existing registry command boundary.
+per-object assessment evidence are reported explicitly. When `security/index.json` exists, audit
+verifies every canonical attestation byte digest, publisher/registry-input identity, exact compiled
+object coverage, and rejects evidence for unknown objects or critical installation risk. High or
+unknown risk remains an explicit review warning. The stdlib-only baseline is documented in
+[`baseline-v1.md`](../security/baseline-v1.md), and the registry evidence layout is documented in
+[`attestations-v1.md`](../security/attestations-v1.md).
 
 ## Migration
 

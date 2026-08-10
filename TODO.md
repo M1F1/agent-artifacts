@@ -102,11 +102,13 @@ Product requirements:
       auto-install them or import them into the AART process.
 - [x] Add optional adapters/suites for applicable open-source analyzers while preserving the
       stdlib-only AART runtime.
-- [ ] Add signed/digest-bound evidence indexes, freshness handling, deterministic bundle
-      aggregation, and policy gates based on worst/unknown status rather than average alone.
+- [x] Add digest-bound evidence indexes, freshness handling, deterministic bundle aggregation,
+      and policy gates based on worst/unknown status rather than average alone, documented in
+      [`attestations-v1.md`](docs/security/attestations-v1.md). Cryptographic signing remains a
+      separately versioned future protocol.
 - [ ] Show provider, rules version, evidence age, coverage, risk range, and remediation details in
       CLI/TUI marketplace, review, maintainer, and outcome views.
-- [ ] Test malicious provider output, timeout, crash, stale/mismatched evidence, partial bundle
+- [x] Test malicious provider output, timeout, crash, stale/mismatched evidence, partial bundle
       coverage, offline behavior, and policy enforcement.
 
 ### Repositories, migration, and verification

@@ -62,8 +62,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | complete | `codex/aart-1-0-life01-lifecycle` | [#47](https://github.com/M1F1/agent-artifacts/pull/47) / `e23c726` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | complete | `codex/aart-1-0-set01-setup` | [#48](https://github.com/M1F1/agent-artifacts/pull/48) / `7a4b045` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / `655ac46` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / pending | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending |
-| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | pending | — | — | Worst/range/mean/coverage |
+| SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | in_progress | `codex/aart-1-0-sec03-attestations-policy` | pending | Local gates pass: digest-bound cache/index, trust/freshness, worst/unknown policy, CLI and registry audit |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | pending | — | — | Registry remains optional |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | pending | — | — | Source/trust/security visible |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
@@ -80,21 +80,22 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SEC02 — Add out-of-process optional security analyzer providers
-Branch: codex/aart-1-0-sec02-analyzers
-Worktree: /tmp/aart-sec02.aRYQLr/worktree
+Task: SEC03 — Add security attestations, bundle aggregation, policy gates, and UI data
+Branch: codex/aart-1-0-sec03-attestations-policy
+Worktree: /private/tmp/aart-sec03.JI3B16/worktree
 Started: 2026-08-10
-Bounded contexts: analyzer discovery/handshake/scan protocol, fixed subprocess request/adapter,
-  provider output normalization, built-in tool adapters, absence/failure/coverage outcomes
-Red test and expected failure: new protocol, process-boundary, and tool-adapter tests could not
-  import the absent analyzer modules before implementation
-Focused tests: 43 pass; 94.91% branch coverage across analyzer protocol/application/IO/adapters
-Files owned: security analyzer model/protocol/application/adapters/IO/tests/docs, TODO.md,
-  PROGRESS.md, narrow exports only
-Risks/migrations: optional tools are trusted processes rather than sandboxes; no auto-install or
-  in-process import; minimal environment, time/output bounds, network consent, no secret echo
-PR: #50 ready and mergeable
-CI: local gates, Python 3.14.6 runtime gates, and first four-job Python 3.10/3.14 matrix pass
+Bounded contexts: security cache/attestation/index identity and freshness, registry evidence trust,
+  deduplicated collection summary, installation-risk policy, CLI security views and UI projections
+Red test and expected failure: missing attestation/cache, aggregation/policy, projections/suites,
+  CLI wiring/commands, and registry security-index verification contracts all failed before Green
+Focused tests: 159 pass across baseline/analyzers/attestations/cache/aggregation/policy/CLI,
+  registry audit, CLI wiring, and semantic flag validation
+Files owned: security attestations/aggregation/policy/application/IO/commands/tests/docs, CLI/model
+  request wiring, TODO.md, PROGRESS.md, narrow marketplace/registry projections only
+Risks/migrations: evidence trust must derive from local source policy; unknown/stale/high cannot be
+  hidden by averages; optional analyzer absence remains supported; cache inputs require exact match
+PR: pending after reviewed local gates
+CI: pending; local Python 3.11 and Python 3.14.6 suites pass
 Merge: pending
 ```
 
@@ -125,6 +126,7 @@ Merge: pending
 | SET01 | 62 pass | 327 files pass | pass | 147 source files pass | 1303 pass | 28 pass | 11-step pass | pass | 85.91% overall; 90.94% new setup context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1303 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
+| SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; CI pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -154,6 +156,7 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 | D-019 | Setup authority is a reviewed digest-bound plan over exact object, recipe, trust, policy, platform, and destination evidence | accepted | Prevents source drift or trust changes from gaining execution authority; custom code runs only from a verified private copy and setup remains independently reportable/rollbackable |
 | D-020 | Installation-risk evidence binds the exact object and a canonical baseline rules descriptor; incomplete coverage remains unknown unless observed high/critical facts dominate | accepted | Keeps stdlib-only evidence deterministic and explainable without turning a completed heuristic scan into a certification or hiding serious observations behind skipped coverage |
 | D-021 | Optional analyzers are trusted bounded processes with object-bound evidence; built-ins disable ambient config and normalize secret-free native output | accepted | Preserves a zero-dependency runtime and explicit unknown coverage without claiming OS sandboxing or letting tools choose commands, install packages, or rebind results to another object |
+| D-022 | Security attestations bind object/provider/rules/options/policy; registry evidence trust is local-policy-derived and bundle gates preserve worst/unknown facts | accepted | Prevents stale or self-trusting evidence, makes optional provider absence explicit, and keeps favorable averages from hiding critical/high/unknown installation risk |
 
 ## Blockers
 
@@ -978,3 +981,40 @@ None.
   PR is mergeable with a clean merge state.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-10 — SEC02 merged; SEC03 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #50 as `524ff38`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean SEC02 temporary worktree and created isolated SEC03 from exact merge
+  `524ff38`.
+- Scoped SEC03 to exact cache/attestation identity and freshness, policy-derived registry evidence
+  trust, deduplicated bundle statistics, worst/unknown installation gates, security CLI commands,
+  and normalized marketplace/TUI-facing fields.
+
+### 2026-08-10 — SEC03 Red, Green, review, and local gates
+
+- Confirmed Red independently for absent cache/attestation/index schemas, deterministic bundle and
+  policy values, normalized projections/suites, CLI security wiring, and registry-CI evidence
+  verification before implementing each vertical slice.
+- Added strict canonical attestations keyed by object, provider/version, rules, normalized options,
+  and effective policy digests; any identity change produces stale evidence. Local cache writes are
+  private, symlink-rejecting, atomic, collision-safe, and idempotent.
+- Added registry security indexes whose exact document bytes, cache keys, source identity, and
+  registry-input digest are verified. `registry audit` requires evidence for every compiled object,
+  rejects unknown objects/tampering/critical risk, and keeps high/unknown results visible for review;
+  registry evidence becomes reviewed only through an exact local trust context.
+- Added deduplicated bundle worst/range/known-mean/severity/status/coverage/provider/trust summaries
+  and recomputed installation policy decisions. Unknown/stale members are excluded from the mean but
+  remain explicit gates; favorable means cannot override critical/high/unknown facts.
+- Added normalized assessment, artifact, bundle, and policy projections plus baseline/recommended/
+  extended analyzer suites. `aart security scan/show/verify/analyzers/suites` never installs optional
+  providers and consistently says installation risk or assessment rather than exposing `safe`.
+- Applied the repository `code-review` skill and closed findings for invalid provider-version
+  crashes and missing tampered-registry evidence coverage. No open review findings remain.
+- Verified 159 focused tests. `make quality` passes Ruff format on 353 files, Ruff lint, mypy on 164
+  source files, 1400 unit tests, 28 integration tests, the 11-step shell E2E, stdlib-only validation,
+  86.29% overall branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation.
+- Python 3.14.6 also passes all 1400 tests, validation, version, packaging, and docs gates. Two
+  pre-existing nonfatal HTTP cleanup ResourceWarnings remain unchanged.

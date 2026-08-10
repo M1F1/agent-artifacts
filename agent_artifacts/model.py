@@ -493,3 +493,17 @@ class Request:
     registry_scopes: Tuple[str, ...] = ()
     registry_modes: Tuple[str, ...] = ()
     registry_platforms: Tuple[str, ...] = ()
+    security_action: Optional[str] = None
+    security_input: Optional[str] = None
+    security_artifact: Optional[str] = None
+    registry_index: Optional[str] = None
+    registry_lock: Optional[str] = None
+    security_cache: Optional[str] = None
+    security_object_digest: Optional[str] = None
+    security_rules_digest: Optional[str] = None
+    security_options_digest: Optional[str] = None
+    security_policy_digest: Optional[str] = None
+    security_provider_version: Optional[str] = None
+    publisher_source_id: Optional[str] = None
+    security_registry_inputs_digest: Optional[str] = None
+    publisher_trust: Optional[str] = None

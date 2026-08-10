@@ -136,5 +136,5 @@ changed native output fails closed as unknown coverage.
 Callers discover the set through `discover_tool_adapters`, construct the exact input with
 `analyzer_input_from_stored_object`, and invoke a selected adapter with `run_tool_adapter`. Generic
 protocol providers use `AnalyzerCommand` and `run_protocol_analyzer`. Assessment aggregation,
-attestation caching/freshness, suites, bundle statistics, policy gates, and CLI/TUI presentation are
-owned by SEC03.
+attestation caching/freshness, suites, bundle statistics, policy gates, and CLI projections are
+specified in [`attestations-v1.md`](attestations-v1.md).
