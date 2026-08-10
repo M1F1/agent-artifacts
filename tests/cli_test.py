@@ -55,6 +55,7 @@ class TestStaticWiring(unittest.TestCase):
         "setup",
         "registry",
         "security",
+        "reporting",
     }
 
     def test_dispatch_keys(self):
@@ -83,6 +84,7 @@ class TestStaticWiring(unittest.TestCase):
         self.assertIs(cli.DISPATCH["setup"], setup.run)
         self.assertIs(cli.DISPATCH["registry"], cli._run_registry)
         self.assertIs(cli.DISPATCH["security"], cli._run_security)
+        self.assertIs(cli.DISPATCH["reporting"], cli._run_reporting)
 
     def test_parser_subcommands_match_dispatch(self):
         parser = cli.build_parser()

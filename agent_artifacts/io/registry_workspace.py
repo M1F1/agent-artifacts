@@ -34,7 +34,15 @@ _ROOT_FILES = frozenset(
     {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json"}
 )
 _ROOT_DIRECTORIES = frozenset({"entries", "artifacts", "collections"})
-_CI_PATH = ".github/workflows/aart-registry.yml"
+_GITHUB_DIRECTORIES = frozenset({".github", ".github/workflows", ".github/ISSUE_TEMPLATE"})
+_GITHUB_FILES = frozenset(
+    {
+        ".github/ISSUE_TEMPLATE/usage-report.yml",
+        ".github/workflows/aart-registry.yml",
+        ".github/workflows/aart-usage-dashboard.yml",
+        ".github/workflows/aart-usage-validate.yml",
+    }
+)
 _MAX_ENTRIES = 100_000
 _MAX_FILE_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_BYTES = 256 * 1024 * 1024
@@ -52,7 +60,7 @@ def _real_directory(path: Path) -> bool:
 
 
 def _managed(relative: str) -> bool:
-    if relative in _ROOT_FILES or relative in {".github", ".github/workflows", _CI_PATH}:
+    if relative in _ROOT_FILES or relative in _GITHUB_DIRECTORIES or relative in _GITHUB_FILES:
         return True
     return relative.split("/", 1)[0] in _ROOT_DIRECTORIES
 

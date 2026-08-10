@@ -45,6 +45,9 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertIn("aart-registry.json", files)
         self.assertIn("aart-source.json", files)
         self.assertIn(".github/workflows/aart-registry.yml", files)
+        self.assertIn(".github/ISSUE_TEMPLATE/usage-report.yml", files)
+        self.assertIn(".github/workflows/aart-usage-validate.yml", files)
+        self.assertIn(".github/workflows/aart-usage-dashboard.yml", files)
         workflow = files[".github/workflows/aart-registry.yml"]
         self.assertIn(b"registry test", workflow)
         self.assertIn(b"minimum", workflow)
@@ -54,6 +57,21 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertIn(b"vars.AART_REPOSITORY", workflow)
         self.assertEqual(workflow.count(b"persist-credentials: false"), 2)
         self.assertNotIn(b"git push", workflow)
+        issue_form = files[".github/ISSUE_TEMPLATE/usage-report.yml"]
+        self.assertIn(b"id: report", issue_form)
+        self.assertIn(b"voluntary", issue_form.lower())
+        self.assertIn(b"never add credentials", issue_form)
+        self.assertNotIn(b'labels: ["usage-report"]', issue_form)
+        validator = files[".github/workflows/aart-usage-validate.yml"]
+        self.assertIn(b"aart reporting validate-issue usage-issue.md", validator)
+        self.assertIn(b"ISSUE_NUMBER: ${{ github.event.issue.number }}", validator)
+        self.assertNotIn(b"${{ github.event.issue.body }}", validator)
+        self.assertNotIn(b"eval ", validator)
+        dashboard = files[".github/workflows/aart-usage-dashboard.yml"]
+        self.assertIn(b"--json body,createdAt", dashboard)
+        self.assertIn(b"aart reporting aggregate", dashboard)
+        self.assertNotIn(b"author", dashboard)
+        self.assertIn(b"actions/deploy-pages@v4", dashboard)
         manifest = parse_registry_manifest(files["aart-registry.json"])
         assert isinstance(manifest, Ok)
         self.assertEqual(
@@ -131,6 +149,26 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         snapshot = SourceSnapshot(
             SnapshotOrigin.LOCAL,
             (SnapshotEntry(path.value, SnapshotEntryKind.FILE, b"user-owned workflow\n"),),
+        )
+
+        planned = plan_registry_init(
+            snapshot,
+            RegistryInitOptions(
+                "company-registry",
+                "Company Registry",
+                SemVer(1, 0, 0),
+                SemVer(2, 0, 0),
+            ),
+        )
+
+        self.assertIsInstance(planned, Err)
+
+    def test_init_never_overwrites_an_existing_reporting_template(self) -> None:
+        path = parse_relative_path(".github/ISSUE_TEMPLATE/usage-report.yml")
+        assert isinstance(path, Ok)
+        snapshot = SourceSnapshot(
+            SnapshotOrigin.LOCAL,
+            (SnapshotEntry(path.value, SnapshotEntryKind.FILE, b"user-owned form\n"),),
         )
 
         planned = plan_registry_init(

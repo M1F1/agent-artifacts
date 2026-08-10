@@ -7,14 +7,18 @@ from pathlib import Path
 from unittest import mock
 
 from agent_artifacts import tui
+from agent_artifacts.configuration.model import ReportingMode
 from agent_artifacts.consumer import (
     ConsumerActionRequest,
     ConsumerApplicationService,
     ConsumerContext,
     LocalConsumerAdapter,
 )
-from agent_artifacts.domain.result import Ok
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.reporting.application import ReportingApplicationService
+from agent_artifacts.reporting.model import ReportingDestination
 from agent_artifacts.tui_sources import build_source_stage
 from tests.canonical_setup_application_test import Fixture as SetupFixture
 from tests.canonical_symlink_test import _fixture
@@ -161,6 +165,55 @@ class TuiConsumerTextTest(unittest.TestCase):
             self.assertIn("actual modes: copy", rendered)
             self.assertIn("Install outcome: succeeded", rendered)
             self.assertIn("changed=1", rendered)
+
+    def test_reporting_provider_failure_after_finalize_preserves_success_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = _fixture(Path(raw), "skill")
+            project, _checkout, paths, location, _request, catalog, effective = fixture
+            service = ConsumerApplicationService(
+                ConsumerContext(catalog, effective, builtin(), location, paths),
+                LocalConsumerAdapter(),
+            )
+            configured = effective.configuration.sources[0]
+            state = source_state(configured, "direct-source", display_order=0)
+            stage = build_source_stage(
+                effective.configuration,
+                effective.policy,
+                {configured.alias: state.health},
+                first_run=False,
+            )
+            assert isinstance(stage, Ok), stage
+            failure = Err(
+                (
+                    Diagnostic(
+                        DiagnosticCode("reporting-provider-failed"),
+                        Severity.ERROR,
+                        "provider unavailable",
+                    ),
+                )
+            )
+            reporting = ReportingApplicationService(
+                ReportingDestination(ReportingMode.AUTOMATIC, "github.com", "org/usage"),
+                lambda _plan: failure,
+                lambda _plan: failure,
+            )
+            writes = []
+
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_text(
+                    _scripted(["", "1", "1", "1", "install", "1", "", "1", "y"]),
+                    writes.append,
+                    project=str(project),
+                    source_stage_view=stage.value,
+                    consumer_service=service,
+                    reporting_service=reporting,
+                )
+
+            self.assertEqual(code, 0)
+            self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
+            rendered = "\n".join(writes)
+            self.assertIn("Exact redacted usage report payload", rendered)
+            self.assertIn("warning: usage report submission failed", rendered)
 
     def test_back_keeps_the_qualified_basket_and_finalizes_once(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
