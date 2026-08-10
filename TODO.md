@@ -98,9 +98,9 @@ Product requirements:
 - [x] Add a zero-runtime-dependency baseline that reports deterministic object/rules-digest-bound
       installation-risk evidence, explicit coverage and remediation, documented in
       [`baseline-v1.md`](docs/security/baseline-v1.md), without certifying an artifact.
-- [ ] Add a versioned out-of-process JSON protocol for independently installed analyzers; never
+- [x] Add a versioned out-of-process JSON protocol for independently installed analyzers; never
       auto-install them or import them into the AART process.
-- [ ] Add optional adapters/suites for applicable open-source analyzers while preserving the
+- [x] Add optional adapters/suites for applicable open-source analyzers while preserving the
       stdlib-only AART runtime.
 - [ ] Add signed/digest-bound evidence indexes, freshness handling, deterministic bundle
       aggregation, and policy gates based on worst/unknown status rather than average alone.
