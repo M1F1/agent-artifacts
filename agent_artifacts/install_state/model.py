@@ -69,6 +69,20 @@ def _safe_git_ref(value: str) -> bool:
     )
 
 
+def _safe_git_identity(value: str) -> bool:
+    """Accept the marketplace's credential-free ``host/repository`` identity."""
+
+    if not _one_line(value) or "://" in value or "@" in value:
+        return False
+    parts = value.split("/")
+    return (
+        len(parts) >= 2
+        and "." in parts[0]
+        and all(part not in {"", ".", ".."} for part in parts)
+        and not any(character in value for character in "\\?#%")
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SourceEvidence:
     alias: SourceAlias
@@ -86,18 +100,20 @@ class SourceEvidence:
             or _SLUG_RE.fullmatch(self.declared_id.value) is None
             or not isinstance(self.kind, SourceKind)
             or not _one_line(self.origin)
-            or _COMMIT_RE.fullmatch(self.resolved_commit) is None
         ):
             raise ValueError("installation source evidence is invalid")
         if self.kind is SourceKind.SOURCE_LOCAL:
             if (
                 not posixpath.isabs(self.origin)
                 or posixpath.normpath(self.origin) != self.origin
+                or self.resolved_commit != "local"
                 or self.subscription_ref is not None
             ):
                 raise ValueError("local source origin must be a normalized absolute path")
-        elif git_location_parts(self.origin) is None or not _safe_git_ref(
-            self.subscription_ref or ""
+        elif (
+            _COMMIT_RE.fullmatch(self.resolved_commit) is None
+            or (git_location_parts(self.origin) is None and not _safe_git_identity(self.origin))
+            or not _safe_git_ref(self.subscription_ref or "")
         ):
             raise ValueError(
                 "Git source origin/ref must be a credential-free Git location and safe subscription"
@@ -174,8 +190,12 @@ class EffectProof:
             raise ValueError("non-symlink effects must record copy mode")
 
     @property
-    def locator(self) -> tuple[str, str]:
-        return (self.destination, self.json_path or "")
+    def locator(self) -> tuple[str, str, str]:
+        return (
+            self.destination,
+            self.json_path or "",
+            "" if self.identity_digest is None else str(self.identity_digest),
+        )
 
 
 @dataclass(frozen=True, slots=True)

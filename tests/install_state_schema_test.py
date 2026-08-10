@@ -120,6 +120,26 @@ class InstallStateSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "safe subscription"):
             replace(_record().source, subscription_ref="../moving")
 
+    def test_local_source_uses_explicit_local_revision_without_a_subscription_ref(self) -> None:
+        original = _record()
+        source = SourceEvidence(
+            SourceAlias("local"),
+            SourceId("local-artifacts"),
+            SourceKind.SOURCE_LOCAL,
+            "/work/artifacts",
+            "local",
+        )
+        record = replace(
+            original,
+            coordinate=ArtifactCoordinate(SourceAlias("local"), original.artifact.identity),
+            source=source,
+        )
+        state = InstallState(2, (record,))
+
+        self.assertEqual(parse_install_state(install_state_bytes(state)), Ok(state))
+        with self.assertRaisesRegex(ValueError, "local source origin"):
+            replace(source, resolved_commit="a" * 40)
+
     def test_state_rejects_duplicate_installation_identity(self) -> None:
         with self.assertRaisesRegex(ValueError, "unique"):
             InstallState(2, (_record(), _record()))
@@ -135,6 +155,25 @@ class InstallStateSchemaTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "effect ownership"):
             InstallState(2, (original, other))
+
+    def test_merge_effects_with_distinct_identities_can_share_a_json_path(self) -> None:
+        original = _record()
+        other_identity = ArtifactIdentity("mcp", "jira")
+        other = replace(
+            original,
+            coordinate=ArtifactCoordinate(SourceAlias("company"), other_identity),
+            artifact=replace(original.artifact, identity=other_identity),
+            effects=(
+                replace(
+                    original.effects[0],
+                    identity_digest=_digest("6"),
+                ),
+            ),
+        )
+
+        state = InstallState(2, (original, other))
+
+        self.assertEqual(len(state.installations), 2)
 
     def test_project_and_user_effect_destinations_do_not_cross_scope(self) -> None:
         project_effect = EffectProof(

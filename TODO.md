@@ -65,6 +65,12 @@ Product requirements:
 
 ### Consumer and TUI migration
 
+- [x] Add a source-aware canonical Copy prepare/review/finalize boundary over qualified marketplace
+      items and verified immutable CAS objects, documented in
+      [`canonical-copy-v1.md`](docs/installation/canonical-copy-v1.md).
+- [x] Apply canonical file, tree, managed-block, and JSON merge effects transactionally; pin
+      manifest-v2 evidence and a durable installed-object reference with structured no-op,
+      conflict, failure, and rollback outcomes.
 - [ ] Resolve Install/Update from qualified source subscriptions and immutable objects.
 - [ ] Keep Copy as default and make managed Symlink target immutable store content; sync alone must
       not retarget installed artifacts.

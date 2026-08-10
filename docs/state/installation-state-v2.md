@@ -24,8 +24,9 @@ filesystem or process modules.
 The top-level document has exactly `schema_version: 2` and a deterministically sorted
 `installations` array. Each installation records:
 
-- qualified source alias, declared source ID, kind, credential-free origin, immutable resolved
-  commit, and the Git subscription ref used by a later explicit update;
+- qualified source alias, declared source ID, kind, credential-free origin, immutable resolved Git
+  commit (or the explicit `local` revision marker), and the Git subscription ref used by a later
+  explicit update;
 - artifact type/name, SemVer, manifest digest, payload digest, and immutable object digest;
 - harness profile/version and a non-crossing `project` or `user` scope;
 - requested mode plus the actual mode and digest proof of every individual effect;
