@@ -96,8 +96,8 @@ Risks/migrations: registry must remain optional unless policy requires it; sourc
   deferred until Finalize; explicit legacy catalog arguments must remain compatible
 PR: [#52](https://github.com/M1F1/agent-artifacts/pull/52)
 CI: local canonical quality passes on Python 3.11; Python 3.14.6 passes 1423 unit tests, 28
-  integration tests, validation/version, packaging, and docs; first remote matrix exposed and the
-  branch fixes Ruff 0.16.2 format drift and ambient-XDG test isolation; replacement matrix pending
+  integration tests, validation/version, packaging, and docs; four Python 3.10/3.14 implementation
+  jobs pass after the recorded Ruff/XDG fixes; final ledger matrix pending
 Merge: pending
 ```
 
@@ -129,7 +129,7 @@ Merge: pending
 | SEC01 | 46 pass | 332 files pass | pass | 151 source files pass | 1331 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.15% overall; 93.87% security context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1331 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
-| TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; replacement remote matrix pending |
+| TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1091,3 +1091,10 @@ None.
   first-run configuration. The fixture now pins config/data/cache XDG roots to the same temporary
   home layout, preserving real path semantics and preventing host-environment leakage. A new
   replacement four-job matrix reruns on this hermetic test fix.
+
+### 2026-08-10 — TUI01 implementation CI
+
+- All four replacement push/pull-request quality jobs passed on Python 3.10 and 3.14 after the
+  formatter and ambient-XDG test-isolation fixes; no product behavior changed in either CI fix.
+- PR #52 is ready and mergeable with the complete implementation diff. This ledger commit records
+  the remote evidence, and a final four-job matrix reruns before the protected squash merge.
