@@ -17,7 +17,7 @@ from agent_artifacts.domain.identifiers import (
 )
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
-from agent_artifacts.protocol.json import JsonObject, canonical_json_bytes
+from agent_artifacts.protocol.json import JsonObject, JsonValue, canonical_json_bytes
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.semver import SemVer
 
@@ -32,6 +32,7 @@ EffectKind = Literal[
     "symlink-tree",
 ]
 MergeMode = Literal["key", "list"]
+MemoryMode = Literal["replace", "prepend", "append", "skip"]
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -68,6 +69,13 @@ def _one_line(value: str) -> bool:
         and "\r" not in value
         and "\n" not in value
     )
+
+
+def _identity_evidence_matches(evidence: JsonValue, digest: ObjectDigest) -> bool:
+    try:
+        return json_digest(evidence) == digest
+    except (TypeError, ValueError, UnicodeError):
+        return False
 
 
 def _safe_git_ref(value: str) -> bool:
@@ -166,6 +174,7 @@ class EffectProof:
     json_path: str | None = None
     merge_mode: MergeMode | None = None
     identity_digest: ObjectDigest | None = None
+    identity_evidence: JsonValue | None = None
     link_target: str | None = None
     link_semantics: Literal["immutable-object", "mutable-local"] | None = None
     created_destination: bool = False
@@ -185,13 +194,22 @@ class EffectProof:
             parsed_source = parse_relative_path(self.source_path)
             if not isinstance(parsed_source, Ok):
                 raise ValueError("effect source path must be a safe relative path")
-        merge_fields = (self.json_path, self.merge_mode, self.identity_digest)
+        merge_fields = (
+            self.json_path,
+            self.merge_mode,
+            self.identity_digest,
+            self.identity_evidence,
+        )
         if self.kind == "merge-json":
             if (
                 not _one_line(self.json_path or "")
                 or self.merge_mode not in {"key", "list"}
                 or not isinstance(self.identity_digest, ObjectDigest)
                 or not _valid_digest(self.identity_digest)
+                or (
+                    self.identity_evidence is not None
+                    and not _identity_evidence_matches(self.identity_evidence, self.identity_digest)
+                )
                 or self.source_path is not None
                 or self.actual_mode != "copy"
             ):
@@ -244,6 +262,7 @@ class InstallationRecord:
     scope: InstallScope
     requested_mode: InstallMode
     effects: tuple[EffectProof, ...]
+    memory_mode: MemoryMode | None = None
     setup_state_ref: str | None = None
 
     def __post_init__(self) -> None:
@@ -261,6 +280,11 @@ class InstallationRecord:
             or self.requested_mode not in {"copy", "symlink"}
             or not self.effects
             or any(not isinstance(effect, EffectProof) for effect in self.effects)
+            or (
+                self.artifact.identity.kind == "memory"
+                and self.memory_mode not in {None, "replace", "prepend", "append", "skip"}
+            )
+            or (self.artifact.identity.kind != "memory" and self.memory_mode is not None)
             or (
                 self.setup_state_ref is not None
                 and _SETUP_REF_RE.fullmatch(self.setup_state_ref) is None

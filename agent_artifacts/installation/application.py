@@ -494,11 +494,13 @@ def _legacy_actions(
 def _descend(root: dict[str, object], json_path: str, *, force: bool) -> Result[dict[str, object]]:
     node = root
     for part in json_path.split(".") if json_path else ():
-        child = node.get(part)
-        if child is None:
+        child: object
+        if part not in node:
             child = {}
             node[part] = child
-        elif not isinstance(child, dict):
+        else:
+            child = node[part]
+        if not isinstance(child, dict):
             if not force:
                 return _error(
                     INSTALL_CONFLICT,
@@ -528,8 +530,9 @@ def _merged_content(
         if isinstance(container, Err):
             return container
         key = action.identity[0]
+        key_exists = key in container.value
         key_current = container.value.get(key)
-        if key_current is not None and key_current != action.value and not force:
+        if key_exists and key_current != action.value and not force:
             return _error(
                 INSTALL_CONFLICT,
                 f"JSON merge identity {action.json_path}.{key} already differs",
@@ -542,8 +545,9 @@ def _merged_content(
         parent = _descend(root, ".".join(parts[:-1]), force=force)
         if isinstance(parent, Err):
             return parent
+        key_exists = parts[-1] in parent.value
         value = parent.value.get(parts[-1])
-        if value is None:
+        if not key_exists:
             list_current: list[object] = []
         elif isinstance(value, list):
             list_current = list(value)
@@ -890,6 +894,7 @@ def _proof(operation: InstallOperation) -> EffectProof:
         json_path=operation.json_path,
         merge_mode=operation.merge_mode,
         identity_digest=operation.identity_digest,
+        identity_evidence=operation.identity_evidence,
         created_destination=created,
         overwrote=operation.overwrote,
     )
@@ -936,6 +941,7 @@ def _replacement_state(
             request.scope,
             request.mode,
             tuple(effects),
+            memory_mode=(request.memory_mode if request.identity.kind == "memory" else None),
         )
         retained = tuple(item for item in current.installations if item.key != record.key)
         return Ok(InstallState(2, (*retained, record)))

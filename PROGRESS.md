@@ -58,8 +58,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | REG01 | Maintainer registry commands/quality gate | IMP02 | complete | `codex/aart-1-0-reg01-registry-commands` | [#43](https://github.com/M1F1/agent-artifacts/pull/43) / `7351861` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `3affea4` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / pending | First four-job Python 3.10/3.14 CI matrix passed; merge pending |
-| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | pending | — | — | Recorded subscription only |
+| INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / `0940566` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge verified |
+| LIFE01 | Status/update/check/uninstall lifecycle | INS02 | in_progress | `codex/aart-1-0-life01-lifecycle` | pending | Recorded subscription only |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | pending | — | — | Separate payload/setup outcomes |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
 | SEC02 | Optional out-of-process analyzers | SEC01 | pending | — | — | No auto-install/runtime deps |
@@ -80,21 +80,21 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: INS02 — Implement durable managed Symlink and explicit retarget update
-Branch: codex/aart-1-0-ins02-managed-symlink
-Worktree: /tmp/aart-ins02.LQ3EHI/worktree
+Task: LIFE01 — Migrate status, update, check, and uninstall lifecycle
+Branch: codex/aart-1-0-life01-lifecycle
+Worktree: /tmp/aart-life01.Ppf7AK/worktree
 Started: 2026-08-10
-Bounded contexts: managed immutable and explicit mutable-local link planning; mixed-mode effects;
-  atomic retarget/rollback; link state classification; object reference lifecycle
-Red test and expected failure: one test-module import error because LinkOperation, LinkStatus, and
-  classify_link do not exist (`python -m unittest tests.canonical_symlink_test`)
-Focused tests: 55 pass (9 Symlink lifecycle plus 46 canonical install/state regressions)
-Files owned: installation/link domain, application and local adapter extensions, state-v2 link proof,
-  Symlink fixtures/tests/docs, TODO.md, PROGRESS.md, narrow exports where required
-Risks/migrations: managed links must target exact CAS objects outside the executable environment;
-  source sync must not retarget; foreign/replaced links must not be followed or silently removed
-PR: #46 ready and mergeable
-CI: local Python 3.11/Python 3.14.6 gates and first four-job GitHub matrix pass
+Bounded contexts: manifest-v2 status/check, recorded-subscription update, upstream removal/prune,
+  proven-effect uninstall, structured per-selection outcomes, installed-object reference release
+Red test and expected failure: lifecycle module import error plus identity-evidence constructor
+  errors because canonical lifecycle services and complete merge ownership proof do not exist
+Focused tests: 53 pass across lifecycle, state-v2, canonical install/Symlink, and IO-boundary suites
+Files owned: lifecycle domain/application/local adapter, merge identity state proof, canonical
+  lifecycle tests/docs, TODO.md, PROGRESS.md, narrow exports/integration where required
+Risks/migrations: no same-name source fallback; fetch remains separate; user/foreign content and
+  cross-scope state must survive; partial failures cannot release live object references
+PR: pending after push
+CI: local Python 3.11 full quality and Python 3.14 runtime gates pass; remote pending
 Merge: pending
 ```
 
@@ -788,3 +788,49 @@ None.
   PR is mergeable with a clean merge state.
 - Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
   commit before the protected squash merge.
+
+### 2026-08-10 — INS02 merged; LIFE01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #46 as `0940566`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preserved the unrelated root
+  worktree files.
+- Removed only the clean INS02 temporary worktree and created isolated LIFE01 from exact merge
+  `0940566`.
+- Scoped LIFE01 to offline manifest-v2 status, current-snapshot checks without implicit fetch,
+  updates through exact recorded source subscriptions, explicit upstream-removal pruning, safe
+  effect-owned uninstall, per-selection terminal outcomes, scope isolation, and reference release.
+
+### 2026-08-10 — LIFE01 Red
+
+- Added end-to-end contracts for Copy/link/merge status, fetch-free exact-subscription checks,
+  explicit reviewed updates, upstream-removal retention/prune, force policy, JSON preservation,
+  rollback, scope selection, per-record terminal outcomes, and installed-reference release.
+- Extended the state contract test with digest-bound merge identity evidence required to inspect and
+  reverse one managed JSON identity without touching foreign entries.
+- Confirmed Red with the expected missing `agent_artifacts.lifecycle` import and rejected
+  `identity_evidence` constructor argument; no implementation path was reachable.
+
+### 2026-08-10 — LIFE01 Green, code review, and local gates
+
+- Added an IO-free lifecycle model/application boundary for exact scope/coordinate/profile
+  selection, per-effect local status, fetch-free marketplace checks, recorded-subscription-only
+  updates, explicit upstream-removal prune, reviewed uninstall, and structured terminal outcomes.
+- Reused canonical Install for updates so Copy conflicts, managed-link retargets, object evidence,
+  state-last writes, and installed references retain one transaction model. New state records bind
+  JSON merge identities and memory composition mode; older memory records fall back to `prepend`.
+- Added a no-follow local uninstall adapter that removes only state-proven effects, preserves
+  foreign JSON and memory content, isolates project/user state, releases only the exact installed
+  reference owner, reads back every mutation, and compensates plus verifies effect/state/reference
+  rollback on failure.
+- Applied the repository `code-review` skill. Review closed findings for JSON `null` versus absence,
+  list-identity and container-type drift, source URL/profile mismatch, scoped operation forgery,
+  reversed markers, durable mutation postconditions, reference-release verification, rollback
+  verification, and retained memory mode. No open review findings remain.
+- Focused coverage passes 53 tests. `make quality` passes Ruff format on 322 files, Ruff lint, mypy
+  on 143 source files, 1285 unit tests, 28 integration tests, the 11-step shell E2E,
+  validation/version checks, 85.86% branch coverage, `1.0.0a1` wheel/import, docs, and repository
+  non-mutation.
+- All 1285 tests, integration, and E2E also pass on Python 3.14.6. Local direct-script validation on
+  Python 3.14 requires `PYTHONPATH=.` when the worktree is not installed; with the same import
+  context as CI it passes validation, packaging, and docs. Two pre-existing HTTP cleanup
+  ResourceWarnings remain nonfatal.

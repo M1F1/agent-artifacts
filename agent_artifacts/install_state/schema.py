@@ -192,6 +192,7 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
             "json_path",
             "merge_mode",
             "identity_digest",
+            "identity_evidence",
             "link_target",
             "link_semantics",
             "created_destination",
@@ -261,6 +262,7 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
                 json_path=optional_strings["json_path"],
                 merge_mode=optional_strings["merge_mode"],  # type: ignore[arg-type]
                 identity_digest=identity,
+                identity_evidence=fields.value.get("identity_evidence"),
                 link_target=optional_strings["link_target"],
                 link_semantics=optional_strings["link_semantics"],  # type: ignore[arg-type]
                 created_destination=flags["created_destination"],
@@ -302,7 +304,7 @@ def _record(value: JsonValue, *, path: str, index: int) -> Result[InstallationRe
                 "effects",
             }
         ),
-        optional=frozenset({"setup_state_ref"}),
+        optional=frozenset({"memory_mode", "setup_state_ref"}),
         path=path,
         pointer=pointer,
     )
@@ -355,18 +357,30 @@ def _record(value: JsonValue, *, path: str, index: int) -> Result[InstallationRe
         if isinstance(parsed_setup, Err):
             return parsed_setup
         setup_ref = parsed_setup.value
+    memory_mode = None
+    if "memory_mode" in fields.value:
+        parsed_memory_mode = _string(
+            fields.value["memory_mode"],
+            "memory_mode",
+            path=path,
+            pointer=f"{pointer}/memory_mode",
+        )
+        if isinstance(parsed_memory_mode, Err):
+            return parsed_memory_mode
+        memory_mode = parsed_memory_mode.value
     try:
         return Ok(
             InstallationRecord(
-                coordinate.value,
-                source.value,
-                artifact.value,
-                simple["profile"],
-                profile_version.value,
-                simple["scope"],  # type: ignore[arg-type]
-                simple["requested_mode"],  # type: ignore[arg-type]
-                tuple(effects),
-                setup_ref,
+                coordinate=coordinate.value,
+                source=source.value,
+                artifact=artifact.value,
+                profile=simple["profile"],
+                profile_version=profile_version.value,
+                scope=simple["scope"],  # type: ignore[arg-type]
+                requested_mode=simple["requested_mode"],  # type: ignore[arg-type]
+                effects=tuple(effects),
+                memory_mode=memory_mode,  # type: ignore[arg-type]
+                setup_state_ref=setup_ref,
             )
         )
     except ValueError as error:
@@ -426,6 +440,8 @@ def _effect_json(effect: EffectProof) -> JsonObject:
         fields.append(("merge_mode", effect.merge_mode))
     if effect.identity_digest is not None:
         fields.append(("identity_digest", str(effect.identity_digest)))
+    if effect.identity_evidence is not None:
+        fields.append(("identity_evidence", effect.identity_evidence))
     if effect.link_target is not None:
         fields.append(("link_target", effect.link_target))
     if effect.link_semantics is not None:
@@ -478,6 +494,8 @@ def install_state_to_json(state: InstallState) -> JsonObject:
             ("requested_mode", record.requested_mode),
             ("effects", JsonArray(tuple(_effect_json(effect) for effect in record.effects))),
         ]
+        if record.memory_mode is not None:
+            fields.append(("memory_mode", record.memory_mode))
         if record.setup_state_ref is not None:
             fields.append(("setup_state_ref", record.setup_state_ref))
         records.append(JsonObject(tuple(fields)))

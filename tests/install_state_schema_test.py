@@ -22,6 +22,8 @@ from agent_artifacts.install_state.model import (
     SourceEvidence,
 )
 from agent_artifacts.install_state.schema import install_state_bytes, parse_install_state
+from agent_artifacts.protocol.hashing import json_digest
+from agent_artifacts.protocol.json import JsonArray
 from agent_artifacts.protocol.semver import SemVer
 
 
@@ -60,7 +62,8 @@ def _record() -> InstallationRecord:
                 installed_digest=_digest("4"),
                 json_path="mcpServers.atlassian",
                 merge_mode="key",
-                identity_digest=_digest("5"),
+                identity_digest=json_digest(JsonArray(("atlassian",))),
+                identity_evidence=JsonArray(("atlassian",)),
                 created_destination=False,
                 overwrote=False,
             ),
@@ -81,6 +84,7 @@ class InstallStateSchemaTests(unittest.TestCase):
         self.assertTrue(first.endswith(b"\n"))
         self.assertIn(b'"schema_version":2', first)
         self.assertIn(b'"subscription_ref":"main"', first)
+        self.assertIn(b'"identity_evidence":["atlassian"]', first)
 
     def test_unknown_fields_and_duplicate_keys_are_rejected(self) -> None:
         valid = install_state_bytes(InstallState(2, (_record(),))).decode().rstrip()
@@ -166,7 +170,8 @@ class InstallStateSchemaTests(unittest.TestCase):
             effects=(
                 replace(
                     original.effects[0],
-                    identity_digest=_digest("6"),
+                    identity_digest=json_digest(JsonArray(("jira",))),
+                    identity_evidence=JsonArray(("jira",)),
                 ),
             ),
         )
@@ -185,6 +190,56 @@ class InstallStateSchemaTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "project.*relative"):
             replace(_record(), effects=(project_effect,))
+
+    def test_memory_mode_round_trips_but_is_rejected_for_other_artifact_types(self) -> None:
+        original = _record()
+        identity = ArtifactIdentity("memory", "house")
+        memory = replace(
+            original,
+            coordinate=ArtifactCoordinate(SourceAlias("company"), identity),
+            artifact=replace(original.artifact, identity=identity),
+            requested_mode="copy",
+            effects=(
+                EffectProof(
+                    kind="managed-block",
+                    destination="CLAUDE.md",
+                    actual_mode="copy",
+                    installed_digest=_digest("8"),
+                ),
+            ),
+            memory_mode="append",
+            setup_state_ref=None,
+        )
+
+        encoded = install_state_bytes(InstallState(2, (memory,)))
+
+        self.assertIn(b'"memory_mode":"append"', encoded)
+        self.assertEqual(parse_install_state(encoded), Ok(InstallState(2, (memory,))))
+        with self.assertRaisesRegex(ValueError, "installation record"):
+            replace(original, memory_mode="append")
+
+    def test_invalid_memory_mode_is_rejected_during_parse(self) -> None:
+        original = _record()
+        identity = ArtifactIdentity("memory", "house")
+        memory = replace(
+            original,
+            coordinate=ArtifactCoordinate(SourceAlias("company"), identity),
+            artifact=replace(original.artifact, identity=identity),
+            requested_mode="copy",
+            effects=(
+                EffectProof(
+                    kind="managed-block",
+                    destination="CLAUDE.md",
+                    actual_mode="copy",
+                    installed_digest=_digest("8"),
+                ),
+            ),
+            setup_state_ref=None,
+        )
+        encoded = install_state_bytes(InstallState(2, (memory,))).decode()
+        invalid = encoded.replace('"effects":', '"memory_mode":"overlay","effects":')
+
+        self.assertIsInstance(parse_install_state(invalid), Err)
 
     def test_non_symlink_effect_cannot_claim_symlink_mode(self) -> None:
         with self.assertRaisesRegex(ValueError, "non-symlink"):
