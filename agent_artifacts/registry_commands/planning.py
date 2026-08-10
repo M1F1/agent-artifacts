@@ -60,6 +60,9 @@ from agent_artifacts.registry_maintenance.planning import (
     registry_native_content,
     resolve_native_acquisition,
 )
+from agent_artifacts.security.application import verify_security_index
+from agent_artifacts.security.attestation_schema import parse_security_index
+from agent_artifacts.security.model import InstallationRisk
 from agent_artifacts.sources.model import source_snapshot_digest
 
 from .model import (
@@ -737,7 +740,7 @@ def audit_registry_workspace(snapshot: SourceSnapshot) -> Result[RegistryQuality
     parsed = _registry_inputs(snapshot)
     if isinstance(parsed, Err):
         return Ok(RegistryQualityReport((RegistryQualityCheck("audit", parsed.diagnostics),)))
-    _registry, source, entries = parsed.value
+    registry, source, entries = parsed.value
     files = _files(snapshot)
     assert isinstance(files, Ok)
     diagnostics: list[Diagnostic] = []
@@ -813,12 +816,97 @@ def audit_registry_workspace(snapshot: SourceSnapshot) -> Result[RegistryQuality
             recipe_file = files.value.get(recipe)
             if recipe_file is None or recipe_file.kind is not SnapshotEntryKind.FILE:
                 diagnostics.append(_diagnostic(f"declared setup recipe is missing: {recipe}"))
-    diagnostics.append(
-        _diagnostic(
-            "no per-object installation-risk evidence was supplied to registry audit",
-            warning=True,
+    security_file = files.value.get("security/index.json")
+    if security_file is None:
+        diagnostics.append(
+            _diagnostic(
+                "no per-object installation-risk evidence was supplied to registry audit",
+                warning=True,
+            )
         )
-    )
+    elif security_file.kind is not SnapshotEntryKind.FILE:
+        diagnostics.append(_diagnostic("registry security index is not a regular file"))
+    else:
+        security_index = parse_security_index(security_file.content)
+        if isinstance(security_index, Err):
+            diagnostics.extend(security_index.diagnostics)
+        else:
+            documents = []
+            missing_document = False
+            for security_entry in security_index.value.entries:
+                document = files.value.get(str(security_entry.path))
+                if document is None or document.kind is not SnapshotEntryKind.FILE:
+                    diagnostics.append(
+                        _diagnostic(
+                            f"registry security index document is missing: {security_entry.path}"
+                        )
+                    )
+                    missing_document = True
+                    continue
+                documents.append((security_entry.path, document.content))
+            if not missing_document:
+                verified = verify_security_index(security_index.value, tuple(documents))
+                if isinstance(verified, Err):
+                    diagnostics.extend(verified.diagnostics)
+                else:
+                    compiled_file = files.value.get("aart.index.json")
+                    compiled = (
+                        parse_registry_index(compiled_file.content)
+                        if compiled_file is not None
+                        and compiled_file.kind is SnapshotEntryKind.FILE
+                        else None
+                    )
+                    if compiled is None or isinstance(compiled, Err):
+                        diagnostics.append(
+                            _diagnostic("registry security index requires a valid compiled index")
+                        )
+                    elif (
+                        security_index.value.registry_id != registry.registry_id
+                        or security_index.value.registry_id != compiled.value.registry_id
+                        or security_index.value.registry_inputs_digest
+                        != compiled.value.registry_inputs_digest
+                    ):
+                        diagnostics.append(
+                            _diagnostic(
+                                "registry security index identity differs from the compiled registry"
+                            )
+                        )
+                    else:
+                        expected_objects = {item.object_digest for item in compiled.value.artifacts}
+                        evidence_objects = {
+                            item.cache_key.object_digest for item in verified.value.attestations
+                        }
+                        missing_objects = expected_objects - evidence_objects
+                        extra_objects = evidence_objects - expected_objects
+                        if missing_objects:
+                            diagnostics.append(
+                                _diagnostic(
+                                    "registry security index lacks evidence for one or more compiled objects"
+                                )
+                            )
+                        if extra_objects:
+                            diagnostics.append(
+                                _diagnostic(
+                                    "registry security index contains evidence for unknown objects"
+                                )
+                            )
+                        for attestation in verified.value.attestations:
+                            risk = attestation.assessment.installation_risk
+                            if risk is InstallationRisk.CRITICAL:
+                                diagnostics.append(
+                                    _diagnostic(
+                                        "registry security evidence reports critical installation risk "
+                                        f"for {attestation.cache_key.object_digest}"
+                                    )
+                                )
+                            elif risk in {InstallationRisk.HIGH, InstallationRisk.UNKNOWN}:
+                                diagnostics.append(
+                                    _diagnostic(
+                                        "registry security evidence requires review because installation "
+                                        f"risk is {risk.value} for {attestation.cache_key.object_digest}",
+                                        warning=True,
+                                    )
+                                )
     return Ok(RegistryQualityReport((RegistryQualityCheck("audit", tuple(diagnostics)),)))
 
 

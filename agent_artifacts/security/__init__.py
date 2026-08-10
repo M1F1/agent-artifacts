@@ -1,5 +1,10 @@
 """Zero-dependency installation-risk evidence and baseline rules."""
 
+from .aggregation import (
+    ArtifactSecurityEvidence,
+    BundleSecuritySummary,
+    summarize_bundle_security,
+)
 from .analyzers import (
     ANALYZER_INVALID,
     PROTOCOL,
@@ -17,7 +22,29 @@ from .analyzers import (
     scan_request_bytes,
     to_security_assessment,
 )
-from .application import analyzer_input_from_stored_object
+from .application import analyzer_input_from_stored_object, verify_security_index
+from .attestation_schema import (
+    attestation_bytes,
+    parse_attestation,
+    parse_security_index,
+    security_index_bytes,
+)
+from .attestations import (
+    AssessmentCacheKey,
+    AttestationOrigin,
+    AttestationOriginKind,
+    AttestationTrust,
+    AttestationTrustContext,
+    EvidenceFreshness,
+    ResolvedAttestation,
+    SecurityAttestation,
+    SecurityIndex,
+    SecurityIndexEntry,
+    VerifiedSecurityIndex,
+    attestation_digest,
+    cache_key_digest,
+    resolve_attestation,
+)
 from .baseline import (
     BASELINE_RULES_DIGEST,
     BaselineScanRequest,
@@ -34,7 +61,20 @@ from .model import (
     SecurityAssessment,
     SecurityFinding,
 )
+from .policy import (
+    SecurityInstallPolicy,
+    SecurityPolicyAction,
+    SecurityPolicyDecision,
+    evaluate_security_policy,
+)
+from .projections import (
+    artifact_security_value,
+    assessment_security_value,
+    bundle_security_value,
+    policy_decision_value,
+)
 from .schema import assessment_bytes, assessment_value, parse_assessment
+from .suites import BUILTIN_ANALYZER_SUITES, AnalyzerSuite
 from .tool_adapters import (
     BUILTIN_TOOL_ADAPTERS,
     BuiltInToolAdapter,
@@ -46,6 +86,7 @@ from .tool_adapters import (
 __all__ = [
     "ANALYZER_INVALID",
     "BASELINE_RULES_DIGEST",
+    "BUILTIN_ANALYZER_SUITES",
     "BUILTIN_TOOL_ADAPTERS",
     "PROTOCOL",
     "AnalyzerCommand",
@@ -55,29 +96,60 @@ __all__ = [
     "AnalyzerProcessOutcome",
     "AnalyzerProcessRequest",
     "AnalyzerScanAttempt",
+    "AnalyzerSuite",
+    "ArtifactSecurityEvidence",
+    "AssessmentCacheKey",
     "AssessmentCoverage",
     "AssessmentStatus",
+    "AttestationOrigin",
+    "AttestationOriginKind",
+    "AttestationTrust",
+    "AttestationTrustContext",
     "BaselineScanRequest",
     "BuiltInToolAdapter",
+    "BundleSecuritySummary",
     "DiscoveredToolAdapter",
+    "EvidenceFreshness",
     "FindingSeverity",
     "InstallationRisk",
     "ProviderAssessment",
+    "ResolvedAttestation",
+    "SecurityAttestation",
     "SecurityAssessment",
     "SecurityFinding",
+    "SecurityIndex",
+    "SecurityIndexEntry",
+    "SecurityInstallPolicy",
+    "SecurityPolicyAction",
+    "SecurityPolicyDecision",
+    "VerifiedSecurityIndex",
     "assess_installation_risk",
     "analyzer_input_from_stored_object",
+    "artifact_security_value",
+    "assessment_security_value",
     "assessment_bytes",
     "assessment_value",
+    "attestation_bytes",
+    "attestation_digest",
+    "bundle_security_value",
+    "cache_key_digest",
     "discover_tool_adapters",
+    "evaluate_security_policy",
     "handshake_request_bytes",
     "mark_assessment_stale",
     "not_scanned_assessment",
     "parse_handshake",
     "parse_scan_result",
     "parse_assessment",
+    "parse_attestation",
+    "parse_security_index",
+    "policy_decision_value",
+    "resolve_attestation",
     "run_protocol_analyzer",
     "run_tool_adapter",
     "scan_request_bytes",
+    "security_index_bytes",
+    "summarize_bundle_security",
     "to_security_assessment",
+    "verify_security_index",
 ]

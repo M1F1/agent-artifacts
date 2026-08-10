@@ -53,4 +53,17 @@ def validate_flags(request: Request) -> Optional[Err]:
             "--all cannot be combined with named artifacts or --bundle",
             code=USAGE,
         )
+    publisher_context = (
+        request.publisher_source_id,
+        request.security_registry_inputs_digest,
+        request.publisher_trust,
+    )
+    if any(value is not None for value in publisher_context) and not all(
+        value is not None for value in publisher_context
+    ):
+        return Err(
+            "--publisher-source-id, --registry-inputs-digest, and --publisher-trust "
+            "must be provided together",
+            code=USAGE,
+        )
     return _common.validate_scope(request)

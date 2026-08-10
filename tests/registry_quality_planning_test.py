@@ -6,6 +6,8 @@ from pathlib import Path
 
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.protocol.capabilities import Capability
+from agent_artifacts.protocol.hashing import json_digest
+from agent_artifacts.protocol.json import JsonObject
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
@@ -31,6 +33,17 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_registry_entry_add,
     project_registry_mutation,
 )
+from agent_artifacts.security.attestation_schema import attestation_bytes, security_index_bytes
+from agent_artifacts.security.attestations import (
+    AssessmentCacheKey,
+    AttestationOrigin,
+    AttestationOriginKind,
+    SecurityAttestation,
+    SecurityIndex,
+    SecurityIndexEntry,
+    attestation_digest,
+)
+from agent_artifacts.security.baseline import BASELINE_RULES_DIGEST, not_scanned_assessment
 from tests.registry_maintenance_fixtures import (
     append_snapshot_file,
     empty_registry_snapshot,
@@ -161,6 +174,86 @@ class RegistryQualityPlanningTest(unittest.TestCase):
         assert isinstance(matrix, Ok), matrix
         self.assertEqual(tuple(item.name for item in matrix.value.checks), ("minimum", "latest"))
         self.assertTrue(matrix.value.passed)
+
+    def test_audit_verifies_complete_digest_bound_registry_security_index(self) -> None:
+        fixture = tree_snapshot(
+            Path("tests/fixtures/protocol/registry-v1"),
+            SnapshotOrigin.LOCAL,
+        )
+        compiled = parse_registry_index(snapshot_file(fixture, "aart.index.json"))
+        assert isinstance(compiled, Ok)
+        empty_digest = json_digest(JsonObject(()))
+        attestations = tuple(
+            SecurityAttestation(
+                1,
+                AssessmentCacheKey(
+                    1,
+                    artifact.object_digest,
+                    "aart-baseline",
+                    "1",
+                    BASELINE_RULES_DIGEST,
+                    empty_digest,
+                    empty_digest,
+                ),
+                AttestationOrigin(
+                    AttestationOriginKind.REGISTRY_CI,
+                    compiled.value.registry_id,
+                    "a" * 40,
+                    compiled.value.registry_inputs_digest,
+                ),
+                not_scanned_assessment(
+                    artifact.object_digest,
+                    "Registry CI deliberately recorded baseline assessment coverage.",
+                ),
+            )
+            for artifact in compiled.value.artifacts
+        )
+        entries = []
+        with_security = fixture
+        for attestation in attestations:
+            digest = attestation_digest(attestation)
+            raw_path = f"security/attestations/{digest.value}.json"
+            parsed_path = parse_relative_path(raw_path)
+            assert isinstance(parsed_path, Ok)
+            entries.append(SecurityIndexEntry(attestation.cache_key, digest, parsed_path.value))
+            with_security = append_snapshot_file(
+                with_security,
+                raw_path,
+                attestation_bytes(attestation),
+            )
+        security_index = SecurityIndex(
+            1,
+            compiled.value.registry_id,
+            compiled.value.registry_inputs_digest,
+            tuple(entries),
+        )
+        with_security = append_snapshot_file(
+            with_security,
+            "security/index.json",
+            security_index_bytes(security_index),
+        )
+
+        audited = audit_registry_workspace(with_security)
+
+        assert isinstance(audited, Ok)
+        messages = tuple(
+            item.message for check in audited.value.checks for item in check.diagnostics
+        )
+        self.assertFalse(any("no per-object" in message for message in messages))
+        self.assertFalse(any("security index" in message for message in messages))
+
+        tampered = replace_snapshot_file(
+            with_security,
+            str(entries[0].path),
+            b"{}\n",
+        )
+        rejected = audit_registry_workspace(tampered)
+        assert isinstance(rejected, Ok)
+        self.assertFalse(rejected.value.passed)
+        rejected_messages = tuple(
+            item.message for check in rejected.value.checks for item in check.diagnostics
+        )
+        self.assertTrue(any("bytes do not match" in message for message in rejected_messages))
 
     def test_audit_fails_an_unapproved_external_reference(self) -> None:
         snapshot = empty_registry_snapshot()
