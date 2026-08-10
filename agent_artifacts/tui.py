@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import textwrap
 from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
@@ -39,6 +40,14 @@ from .configuration.model import (
     UserConfiguration,
     default_user_configuration,
     git_location_parts,
+)
+from .consumer import (
+    ConsumerActionRequest,
+    ConsumerApplicationService,
+    ConsumerOutcome,
+    ConsumerReview,
+    render_consumer_outcome,
+    render_consumer_review,
 )
 from .domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from .domain.identifiers import SourceAlias
@@ -67,6 +76,7 @@ from .profiles.scope import profile_for_scope
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
+from .tui_marketplace import MarketplaceArtifactRow, MarketplaceTarget, render_marketplace_row
 from .tui_sources import (
     SourceManagementRequest,
     SourceSelection,
@@ -147,6 +157,7 @@ WriteFn = Callable[[str], None]
 SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
+ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +256,7 @@ class _Choice:
     reason: str = ""
     linked_count: int = 0
     copied_count: int = 0
+    qualified_key: str = ""
 
 
 def _type_rank(t: ArtifactType) -> int:
@@ -874,6 +886,73 @@ def _run_post_install_setup(
     return 1
 
 
+def _run_canonical_setup_queue(
+    service: ConsumerApplicationService,
+    review: ConsumerReview,
+    outcome: ConsumerOutcome,
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> int:
+    """Prepare, separately review, and sequentially execute canonical post-payload setup."""
+
+    if not any(item.setup_status == "pending" for item in outcome.items):
+        return 0
+    queue = service.setup_queue(review, outcome)
+    if queue.failures and all("authoriz" in item.detail.casefold() for item in queue.failures):
+        write("Setup needs explicit permission for untrusted/custom source capabilities.")
+        answer = _read_line(read, "Authorize these reviewed setup capabilities? [y/N]: ")
+        if answer is not None and answer.strip().lower() in ("y", "yes"):
+            queue = service.setup_queue(
+                review,
+                outcome,
+                authorize_untrusted_source=True,
+                authorize_custom_entrypoint=True,
+            )
+    for failure in queue.failures:
+        write(f"Setup planning failed for {failure.key}: {failure.detail}")
+        write(f"  Retry: aart setup retry --artifact {failure.key.split('#', 1)[0]}")
+    if not queue.plans:
+        return 1 if queue.failures else 0
+    write("Review setup queue (runs sequentially after installed payloads):")
+    for plan in queue.plans:
+        write(
+            f"  - {plan.request.coordinate}#{plan.request.profile}/{plan.request.scope} · "
+            f"trust {plan.trust} · recipe {plan.recipe_path} · Review {plan.review_digest}"
+        )
+        for effect in plan.legacy_plan.effects:
+            write(
+                f"      {effect.module}: {effect.summary}"
+                + (f" -> {effect.target}" if effect.target else "")
+            )
+    answer = _read_line(read, "Finalize this setup queue? [y/N]: ")
+    if answer is None or answer.strip().lower() not in ("y", "yes"):
+        write("Setup remains pending; installed payloads were not rolled back.")
+        return 1
+
+    def consent(effect) -> bool:
+        write(
+            f"Approve {effect.module}: {effect.summary} "
+            f"[{'reversible' if effect.reversible else 'not automatically reversible'}]"
+        )
+        decision = _read_line(read, "Approve this exact effect? [y/N]: ")
+        return decision is not None and decision.strip().lower() in ("y", "yes")
+
+    setup_outcome = service.finalize_setup_queue(queue, consent=consent)
+    write(
+        f"Setup outcome: configured={setup_outcome.configured}, "
+        f"incomplete={setup_outcome.incomplete}."
+    )
+    for item in setup_outcome.items:
+        write(
+            f"  - {item.coordinate}#{item.profile}/{item.scope}: "
+            f"{item.setup_status.value} — {item.detail}"
+        )
+        if not item.successful:
+            write(f"    Retry: aart setup retry --artifact {item.coordinate}")
+    return 0 if setup_outcome.incomplete == 0 and not queue.failures else 1
+
+
 def _render_result(result: CommandOutcome, write: WriteFn) -> int:
     for line in render_outcome(result):
         write(line)
@@ -1185,7 +1264,6 @@ def _runtime_source_stage_context(
             )
         )
 
-    import sys
     import time
 
     from .application.configuration import (
@@ -1489,9 +1567,12 @@ class _UserWizardReadModel:
     profiles_map: Mapping[str, Profile]
     source_label: str = ""
     source_root: str = ""
+    marketplace_rows: Tuple[MarketplaceArtifactRow, ...] = ()
 
 
 def _basket_key(choice: _Choice) -> str:
+    if choice.qualified_key:
+        return choice.qualified_key
     return (
         f"{choice.type}/{choice.name}"
         if choice.kind == "artifact" and choice.type is not None
@@ -1505,6 +1586,38 @@ def _basket_item(choice: _Choice) -> BasketItem:
         _basket_key(choice),
         choice.label,
         choice.description,
+    )
+
+
+def _canonical_choice(row: MarketplaceArtifactRow) -> _Choice:
+    providers = ", ".join(row.security.provider_versions) or "none"
+    evidence_age = (
+        "unknown"
+        if row.security.evidence_age_seconds is None
+        else f"{row.security.evidence_age_seconds}s"
+    )
+    remediation = "; ".join(row.security.remediation) or "none"
+    details = (
+        f"{row.summary} Source {row.source_alias} at {row.source_revision}; trust {row.trust}; "
+        f"security {row.security.installation_risk} ({row.security.assessment_status}), max severity "
+        f"{row.security.max_finding_severity}, coverage "
+        f"{row.security.coverage_completed}/{row.security.coverage_expected}, providers {providers}, "
+        f"evidence age {evidence_age}, remediation {remediation}; manifest {row.manifest_digest}; "
+        f"payload {row.payload_digest}; object {row.object_digest}."
+    )
+    if row.reasons:
+        details += " Compatibility: " + "; ".join(reason.message for reason in row.reasons)
+    return _Choice(
+        "artifact",
+        row.identity.name,
+        row.identity.kind,  # type: ignore[arg-type]
+        render_marketplace_row(row),
+        description=details,
+        enabled=row.compatible,
+        reason="; ".join(reason.message for reason in row.reasons),
+        linked_count=sum(mode == "symlink" for mode in row.actual_modes),
+        copied_count=sum(mode == "copy" for mode in row.actual_modes),
+        qualified_key=row.key,
     )
 
 
@@ -1676,6 +1789,7 @@ def _load_user_wizard_read_model(
     repo: Optional[str],
     project: Optional[str],
     user_home: Optional[str],
+    consumer_service: Optional[ConsumerApplicationService] = None,
 ) -> _UserWizardReadModel | Err:
     assert session.action is not None
     base_profiles = load_profiles(project)
@@ -1689,6 +1803,33 @@ def _load_user_wizard_read_model(
             for name, profile in base_profiles.items()
         }
     )
+    if consumer_service is not None:
+        selected_sources = (
+            () if session.source_selection is None else session.source_selection.enabled_aliases
+        )
+        projected = consumer_service.browse(
+            MarketplaceTarget(
+                tuple(sorted(session.profiles)),
+                "darwin" if sys.platform == "darwin" else "linux",
+                scope,  # type: ignore[arg-type]
+                session.install_mode,  # type: ignore[arg-type]
+            ),
+            sources=selected_sources,
+        )
+        if isinstance(projected, DomainErr):
+            return Err("; ".join(item.message for item in projected.diagnostics), code=2)
+        rows = projected.value
+        if session.action in ("update", "uninstall"):
+            rows = tuple(row for row in rows if row.installed)
+        return _UserWizardReadModel(
+            Catalog(artifacts={}, bundles={}),
+            None,
+            tuple(_canonical_choice(row) for row in rows),
+            profiles_map,
+            "federated configured marketplace",
+            consumer_service.context.store_paths.root,
+            rows,
+        )
     request_project = project if scope == "project" else None
     catalog = Catalog(artifacts={}, bundles={})
     source_label = ""
@@ -1798,6 +1939,7 @@ def _run_user_text_wizard(
     project: Optional[str],
     user_home: Optional[str],
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    consumer_service: Optional[ConsumerApplicationService] = None,
 ) -> int | WizardSession:
     read_model: Optional[_UserWizardReadModel] = None
     read_key: Optional[tuple] = None
@@ -1897,6 +2039,7 @@ def _run_user_text_wizard(
                     repo=repo,
                     project=project,
                     user_home=user_home,
+                    consumer_service=consumer_service,
                 )
                 if isinstance(loaded, Err):
                     write(f"error: {loaded.reason}")
@@ -1965,7 +2108,33 @@ def _run_user_text_wizard(
                 user_home=user_home,
             )
             confirmation: Optional[InstallConfirmation] = None
-            if session.action == "install":
+            canonical_review: Optional[ConsumerReview] = None
+            if consumer_service is not None:
+                coordinates: tuple = ()
+                if read_model is not None:
+                    selected_keys = {item.key for item in session.basket}
+                    coordinates = tuple(
+                        row.coordinate
+                        for row in read_model.marketplace_rows
+                        if row.key in selected_keys
+                    )
+                prepared = consumer_service.prepare(
+                    ConsumerActionRequest(
+                        session.action or "status",  # type: ignore[arg-type]
+                        coordinates,
+                        tuple(sorted(session.profiles)),
+                        session.scope,  # type: ignore[arg-type]
+                        session.install_mode,  # type: ignore[arg-type]
+                    )
+                )
+                if isinstance(prepared, DomainErr):
+                    for diagnostic in prepared.diagnostics:
+                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                    return 2
+                canonical_review = prepared.value
+                for line in render_consumer_review(canonical_review):
+                    write(line)
+            elif session.action == "install":
                 assert read_model is not None
                 confirmation = build_install_confirmation(
                     source_label=read_model.source_label,
@@ -2005,6 +2174,24 @@ def _run_user_text_wizard(
             source_code = _finalize_source_selection(session, source_finalizer, write)
             if source_code is not None:
                 return source_code
+            if canonical_review is not None:
+                finalized = consumer_service.finalize(  # type: ignore[union-attr]
+                    canonical_review,
+                    canonical_review.review_digest,
+                )
+                if isinstance(finalized, DomainErr):
+                    for diagnostic in finalized.diagnostics:
+                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                    return 2
+                for line in render_consumer_outcome(finalized.value):
+                    write(line)
+                return _run_canonical_setup_queue(
+                    consumer_service,  # type: ignore[arg-type]
+                    canonical_review,
+                    finalized.value,
+                    read=read,
+                    write=write,
+                )
             outcome = _dispatch_result(request)
             code = _render_result(outcome, write)
             if code != 0 or confirmation is None:
@@ -2029,6 +2216,8 @@ def _run_text(
     user_home: Optional[str] = None,
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    consumer_service: Optional[ConsumerApplicationService] = None,
+    consumer_service_factory: Optional[ConsumerServiceFactory] = None,
 ) -> int:
     """Persistent onboarding/role wizard shared by the fallback and headless tests."""
 
@@ -2084,18 +2273,28 @@ def _run_text(
                     write,
                     "No sources selected; no registry was forced and no changes were made.",
                 )
-            source_arguments = _selected_legacy_source_arguments(
-                stage_view,
-                selected_source,
-                source_dir=legacy_source_dir,
-                repo=legacy_repo,
-            )
-            if isinstance(source_arguments, DomainErr):
-                for diagnostic in source_arguments.diagnostics:
-                    write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                session = wizard_back(session)
-                continue
-            source_dir, repo = source_arguments.value
+            active_consumer_service = consumer_service
+            if consumer_service_factory is not None and session.role == "user":
+                loaded_consumer = consumer_service_factory(selected_source.request.after)
+                if isinstance(loaded_consumer, DomainErr):
+                    for diagnostic in loaded_consumer.diagnostics:
+                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                    session = wizard_back(session)
+                    continue
+                active_consumer_service = loaded_consumer.value
+            if active_consumer_service is None or session.role != "user":
+                source_arguments = _selected_legacy_source_arguments(
+                    stage_view,
+                    selected_source,
+                    source_dir=legacy_source_dir,
+                    repo=legacy_repo,
+                )
+                if isinstance(source_arguments, DomainErr):
+                    for diagnostic in source_arguments.diagnostics:
+                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                    session = wizard_back(session)
+                    continue
+                source_dir, repo = source_arguments.value
             if session.role == "user":
                 result = _run_user_text_wizard(
                     session,
@@ -2107,6 +2306,7 @@ def _run_text(
                     project=project,
                     user_home=user_home,
                     source_finalizer=source_finalizer,
+                    consumer_service=active_consumer_service,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -2120,7 +2320,10 @@ def _run_text(
                 source_dir=source_dir,
                 repo=repo,
                 project=project,
+                user_home=user_home,
                 source_finalizer=source_finalizer,
+                consumer_service_factory=consumer_service_factory,
+                consumer_configuration=selected_source.request.after,
             )
             if isinstance(result, WizardSession):
                 session = result
@@ -2162,7 +2365,10 @@ def _run_maintainer_text(
     source_dir: Optional[str],
     repo: Optional[str],
     project: Optional[str],
+    user_home: Optional[str] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    consumer_service_factory: Optional[ConsumerServiceFactory] = None,
+    consumer_configuration: Optional[UserConfiguration] = None,
 ) -> int | WizardSession:
     """Drive Maintainer stages and expose apply only at the Review Finalize boundary."""
     del source_factory  # maintainer source resolution belongs to the upstream command core
@@ -2203,6 +2409,15 @@ def _run_maintainer_text(
             request = None
             previewed = None
             if selected == "user":
+                consumer_service: Optional[ConsumerApplicationService] = None
+                if consumer_service_factory is not None and consumer_configuration is not None:
+                    loaded_consumer = consumer_service_factory(consumer_configuration)
+                    if isinstance(loaded_consumer, DomainErr):
+                        for diagnostic in loaded_consumer.diagnostics:
+                            write(f"{diagnostic.severity.value}: {diagnostic.message}")
+                        session = wizard_back(session)
+                        continue
+                    consumer_service = loaded_consumer.value
                 result = _run_user_text_wizard(
                     session,
                     read,
@@ -2211,8 +2426,9 @@ def _run_maintainer_text(
                     source_dir=source_dir,
                     repo=repo,
                     project=project,
-                    user_home=None,
+                    user_home=user_home,
                     source_finalizer=source_finalizer,
+                    consumer_service=consumer_service,
                 )
                 if isinstance(result, WizardSession):
                     session = result
@@ -3023,6 +3239,7 @@ def _run_user_curses_wizard(
     repo: Optional[str],
     project: Optional[str],
     user_home: Optional[str],
+    consumer_service: Optional[ConsumerApplicationService] = None,
 ) -> WizardSession:
     profile_names = tuple(sorted(load_profiles(project)))
     read_model: Optional[_UserWizardReadModel] = None
@@ -3187,6 +3404,7 @@ def _run_user_curses_wizard(
                     repo=repo,
                     project=project,
                     user_home=user_home,
+                    consumer_service=consumer_service,
                 )
                 if isinstance(loaded, Err):
                     selection["error"] = (loaded.reason, loaded.code)
@@ -3263,7 +3481,41 @@ def _run_user_curses_wizard(
                 user_home=user_home,
             )
             confirmation: Optional[InstallConfirmation] = None
-            if session.action == "install":
+            canonical_review: Optional[ConsumerReview] = None
+            if consumer_service is not None:
+                selected_keys = {item.key for item in session.basket}
+                coordinates = (
+                    ()
+                    if read_model is None
+                    else tuple(
+                        row.coordinate
+                        for row in read_model.marketplace_rows
+                        if row.key in selected_keys
+                    )
+                )
+                prepared = consumer_service.prepare(
+                    ConsumerActionRequest(
+                        session.action or "status",  # type: ignore[arg-type]
+                        coordinates,
+                        tuple(sorted(session.profiles)),
+                        session.scope,  # type: ignore[arg-type]
+                        session.install_mode,  # type: ignore[arg-type]
+                    )
+                )
+                if isinstance(prepared, DomainErr):
+                    selection["error"] = (
+                        "; ".join(item.message for item in prepared.diagnostics),
+                        2,
+                    )
+                    return session
+                canonical_review = prepared.value
+                review = _curses_review(
+                    curses,
+                    stdscr,
+                    session,
+                    render_consumer_review(canonical_review),
+                )
+            elif session.action == "install":
                 assert read_model is not None
                 confirmation = build_install_confirmation(
                     source_label=read_model.source_label,
@@ -3316,6 +3568,7 @@ def _run_user_curses_wizard(
                 return session
             selection["request"] = request
             selection["confirmation"] = confirmation
+            selection["consumer_review"] = canonical_review
             selection["wizard_session"] = session
             return session
 
@@ -3330,6 +3583,8 @@ def _run_curses(
     user_home: Optional[str] = None,
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    consumer_service: Optional[ConsumerApplicationService] = None,
+    consumer_service_factory: Optional[ConsumerServiceFactory] = None,
 ) -> int:
     """Collect a persistent wizard session and dispatch only after curses teardown."""
     import curses  # stdlib; imported lazily so the text path needs no terminal at all.
@@ -3408,21 +3663,33 @@ def _run_curses(
             if selected_source_value.no_source:
                 selection["no_source"] = True
                 return
-            source_arguments = _selected_legacy_source_arguments(
-                stage_view,
-                selected_source_value,
-                source_dir=source_dir,
-                repo=repo,
-            )
-            if isinstance(source_arguments, DomainErr):
-                selection["error"] = (
-                    "; ".join(item.message for item in source_arguments.diagnostics),
-                    2,
-                )
-                return
-            active_source_dir, active_repo = source_arguments.value
             selected_role = session.role
             assert selected_role is not None
+            active_consumer_service = consumer_service
+            if consumer_service_factory is not None and selected_role == "user":
+                loaded_consumer = consumer_service_factory(selected_source_value.request.after)
+                if isinstance(loaded_consumer, DomainErr):
+                    selection["error"] = (
+                        "; ".join(item.message for item in loaded_consumer.diagnostics),
+                        2,
+                    )
+                    return
+                active_consumer_service = loaded_consumer.value
+            active_source_dir, active_repo = source_dir, repo
+            if active_consumer_service is None or selected_role != "user":
+                source_arguments = _selected_legacy_source_arguments(
+                    stage_view,
+                    selected_source_value,
+                    source_dir=source_dir,
+                    repo=repo,
+                )
+                if isinstance(source_arguments, DomainErr):
+                    selection["error"] = (
+                        "; ".join(item.message for item in source_arguments.diagnostics),
+                        2,
+                    )
+                    return
+                active_source_dir, active_repo = source_arguments.value
             if selected_role == "user":
                 session = _run_user_curses_wizard(
                     curses,
@@ -3433,6 +3700,7 @@ def _run_curses(
                     repo=active_repo,
                     project=project,
                     user_home=user_home,
+                    consumer_service=active_consumer_service,
                 )
                 if selection:
                     return
@@ -3472,6 +3740,18 @@ def _run_curses(
                 session = wizard_select(session, "maintainer_action", action)
                 session = wizard_advance(session)
                 if action == "user":
+                    maintainer_consumer_service = consumer_service
+                    if consumer_service_factory is not None:
+                        loaded_consumer = consumer_service_factory(
+                            selected_source_value.request.after
+                        )
+                        if isinstance(loaded_consumer, DomainErr):
+                            selection["error"] = (
+                                "; ".join(item.message for item in loaded_consumer.diagnostics),
+                                2,
+                            )
+                            return
+                        maintainer_consumer_service = loaded_consumer.value
                     session = _run_user_curses_wizard(
                         curses,
                         stdscr,
@@ -3481,6 +3761,7 @@ def _run_curses(
                         repo=active_repo,
                         project=project,
                         user_home=user_home,
+                        consumer_service=maintainer_consumer_service,
                     )
                     if selection or session.current != "maintainer_action":
                         return
@@ -3501,6 +3782,8 @@ def _run_curses(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            consumer_service=consumer_service,
+            consumer_service_factory=consumer_service_factory,
         )
 
     if "error" in selection:
@@ -3545,6 +3828,26 @@ def _run_curses(
     )
     if source_code is not None:
         return source_code
+    consumer_review = selection.get("consumer_review")
+    if consumer_review is not None:
+        assert consumer_service is not None
+        finalized = consumer_service.finalize(
+            consumer_review,
+            consumer_review.review_digest,
+        )
+        if isinstance(finalized, DomainErr):
+            for diagnostic in finalized.diagnostics:
+                print(f"{diagnostic.severity.value}: {diagnostic.message}")
+            return 2
+        for line in render_consumer_outcome(finalized.value):
+            print(line)
+        return _run_canonical_setup_queue(
+            consumer_service,
+            consumer_review,
+            finalized.value,
+            read=input,
+            write=print,
+        )
     outcome = _dispatch_result(request)
     code = _render_result(outcome, print)
     confirmation = selection.get("confirmation")
@@ -3989,9 +4292,28 @@ def run(
             print(f"{diagnostic.severity.value}: {diagnostic.message}")
         return 2
     source_stage_view, source_finalizer = source_context.value
+    consumer_service: Optional[ConsumerApplicationService] = None
+    consumer_service_factory: Optional[ConsumerServiceFactory] = None
+    legacy_aliases = {"bundled-legacy", "explicit-local", "explicit-git"}
+    if (
+        source_dir is None
+        and repo is None
+        and not any(row.source.alias.value in legacy_aliases for row in source_stage_view.rows)
+    ):
+        from .consumer.runtime import load_local_consumer_service
+
+        def runtime_consumer_service(
+            configuration: UserConfiguration,
+        ) -> DomainResult[ConsumerApplicationService]:
+            return load_local_consumer_service(
+                project=project,
+                user_home=user_home,
+                configuration=configuration,
+            )
+
+        consumer_service_factory = runtime_consumer_service
     try:
         import curses  # noqa: F401  (presence check only)
-        import sys
 
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             raise RuntimeError("not a tty")
@@ -4003,6 +4325,8 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            consumer_service=consumer_service,
+            consumer_service_factory=consumer_service_factory,
         )
 
     try:
@@ -4013,6 +4337,8 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            consumer_service=consumer_service,
+            consumer_service_factory=consumer_service_factory,
         )
     except Exception:  # pragma: no cover - last-resort guard around the curses path
         return _run_text(
@@ -4022,4 +4348,6 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            consumer_service=consumer_service,
+            consumer_service_factory=consumer_service_factory,
         )
