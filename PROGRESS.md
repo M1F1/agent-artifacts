@@ -1255,3 +1255,6 @@ None.
   and version validation, 85.74% overall branch coverage, `1.0.0a1` wheel packaging, and docs.
   An intentionally PTY-bound trial shortened responsive TUI descriptions at 80 columns and failed
   two pre-existing full-width text assertions; the canonical non-PTY gate and all product tests pass.
+- Initial PR #55 push/PR jobs reached only the format gate: CI Ruff 0.16.2 required parentheses
+  around one multi-line test lambda that local Ruff 0.12.2 accepted. Applied the exact current-Ruff
+  formatting with no product behavior change; replacement gate evidence follows after push.

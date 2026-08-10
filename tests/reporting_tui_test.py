@@ -70,8 +70,9 @@ class ReportingTuiTest(unittest.TestCase):
         provider_calls = []
         service = ReportingApplicationService(
             ReportingDestination(ReportingMode.PROMPT, "github.com", "org/registry"),
-            lambda plan: provider_calls.append(plan.payload)
-            or Ok(ReportingSubmission("browser-opened")),
+            lambda plan: (
+                provider_calls.append(plan.payload) or Ok(ReportingSubmission("browser-opened"))
+            ),
             lambda _plan: self.fail("authenticated provider used in prompt mode"),
         )
         writes = []
