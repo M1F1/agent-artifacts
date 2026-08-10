@@ -18,6 +18,14 @@ _VERSION_RE = re.compile(
 )
 _INIT_RE = re.compile(r'(?m)^__version__\s*=\s*"([^"]+)"\s*$')
 _PROJECT_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"\s*$')
+_RUNTIME_CONTRACT_RE = re.compile(
+    r"(?m)^EXECUTABLE_VERSION\s*=\s*SemVer\("
+    r"(?P<major>0|[1-9]\d*),\s*"
+    r"(?P<minor>0|[1-9]\d*),\s*"
+    r"(?P<patch>0|[1-9]\d*)"
+    r'(?:,\s*\("(?P<phase>a|b|rc)",\s*(?P<number>0|[1-9]\d*)\))?'
+    r"\)\s*$"
+)
 _TASK_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*\d+$")
 
 
@@ -78,20 +86,39 @@ def _extract(pattern: re.Pattern[str], text: str, label: str) -> str:
     return matches[0]
 
 
-def _version_strings(root: Path) -> tuple[str, str]:
+def _runtime_contract_version(text: str) -> str:
+    matches = tuple(_RUNTIME_CONTRACT_RE.finditer(text))
+    if len(matches) != 1:
+        raise VersionError(
+            f"expected exactly one runtime executable-version assignment, found {len(matches)}"
+        )
+    match = matches[0]
+    suffix = (
+        "" if match.group("phase") is None else f"{match.group('phase')}{match.group('number')}"
+    )
+    return f"{match.group('major')}.{match.group('minor')}.{match.group('patch')}{suffix}"
+
+
+def _version_strings(root: Path) -> tuple[str, str, str]:
     init = (root / "agent_artifacts" / "__init__.py").read_text(encoding="utf-8")
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    runtime_contract = (root / "agent_artifacts" / "runtime_contract.py").read_text(
+        encoding="utf-8"
+    )
     return (
         _extract(_INIT_RE, init, "agent_artifacts.__version__"),
         _extract(_PROJECT_RE, pyproject, "pyproject project"),
+        _runtime_contract_version(runtime_contract),
     )
 
 
 def read_version(root: Path = ROOT) -> Version:
-    init_version, project_version = _version_strings(root)
-    if init_version != project_version:
+    init_version, project_version, runtime_contract_version = _version_strings(root)
+    if len({init_version, project_version, runtime_contract_version}) != 1:
         raise VersionError(
-            f"version mismatch: agent_artifacts={init_version}, pyproject={project_version}"
+            "version mismatch: "
+            f"agent_artifacts={init_version}, pyproject={project_version}, "
+            f"runtime_contract={runtime_contract_version}"
         )
     return parse_version(init_version)
 
@@ -144,11 +171,18 @@ def _replace_one(pattern: re.Pattern[str], text: str, replacement: str, label: s
     return updated
 
 
+def _runtime_contract_assignment(version: Version) -> str:
+    prerelease = "" if version.phase is None else f', ("{version.phase}", {version.phase_number})'
+    return f"EXECUTABLE_VERSION = SemVer({version.major}, {version.minor}, {version.patch}{prerelease})"
+
+
 def write_version(root: Path, version: Version) -> None:
     ensure_allowed(root, version)
     init_path = root / "agent_artifacts" / "__init__.py"
+    runtime_contract_path = root / "agent_artifacts" / "runtime_contract.py"
     project_path = root / "pyproject.toml"
     init = init_path.read_text(encoding="utf-8")
+    runtime_contract = runtime_contract_path.read_text(encoding="utf-8")
     project = project_path.read_text(encoding="utf-8")
     updated_init = _replace_one(
         _INIT_RE, init, f'__version__ = "{version}"', "agent_artifacts.__version__"
@@ -156,8 +190,15 @@ def write_version(root: Path, version: Version) -> None:
     updated_project = _replace_one(
         _PROJECT_RE, project, f'version = "{version}"', "pyproject project version"
     )
+    updated_runtime_contract = _replace_one(
+        _RUNTIME_CONTRACT_RE,
+        runtime_contract,
+        _runtime_contract_assignment(version),
+        "runtime executable-version",
+    )
     init_path.write_text(updated_init, encoding="utf-8")
     project_path.write_text(updated_project, encoding="utf-8")
+    runtime_contract_path.write_text(updated_runtime_contract, encoding="utf-8")
 
 
 def validate_tag(root: Path, tag: str, expected: Version | None = None) -> None:

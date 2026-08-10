@@ -271,8 +271,13 @@ Interactive first use offers:
 - continuation with no source.
 
 Non-interactive content commands with no usable source fail with stable code `no-source-configured`
-and print `aart source add ...` guidance. `--help`, `--version`, local status, and uninstall do not
-require a source.
+and direct an agent to `aart source add --help` (or a human to the interactive Sources stage), then
+to add each policy-allowed required alias through the reviewed source-management path where
+required. Intermediate source configuration never authorizes content: all required aliases must be
+enabled before marketplace/install/update/setup operations proceed. The canonical agent browse
+command is `aart marketplace list --json`; legacy list/install/update/setup retain their explicit
+0.1 compatibility source contract until canonical lifecycle CLI commands land.
+`--help`, `--version`, local status, and uninstall do not require a source.
 
 ## 8. Platform paths
 
@@ -1017,10 +1022,18 @@ registry. Maintainer mode requires an explicit writable local source/registry ch
 
 ## 20. CLI surface
 
-Target command groups:
+Implemented canonical agent commands in this release slice:
 
 ```text
-aart source add|remove|list|enable|disable|use|sync|health|doctor|path
+aart source add|list
+aart marketplace list [--json]
+```
+
+The remaining target command groups are design targets, not aliases for the retained legacy
+`list/install/update/setup` compatibility commands:
+
+```text
+aart source remove|enable|disable|use|sync|health|doctor|path
 aart compile [--source <alias-or-path>] [--frozen] [--json]
 
 aart registry init|validate|format|lock|build|audit|test|diff|migrate
@@ -1144,15 +1157,17 @@ follow the untrusted-input and privacy constraints retained from superseded issu
 
 ### 25.1 Catalog content
 
-Use built-in importer `legacy-catalog-v1` for the current top-level:
+Use built-in importer `legacy-catalog-v1` for an external 0.1 checkout with this top-level
+layout:
 
 ```text
 skills/ guidelines/ mcp/ hooks/ memory/ bundles/ upstreams.json
 ```
 
-It produces a canonical native source root with `aart-source.json`, `artifacts/`, `collections/`,
-and provenance. IMP02/REG01 add promotion, registry lock, and compiled index workflows. Migration
-runs in a new/explicit output directory and never deletes the source tree without a reviewed apply.
+The AART tool checkout intentionally contains none of these operational roots. The importer
+produces a canonical native source root with `aart-source.json`, `artifacts/`, `collections/`, and
+provenance. IMP02/REG01 add promotion, registry lock, and compiled index workflows. Migration runs
+in a new/explicit output directory and never deletes the source tree without a reviewed apply.
 
 ### 25.2 Installation state
 

@@ -4,6 +4,9 @@ Status: completed
 
 Design: `docs/design/DESIGN-setup-installers.md`
 
+> Historical implementation plan. References below to a tool-repository `skills/` tree describe
+> the pre-1.0 embedded catalog; current authoring assets belong to an external registry/source.
+
 ## 1. Delivery strategy
 
 Deliver test-first vertical slices. Each work package starts with failing domain/security or

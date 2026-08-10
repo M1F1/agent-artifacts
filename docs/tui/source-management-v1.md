@@ -1,9 +1,10 @@
 # TUI source management and health v1
 
 TUI01 inserts **Sources** between Role and Harness in both the text and curses state machines. The
-stage is a policy-aware configuration editor and health snapshot, not a network fetch or an
-artifact installer. Its functional core is [`tui_sources.py`](../../agent_artifacts/tui_sources.py),
-and the only write boundary is
+stage is a policy-aware configuration editor and health snapshot. Ordinary checkbox selection is
+not a network fetch or an artifact installer; the explicit **Add source** action has its own
+review, synchronizes one immutable snapshot, then saves the reviewed origin. Its functional core
+is [`tui_sources.py`](../../agent_artifacts/tui_sources.py), and its durable boundaries are
 [`application/source_management.py`](../../agent_artifacts/application/source_management.py).
 
 ## Read model
@@ -32,16 +33,29 @@ sources.
 
 ## First run and optional registries
 
-No registry is intrinsically required. With no configured source, the UI gives the exact
-`aart source add` setup direction and, unless policy declares required aliases, offers **Continue
-without sources**. That path exits successfully and states that no registry was forced and no
-changes were made. Missing required/recommended policy aliases remain visible instead of being
-invented from an alias or URL guess.
+No registry is intrinsically required. With no configured source, the Sources screen offers
+**Add source** plus, unless policy declares required aliases, **Continue without sources**. Add
+asks for an alias, origin, and Git ref (or a local directory), shows a credential-free review, then
+downloads and validates one immutable source snapshot before saving the configuration. A registry
+must have a valid current compiled lock/index; a direct/local source must satisfy the native source
+protocol. Sync failure leaves user configuration untouched. Continue without sources exits
+successfully and states that no registry was forced and no changes were made. Missing
+required/recommended policy aliases remain visible instead of being invented from an alias or URL
+guess.
 
-During the alpha transition, a genuinely new configuration with no source policy keeps the
-installed checkout as one visible `bundled-legacy` local choice. An explicitly saved empty
-configuration does not reactivate that compatibility fallback. Explicit `--source` and `--repo`
-arguments remain isolated legacy choices and never rewrite global configuration.
+When policy requires more than one alias, **Add source** may save each policy-allowed source in a
+separate reviewed/synchronized operation. The intermediate configuration is usable only to return
+to Sources and add the remaining aliases; it cannot enter the canonical marketplace or install
+content until all required aliases are enabled. This does not relax direct-source, Git-origin,
+reporting, or default-registry policy checks.
+
+For the current store format, one Git kind/origin may be configured once. Add rejects a second
+alias pointing at the same Git origin, even with a different ref, rather than let two refs share a
+managed pointer. Ref-aware multi-source support requires its own versioned store migration.
+
+The executable checkout is never *implicitly* treated as an artifact source. Explicit `--source`
+and `--repo` arguments remain isolated legacy choices and never rewrite global configuration; an
+explicit tool checkout is simply an empty legacy source after the repository-boundary change.
 
 ## Deferred request and policy gate
 
@@ -58,6 +72,13 @@ operation. The desired configuration is evaluated against organization policy be
 Required sources, direct-source restrictions, reporting destination constraints, and default
 registry validity therefore fail closed.
 
+Adding an origin uses a separate `SourceAdditionRequest`, not an overloaded toggle request. It
+preserves every existing source/settings field, adds exactly one enabled schema-valid source, and
+makes only a new registry the default. The runtime synchronizes and validates that source before
+the atomic configuration write; it rechecks configuration/policy drift after synchronization.
+Only missing required aliases are temporarily tolerated by this source-management write. Ordinary
+source toggles and every content operation retain the full required-source gate.
+
 The wizard stores selected aliases, default registry, no-source decision, the inert request, and a
 health snapshot. Backspace (or `b`/`back`) returns exactly one applicable stage while preserving
 that value plus existing profiles, basket, cursor, and scroll state. Changing Sources unconfirms
@@ -68,11 +89,9 @@ no-op request performs no write. Save failure prevents artifact command dispatch
 an explicit failure. Text applies this boundary only after the Review answer; curses tears down the
 full-screen UI before applying it.
 
-## Transitional consumer boundary
+## Consumer boundary
 
-TUI01 owns source configuration and health, not the federated artifact union delivered by TUI02.
-The existing 0.1 consumer catalog bridge therefore proceeds only with one compatible local source
-or one `github.com` direct source tracking `main`; it never silently treats a registry, multiple
-sources, another Git host, or another ref as the old catalog shape. Those selections remain valid
-source-management domain values, but artifact browsing fails explicitly until the federated
-marketplace path can consume them.
+The TUI hands the reviewed effective configuration to the canonical consumer marketplace. It
+combines enabled current registry/direct/local sources by their qualified coordinates and preserves
+source trust/health facts. A missing, stale, invalid, or policy-denied source is rendered explicitly
+rather than being silently reinterpreted as the executable checkout or an old catalog layout.

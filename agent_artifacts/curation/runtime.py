@@ -25,7 +25,6 @@ from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.importers.legacy_catalog import LegacyCatalogOptions, scan_legacy_catalog
 from agent_artifacts.importers.model import ImporterInput, ImportOrigin
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
-from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
 from agent_artifacts.protocol.registry_models import RegistryEntry
 from agent_artifacts.protocol.registry_schema import parse_registry_entry
@@ -64,6 +63,7 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.model import (
     GitSnapshotRequest,
@@ -84,18 +84,8 @@ from .model import (
     curation_review_digest,
 )
 
-_VERSION = SemVer(1, 0, 0)
-_CAPABILITIES = tuple(
-    Capability(value)
-    for value in (
-        "artifact-manifest-v1",
-        "keychain-secret",
-        "lockfile-v1",
-        "managed-file",
-        "open-browser",
-        "registry-entry-v1",
-    )
-)
+_VERSION = EXECUTABLE_VERSION
+_CAPABILITIES = EXECUTABLE_CAPABILITIES
 CURATION_INVALID = DiagnosticCode("curation-invalid")
 CURATION_STALE = DiagnosticCode("curation-stale")
 

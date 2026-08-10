@@ -42,6 +42,7 @@ from .configuration.model import (
     default_user_configuration,
     git_location_parts,
 )
+from .configuration.schema import configured_source_from_input
 from .consumer import (
     ConsumerActionRequest,
     ConsumerApplicationService,
@@ -89,11 +90,14 @@ from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
 from .tui_marketplace import MarketplaceArtifactRow, MarketplaceTarget, render_marketplace_row
 from .tui_sources import (
+    SourceAdditionRequest,
     SourceManagementRequest,
     SourceSelection,
     SourceStageView,
     build_source_stage,
+    plan_source_addition,
     plan_source_management,
+    render_source_addition_review,
     render_source_row,
 )
 from .wizard import (
@@ -182,9 +186,22 @@ WriteFn = Callable[[str], None]
 SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
+SourceAdditionFinalizeFn = Callable[[SourceAdditionRequest], DomainResult[object]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
 ReportingServiceFactory = Callable[[UserConfiguration], DomainResult[ReportingApplicationService]]
 CurationServiceFactory = Callable[[str], DomainResult[CurationService]]
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeSourceStage:
+    """The imperative source boundary injected into either human TUI frontend."""
+
+    view: SourceStageView
+    source_finalizer: SourceFinalizeFn | None
+    source_addition_finalizer: SourceAdditionFinalizeFn | None
+
+
+SourceStageLoader = Callable[[], DomainResult[_RuntimeSourceStage]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1382,7 +1399,7 @@ def _legacy_source_stage_view(
     source_dir: Optional[str],
     repo: Optional[str],
 ) -> SourceStageView:
-    """Describe the exact legacy catalog source while TUI02 migrates marketplace consumption."""
+    """Describe one explicitly requested legacy source without touching the executable checkout."""
 
     if source_dir is not None:
         source = ConfiguredSource(
@@ -1401,16 +1418,7 @@ def _legacy_source_stage_view(
             True,
         )
     else:
-        import agent_artifacts
-
-        package_root = os.path.dirname(os.path.dirname(os.path.abspath(agent_artifacts.__file__)))
-        source = ConfiguredSource(
-            SourceAlias("bundled-legacy"),
-            SourceKind.SOURCE_LOCAL,
-            package_root,
-            None,
-            True,
-        )
+        raise ValueError("legacy source stage requires an explicit --source or --repo")
     baseline = default_user_configuration()
     configuration = UserConfiguration(
         baseline.schema_version,
@@ -1429,18 +1437,32 @@ def _legacy_source_stage_view(
     return projected.value
 
 
+def _empty_source_stage_view() -> SourceStageView:
+    """Return the real no-source state for private frontend tests without filesystem effects."""
+
+    projected = build_source_stage(
+        default_user_configuration(),
+        OrganizationPolicy(1),
+        {},
+        first_run=True,
+    )
+    assert isinstance(projected, DomainOk)
+    return projected.value
+
+
 def _runtime_source_stage_context(
     *,
     source_dir: Optional[str],
     repo: Optional[str],
     user_home: Optional[str],
-) -> DomainResult[Tuple[SourceStageView, Optional[SourceFinalizeFn]]]:
+) -> DomainResult[_RuntimeSourceStage]:
     """Load configured sources and current managed health at the imperative TUI boundary."""
 
     if source_dir is not None or repo is not None:
         return DomainOk(
-            (
+            _RuntimeSourceStage(
                 _legacy_source_stage_view(source_dir=source_dir, repo=repo),
+                None,
                 None,
             )
         )
@@ -1452,8 +1474,12 @@ def _runtime_source_stage_context(
         ConfigurationRequest,
         load_configuration,
         save_user_configuration,
+        save_user_configuration_for_source_management,
     )
-    from .application.source_management import finalize_source_management
+    from .application.source_management import (
+        finalize_source_addition,
+        finalize_source_management,
+    )
     from .application.sources import SourceStatusRequest, source_status
     from .configuration.paths import Platform, resolve_config_paths
     from .configuration.policy import RuntimeOverrides
@@ -1487,16 +1513,6 @@ def _runtime_source_stage_context(
         return loaded
     configuration = loaded.value.user_configuration
     policy = loaded.value.effective.policy
-    if (
-        loaded.value.first_run is not None
-        and not configuration.sources
-        and not policy.recommended_sources
-        and not policy.required_sources
-    ):
-        # Preserve the installed-checkout alpha transition on a genuinely unconfigured first run.
-        # Explicitly saving an empty configuration disables this compatibility fallback.
-        return DomainOk((_legacy_source_stage_view(source_dir=None, repo=None), None))
-
     now = int(time.time())
     health = {}
     for source in configuration.sources:
@@ -1518,16 +1534,29 @@ def _runtime_source_stage_context(
     if isinstance(projected, DomainErr):
         return projected
 
-    def finalize(request: SourceManagementRequest) -> DomainResult[object]:
+    def refreshed_configuration(
+        expected_before: UserConfiguration, expected_policy: OrganizationPolicy
+    ):
         refreshed = load_configuration(
             ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
             ports,
         )
         if isinstance(refreshed, DomainErr):
             return refreshed
+        if refreshed.value.recovery is not None:
+            return DomainErr(
+                (
+                    Diagnostic(
+                        DiagnosticCode("config-invalid"),
+                        Severity.ERROR,
+                        "user configuration is invalid; recover it before changing sources",
+                        remediation=("recover the configuration and retry",),
+                    ),
+                )
+            )
         if (
-            refreshed.value.user_configuration != request.before
-            or refreshed.value.effective.policy != request.policy
+            refreshed.value.user_configuration != expected_before
+            or refreshed.value.effective.policy != expected_policy
         ):
             return DomainErr(
                 (
@@ -1539,6 +1568,12 @@ def _runtime_source_stage_context(
                     ),
                 )
             )
+        return DomainOk(refreshed.value)
+
+    def finalize(request: SourceManagementRequest) -> DomainResult[object]:
+        refreshed = refreshed_configuration(request.before, request.policy)
+        if isinstance(refreshed, DomainErr):
+            return refreshed
         return finalize_source_management(
             request,
             lambda desired, active_policy: save_user_configuration(
@@ -1549,7 +1584,32 @@ def _runtime_source_stage_context(
             ),
         )
 
-    return DomainOk((projected.value, finalize))
+    def finalize_addition(request: SourceAdditionRequest) -> DomainResult[object]:
+        """Acquire a safe immutable snapshot before writing the new configured origin."""
+
+        current = refreshed_configuration(request.before, request.policy)
+        if isinstance(current, DomainErr):
+            return current
+        from .sources.runtime import sync_configured_source
+
+        synchronized = sync_configured_source(request.source, data_root=paths.data_root)
+        if isinstance(synchronized, DomainErr):
+            return synchronized
+        # Source fetching can take time; fail closed if config or policy changed before its write.
+        after_sync = refreshed_configuration(request.before, request.policy)
+        if isinstance(after_sync, DomainErr):
+            return after_sync
+        return finalize_source_addition(
+            request,
+            lambda desired, active_policy: save_user_configuration_for_source_management(
+                desired,
+                active_policy,
+                paths,
+                ports,
+            ),
+        )
+
+    return DomainOk(_RuntimeSourceStage(projected.value, finalize, finalize_addition))
 
 
 def _automatic_source_selection(view: SourceStageView) -> SourceSelection:
@@ -1615,7 +1675,9 @@ def _prompt_source_stage_text(
     for index, choice in enumerate(choices, start=1):
         write(f"  {index:>2}. {choice.label}")
     if not view.rows:
-        write("No sources are configured. Add one with: aart source add")
+        write("No sources are configured. Enter 'a' to add a registry or compatible source.")
+    else:
+        write("Enter 'a' to add another registry or compatible source.")
     if view.unconfigured_recommended:
         write(
             "Organization-recommended aliases needing configuration: "
@@ -1641,9 +1703,10 @@ def _prompt_source_stage_text(
         event = _prompt_wizard_indices(
             read,
             write,
-            "Source(s) (b=back, q=quit): ",
+            "Source(s) (a=add, b=back, q=quit): ",
             choices,
             selected=selected,
+            allow_add=True,
         )
         if event.kind != "confirm":
             return event
@@ -1653,6 +1716,128 @@ def _prompt_source_stage_text(
                 write(f"{diagnostic.severity.value}: {diagnostic.message}")
             continue
         return planned
+
+
+def _source_kind_choices(view: SourceStageView) -> tuple[tuple[SourceKind, str], ...]:
+    choices: tuple[tuple[SourceKind, str], ...] = (
+        (
+            SourceKind.REGISTRY_GIT,
+            "Registry Git source — reviewed marketplace with compiled lock and index.",
+        ),
+    )
+    if view.allow_direct_sources:
+        choices += (
+            (
+                SourceKind.SOURCE_GIT,
+                "Direct Git source — any compatible native artifact repository.",
+            ),
+            (
+                SourceKind.SOURCE_LOCAL,
+                "Local source — a compatible directory on this machine.",
+            ),
+        )
+    return choices
+
+
+def _prompt_source_value(
+    read: ReadFn,
+    prompt: str,
+    *,
+    default: str | None = None,
+) -> str | WizardInput:
+    """Read one source-setup field without leaking blank/quit/back ambiguity into callers."""
+
+    line = _read_line(read, prompt)
+    if line is None:
+        return WizardInput("quit")
+    answer = line.strip()
+    if answer.lower() in ("q", "quit"):
+        return WizardInput("quit")
+    if answer.lower() in ("b", "back"):
+        return WizardInput("back")
+    if not answer and default is not None:
+        return default
+    return answer
+
+
+def _prompt_source_addition_text(
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardInput | SourceAdditionRequest:
+    """Collect and review one source origin before its sync-and-save runtime boundary."""
+
+    choices = _source_kind_choices(view)
+    write("Add an artifact source:")
+    for index, (_kind, label) in enumerate(choices, start=1):
+        write(f"  {index:>2}. {label}")
+    while True:
+        raw_kind = _prompt_source_value(
+            read,
+            "Source type (b=back, q=quit): ",
+        )
+        if isinstance(raw_kind, WizardInput):
+            return raw_kind
+        if not raw_kind.isdigit() or not 1 <= int(raw_kind) <= len(choices):
+            write(f"Please enter a number between 1 and {len(choices)}, 'b', or 'q'.")
+            continue
+        kind = choices[int(raw_kind) - 1][0]
+        default_alias = {
+            SourceKind.REGISTRY_GIT: "registry",
+            SourceKind.SOURCE_GIT: "source",
+            SourceKind.SOURCE_LOCAL: "local",
+        }[kind]
+        alias = _prompt_source_value(
+            read,
+            f"Source alias [{default_alias}] (b=back, q=quit): ",
+            default=default_alias,
+        )
+        if isinstance(alias, WizardInput):
+            return alias
+        location_label = "Local directory" if kind is SourceKind.SOURCE_LOCAL else "Git URL"
+        location = _prompt_source_value(read, f"{location_label} (b=back, q=quit): ")
+        if isinstance(location, WizardInput):
+            return location
+        if not location:
+            write(f"{location_label} is required.")
+            continue
+        ref: str | None = None
+        if kind is not SourceKind.SOURCE_LOCAL:
+            prompted_ref = _prompt_source_value(
+                read,
+                "Git ref [main] (b=back, q=quit): ",
+                default="main",
+            )
+            if isinstance(prompted_ref, WizardInput):
+                return prompted_ref
+            ref = prompted_ref
+        parsed = configured_source_from_input(alias, kind, location, ref)
+        if isinstance(parsed, DomainErr):
+            _write_domain_diagnostics(parsed, write)
+            continue
+        planned = plan_source_addition(
+            view,
+            parsed.value,
+            make_default=not any(row.source.is_registry for row in view.rows),
+        )
+        if isinstance(planned, DomainErr):
+            _write_domain_diagnostics(planned, write)
+            continue
+        for line in render_source_addition_review(planned.value):
+            write(line)
+        answer = _read_line(
+            read,
+            "Synchronize and save this source? [y/N] (b=back, q=quit): ",
+        )
+        choice = "q" if answer is None else answer.strip().lower()
+        if choice in ("b", "back"):
+            return WizardInput("back")
+        if choice in ("q", "quit"):
+            return WizardInput("quit")
+        if choice in ("y", "yes", "f", "finalize"):
+            return planned.value
+        write("Source setup was not finalized; no source was synchronized or saved.")
+        return WizardInput("back")
 
 
 def _selected_legacy_source_arguments(
@@ -1892,6 +2077,7 @@ def _prompt_wizard_indices(
     choices: Sequence[_Choice],
     *,
     selected: Sequence[int] = (),
+    allow_add: bool = False,
 ) -> WizardInput:
     selected_tuple = tuple(dict.fromkeys(selected))
     while True:
@@ -1904,6 +2090,8 @@ def _prompt_wizard_indices(
             return WizardInput("quit")
         if low in ("b", "back"):
             return WizardInput("back")
+        if allow_add and low in ("a", "add"):
+            return WizardInput("add")
         if not answer and selected_tuple:
             return WizardInput("confirm", selected_tuple)
         if answer.startswith("?"):
@@ -2399,6 +2587,8 @@ def _run_text(
     user_home: Optional[str] = None,
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
+    source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
     reporting_service: Optional[ReportingApplicationService] = None,
@@ -2411,9 +2601,10 @@ def _run_text(
     buffered_role: Optional[str] = None
     legacy_source_dir = source_dir
     legacy_repo = repo
-    stage_view = source_stage_view or _legacy_source_stage_view(
-        source_dir=source_dir,
-        repo=repo,
+    stage_view = source_stage_view or (
+        _legacy_source_stage_view(source_dir=source_dir, repo=repo)
+        if source_dir is not None or repo is not None
+        else _empty_source_stage_view()
     )
     while True:
         if session.current == "onboarding":
@@ -2439,7 +2630,7 @@ def _run_text(
             session = wizard_advance(session)
             continue
         if session.current == "source":
-            if source_stage_view is None:
+            if source_stage_view is None and (source_dir is not None or repo is not None):
                 selected_source: WizardInput | SourceSelection = _automatic_source_selection(
                     stage_view
                 )
@@ -2449,6 +2640,37 @@ def _run_text(
             if isinstance(selected_source, WizardInput):
                 if selected_source.kind == "back":
                     session = wizard_back(session)
+                elif selected_source.kind == "add":
+                    if source_addition_finalizer is None or source_stage_loader is None:
+                        write("error: source setup is unavailable in this TUI runtime")
+                        continue
+                    addition = _prompt_source_addition_text(stage_view, read, write)
+                    if isinstance(addition, WizardInput):
+                        if addition.kind == "quit" and _confirm_wizard_quit(session, read, write):
+                            return _cancel(write)
+                        continue
+                    finalized_addition = source_addition_finalizer(addition)
+                    if isinstance(finalized_addition, DomainErr):
+                        _write_domain_diagnostics(finalized_addition, write)
+                        write("Source was not saved; choose another source or retry setup.")
+                        continue
+                    refreshed = source_stage_loader()
+                    if isinstance(refreshed, DomainErr):
+                        _write_domain_diagnostics(refreshed, write)
+                        write("Source was saved but the Sources screen could not be refreshed.")
+                        continue
+                    stage_view = refreshed.value.view
+                    source_finalizer = refreshed.value.source_finalizer
+                    source_addition_finalizer = refreshed.value.source_addition_finalizer
+                    session = replace(
+                        session,
+                        source_selection=None,
+                        revision=session.revision + 1,
+                    )
+                    write(
+                        f"Sources: synchronized and saved {addition.source.alias}. "
+                        "Choose enabled source(s) to continue."
+                    )
                 elif _confirm_wizard_quit(session, read, write):
                     return _cancel(write)
                 continue
@@ -3767,6 +3989,7 @@ def _curses_multi_event(
     selected: Sequence[int] = (),
     details: Optional[Sequence[str]] = None,
     disabled: Optional[Sequence[bool]] = None,
+    allow_add: bool = False,
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -3778,6 +4001,7 @@ def _curses_multi_event(
             details=details,
             disabled=disabled,
             wizard=True,
+            allow_add=allow_add,
             initial_checked=selected,
             initial_cursor=cursor,
             initial_scroll=scroll,
@@ -3795,6 +4019,39 @@ def _curses_multi_event(
     return WizardInput("confirm", picked, cursor, scroll)
 
 
+def _curses_empty_source_event(curses, stdscr, session: WizardSession) -> WizardInput:
+    """Keep source onboarding navigable when policy leaves no selectable source rows.
+
+    A required source may be named by policy before the user has configured its origin.  There
+    is deliberately no synthetic, untrusted row to toggle in that case; ``a`` remains the only
+    productive action.  This has a dedicated screen rather than relying on the generic checkbox
+    widget, whose empty-list result is a confirmation with no selection.
+    """
+
+    required = ("clear", "addstr", "refresh", "getch")
+    if not all(hasattr(stdscr, name) for name in required):
+        return WizardInput("quit")
+    backspace = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    lines = _curses_header(stdscr, session) + (
+        "Sources",
+        "No sources are configured.",
+        "Press a to add a source, Backspace to return, or q to quit.",
+    )
+    while True:
+        stdscr.clear()
+        available = max(_width(stdscr) - 1, 0)
+        for row, line in enumerate(lines[: _height(stdscr)]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (ord("a"), ord("A")):
+            return WizardInput("add")
+        if key in (ord("q"), 27):
+            return WizardInput("quit")
+        if key in backspace:
+            return WizardInput("back")
+
+
 def _curses_source_event(
     curses,
     stdscr,
@@ -3802,6 +4059,8 @@ def _curses_source_event(
     view: SourceStageView,
 ) -> Tuple[WizardInput, Optional[SourceSelection], Optional[DomainErr]]:
     choices = _source_choice_rows(view)
+    if not choices:
+        return _curses_empty_source_event(curses, stdscr, session), None, None
     selected_aliases = (
         set() if session.source_selection is None else set(session.source_selection.enabled_aliases)
     )
@@ -3817,12 +4076,13 @@ def _curses_source_event(
     event = _curses_multi_event(
         curses,
         stdscr,
-        f"Sources (space=toggle, enter=confirm, q=quit){suffix}",
+        f"Sources (space=toggle, enter=confirm, a=add, q=quit){suffix}",
         tuple(choice.label for choice in choices),
         session,
         selected=selected,
         details=tuple(choice.description for choice in choices),
         disabled=tuple(not choice.enabled for choice in choices),
+        allow_add=True,
     )
     if event.kind != "confirm":
         return event, None, None
@@ -3830,6 +4090,214 @@ def _curses_source_event(
     if isinstance(planned, DomainErr):
         return event, None, planned
     return event, planned, None
+
+
+def _curses_text_input(
+    curses,
+    stdscr,
+    session: WizardSession,
+    prompt: str,
+    *,
+    default: str | None = None,
+    maximum_length: int = 512,
+) -> str | WizardInput:
+    """Collect one bounded printable source field without leaving the full-screen wizard."""
+
+    required = ("clear", "addstr", "refresh", "getch")
+    if not all(hasattr(stdscr, name) for name in required):
+        return WizardInput("quit")
+    buffer = ""
+    backspace = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    enter = {getattr(curses, "KEY_ENTER", -1), 10, 13}
+    while True:
+        stdscr.clear()
+        available = max(_width(stdscr) - 1, 1)
+        lines = _curses_header(stdscr, session) + (prompt,)
+        for row, line in enumerate(lines):
+            if row >= max(_height(stdscr) - 2, 0):
+                break
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        input_row = min(len(lines) + 1, max(_height(stdscr) - 2, 0))
+        shown = buffer or ("" if default is None else f"[{default}]")
+        stdscr.addstr(input_row, 0, _ellipsize(f"> {shown}", available))
+        footer = "Enter = continue · Backspace on empty = back · q on empty = quit"
+        if _height(stdscr) > 0:
+            stdscr.addstr(_height(stdscr) - 1, 0, _ellipsize(footer, available))
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in enter:
+            return buffer or (default or "")
+        if key in backspace:
+            if buffer:
+                buffer = buffer[:-1]
+            else:
+                return WizardInput("back")
+            continue
+        if key in (27,) or (key in (ord("q"), ord("Q")) and not buffer):
+            return WizardInput("quit")
+        if 32 <= key <= 126 and len(buffer) < maximum_length:
+            buffer += chr(key)
+
+
+def _curses_notice(
+    stdscr,
+    session: WizardSession,
+    title: str,
+    lines: Sequence[str],
+) -> None:
+    """Show one bounded source-flow outcome before returning to the Sources stage.
+
+    Curses has no scrollback after a form closes.  A short acknowledgement keeps parser,
+    policy, sync, and success outcomes observable instead of silently dropping the user back at
+    the checkbox list.
+    """
+
+    required = ("clear", "addstr", "refresh", "getch")
+    if not all(hasattr(stdscr, name) for name in required):
+        return
+    content = _curses_header(stdscr, session) + (title, *lines)
+    available = max(_width(stdscr) - 1, 1)
+    stdscr.clear()
+    for row, line in enumerate(content[: max(_height(stdscr) - 1, 0)]):
+        stdscr.addstr(row, 0, _ellipsize(line, available))
+    if _height(stdscr) > 0:
+        stdscr.addstr(_height(stdscr) - 1, 0, _ellipsize("Press any key to continue.", available))
+    stdscr.refresh()
+    stdscr.getch()
+
+
+def _source_addition_diagnostics(result: DomainErr) -> tuple[str, ...]:
+    return tuple(
+        f"{diagnostic.severity.value}: {diagnostic.message}" for diagnostic in result.diagnostics
+    )
+
+
+def _curses_source_addition_review(
+    curses,
+    stdscr,
+    session: WizardSession,
+    request: SourceAdditionRequest,
+) -> bool | WizardInput:
+    """Confirm the exact source-only effect before network acquisition and config persistence."""
+
+    required = ("clear", "addstr", "refresh", "getch")
+    if not all(hasattr(stdscr, name) for name in required):
+        return WizardInput("quit")
+    lines = _curses_header(stdscr, session) + render_source_addition_review(request)
+    available = max(_width(stdscr) - 1, 1)
+    backspace = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    enter = {getattr(curses, "KEY_ENTER", -1), 10, 13}
+    while True:
+        stdscr.clear()
+        for row, line in enumerate(lines[: max(_height(stdscr) - 1, 0)]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if _height(stdscr) > 0:
+            stdscr.addstr(
+                _height(stdscr) - 1,
+                0,
+                _ellipsize(
+                    "Enter/y = synchronize and save · Backspace/n = back · q = quit", available
+                ),
+            )
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in enter or key in (ord("y"), ord("Y")):
+            return True
+        if key in backspace or key in (ord("n"), ord("N")):
+            return WizardInput("back")
+        if key in (ord("q"), 27):
+            return WizardInput("quit")
+
+
+def _curses_source_addition(
+    curses,
+    stdscr,
+    session: WizardSession,
+    view: SourceStageView,
+) -> WizardInput | SourceAdditionRequest:
+    """Curses counterpart of the text source setup form with the same parser and planner."""
+
+    choices = _source_kind_choices(view)
+    kind_event = _curses_single_event(
+        curses,
+        stdscr,
+        "Add source (enter=choose, Backspace=back, q=quit)",
+        tuple(label for _kind, label in choices),
+        session,
+    )
+    if kind_event.kind != "confirm":
+        return kind_event
+    kind = choices[kind_event.selected[0]][0]
+    default_alias = {
+        SourceKind.REGISTRY_GIT: "registry",
+        SourceKind.SOURCE_GIT: "source",
+        SourceKind.SOURCE_LOCAL: "local",
+    }[kind]
+    alias = _curses_text_input(
+        curses,
+        stdscr,
+        session,
+        "Source alias:",
+        default=default_alias,
+    )
+    if isinstance(alias, WizardInput):
+        return alias
+    location = _curses_text_input(
+        curses,
+        stdscr,
+        session,
+        "Local directory:" if kind is SourceKind.SOURCE_LOCAL else "Git URL:",
+    )
+    if isinstance(location, WizardInput):
+        return location
+    if not location:
+        _curses_notice(
+            stdscr,
+            session,
+            "Source setup error",
+            ("A local directory or Git URL is required. Choose Add to retry.",),
+        )
+        return WizardInput("back")
+    ref: str | None = None
+    if kind is not SourceKind.SOURCE_LOCAL:
+        prompted_ref = _curses_text_input(
+            curses,
+            stdscr,
+            session,
+            "Git ref:",
+            default="main",
+        )
+        if isinstance(prompted_ref, WizardInput):
+            return prompted_ref
+        ref = prompted_ref
+    parsed = configured_source_from_input(alias, kind, location, ref)
+    if isinstance(parsed, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            "Source setup error",
+            (*_source_addition_diagnostics(parsed), "Choose Add to retry."),
+        )
+        return WizardInput("back")
+    planned = plan_source_addition(
+        view,
+        parsed.value,
+        make_default=not any(row.source.is_registry for row in view.rows),
+    )
+    if isinstance(planned, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            "Source setup error",
+            (*_source_addition_diagnostics(planned), "Choose Add to retry."),
+        )
+        return WizardInput("back")
+    reviewed = _curses_source_addition_review(curses, stdscr, session, planned.value)
+    if isinstance(reviewed, WizardInput):
+        return reviewed
+    if reviewed:
+        return planned.value
+    return WizardInput("back")
 
 
 def _curses_confirm_discard(curses, stdscr, session: WizardSession) -> bool:
@@ -4257,6 +4725,8 @@ def _run_curses(
     user_home: Optional[str] = None,
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
+    source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
+    source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
     reporting_service: Optional[ReportingApplicationService] = None,
@@ -4270,12 +4740,14 @@ def _run_curses(
         print("No profiles available.")
         return 0
     selection: dict = {}
-    stage_view = source_stage_view or _legacy_source_stage_view(
-        source_dir=source_dir,
-        repo=repo,
+    stage_view = source_stage_view or (
+        _legacy_source_stage_view(source_dir=source_dir, repo=repo)
+        if source_dir is not None or repo is not None
+        else _empty_source_stage_view()
     )
 
     def _ui(stdscr) -> None:
+        nonlocal stage_view, source_stage_view, source_finalizer, source_addition_finalizer
         curses.curs_set(0)
         session = initial_session()
         onboarding = _curses_onboarding(curses, stdscr)
@@ -4309,7 +4781,7 @@ def _run_curses(
                 session = wizard_advance(session)
 
             assert session.current == "source"
-            if source_stage_view is None:
+            if source_stage_view is None and (source_dir is not None or repo is not None):
                 selected_source_value = _automatic_source_selection(stage_view)
             else:
                 event, maybe_selected_source, source_error = _curses_source_event(
@@ -4327,6 +4799,66 @@ def _run_curses(
                 if event.kind == "quit":
                     selection["cancelled"] = True
                     return
+                if event.kind == "add":
+                    if source_addition_finalizer is None or source_stage_loader is None:
+                        selection["error"] = ("source setup is unavailable in this TUI runtime", 2)
+                        return
+                    addition = _curses_source_addition(curses, stdscr, session, stage_view)
+                    if isinstance(addition, WizardInput):
+                        if addition.kind == "quit":
+                            selection["cancelled"] = True
+                            return
+                        continue
+                    if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+                        stdscr.clear()
+                        stdscr.addstr(0, 0, "Synchronizing and validating the source…")
+                        stdscr.refresh()
+                    finalized_addition = source_addition_finalizer(addition)
+                    if isinstance(finalized_addition, DomainErr):
+                        _curses_notice(
+                            stdscr,
+                            session,
+                            "Source setup failed",
+                            (
+                                *_source_addition_diagnostics(finalized_addition),
+                                "The source was not saved. Choose Add to retry.",
+                            ),
+                        )
+                        continue
+                    refreshed = source_stage_loader()
+                    if isinstance(refreshed, DomainErr):
+                        _curses_notice(
+                            stdscr,
+                            session,
+                            "Source setup incomplete",
+                            (
+                                *_source_addition_diagnostics(refreshed),
+                                "The source was saved, but restart aart to reload Sources.",
+                            ),
+                        )
+                        continue
+                    stage_view = refreshed.value.view
+                    # The text fallback below receives ``source_stage_view``.  Keep it in sync
+                    # with the live curses value so a later terminal exception does not make a
+                    # successfully saved source look absent (and provoke a duplicate add).
+                    source_stage_view = stage_view
+                    source_finalizer = refreshed.value.source_finalizer
+                    source_addition_finalizer = refreshed.value.source_addition_finalizer
+                    session = replace(
+                        session,
+                        source_selection=None,
+                        revision=session.revision + 1,
+                    )
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source setup complete",
+                        (
+                            f"Sources: synchronized and saved {addition.source.alias}.",
+                            "Choose enabled source(s) to continue.",
+                        ),
+                    )
+                    continue
                 if source_error is not None:
                     selection["error"] = (
                         "; ".join(item.message for item in source_error.diagnostics),
@@ -4510,6 +5042,8 @@ def _run_curses(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            source_addition_finalizer=source_addition_finalizer,
+            source_stage_loader=source_stage_loader,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
             reporting_service=reporting_service,
@@ -4613,6 +5147,7 @@ def _curses_multiselect(
     disabled: Optional[Sequence[bool]] = None,
     *,
     wizard: bool = False,
+    allow_add: bool = False,
     initial_checked: Sequence[int] = (),
     initial_cursor: int = 0,
     initial_scroll: int = 0,
@@ -4645,6 +5180,8 @@ def _curses_multiselect(
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
         elif wizard and ch in backspace_keys:
             return WizardInput("back", cursor=cursor, scroll=scroll)
+        elif wizard and allow_add and ch in (ord("a"), ord("A")):
+            return WizardInput("add", cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
         elif ch in (curses.KEY_DOWN, ord("j")):
@@ -5033,17 +5570,23 @@ def run(
         for diagnostic in source_context.diagnostics:
             print(f"{diagnostic.severity.value}: {diagnostic.message}")
         return 2
-    source_stage_view, source_finalizer = source_context.value
+    source_runtime = source_context.value
+    source_stage_view = source_runtime.view
+    source_finalizer = source_runtime.source_finalizer
+    source_addition_finalizer = source_runtime.source_addition_finalizer
+
+    def reload_source_stage() -> DomainResult[_RuntimeSourceStage]:
+        return _runtime_source_stage_context(
+            source_dir=source_dir,
+            repo=repo,
+            user_home=user_home,
+        )
+
     consumer_service: Optional[ConsumerApplicationService] = None
     consumer_service_factory: Optional[ConsumerServiceFactory] = None
     reporting_service: Optional[ReportingApplicationService] = None
     reporting_service_factory: Optional[ReportingServiceFactory] = None
-    legacy_aliases = {"bundled-legacy", "explicit-local", "explicit-git"}
-    if (
-        source_dir is None
-        and repo is None
-        and not any(row.source.alias.value in legacy_aliases for row in source_stage_view.rows)
-    ):
+    if source_dir is None and repo is None:
         from .consumer.runtime import load_local_consumer_service
         from .reporting.runtime import load_local_reporting_service
 
@@ -5080,6 +5623,8 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            source_addition_finalizer=source_addition_finalizer,
+            source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
             reporting_service=reporting_service,
@@ -5094,6 +5639,8 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            source_addition_finalizer=source_addition_finalizer,
+            source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
             reporting_service=reporting_service,
@@ -5107,6 +5654,8 @@ def run(
             user_home=user_home,
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
+            source_addition_finalizer=source_addition_finalizer,
+            source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
             reporting_service=reporting_service,

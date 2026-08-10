@@ -514,6 +514,14 @@ class Request:
     migration_action: Optional[str] = None
     migration_from: Optional[str] = None
     source_mappings: Tuple[str, ...] = ()
+    # Canonical configured-source command surface.  These values deliberately remain distinct
+    # from the legacy ``--source DIR`` catalog compatibility flag above.
+    source_action: Optional[str] = None
+    source_alias: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_location: Optional[str] = None
+    source_make_default: Optional[bool] = None
+    marketplace_action: Optional[str] = None
     rollback: bool = False
     upgrade_wheel: Optional[str] = None
     upgrade_source_checkout: Optional[str] = None

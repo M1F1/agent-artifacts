@@ -4,6 +4,10 @@ Status: complete
 
 Design: `docs/design/DESIGN-persistent-tui-wizard.md`
 
+> Historical implementation plan. Any references below to root catalog content or authoring skills
+> describe the pre-1.0 embedded catalog; the current tool checkout is code-only and consumes
+> explicit external sources/registries.
+
 ## 1. Delivery strategy
 
 Implement vertical, test-first slices from the pure wizard domain outward. Every work package starts

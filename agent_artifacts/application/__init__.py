@@ -18,6 +18,7 @@ from .registry_commands import (
 from .registry_maintenance import finalize_registry_mutation, prepare_native_promotion
 from .source_management import (
     SourceManagementReceipt,
+    finalize_source_addition,
     finalize_source_management,
 )
 from .sources import (
@@ -54,6 +55,7 @@ __all__ = [
     "finalize_legacy_import",
     "finalize_registry_mutation",
     "finalize_registry_workspace",
+    "finalize_source_addition",
     "finalize_source_management",
     "object_status",
     "compile_sources",

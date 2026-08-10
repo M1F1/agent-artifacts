@@ -12,6 +12,7 @@ from agent_artifacts.application.configuration import (
     load_configuration,
     recover_user_configuration,
     save_user_configuration,
+    save_user_configuration_for_source_management,
 )
 from agent_artifacts.configuration.paths import PathOverrides, Platform, resolve_config_paths
 from agent_artifacts.configuration.policy import RuntimeOverrides
@@ -101,7 +102,7 @@ class ConfigurationApplicationTest(unittest.TestCase):
         self.assertIsInstance(result, Err)
         assert isinstance(result, Err)
         self.assertEqual(result.diagnostics[0].code.value, "no-source-configured")
-        self.assertIn("aart source add", result.diagnostics[0].remediation)
+        self.assertIn("Sources stage", "\n".join(result.diagnostics[0].remediation))
 
     def test_policy_recommendations_shape_first_run_without_forcing_registry(self) -> None:
         paths = _paths()
@@ -266,6 +267,44 @@ class ConfigurationApplicationTest(unittest.TestCase):
         self.assertEqual(len(fake.writes), 1)
         self.assertEqual(fake.writes[0].path, paths.user_config_file)
         self.assertEqual(fake.writes[0].content[-1:], b"\n")
+
+    def test_partial_required_source_configuration_is_manageable_but_not_content(self) -> None:
+        paths = _paths()
+        partial = (
+            b'{"schema_version":1,"sources":[{"alias":"company","kind":"registry-git",'
+            b'"url":"https://git.example.test/company/registry.git","ref":"main",'
+            b'"enabled":true}],"default_registry":"company"}'
+        )
+        policy = b'{"schema_version":1,"required_sources":["company","team"]}'
+        fake = _FakePorts({paths.policy_file: policy, paths.user_config_file: partial})
+
+        management = load_configuration(
+            ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
+            fake.ports(),
+        )
+        content = load_configuration(
+            ConfigurationRequest(paths, RuntimeOverrides(), content_required=True),
+            fake.ports(),
+        )
+
+        self.assertIsInstance(management, Ok)
+        self.assertIsInstance(content, Err)
+        assert isinstance(content, Err)
+        self.assertEqual(content.diagnostics[0].code.value, "source-policy-denied")
+
+        parsed = parse_user_configuration(partial)
+        parsed_policy = parse_organization_policy(policy)
+        assert isinstance(parsed, Ok)
+        assert isinstance(parsed_policy, Ok)
+        persisted = save_user_configuration_for_source_management(
+            parsed.value,
+            parsed_policy.value,
+            paths,
+            fake.ports(),
+        )
+        strict = save_user_configuration(parsed.value, parsed_policy.value, paths, fake.ports())
+        self.assertIsInstance(persisted, Ok)
+        self.assertIsInstance(strict, Err)
 
 
 if __name__ == "__main__":

@@ -57,6 +57,8 @@ class TestStaticWiring(unittest.TestCase):
         "security",
         "reporting",
         "migrate",
+        "source",
+        "marketplace",
     }
 
     def test_dispatch_keys(self):

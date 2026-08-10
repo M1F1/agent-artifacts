@@ -1,8 +1,8 @@
 # AART 1.0 Implementation Plan
 
-- **Status:** Execution in progress
+- **Status:** Completed and released as `v1.0.0` on 2026-08-10
 - **Target:** `1.0.0`
-- **Development train:** `1.0.0aN`
+- **Historical development train:** `1.0.0aN`
 - **Tracking issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Product requirements:** [docs/product/PRD-aart-1.0.md](docs/product/PRD-aart-1.0.md)
 - **Technical specification:** [docs/design/SPEC-aart-1.0.md](docs/design/SPEC-aart-1.0.md)
@@ -10,15 +10,20 @@
 
 ## 1. Objective
 
+> Historical execution plan. Its tracked implementation was merged in PR #60 as `92aa3ea` and
+> released as `v1.0.0`. New work is tracked in
+> [`docs/plan/PLAN-post-v1-catalog-boundary.md`](docs/plan/PLAN-post-v1-catalog-boundary.md);
+> it must not rewrite this release's evidence.
+
 Implement AART 1.0 as a zero-Python-runtime-dependency, federated compiler and package manager for
 agent artifacts. AART must consume zero or more native local/Git sources and optional registries,
 compile canonical artifact packages into supported harness layouts, maintain durable immutable
 objects for Copy/Symlink installation, support controlled maintainer-time imports, expose optional
 security assessment providers, and migrate existing 0.1.x catalogs/installations safely.
 
-The implementation is complete only when every task in this plan is merged to `main`, every release
-gate passes, the public reference-registry decision is resolved, and the stable version is
-`1.0.0`. Nexus/PyPI publication is not required.
+This implementation was complete when every task in this plan was merged to `main`, every release
+gate passed, the public reference-registry decision was resolved, and the stable version became
+`1.0.0`. Nexus/PyPI publication was not required.
 
 ## 2. Scope and constraints
 

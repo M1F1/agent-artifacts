@@ -136,4 +136,6 @@ decision, not a side effect of migration.
 `--source DIR` and `--repo OWNER/NAME` on the legacy list/install/update/setup path print an explicit
 0.1 compatibility warning. They are never reinterpreted as configured source aliases. Invoking
 that legacy content path without either option now fails with guidance to use the configured TUI
-marketplace; the wheel is executable-only and is not an implicit catalog.
+marketplace or, for an agent, to configure a source with `aart source add --help` and inspect it
+with `aart marketplace list --json`. Canonical install/update CLI commands are a separate follow-up;
+the wheel is executable-only and is not an implicit catalog.

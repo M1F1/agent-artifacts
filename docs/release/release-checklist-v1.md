@@ -40,7 +40,8 @@ without captured subprocess output.
 - The public registry is exactly
   [`M1F1/agent-artifacts-registry`](https://github.com/M1F1/agent-artifacts-registry), is public,
   has a frozen lock/index, and passes current strict/minimum/latest AART checks.
-- Packaging rejects operational catalog roots and validates every wheel member and RECORD digest.
+- The tool's code-only repository boundary rejects embedded legacy/canonical catalog paths,
+  including dangling root symlinks; packaging validates every wheel member and RECORD digest.
 - Nexus/PyPI publication is neither performed nor required.
 
 The GitHub `v1.0.0` tag/release workflow repeats `make quality` on Python 3.10 and 3.14, fetches

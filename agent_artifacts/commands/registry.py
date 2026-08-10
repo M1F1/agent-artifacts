@@ -28,7 +28,6 @@ from agent_artifacts.importers.legacy_catalog import LegacyCatalogOptions
 from agent_artifacts.importers.model import ImporterInput, ImportOrigin
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
 from agent_artifacts.model import Request
-from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
 from agent_artifacts.protocol.registry_models import RegistryEntry, RegistryManifest
 from agent_artifacts.protocol.registry_schema import (
@@ -49,6 +48,7 @@ from agent_artifacts.registry_commands.planning import (
     validate_registry_workspace,
 )
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
+from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.model import (
     GitSnapshotRequest,
@@ -59,18 +59,8 @@ from agent_artifacts.sources.model import (
 
 from . import _common
 
-_VERSION = SemVer(1, 0, 0)
-_CAPABILITIES = tuple(
-    Capability(value)
-    for value in (
-        "artifact-manifest-v1",
-        "keychain-secret",
-        "lockfile-v1",
-        "managed-file",
-        "open-browser",
-        "registry-entry-v1",
-    )
-)
+_VERSION = EXECUTABLE_VERSION
+_CAPABILITIES = EXECUTABLE_CAPABILITIES
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 
 

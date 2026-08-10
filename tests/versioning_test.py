@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,8 @@ import unittest
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+_VERSION_PARTS = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$")
 
 
 def _load_script(name: str):
@@ -32,6 +35,16 @@ def _fixture_root(raw: str, *, version: str = "0.1.48", complete: bool = False) 
     package = root / "agent_artifacts"
     package.mkdir()
     (package / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+    match = _VERSION_PARTS.fullmatch(version)
+    if match is None:
+        raise AssertionError(f"invalid test fixture version: {version}")
+    prerelease = "" if match.group(4) is None else f', ("{match.group(4)}", {match.group(5)})'
+    (package / "runtime_contract.py").write_text(
+        "from agent_artifacts.protocol.semver import SemVer\n"
+        "EXECUTABLE_VERSION = SemVer("
+        f"{match.group(1)}, {match.group(2)}, {match.group(3)}{prerelease})\n",
+        encoding="utf-8",
+    )
     (root / "pyproject.toml").write_text(
         f'[project]\nname = "agent-artifacts"\nversion = "{version}"\ndependencies = []\n',
         encoding="utf-8",
@@ -75,7 +88,7 @@ class VersionValueTest(unittest.TestCase):
 
 
 class VersionFilesTest(unittest.TestCase):
-    def test_explicit_write_updates_both_version_files(self):
+    def test_explicit_write_updates_all_version_files(self):
         versioning = _load_script("version")
         with tempfile.TemporaryDirectory() as raw:
             root = _fixture_root(raw)
@@ -84,6 +97,10 @@ class VersionFilesTest(unittest.TestCase):
             self.assertIn('version = "1.0.0a1"', (root / "pyproject.toml").read_text())
             self.assertIn(
                 '__version__ = "1.0.0a1"', (root / "agent_artifacts/__init__.py").read_text()
+            )
+            self.assertIn(
+                'EXECUTABLE_VERSION = SemVer(1, 0, 0, ("a", 1))',
+                (root / "agent_artifacts/runtime_contract.py").read_text(),
             )
 
     def test_check_reports_mismatched_files_without_mutation(self):
@@ -97,19 +114,42 @@ class VersionFilesTest(unittest.TestCase):
             self.assertTrue(any("mismatch" in item for item in diagnostics), diagnostics)
             self.assertEqual(init.read_bytes(), before)
 
+    def test_check_reports_runtime_contract_mismatch_without_mutation(self):
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw)
+            runtime_contract = root / "agent_artifacts" / "runtime_contract.py"
+            runtime_contract.write_text(
+                "from agent_artifacts.protocol.semver import SemVer\n"
+                "EXECUTABLE_VERSION = SemVer(9, 9, 9)\n",
+                encoding="utf-8",
+            )
+            before = runtime_contract.read_bytes()
+            diagnostics = versioning.check_version(root)
+            self.assertTrue(any("mismatch" in item for item in diagnostics), diagnostics)
+            self.assertEqual(runtime_contract.read_bytes(), before)
+
     def test_cli_requires_explicit_write_acknowledgement(self):
         versioning = _load_script("version")
         with tempfile.TemporaryDirectory() as raw:
             root = _fixture_root(raw, version="1.0.0a1")
             before = tuple(
                 path.read_bytes()
-                for path in (root / "agent_artifacts" / "__init__.py", root / "pyproject.toml")
+                for path in (
+                    root / "agent_artifacts" / "__init__.py",
+                    root / "agent_artifacts" / "runtime_contract.py",
+                    root / "pyproject.toml",
+                )
             )
             self.assertEqual(versioning.main(("bump-alpha",), root), 1)
             self.assertEqual(versioning.main(("set", "1.0.0a2"), root), 1)
             after = tuple(
                 path.read_bytes()
-                for path in (root / "agent_artifacts" / "__init__.py", root / "pyproject.toml")
+                for path in (
+                    root / "agent_artifacts" / "__init__.py",
+                    root / "agent_artifacts" / "runtime_contract.py",
+                    root / "pyproject.toml",
+                )
             )
             self.assertEqual(after, before)
 

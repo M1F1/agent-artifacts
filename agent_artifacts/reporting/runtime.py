@@ -132,7 +132,11 @@ def load_local_reporting_service(
         xdg_cache_home=os.environ.get("XDG_CACHE_HOME"),
     )
     loaded = load_configuration(
-        ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
+        ConfigurationRequest(
+            paths,
+            RuntimeOverrides(),
+            content_required=configuration is None,
+        ),
         ConfigurationPorts(read_configuration, write_configuration, recover_configuration),
     )
     if isinstance(loaded, Err):

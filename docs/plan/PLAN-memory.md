@@ -9,6 +9,10 @@ only, `unittest`, disjoint file ownership, per-WP DoD.
 Read order: §1 contract delta → §2 ownership map → §3 waves → §4 dependency graph → §5 work
 packages → §6 critical path → §7 test strategy.
 
+> Historical implementation plan. The listed root `memory/` and `bundles/` paths belonged to the
+> pre-1.0 embedded catalog. Current operational artifacts live only in external sources or
+> registries; test fixtures remain intentionally local to this repository.
+
 ---
 
 ## 1. Contract delta (what WP-25 freezes)

@@ -1,12 +1,64 @@
 # AART 1.0 Execution Progress
 
 - **Plan:** [PLAN.md](PLAN.md)
-- **Issue:** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
+- **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
+- **CB01 issue:** create/link a post-1.0 follow-up issue before opening its review PR
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0`
-- **Execution status:** REL01 initial CI passed; final CI/merge/tag pending
-- **Next task:** none — publish `v1.0.0` only after REL01 review, CI, and merge
-- **Last updated:** 2026-08-10
+- **Execution status:** `v1.0.0` released from merged REL01
+- **Next task:** CB01 — post-release catalog boundary and source onboarding follow-up
+- **Last updated:** 2026-08-11
+
+## Post-v1.0.0 catalog-boundary follow-up
+
+- **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
+- **Branch:** `codex/remove-legacy-root-catalog`
+- **Status:** `CB01` in progress; this addendum does not modify frozen `v1.0.0` release evidence.
+- **Last updated:** 2026-08-11
+- **Next checkpoint:** commit/push CB01 for review, then create/link its post-1.0 issue before
+  opening a PR. Do not merge/tag/release as part of this checkpoint.
+
+| ID | Task | Status | Evidence / next action |
+|---|---|---|---|
+| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | in_progress | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes; commit/push remain. |
+| LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | pending | Keep separate from CB01; legacy lifecycle commands remain explicit compatibility adapters until this task passes its own E2E matrix. |
+| SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | pending | The current store remains origin-keyed for compatibility; CB01 rejects a second ref for the same Git origin rather than sharing a pointer. Add a versioned migration/rebind before enabling multi-ref sources. |
+| CFG02 | Atomic source-management configuration writes | pending | Add a configuration lock plus expected-digest CAS. The current post-sync re-read detects ordinary drift but cannot prevent a writer that races between that read and atomic replacement. |
+| REG02 | Registry-owned agent skills | pending | Separate `M1F1/agent-artifacts-registry` PR after an executable version exposes/guarantees the documented commands; rewrite the two existing skills to `2.0.0` and regenerate lock/index. |
+| REL02 | Next executable release contract | pending | Define a new immutable release checklist/schema, choose the next version (expected at least `1.0.1`), and leave `v1.0.0` evidence untouched. |
+
+### 2026-08-11 — CB01 work log
+
+- Reframed the tool repository as executable-only; operational content is retained in canonical
+  registries and legacy compatibility fixtures/importers remain tested.
+- Removed the first-run `bundled-legacy` source fallback so neither CLI nor TUI treats its own
+  checkout as a marketplace.
+- Added agent-facing source bootstrap and safe discovery contracts without silently rerouting
+  legacy lifecycle commands.
+- Added a source-management-only policy path: individual required sources may be synchronized and
+  persisted one at a time, while all content operations still fail closed until every required
+  alias is enabled. Host/direct/reporting/default constraints remain enforced.
+- Added native and registry read-only browse tests proving catalog discovery does not materialize
+  CAS objects while registry-owned package digests remain verified.
+- Reconciled the released history: PR #60 merged as `92aa3ea`, and immutable `v1.0.0` resolves to
+  that commit. The original 1.0 plan/ledger now records this as historical evidence rather than an
+  active release action.
+- Hardened the code-only boundary after review: it rejects the six legacy roots, canonical
+  source/registry roots and markers, and dangling root symlinks. The version tool now keeps the
+  runtime protocol contract synchronized with package and project version values.
+- Corrected the post-release README and historical Symlink design so humans are directed to the
+  TUI, agents to JSON source/discovery commands, and legacy lifecycle examples retain explicit
+  source context.
+- Added final P1 regressions from review: configuration parsing/model construction now reject a
+  second ref for one Git origin, and a no-row curses Sources screen under a required-source policy
+  still offers Add/Back/Quit. A post-add curses failure now hands the refreshed Sources view to the
+  text fallback. The remaining configuration write race is deliberately tracked as `CFG02`, not
+  hidden by the pre-write revalidation.
+- Normalized the Git-origin invariant across HTTPS/SSH/SCP transport spellings, host case, and
+  optional `.git`; a safe full branch ref (`refs/heads/*`) now resolves through the fetched remote
+  tracking ref. Both fixes have focused real-Git/configuration/TUI regressions.
+- Final local `make quality` passed after all review corrections: Ruff format/lint, mypy on 193
+  source files, all unit tests, integration/E2E, validation, coverage, packaging, and docs.
 
 ## Status rules
 
@@ -73,7 +125,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) / `b05fd42` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | [#59](https://github.com/M1F1/agent-artifacts/pull/59) / `5ae7310` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| REL01 | Stable release gates and `1.0.0` | all | complete | `codex/aart-1-0-rel01-stable-release` | [#60](https://github.com/M1F1/agent-artifacts/pull/60) / pending | Stable `1.0.0`, docs/schema freeze, 24 focused tests and all local gates pass; initial four-job Python 3.10/3.14 push/PR CI passed; final CI/merge/tag pending |
+| REL01 | Stable release gates and `1.0.0` | all | complete | `codex/aart-1-0-rel01-stable-release` | [#60](https://github.com/M1F1/agent-artifacts/pull/60) / `92aa3ea` (`v1.0.0`) | Stable `1.0.0` released after the protected PR merge. Docs/schema freeze, 24 focused tests, local gates, and Python 3.10/3.14 CI passed; immutable tag resolves to the merged commit. |
 
 ## Current-task template
 
@@ -81,24 +133,27 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: REL01 — Final release gates, documentation, and stable 1.0.0
-Branch: codex/aart-1-0-rel01-stable-release
-Worktree: /private/tmp/aart-rel01.GNHrtf/worktree
-Started: 2026-08-10
-Bounded contexts: release policy/tooling, protocol/schema freeze evidence, documentation and
-  compatibility/migration acceptance, GitHub tag/release workflow
-Red test and expected failure: focused release suite produced five expected missing
-  `scripts/release.py` failures plus absent stable-finalization API/workflow gates and the expected
-  repository `1.0.0a1` versus stable `1.0.0` assertion
-Focused tests: 24 pass (release/version contracts, registry export E2E, workflow contract)
-Files owned: release/version scripts/tests/workflow, release docs/changelog/README/PRD/SPEC/TODO,
-  schema-freeze evidence, Makefile, PROGRESS.md
-Risks/migrations: stable version/tag fails closed on incomplete progress, stale schemas/index,
-  incompatible/dirty/noncurrent registry, dirty output, missing migration docs, or source not
-  proven merged into `origin/main`; final tag waits for PR review/CI/merge
-PR: #60 ready — local completion is provisional until the reviewed PR is merged
-CI: initial push/PR matrix passed in Actions runs 31431386048 and 31431428569; final matrix pending
-Merge: E2E01 `5ae7310`; REL01 pending
+Task: CB01 — post-v1.0.0 catalog boundary and source onboarding
+Branch: codex/remove-legacy-root-catalog
+Worktree: /private/tmp/aart-catalog-cleanup.V7N3iV/worktree
+Started: 2026-08-11
+Bounded contexts: executable-only repository boundary, explicit source onboarding, TUI first-run
+  behavior, agent JSON discovery, configuration policy, documentation, and regression gates
+Red tests and expected failures: embedded legacy/canonical roots and dangling symlinks are rejected;
+  first run no longer invents a bundled catalog; partial required-source configuration is usable
+  only for source management, never marketplace content; duplicate Git origins across refs and an
+  empty required-policy curses Sources screen are rejected/navigable respectively
+Focused tests: repository boundary, configuration/policy, source CLI/runtime/validation, TUI source
+  stage, consumer read-only marketplace, version synchronization, release fixtures
+Files owned: tool code/tests, executable-boundary docs, post-v1 plan/TODO/PROGRESS; no registry
+  payloads or `v1.0.0` release evidence
+Risks/migrations: source sync must precede config write; source refs remain origin-keyed until SRC02;
+  configuration writes need CAS/locking in CFG02; content remains fail-closed until required
+  sources are complete; browse must not materialize CAS
+PR: not opened; a new post-1.0 issue must be linked before review PR creation
+CI: local `make quality` passed after final corrections (Ruff format/lint, mypy on 193 source
+  files, all unit tests, integration/E2E, validation, coverage, packaging, and docs)
+Merge: none — commit/push only; do not tag/release
 ```
 
 ## Quality-gate history
@@ -137,7 +192,7 @@ Merge: E2E01 `5ae7310`; REL01 pending
 | MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
 | DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
 | E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
-| REL01 | 24 release/version/workflow/export tests | 414 files pass | pass | 188 source files pass | 1566 pass | 40 pass | 11-step pass | stable version/schema/system matrix pass | 85.62% overall (≥82%) | `1.0.0` wheel/RECORD/import pass | pass | pending PR |
+| REL01 | 24 release/version/workflow/export tests | 414 files pass | pass | 188 source files pass | 1566 pass | 40 pass | 11-step pass | stable version/schema/system matrix pass | 85.62% overall (≥82%) | `1.0.0` wheel/RECORD/import pass | pass | PR #60 merged as `92aa3ea`; tag/release `v1.0.0` verified |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.

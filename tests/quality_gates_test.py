@@ -92,6 +92,18 @@ class DocsCheckTest(unittest.TestCase):
         docs_check = _load_script("docs_check")
         self.assertEqual(docs_check.check_repository(ROOT), ())
 
+    def test_ignores_markdown_deleted_from_the_unstaged_working_tree(self):
+        docs_check = _load_script("docs_check")
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            removed = root / "removed.md"
+            subprocess.run(("git", "init", "-q", str(root)), check=True)
+            removed.write_text("# removed\n", encoding="utf-8")
+            subprocess.run(("git", "-C", str(root), "add", "removed.md"), check=True)
+            removed.unlink()
+
+            self.assertEqual(docs_check._repository_markdown(root), ())
+
 
 class PackagingCheckTest(unittest.TestCase):
     def test_packaging_smoke_does_not_mutate_tracked_source(self):

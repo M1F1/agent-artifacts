@@ -16,7 +16,11 @@ from agent_artifacts.application.sources import SourceStatusRequest, source_stat
 from agent_artifacts.compiler.graph import GraphSource, compile_marketplace_graph
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind, UserConfiguration
 from agent_artifacts.configuration.paths import Platform, resolve_config_paths
-from agent_artifacts.configuration.policy import RuntimeOverrides, apply_configuration
+from agent_artifacts.configuration.policy import (
+    EffectiveConfiguration,
+    RuntimeOverrides,
+    apply_configuration,
+)
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ArtifactCoordinate
 from agent_artifacts.domain.result import Err, Ok, Result
@@ -39,7 +43,6 @@ from agent_artifacts.marketplace.model import (
     MarketplaceSourceState,
 )
 from agent_artifacts.profiles.builtin import builtin
-from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_schema import parse_source_manifest
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
@@ -59,12 +62,12 @@ from agent_artifacts.protocol.registry_tree import (
     registry_inputs_digest,
     resolve_locked_references,
 )
-from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.registry_maintenance.planning import (
     registry_native_content,
     resolve_native_acquisition,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
@@ -95,6 +98,7 @@ from agent_artifacts.sources.model import (
 from agent_artifacts.store.model import (
     ObjectPublishCommand,
     ObjectReadRequest,
+    ObjectStorePaths,
     make_object_candidate,
     object_store_paths,
 )
@@ -104,18 +108,10 @@ from .io import LocalConsumerAdapter
 from .model import ConsumerActionRequest, ConsumerContext
 
 CONSUMER_RUNTIME_INVALID = DiagnosticCode("consumer-runtime-invalid")
-_VERSION = SemVer(1, 0, 0)
-_CAPABILITIES = tuple(
-    Capability(value)
-    for value in (
-        "artifact-manifest-v1",
-        "keychain-secret",
-        "lockfile-v1",
-        "managed-file",
-        "open-browser",
-        "registry-entry-v1",
-    )
-)
+# Compatibility aliases for existing internal callers.  New composition roots use the public
+# executable contract instead of importing this module's private implementation details.
+_VERSION = EXECUTABLE_VERSION
+_CAPABILITIES = EXECUTABLE_CAPABILITIES
 _ATTESTATION_TRUST_RANK = {
     AttestationTrust.UNVERIFIED: 0,
     AttestationTrust.LOCAL: 1,
@@ -186,7 +182,14 @@ def _package_root(snapshot, native, identity) -> SafeRelativePath:
     return matches[0]
 
 
-def _materialize_native(snapshot, native, paths, expected_by_identity=None):
+def _index_native(
+    snapshot,
+    native,
+    paths: ObjectStorePaths | None,
+    expected_by_identity=None,
+):
+    """Validate native packages into graph index records, optionally publishing their objects."""
+
     indexed = []
     for package in native.artifacts:
         try:
@@ -204,9 +207,10 @@ def _materialize_native(snapshot, native, paths, expected_by_identity=None):
         candidate = make_object_candidate(entries.value, expected_digest=expected)
         if isinstance(candidate, Err):
             return candidate
-        published = publish_object(ObjectPublishCommand(paths, candidate.value))
-        if isinstance(published, Err):
-            return published
+        if paths is not None:
+            published = publish_object(ObjectPublishCommand(paths, candidate.value))
+            if isinstance(published, Err):
+                return published
         indexed.append(
             index_artifact_from_package(
                 package,
@@ -217,7 +221,24 @@ def _materialize_native(snapshot, native, paths, expected_by_identity=None):
     return Ok(tuple(indexed))
 
 
-def _materialize_registry_owned(snapshot, source, owned, paths) -> Result[None]:
+def _materialize_native(snapshot, native, paths, expected_by_identity=None):
+    """Compatibility wrapper for the consumer service's object-materializing composition path."""
+
+    return _index_native(snapshot, native, paths, expected_by_identity)
+
+
+def _verify_registry_owned(
+    snapshot,
+    source,
+    owned,
+    paths: ObjectStorePaths | None,
+) -> Result[None]:
+    """Verify registry-owned packages and optionally materialize their immutable objects.
+
+    Read-only discovery still has to bind each package to the digest committed in the registry
+    index.  It may skip only the final object-store publication effect, never that verification.
+    """
+
     for artifact in owned:
         roots = tuple(
             SafeRelativePath((*root.parts, artifact.identity.kind, artifact.identity.name))
@@ -239,10 +260,17 @@ def _materialize_registry_owned(snapshot, source, owned, paths) -> Result[None]:
         )
         if isinstance(candidate, Err):
             return candidate
-        published = publish_object(ObjectPublishCommand(paths, candidate.value))
-        if isinstance(published, Err):
-            return published
+        if paths is not None:
+            published = publish_object(ObjectPublishCommand(paths, candidate.value))
+            if isinstance(published, Err):
+                return published
     return Ok(None)
+
+
+def _materialize_registry_owned(snapshot, source, owned, paths) -> Result[None]:
+    """Compatibility wrapper for the object-materializing consumer service path."""
+
+    return _verify_registry_owned(snapshot, source, owned, paths)
 
 
 def _registry_entries(snapshot) -> Result[tuple[RegistryEntry, ...]]:
@@ -352,7 +380,13 @@ def _registry_references(
     return Ok(tuple(bindings))
 
 
-def _project_graph_source(configured, current, paths) -> Result[_GraphProjection]:
+def _project_graph_source(
+    configured,
+    current,
+    paths: ObjectStorePaths,
+    *,
+    materialize_objects: bool = True,
+) -> Result[_GraphProjection]:
     snapshot = current.candidate.snapshot
     if configured.kind is not SourceKind.REGISTRY_GIT:
         native = load_native_source(
@@ -362,7 +396,11 @@ def _project_graph_source(configured, current, paths) -> Result[_GraphProjection
         )
         if isinstance(native, Err):
             return native
-        indexed = _materialize_native(snapshot, native.value, paths)
+        indexed = _index_native(
+            snapshot,
+            native.value,
+            paths if materialize_objects else None,
+        )
         if isinstance(indexed, Err):
             return indexed
         return Ok(
@@ -416,11 +454,11 @@ def _project_graph_source(configured, current, paths) -> Result[_GraphProjection
         or index.collections != owned.value[1]
     ):
         return _error(f"registry {configured.alias} compiled index is stale")
-    materialized = _materialize_registry_owned(
+    materialized = _verify_registry_owned(
         snapshot,
         source.value,
         owned.value[0],
-        paths,
+        paths if materialize_objects else None,
     )
     if isinstance(materialized, Err):
         return materialized
@@ -715,6 +753,56 @@ def _registry_security_evidence(
     return tuple(evidence)
 
 
+def load_read_only_marketplace(
+    effective: EffectiveConfiguration,
+    *,
+    data_root: str,
+) -> Result[MarketplaceCatalog]:
+    """Build the configured marketplace from durable snapshots without object-store mutation.
+
+    This is intentionally narrower than :func:`load_local_consumer_service`: it receives the
+    already-resolved effective configuration from its caller, never rereads configuration, and
+    validates packages into graph/index values without materializing immutable objects.  Object
+    publication remains an install/update concern owned by the consumer service.
+    """
+
+    now = int(time.time())
+    states = []
+    graph_sources = []
+    paths = object_store_paths(data_root)
+    for order, configured in enumerate(
+        source for source in effective.configuration.sources if source.enabled
+    ):
+        source_paths = source_store_paths(data_root, source_instance_id(configured))
+        health: SourceHealth = source_status(
+            SourceStatusRequest(
+                CurrentSourceRequest(source_paths, configured.alias),
+                now,
+                effective.configuration.sync.max_age_seconds,
+            ),
+            read_current_source,
+        )
+        states.append(MarketplaceSourceState(configured, health, order))
+        if health.current is None:
+            continue
+        projected = _project_graph_source(
+            configured,
+            health.current,
+            paths,
+            materialize_objects=False,
+        )
+        if isinstance(projected, Err):
+            return projected
+        graph_sources.append(projected.value.graph)
+    graph = compile_marketplace_graph(
+        tuple(graph_sources),
+        available_capabilities=_CAPABILITIES,
+    )
+    if isinstance(graph, Err):
+        return graph
+    return build_marketplace(graph.value, effective, tuple(states))
+
+
 def load_local_consumer_service(
     *,
     project: str | None,
@@ -733,7 +821,11 @@ def load_local_consumer_service(
         xdg_cache_home=os.environ.get("XDG_CACHE_HOME"),
     )
     loaded = load_configuration(
-        ConfigurationRequest(config_paths, RuntimeOverrides(), content_required=False),
+        ConfigurationRequest(
+            config_paths,
+            RuntimeOverrides(),
+            content_required=configuration is None,
+        ),
         ConfigurationPorts(
             read_configuration,
             write_configuration,
@@ -819,4 +911,8 @@ def load_local_consumer_service(
     )
 
 
-__all__ = ["CONSUMER_RUNTIME_INVALID", "load_local_consumer_service"]
+__all__ = [
+    "CONSUMER_RUNTIME_INVALID",
+    "load_local_consumer_service",
+    "load_read_only_marketplace",
+]

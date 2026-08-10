@@ -11,7 +11,12 @@ from agent_artifacts.configuration.model import (
     SyncSettings,
     UserConfiguration,
 )
-from agent_artifacts.configuration.policy import RuntimeOverrides, apply_configuration, redact_text
+from agent_artifacts.configuration.policy import (
+    RuntimeOverrides,
+    apply_configuration,
+    apply_configuration_for_source_management,
+    redact_text,
+)
 from agent_artifacts.configuration.schema import (
     parse_organization_policy,
     parse_user_configuration,
@@ -127,6 +132,50 @@ class ConfigurationPolicyTest(unittest.TestCase):
                 self.assertTrue(
                     all(item.code.value == "source-policy-denied" for item in result.diagnostics)
                 )
+
+    def test_source_management_can_stage_required_sources_without_authorizing_content(self) -> None:
+        company_only = _config(
+            """{
+              "schema_version":1,
+              "sources":[{"alias":"company","kind":"registry-git","url":"https://git.company.example/agents/company.git","ref":"main","enabled":true}],
+              "default_registry":"company"
+            }"""
+        )
+        policy = _policy(
+            """{
+              "schema_version":1,
+              "required_sources":["company","team"],
+              "allowed_git_hosts":["git.company.example"],
+              "allowed_repository_prefixes":["agents/"]
+            }"""
+        )
+
+        content = apply_configuration(company_only, RuntimeOverrides(), policy)
+        management = apply_configuration_for_source_management(company_only, policy)
+
+        self.assertIsInstance(content, Err)
+        self.assertIsInstance(management, Ok)
+        assert isinstance(content, Err)
+        self.assertEqual(content.diagnostics[0].code.value, "source-policy-denied")
+
+        forbidden_direct = _config(
+            """{
+              "schema_version":1,
+              "sources":[{"alias":"external","kind":"source-git","url":"https://git.company.example/agents/external.git","ref":"main","enabled":true}]
+            }"""
+        )
+        direct_denied = apply_configuration_for_source_management(
+            forbidden_direct,
+            _policy('{"schema_version":1,"allow_direct_sources":false}'),
+        )
+        self.assertIsInstance(direct_denied, Err)
+
+        locked_override = apply_configuration_for_source_management(
+            company_only,
+            _policy('{"schema_version":1,"reporting":{"mode":"disabled"}}'),
+            RuntimeOverrides(reporting_mode=ReportingMode.PROMPT),
+        )
+        self.assertIsInstance(locked_override, Err)
 
     def test_public_reporting_destination_is_denied_and_diagnostics_are_redacted(self) -> None:
         config = _config(

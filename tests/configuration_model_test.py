@@ -23,6 +23,20 @@ class ConfigurationModelTest(unittest.TestCase):
         source = ConfiguredSource(
             SourceAlias("valid"), SourceKind.SOURCE_LOCAL, "/valid", None, True
         )
+        first_git = ConfiguredSource(
+            SourceAlias("first-git"),
+            SourceKind.SOURCE_GIT,
+            "https://example.test/team/artifacts.git",
+            "main",
+            True,
+        )
+        same_origin_different_ref = ConfiguredSource(
+            SourceAlias("second-git"),
+            SourceKind.SOURCE_GIT,
+            "git@EXAMPLE.test:team/artifacts",
+            "release/1.0",
+            True,
+        )
         invalid_constructors = (
             lambda: ConfiguredSource(SourceAlias(""), SourceKind.SOURCE_LOCAL, "/a", None, True),
             lambda: ConfiguredSource(SourceAlias("a"), "local", "/a", None, True),  # type: ignore[arg-type]
@@ -39,6 +53,13 @@ class ConfigurationModelTest(unittest.TestCase):
             lambda: UserConfiguration(2, (source,), None, SyncSettings(), ReportingSettings()),
             lambda: UserConfiguration(
                 1, (source, source), None, SyncSettings(), ReportingSettings()
+            ),
+            lambda: UserConfiguration(
+                1,
+                (first_git, same_origin_different_ref),
+                None,
+                SyncSettings(),
+                ReportingSettings(),
             ),
             lambda: ReportingPolicy("prompt"),  # type: ignore[arg-type]
             lambda: ReportingPolicy(destination=SourceAlias("")),
