@@ -66,7 +66,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
-| TUI03 | Maintainer curation/security UX | TUI02,REG01 | in_progress | `codex/aart-1-0-tui03-maintainer-curation` | pending | Local quality gates pass; publication pending |
+| TUI03 | Maintainer curation/security UX | TUI02,REG01 | in_progress | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / pending merge | First four-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
@@ -96,8 +96,8 @@ Files owned: Maintainer application/read model and TUI stages, focused tests, Ma
 Risks/migrations: all mutations require a verified local checkout and one reviewed Finalize apply;
   conversion warnings and diffs must remain exact; no automatic commit/push; consumer managed
   snapshots and content-addressed objects remain read-only; recovery commands must be explicit
-PR: pending
-CI: local gates pass; remote matrix pending
+PR: #54 ready and mergeable
+CI: first four-job Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -131,7 +131,7 @@ Merge: pending
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; 2× replacement 4-job Python 3.10/3.14 matrices passed |
-| TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper passes; remote matrix pending |
+| TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1210,3 +1210,6 @@ None.
   quality wrapper passes Ruff format/lint over 375 files, mypy over 175 source modules, 1472 unit
   tests, 29 integration tests, 11-step E2E, stdlib-only validation, 86.06% overall coverage,
   `1.0.0a1` packaging, and docs validation.
+- Published ready and mergeable PR #54 from commit `98a0c93`; all four initial push/PR quality jobs
+  passed on Python 3.10 and 3.14. This ledger update records that remote evidence and triggers the
+  final matrix before the protected squash merge.
