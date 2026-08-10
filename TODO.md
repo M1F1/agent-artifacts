@@ -87,6 +87,10 @@ Product requirements:
 - [x] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
       Review/Finalize, descriptions, modes, scopes, and explicit outcomes, documented in
       [`source-management-v1.md`](docs/tui/source-management-v1.md).
+- [x] Migrate the User TUI to qualified federated marketplace rows, canonical multi-item
+      Review/Finalize requests, verified registry security evidence, persistent cart navigation,
+      and explicit no-op/partial/offline/setup outcomes, documented in
+      [`consumer-marketplace-v1.md`](docs/tui/consumer-marketplace-v1.md).
 - [x] Bind reviewed macOS setup recipes to source trust and artifact/recipe/plan digests, retain the
       exact CAS object, execute custom code from a verified private copy, and preserve separate
       payload/setup outcomes, documented in

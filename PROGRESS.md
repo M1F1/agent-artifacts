@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `TUI02`
+- **Next task:** `TUI03`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -64,8 +64,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | complete | `codex/aart-1-0-sec01-risk-baseline` | [#49](https://github.com/M1F1/agent-artifacts/pull/49) / `655ac46` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | pending | Registry remains optional; source health and first-run policy are explicit |
-| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | pending | — | — | Source/trust/security visible |
+| TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
+| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | pending | Local gates pass; PR/CI evidence pending |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
@@ -80,24 +80,25 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: TUI01 — Add first-run source management and health stages
-Branch: codex/aart-1-0-tui01-source-health
-Worktree: /private/tmp/aart-tui01.hXSUvp/worktree
+Task: TUI02 — Migrate consumer marketplace/cart/review/outcomes
+Branch: codex/aart-1-0-tui02-consumer-marketplace
+Worktree: /private/tmp/aart-tui02.y4oij2/worktree
 Started: 2026-08-10
-Bounded contexts: interface wizard state, first-run source selection, source-health projection,
-  organization policy presentation, deferred source-management requests
-Red test and expected failure: first-run recommended/direct/no-source, source management,
-  health/offline/incompatible, organization restrictions, and text/curses Backspace preservation;
-  failed before the source-stage values/module and wizard transition existed
-Focused tests: 45 source/wizard tests pass; 138 discovered TUI tests pass
-Files owned: wizard/source-stage domain, TUI source projections and frontends, focused tests/docs,
-  TODO.md and PROGRESS.md
-Risks/migrations: registry must remain optional unless policy requires it; source mutations must be
-  deferred until Finalize; explicit legacy catalog arguments must remain compatible
-PR: [#52](https://github.com/M1F1/agent-artifacts/pull/52)
-CI: local canonical quality passes on Python 3.11; Python 3.14.6 passes 1423 unit tests, 28
-  integration tests, validation/version, packaging, and docs; four Python 3.10/3.14 implementation
-  jobs pass after the recorded Ruff/XDG fixes; final ledger matrix pending
+Bounded contexts: federated consumer marketplace projection, qualified cart selection, review
+  evidence, canonical install/lifecycle application requests, structured terminal outcomes
+Red test and expected failure: `python -m unittest tests.tui_marketplace_test` failed with the
+  expected `ModuleNotFoundError: agent_artifacts.tui_marketplace`; review later exposed a second Red
+  case where a selected external registry reference had no CAS object and no pinned acquisition
+  path; both are now covered by regression tests
+Focused tests: 36 consumer/marketplace/frontend tests and 167 discovered TUI/consumer tests pass;
+  the complete local quality wrapper passes on the implementation tree
+Files owned: consumer TUI read model/application adapter, user text/curses frontends, focused tests
+  and TUI documentation, TODO.md and PROGRESS.md
+Risks/migrations: source union must replace the one-source legacy bridge without unqualified
+  shadowing; no command-stdout parsing; basket/back state and Review/Finalize proof remain exact;
+  external registry objects resolve lazily only from a matching committed lock and exact digest
+PR: pending
+CI: pending
 Merge: pending
 ```
 
@@ -130,6 +131,7 @@ Merge: pending
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
+| TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; CI pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1098,3 +1100,58 @@ None.
   formatter and ambient-XDG test-isolation fixes; no product behavior changed in either CI fix.
 - PR #52 is ready and mergeable with the complete implementation diff. This ledger commit records
   the remote evidence, and a final four-job matrix reruns before the protected squash merge.
+
+### 2026-08-10 — TUI01 merged; TUI02 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #52 as `62cadb5`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, and preservation of the unrelated
+  root-worktree files.
+- Removed only the clean TUI01 temporary worktree and created isolated TUI02 from exact merge
+  `62cadb5`.
+- Scoped TUI02 to replacing the transitional one-source consumer bridge with the configured
+  federated marketplace union, qualified collision handling, trust/security/effect evidence,
+  persistent basket/review state, canonical install/lifecycle application requests, and complete
+  terminal outcomes for both text and curses frontends.
+
+### 2026-08-10 — TUI02 marketplace projection Red/Green slice
+
+- Recorded the expected missing-module Red failure before adding the consumer projection.
+- Added an IO-free qualified artifact row model joining marketplace source/trust evidence,
+  per-harness compatibility, normalized security evidence, lifecycle state, deterministic filters,
+  actual-mode preview, and qualified basket reconciliation.
+- Passed the first five focused projection tests; canonical multi-item plans, setup queue,
+  structured terminal outcomes, and text/curses integration remain intentionally uncommitted.
+
+### 2026-08-10 — TUI02 canonical consumer application and frontends
+
+- Added a frozen consumer request/review/outcome model and application facade over the canonical
+  install, lifecycle, setup, marketplace, security, state, and CAS contexts. Multi-item Review is
+  sequentially projected, binds exact qualified versions/digests/destinations/modes, and Finalize
+  reuses typed domain plans rather than parsing command output.
+- Replaced the User text/curses transitional bridge with the configured source union. Both
+  frontends preserve qualified cart, cursor, scroll, and earlier wizard values across Back;
+  finalize only after the source-selection write succeeds and after curses teardown.
+- Added explicit no-op/succeeded/partial/failed outcomes with per-target counts and details, plus a
+  separately authorized and reviewed sequential setup queue whose failures retain exact retry
+  commands without rolling back successful payload installation.
+- Runtime composition supports persisted or reviewed prospective source configuration, publishes
+  native and registry-owned packages to the immutable store, rebinds registry coordinates without
+  losing upstream provenance, and accepts optional security evidence only after exact registry,
+  input-digest, document, attestation, and local-trust verification.
+
+### 2026-08-10 — TUI02 review and local quality gates
+
+- Applied the repository `code-review` skill. Review found that external artifacts were visible
+  from `aart.index.json` but an empty CAS had no consumer acquisition path. The runtime now resolves
+  only the selected external reference through its matching committed `aart.lock.json`, fetches the
+  immutable locked commit under a managed source lock, validates the native package against lock
+  and index, and atomically publishes the verified object. Browse remains fetch-free, cache hits do
+  not fetch, offline cache misses are explicit, and registries containing references only are valid.
+- Added fail-closed coverage for stale/missing lock/index evidence, mismatched registry identity,
+  acquisition failure, offline cache miss, exact pinned Git request, cache reuse, and reference-only
+  registries. No open review findings remain.
+- Passed 36 focused consumer/marketplace/frontend tests and 167 discovered TUI/consumer tests.
+  The final exact-tree `make quality` run passed Ruff format on 367 files, Ruff lint, mypy on 172
+  source files, 1452 unit tests, 28 integration tests, the 11-step shell E2E, stdlib-only validation,
+  86.26% overall branch coverage (87.98% across the focused consumer contexts), `1.0.0a1`
+  wheel/import, docs, and repository non-mutation.

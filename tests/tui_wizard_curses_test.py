@@ -5,12 +5,22 @@ from __future__ import annotations
 import curses
 import io
 import pathlib
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 from agent_artifacts import tui
+from agent_artifacts.consumer import (
+    ConsumerApplicationService,
+    ConsumerContext,
+    LocalConsumerAdapter,
+)
+from agent_artifacts.domain.result import Ok
 from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
+from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.tui_sources import build_source_stage
 from agent_artifacts.wizard import (
     BasketItem,
     WizardInput,
@@ -22,6 +32,8 @@ from agent_artifacts.wizard import (
 from agent_artifacts.wizard import (
     select as wizard_select,
 )
+from tests.canonical_symlink_test import _fixture
+from tests.marketplace_fixtures import source_state
 from tests.wizard_state_test import source_selection
 
 FIXTURES = str(pathlib.Path(__file__).resolve().parent / "fixtures")
@@ -153,6 +165,64 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
 
 
 class CursesWizardFlowTests(unittest.TestCase):
+    def test_canonical_consumer_finalizes_after_curses_teardown_without_legacy_dispatch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = _fixture(Path(raw), "skill")
+            project, _checkout, paths, location, _request, catalog, effective = fixture
+            service = ConsumerApplicationService(
+                ConsumerContext(catalog, effective, builtin(), location, paths),
+                LocalConsumerAdapter(),
+            )
+            configured = effective.configuration.sources[0]
+            state = source_state(configured, "direct-source", display_order=0)
+            source_view = build_source_stage(
+                effective.configuration,
+                effective.policy,
+                {configured.alias: state.health},
+                first_run=False,
+            )
+            assert isinstance(source_view, Ok), source_view
+            inside_wrapper = {"value": False}
+
+            def wrapper(callback):
+                inside_wrapper["value"] = True
+                callback(object())
+                inside_wrapper["value"] = False
+
+            singles = iter((0, 0))  # User, Install
+            multis = iter(((0,), (0,), (0,)))  # source, profile, artifact
+            output = io.StringIO()
+            with (
+                redirect_stdout(output),
+                mock.patch.object(curses, "wrapper", side_effect=wrapper),
+                mock.patch.object(curses, "curs_set", return_value=None),
+                mock.patch.object(
+                    tui,
+                    "_curses_singleselect",
+                    side_effect=lambda *_args, **_kwargs: next(singles),
+                ),
+                mock.patch.object(
+                    tui,
+                    "_curses_multiselect",
+                    side_effect=lambda *_args, **_kwargs: next(multis),
+                ),
+                mock.patch.object(tui, "_curses_install_scope", return_value="project"),
+                mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
+                mock.patch.object(tui, "_curses_review", return_value=True),
+                mock.patch.object(tui, "_dispatch_result") as legacy_dispatch,
+            ):
+                code = tui._run_curses(
+                    project=str(project),
+                    source_stage_view=source_view.value,
+                    consumer_service=service,
+                )
+
+            self.assertFalse(inside_wrapper["value"])
+            self.assertEqual(code, 0)
+            legacy_dispatch.assert_not_called()
+            self.assertIn("Install outcome: succeeded", output.getvalue())
+            self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
+
     def test_review_back_keeps_basket_and_finalize_dispatches_once_after_teardown(self):
         inside_wrapper = {"value": False}
 
