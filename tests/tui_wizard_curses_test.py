@@ -194,6 +194,7 @@ class CursesWizardFlowTests(unittest.TestCase):
             output = io.StringIO()
             with (
                 redirect_stdout(output),
+                mock.patch.object(tui.sys, "platform", "darwin"),
                 mock.patch.object(curses, "wrapper", side_effect=wrapper),
                 mock.patch.object(curses, "curs_set", return_value=None),
                 mock.patch.object(

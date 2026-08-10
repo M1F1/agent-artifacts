@@ -60,13 +60,14 @@ class TuiConsumerTextTest(unittest.TestCase):
             assert isinstance(payload, Ok), payload
             writes = []
 
-            code = tui._run_canonical_setup_queue(
-                service,
-                reviewed.value,
-                payload.value,
-                read=_scripted(["y", "y", "y"]),
-                write=writes.append,
-            )
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_canonical_setup_queue(
+                    service,
+                    reviewed.value,
+                    payload.value,
+                    read=_scripted(["y", "y", "y"]),
+                    write=writes.append,
+                )
 
             self.assertEqual(code, 0)
             rendered = "\n".join(writes)
@@ -110,14 +111,15 @@ class TuiConsumerTextTest(unittest.TestCase):
                 order.append("finalizer")
                 return Ok(object())
 
-            code = tui._run_text(
-                _scripted(["", "1", "1", "1", "install", "1", "", "1", "y"]),
-                lambda _line: None,
-                project=str(project),
-                source_stage_view=stage.value,
-                source_finalizer=finalizer,
-                consumer_service_factory=factory,
-            )
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_text(
+                    _scripted(["", "1", "1", "1", "install", "1", "", "1", "y"]),
+                    lambda _line: None,
+                    project=str(project),
+                    source_stage_view=stage.value,
+                    source_finalizer=finalizer,
+                    consumer_service_factory=factory,
+                )
 
             self.assertEqual(code, 0)
             self.assertEqual(order, ["factory", "finalizer"])
@@ -139,7 +141,10 @@ class TuiConsumerTextTest(unittest.TestCase):
             assert isinstance(stage, Ok), stage
             writes = []
 
-            with mock.patch.object(tui, "_dispatch_result") as legacy_dispatch:
+            with (
+                mock.patch.object(tui.sys, "platform", "darwin"),
+                mock.patch.object(tui, "_dispatch_result") as legacy_dispatch,
+            ):
                 code = tui._run_text(
                     _scripted(["", "1", "1", "1", "install", "1", "", "1", "y"]),
                     writes.append,
@@ -176,13 +181,28 @@ class TuiConsumerTextTest(unittest.TestCase):
             assert isinstance(stage, Ok), stage
             writes = []
 
-            code = tui._run_text(
-                _scripted(["", "1", "1", "1", "install", "1", "", "1", "back", "", "y"]),
-                writes.append,
-                project=str(project),
-                source_stage_view=stage.value,
-                consumer_service=service,
-            )
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_text(
+                    _scripted(
+                        [
+                            "",
+                            "1",
+                            "1",
+                            "1",
+                            "install",
+                            "1",
+                            "",
+                            "1",
+                            "back",
+                            "",
+                            "y",
+                        ]
+                    ),
+                    writes.append,
+                    project=str(project),
+                    source_stage_view=stage.value,
+                    consumer_service=service,
+                )
 
             self.assertEqual(code, 0)
             rendered = "\n".join(writes)

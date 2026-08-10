@@ -1155,3 +1155,15 @@ None.
   source files, 1452 unit tests, 28 integration tests, the 11-step shell E2E, stdlib-only validation,
   86.26% overall branch coverage (87.98% across the focused consumer contexts), `1.0.0a1`
   wheel/import, docs, and repository non-mutation.
+
+### 2026-08-10 — TUI02 initial CI platform-fixture fix
+
+- Published implementation commit `703af53` and opened ready PR #53 referencing the 1.0 umbrella
+  issue without closing it.
+- All four push/pull-request Python 3.10/3.14 jobs passed format, lint, and type checking, then
+  reported the same five User-flow test failures. The product correctly selected Linux on the
+  GitHub runner while the synthetic canonical artifacts and macOS setup fixture declared only
+  Darwin compatibility, so the wizard correctly disabled them before Review.
+- Made those Darwin-specific frontend tests pin their intended simulated platform explicitly rather
+  than inherit the host OS. The 12 affected text/curses tests pass both normally and when the outer
+  test process is forced to report Linux; product platform detection remains unchanged.
