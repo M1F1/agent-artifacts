@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `STATE01`
+- **Next task:** `INS01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -55,8 +55,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | MKT01 | Federated marketplace and trust | C02,CFG01,CAS01 | complete | `codex/aart-1-0-mkt01-federated-marketplace` | [#40](https://github.com/M1F1/agent-artifacts/pull/40) / `85a5a5f` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | IMP01 | Importer contract and legacy catalog importer | MKT01 | complete | `codex/aart-1-0-imp01-legacy-importer` | [#41](https://github.com/M1F1/agent-artifacts/pull/41) / `e3157d3` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | IMP02 | Native references/promotion/upstream locks | IMP01,P03 | complete | `codex/aart-1-0-imp02-native-promotion` | [#42](https://github.com/M1F1/agent-artifacts/pull/42) / `ab8ae2b` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| REG01 | Maintainer registry commands/quality gate | IMP02 | complete | `codex/aart-1-0-reg01-registry-commands` | [#43](https://github.com/M1F1/agent-artifacts/pull/43) / `ba33903` | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending before squash merge |
-| STATE01 | Manifest v2 and state migration | REG01 | pending | — | — | Backup/dry-run/rollback |
+| REG01 | Maintainer registry commands/quality gate | IMP02 | complete | `codex/aart-1-0-reg01-registry-commands` | [#43](https://github.com/M1F1/agent-artifacts/pull/43) / `7351861` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
+| STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `ba52a15` | First four-job Python 3.10/3.14 CI matrix passed; final ledger matrix pending before squash merge |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | pending | — | — | Immutable reviewed plan |
 | INS02 | Durable managed Symlink | INS01 | pending | — | — | Explicit atomic retarget only |
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | pending | — | — | Recorded subscription only |
@@ -80,21 +80,20 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: REG01 — Maintainer registry commands and quality gate
-Branch: codex/aart-1-0-reg01-registry-commands
-Worktree: /tmp/aart-reg01.oiGhEu/worktree
-Started: 2026-08-07
-Bounded contexts: Registry command/query plans; deterministic templates and compatibility/audit
-  reports; explicit local-workspace filesystem adapter; CLI mapping and structured outcomes
-Red test and expected failure: four missing-module collection errors plus three CLI failures because
-  registry command/planning/IO modules, actions, Request fields, and dispatch do not exist; two
-  dependency/no-Git-mutation boundary tests pass
-Focused tests: 126 pass + 206 subtests
-Files owned: new registry command/application/IO modules, CLI/Request wiring, registry templates,
-  CI template, tests/docs, TODO.md, PROGRESS.md
-Risks/migrations: check/diff must remain read-only; mutation must reject managed consumer snapshots,
-  symlinks, non-Git/non-writable targets, and stale review plans; no code may commit or push Git
-PR: #43 ready; implementation commit ba33903
+Task: STATE01 — Installation manifest v2 and 0.1.x state migration
+Branch: codex/aart-1-0-state01-state-migration
+Worktree: /tmp/aart-state01.LjLTyM/worktree
+Started: 2026-08-10
+Bounded contexts: strict installation-state schema; legacy evidence resolution and pure migration
+  planning; project/user path policy; atomic state store with backup, rollback, and stale-plan checks
+Red test and expected failure: three expected collection errors because the install-state domain,
+  migration application service, and state-store adapter do not exist
+Focused tests: 28 pass + 8 subtests
+Files owned: new install-state domain/application/IO modules, migration fixtures/tests/docs,
+  TODO.md, PROGRESS.md, narrow exports and path integration where required
+Risks/migrations: state must never retain credentials or raw setup output; user state changes roots;
+  project state stays in place; apply must be idempotent and rollback must survive partial failure
+PR: #44 ready; implementation commit ba52a15
 CI: first four-job Python 3.10/3.14 matrix passed; final ledger rerun pending
 Merge: pending
 ```
@@ -119,6 +118,7 @@ Merge: pending
 | IMP01 | 42 pass | 267 files pass | pass | 113 source files pass | 1130 pass | 28 pass | 11-step pass | pass | 87.78% overall; 90.61% importer/application/IO contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1130 pass; 2× 4-job Python 3.10/3.14 pass |
 | IMP02 | 31 pass + 2 subtests | 281 files pass | pass | 118 source files pass | 1161 pass | 28 pass | 11-step pass | pass | 87.72% overall; 85.68% focused context | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1161 pass; first 4-job Python 3.10/3.14 CI matrix passed |
 | REG01 | 126 pass + 206 subtests | 298 files pass | pass | 127 source files pass | 1197 pass | 28 pass | 11-step pass | pass | 86.92% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1197 pass; first 4-job Python 3.10/3.14 matrix passed |
+| STATE01 | 28 pass + 8 subtests | 309 files pass | pass | 135 source files pass | 1225 pass | 28 pass | 11-step pass | pass | 86.59% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1225 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -641,6 +641,53 @@ None.
 ### 2026-08-10 — REG01 implementation CI
 
 - Published implementation commit `ba33903` and opened ready PR #43 referencing the 1.0 umbrella
+  issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
+
+### 2026-08-10 — REG01 merged; STATE01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #43 as `7351861`; verified the
+  merged PR, exact `origin/main`, and remote branch deletion.
+- Removed only the clean REG01 temporary worktree and created the isolated STATE01 worktree from
+  exact `7351861`; unrelated root-worktree files remain untouched.
+- Scoped STATE01 to strict schema-v2 installation evidence, explicit legacy source resolution,
+  project/user path policy, and reviewed atomic migration with backup and rollback.
+
+### 2026-08-10 — STATE01 Red
+
+- Added contracts for canonical v2 round-trip and corruption, credential-free source evidence,
+  version/digest/profile/scope/mode/effect proof, deterministic project/user migration planning,
+  missing/ambiguous legacy sources, proof mismatch, backup, stale review, idempotent apply, exact
+  rollback, and partial failure preservation.
+- Confirmed Red with three expected collection errors because the install-state domain/schema,
+  migration application service, and local state-store adapter do not exist.
+
+### 2026-08-10 — STATE01 Green, code review, and local gates
+
+- Implemented canonical manifest v2 with qualified source/subscription/commit evidence, artifact
+  SemVer and manifest/payload/object digests, profile/scope/requested mode, per-effect actual-mode
+  and ownership proof, and non-secret setup-state references.
+- Added pure project/user path policy and explicit legacy candidate resolution; project state stays
+  in place while user state moves from the home-root legacy path into the platform data root.
+- Added reviewed prepare/apply/rollback services and a bounded no-follow filesystem adapter with
+  digest-bound plans, private full-digest backups, journals, exclusive locking, atomic writes,
+  idempotence, stale detection, and compensation for post-replace/post-unlink/apply/rollback faults.
+- The `code-review` skill added regression coverage for Git subscription safety, forged reviewed
+  plans, legacy symlink reinterpretation, merge identity binding, duplicate/unknown legacy JSON,
+  global effect ownership, symlink state files, and compensation after partial mutations. No open
+  review findings remain.
+- The first full quality attempt stopped at one Ruff import-order finding in the narrow application
+  export. Fixed it mechanically, then reran the entire gate rather than only the failed step.
+- Passed Ruff format on 309 files, Ruff lint, mypy on 135 source files, 1225 unit tests, 28
+  integration tests, 11-step E2E, validation/version checks, 86.59% branch coverage, wheel
+  build/import, docs checks, and a second 1225-test run on Python 3.14.
+
+### 2026-08-10 — STATE01 implementation CI
+
+- Published implementation commit `ba52a15` and opened ready PR #44 referencing the 1.0 umbrella
   issue without closing it.
 - All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
   PR is mergeable with a clean merge state.

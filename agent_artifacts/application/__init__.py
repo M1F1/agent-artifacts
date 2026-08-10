@@ -23,6 +23,7 @@ from .sources import (
     source_status,
     sync_source,
 )
+from .state_migration import StateMigrationService
 from .store import (
     ReferenceUpdatePorts,
     ReferenceUpdateRequest,
@@ -43,6 +44,7 @@ __all__ = [
     "ReferenceUpdatePorts",
     "ReferenceUpdateRequest",
     "StoreGcPorts",
+    "StateMigrationService",
     "collect_garbage",
     "finalize_legacy_import",
     "finalize_registry_mutation",
