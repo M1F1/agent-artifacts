@@ -13,14 +13,15 @@
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
 - **Branch:** `codex/remove-legacy-root-catalog`
-- **Status:** `CB01` in progress; this addendum does not modify frozen `v1.0.0` release evidence.
+- **Status:** `CB01` locally complete and pushed; this addendum does not modify frozen `v1.0.0`
+  release evidence.
 - **Last updated:** 2026-08-11
-- **Next checkpoint:** commit/push CB01 for review, then create/link its post-1.0 issue before
-  opening a PR. Do not merge/tag/release as part of this checkpoint.
+- **Next checkpoint:** create/link the post-1.0 issue before opening a CB01 review PR. Do not
+  merge/tag/release as part of this checkpoint.
 
 | ID | Task | Status | Evidence / next action |
 |---|---|---|---|
-| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | in_progress | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes; commit/push remain. |
+| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | complete | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes. Locally committed/pushed as `9bdb24d`; a post-1.0 issue and review PR remain before merge. |
 | LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | pending | Keep separate from CB01; legacy lifecycle commands remain explicit compatibility adapters until this task passes its own E2E matrix. |
 | SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | pending | The current store remains origin-keyed for compatibility; CB01 rejects a second ref for the same Git origin rather than sharing a pointer. Add a versioned migration/rebind before enabling multi-ref sources. |
 | CFG02 | Atomic source-management configuration writes | pending | Add a configuration lock plus expected-digest CAS. The current post-sync re-read detects ordinary drift but cannot prevent a writer that races between that read and atomic replacement. |
@@ -59,6 +60,8 @@
   tracking ref. Both fixes have focused real-Git/configuration/TUI regressions.
 - Final local `make quality` passed after all review corrections: Ruff format/lint, mypy on 193
   source files, all unit tests, integration/E2E, validation, coverage, packaging, and docs.
+- Committed and pushed the locally complete CB01 implementation as `9bdb24d`
+  (`codex/remove-legacy-root-catalog`). No issue/PR, merge, tag, or release was created.
 
 ## Status rules
 
@@ -133,7 +136,7 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: CB01 — post-v1.0.0 catalog boundary and source onboarding
+Task: CB01 — post-v1.0.0 catalog boundary and source onboarding (locally complete)
 Branch: codex/remove-legacy-root-catalog
 Worktree: /private/tmp/aart-catalog-cleanup.V7N3iV/worktree
 Started: 2026-08-11
@@ -150,6 +153,7 @@ Files owned: tool code/tests, executable-boundary docs, post-v1 plan/TODO/PROGRE
 Risks/migrations: source sync must precede config write; source refs remain origin-keyed until SRC02;
   configuration writes need CAS/locking in CFG02; content remains fail-closed until required
   sources are complete; browse must not materialize CAS
+Commit: `9bdb24d` pushed to `origin/codex/remove-legacy-root-catalog`
 PR: not opened; a new post-1.0 issue must be linked before review PR creation
 CI: local `make quality` passed after final corrections (Ruff format/lint, mypy on 193 source
   files, all unit tests, integration/E2E, validation, coverage, packaging, and docs)
