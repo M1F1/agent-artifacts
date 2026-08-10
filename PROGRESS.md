@@ -58,7 +58,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | REG01 | Maintainer registry commands/quality gate | IMP02 | complete | `codex/aart-1-0-reg01-registry-commands` | [#43](https://github.com/M1F1/agent-artifacts/pull/43) / `7351861` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | STATE01 | Manifest v2 and state migration | REG01 | complete | `codex/aart-1-0-state01-state-migration` | [#44](https://github.com/M1F1/agent-artifacts/pull/44) / `3affea4` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | INS01 | Canonical object install with Copy | STATE01,MKT01,CAS01 | complete | `codex/aart-1-0-ins01-canonical-copy` | [#45](https://github.com/M1F1/agent-artifacts/pull/45) / `314e5e0` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
-| INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | pending | Local gates pass; PR/CI/merge pending |
+| INS02 | Durable managed Symlink | INS01 | complete | `codex/aart-1-0-ins02-managed-symlink` | [#46](https://github.com/M1F1/agent-artifacts/pull/46) / pending | First four-job Python 3.10/3.14 CI matrix passed; merge pending |
 | LIFE01 | Status/update/check/uninstall lifecycle | INS02 | pending | — | — | Recorded subscription only |
 | SET01 | Setup trust/digest/policy integration | LIFE01 | pending | — | — | Separate payload/setup outcomes |
 | SEC01 | Zero-dependency risk baseline | SET01,P02,P03 | pending | — | — | Evidence, never a “safe” claim |
@@ -93,8 +93,8 @@ Files owned: installation/link domain, application and local adapter extensions,
   Symlink fixtures/tests/docs, TODO.md, PROGRESS.md, narrow exports where required
 Risks/migrations: managed links must target exact CAS objects outside the executable environment;
   source sync must not retarget; foreign/replaced links must not be followed or silently removed
-PR: pending after push
-CI: local Python 3.11 and Python 3.14.6 gates pass; GitHub matrix pending
+PR: #46 ready and mergeable
+CI: local Python 3.11/Python 3.14.6 gates and first four-job GitHub matrix pass
 Merge: pending
 ```
 
@@ -120,7 +120,7 @@ Merge: pending
 | REG01 | 126 pass + 206 subtests | 298 files pass | pass | 127 source files pass | 1197 pass | 28 pass | 11-step pass | pass | 86.92% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1197 pass; first 4-job Python 3.10/3.14 matrix passed |
 | STATE01 | 28 pass + 8 subtests | 309 files pass | pass | 135 source files pass | 1225 pass | 28 pass | 11-step pass | pass | 86.59% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14 all 1225 pass; first 4-job Python 3.10/3.14 matrix passed |
 | INS01 | 27 pass | 315 files pass | pass | 139 source files pass | 1243 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1243 pass; first 4-job Python 3.10/3.14 matrix passed |
-| INS02 | 55 pass | 316 files pass | pass | 139 source files pass | 1252 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1252 pass; GitHub CI pending |
+| INS02 | 55 pass | 316 files pass | pass | 139 source files pass | 1252 pass | 28 pass | 11-step pass | pass | 86.12% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1252 pass; first 4-job Python 3.10/3.14 matrix passed |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -779,3 +779,12 @@ None.
   source files, 1252 unit tests, 28 integration tests, the 11-step shell E2E, validation/version
   checks, 86.12% branch coverage, `1.0.0a1` wheel/import, docs, and repository non-mutation. All
   1252 tests also pass on Python 3.14.6; two pre-existing HTTP cleanup ResourceWarnings are nonfatal.
+
+### 2026-08-10 — INS02 implementation CI
+
+- Published reviewed implementation commit `55720ce` and opened ready PR #46 referencing the 1.0
+  umbrella issue without closing it.
+- All four push/pull-request quality jobs passed on Python 3.10 and 3.14 without a CI-only fix; the
+  PR is mergeable with a clean merge state.
+- Recorded the evidence in this ledger. A final four-job matrix reruns on this documentation-only
+  commit before the protected squash merge.
