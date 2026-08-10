@@ -7,7 +7,7 @@
 PYTHON ?= python
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration e2e wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-set
+.PHONY: test unit integration e2e system-matrix wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-set
 
 # Backwards-compatible aggregate. The Python discovery remains the broad unit/regression gate.
 test: unit e2e
@@ -20,6 +20,9 @@ integration:
 
 e2e:
 	$(QUALITY) e2e
+
+system-matrix:
+	$(PYTHON) scripts/system_matrix.py
 
 # Stamp the git commit, then build the stdlib wheel into dist/.
 wheel:
