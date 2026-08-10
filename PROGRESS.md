@@ -65,7 +65,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | SEC02 | Optional out-of-process analyzers | SEC01 | complete | `codex/aart-1-0-sec02-analyzers` | [#50](https://github.com/M1F1/agent-artifacts/pull/50) / `524ff38` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | SEC03 | Attestations/bundle aggregation/policy | SEC02,C02,REG01 | complete | `codex/aart-1-0-sec03-attestations-policy` | [#51](https://github.com/M1F1/agent-artifacts/pull/51) / `feecf26` | Two four-job Python 3.10/3.14 CI matrices passed; squash merge and branch deletion verified |
 | TUI01 | First-run source management/health | MKT01,REG01,SEC03 | complete | `codex/aart-1-0-tui01-source-health` | [#52](https://github.com/M1F1/agent-artifacts/pull/52) / `62cadb5` | Two final four-job Python 3.10/3.14 CI matrices passed after recorded format/test-isolation fixes; squash merge and branch deletion verified |
-| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | pending | Local gates pass; PR/CI evidence pending |
+| TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / pending merge | First replacement four-job Python 3.10/3.14 CI matrix passed after the recorded platform-fixture fix; final ledger matrix pending |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | pending | — | — | Review/Finalize boundary |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | pending | — | — | Disabled without destination |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | pending | — | — | Approved target: public `M1F1/agent-artifacts-registry`; preflight required |
@@ -97,8 +97,9 @@ Files owned: consumer TUI read model/application adapter, user text/curses front
 Risks/migrations: source union must replace the one-source legacy bridge without unqualified
   shadowing; no command-stdout parsing; basket/back state and Review/Finalize proof remain exact;
   external registry objects resolve lazily only from a matching committed lock and exact digest
-PR: pending
-CI: pending
+PR: #53 ready and mergeable
+CI: first replacement four-job Python 3.10/3.14 matrix passed after the recorded test-only
+  platform-fixture fix; final ledger matrix pending
 Merge: pending
 ```
 
@@ -131,7 +132,7 @@ Merge: pending
 | SEC02 | 43 pass | 339 files pass | pass | 155 source files pass | 1374 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.45% overall; 94.91% analyzer contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1374 pass; first 4-job Python 3.10/3.14 matrix passed |
 | SEC03 | 159 pass | 353 files pass | pass | 164 source files pass | 1400 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.29% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1400 pass; first 4-job Python 3.10/3.14 matrix passed |
 | TUI01 | 45 pass; 138 TUI pass | 356 files pass on Ruff 0.12.2 and 0.16.2 | pass | 166 source files pass | 1423 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 96.45% source values, 100% finalizer | `1.0.0a1` wheel/import pass | pass | local Python 3.14.6 all 1423 pass; first 4-job Python 3.10/3.14 matrix passed |
-| TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; CI pending |
+| TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; first replacement 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1167,3 +1168,10 @@ None.
 - Made those Darwin-specific frontend tests pin their intended simulated platform explicitly rather
   than inherit the host OS. The 12 affected text/curses tests pass both normally and when the outer
   test process is forced to report Linux; product platform detection remains unchanged.
+
+### 2026-08-10 — TUI02 implementation CI
+
+- All four replacement push/pull-request quality jobs passed on Python 3.10 and 3.14 after the
+  platform-fixture fix; no product behavior changed in the CI correction.
+- PR #53 is ready and mergeable with the reviewed implementation diff. This ledger commit records
+  the remote evidence, and a final four-job matrix reruns before the protected squash merge.
