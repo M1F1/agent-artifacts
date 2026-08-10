@@ -24,6 +24,68 @@ from tests.marketplace_fixtures import (
 
 
 class MarketplaceE2ETest(unittest.TestCase):
+    def test_public_company_and_team_sources_compile_without_shadowing(self) -> None:
+        public = configured_source(
+            "public",
+            SourceKind.REGISTRY_GIT,
+            location="https://github.com/example/public-registry.git",
+        )
+        company = configured_source(
+            "company",
+            SourceKind.REGISTRY_GIT,
+            location="git@git.company.example:agents/registry.git",
+        )
+        team = configured_source(
+            "team",
+            SourceKind.SOURCE_GIT,
+            location="https://git.company.example/team/native.git",
+        )
+        approved = ReviewRecord("approved", "company-v1")
+        compiled = graph(
+            (public, "public-registry", (artifact("public-registry", "discover"),)),
+            (
+                company,
+                "company-registry",
+                (artifact("company-registry", "review", review=approved),),
+            ),
+            (team, "team-source", (artifact("team-source", "review"),)),
+        )
+
+        catalog = build_marketplace(
+            compiled,
+            effective_configuration(
+                (public, company, team),
+                default_registry="company",
+                company_sources=(
+                    CompanyReviewedSource(
+                        SourceId("company-registry"),
+                        "git.company.example",
+                        "agents/registry",
+                    ),
+                ),
+            ),
+            (
+                source_state(public, "public-registry", display_order=0),
+                source_state(company, "company-registry", display_order=1),
+                source_state(team, "team-source", display_order=2),
+            ),
+        )
+
+        assert isinstance(catalog, Ok), catalog
+        self.assertEqual(
+            tuple(source.alias.value for source in catalog.value.sources),
+            ("company", "public", "team"),
+        )
+        self.assertEqual(
+            tuple(item.coordinate.source.value for item in catalog.value.items),
+            ("company", "public", "team"),
+        )
+        ambiguous = resolve_artifact(
+            catalog.value,
+            ArtifactQuery(ArtifactIdentity("skill", "review")),
+        )
+        self.assertIsInstance(ambiguous, Err)
+
     def test_two_real_runtime_sources_preserve_collision_and_resolve_qualified_company_item(
         self,
     ) -> None:

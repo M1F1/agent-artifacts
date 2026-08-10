@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `E2E01`
+- **Next task:** `REL01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -70,8 +70,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) | Local and replacement four-job Python 3.10/3.14 matrices pass; final ledger matrix pending |
-| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
+| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) / `b05fd42` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
+| E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | complete | `codex/aart-1-0-e2e01-system-matrix` | pending | Local 13-scenario hermetic matrix and complete quality gates passed; merge pending |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
 
 ## Current-task template
@@ -80,25 +80,22 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: DIST01 — Prove local editable/local-wheel and future Nexus readiness
-Branch: codex/aart-1-0-dist01-distribution
-Worktree: /private/tmp/aart-dist01.BUUQhs/worktree
+Task: E2E01 — Run the complete AART 1.0 system matrix and fault injection
+Branch: codex/aart-1-0-e2e01-system-matrix
+Worktree: /private/tmp/aart-e2e01.sFlWee/worktree
 Started: 2026-08-10
-Bounded contexts: distribution wheel/resources, isolated local install smoke runner, documented
-  local editable/wheel and future-index upgrade boundary
-Red test and expected failure: `python -m unittest tests.upgrade_test tests.packaging_test
-  tests.distribution_e2e_test` produced the expected missing `plan_upgrade`, missing hermetic
-  `scripts/distribution_smoke.py`, and absent wheel-resource allowlist failures
-Focused tests: 86 pass across upgrade/CLI rules, install-state schema, wheel packaging, and the
-  editable-to-wheel lifecycle smoke
-Files owned: upgrade command/parser/request/rules, local source revision evidence, wheel builder
-  and packaging checker, distribution smoke/test, README/distribution/SPEC docs, PROGRESS.md
-Risks/migrations: no real index/home/network; wheel cannot contain operational registry/state;
-  environment recreation does not invalidate immutable managed object Symlinks; legacy `local`
-  state remains readable alongside snapshot-bound `local:<sha256>` evidence
-PR: #58 — https://github.com/M1F1/agent-artifacts/pull/58
-CI: replacement push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
-Merge: MIG01 `e70ec62`; DIST01 pending
+Bounded contexts: cross-context acceptance runner over Source, Marketplace, Import, Registry,
+  Installation, Setup, Security, Reporting, Migration, and Interface boundaries
+Red test and expected failure: focused runner suite produced five expected missing
+  `scripts/system_matrix.py` errors; the new three-source characterization also exposed one
+  incorrect projection-field assumption before implementation
+Focused tests: 8 pass, including one complete 13-scenario/18-acceptance-test matrix run
+Files owned: hermetic system-matrix runner/tests/fixtures, system-matrix documentation, PROGRESS.md
+Risks/migrations: runner must not access real home/keychain/credentials or external network;
+  per-scenario timeouts, deterministic receipts, recovery commands, and cleanup are mandatory
+PR: pending
+CI: local Python 3.11 complete quality matrix passed; remote matrix pending
+Merge: DIST01 `b05fd42`; E2E01 pending
 ```
 
 ## Quality-gate history
@@ -135,7 +132,8 @@ Merge: MIG01 `e70ec62`; DIST01 pending
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 | MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
-| DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | replacement 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
+| DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
+| E2E01 | 8 focused + 13 scenarios/18 acceptance tests | 410 files pass | pass | 188 source files pass | 1553 pass | 39 pass | 11-step pass | strict catalog/runtime + version pass | 85.56% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import pass | pass | local Python 3.11 complete quality matrix passed; remote matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1446,3 +1444,40 @@ None.
 - Published focused correction `f8b7f9c`. All four replacement push and pull-request quality jobs
   passed on Python 3.10 and 3.14 in Actions runs `31422957299` and `31422960142`. This ledger update
   records that evidence and triggers the final matrix before protected squash merge.
+
+### 2026-08-10 — DIST01 merged; E2E01 started
+
+- Observed all four final Python 3.10/3.14 jobs pass in Actions runs `31423170240` and
+  `31423177973`, then squash-merged ready PR #58 as `b05fd42`; verified the merged PR, exact
+  `origin/main`, remote branch deletion, and preservation of unrelated root-worktree files.
+- Removed only the clean DIST01 temporary worktree and created isolated E2E01 from exact merge
+  `b05fd42`. Scoped the task to one auditable, hermetic runner over all thirteen named system and
+  fault-injection scenarios, with isolated processes, bounded runtime, deterministic evidence,
+  actionable recovery commands, and cleanup independent of the real home or credentials.
+
+### 2026-08-10 — E2E01 Red
+
+- Added the complete ordered scenario contract plus characterization coverage for a simultaneous
+  public/company/team marketplace and concurrent reviewed installation convergence.
+- Confirmed Red: the focused suite produced five expected `FileNotFoundError` failures because the
+  system-matrix runner did not exist. The marketplace characterization also caught an invalid test
+  assumption about the source projection field; the existing domain behavior itself remained
+  unchanged, and the concurrent installation characterization already passed without lost state.
+
+### 2026-08-10 — E2E01 Green, code review, and local gates
+
+- Added a functional manifest and imperative runner for all thirteen required scenarios, covering
+  eighteen exact acceptance tests. Every scenario gets a separate process, temporary HOME/TMP/XDG
+  tree, credential-free minimal environment, loopback-refused HTTP configuration, Git prompt/global
+  config isolation, a fixed timeout, deterministic typed receipt, and exact recovery command.
+- Added real public/company/team federation and concurrent install convergence characterizations.
+  The latter proves exactly one reviewed plan applies while its racing peer terminates safely, with
+  one canonical state record and no partial or lost payload.
+- Applied the repository `code-review` skill. The review simplified canonical scenario selection,
+  retained path/time/output-free receipts, confirmed timeout/nonzero/runner failure redaction and
+  cleanup, and clarified the external-network boundary in the operator documentation.
+- Focused tests pass (8 top-level tests, including the complete 13-scenario/18-acceptance-test run),
+  and `make system-matrix` reports 13/13 passed. `make quality` passes Ruff format over 410 files,
+  Ruff lint, mypy over 188 source modules, 1553 unit tests, 39 Python integration tests, the 11-step
+  shell E2E, validation/version checks, 85.56% branch coverage, hardened `1.0.0a1` packaging, and
+  documentation checks.
