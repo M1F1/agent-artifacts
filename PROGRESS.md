@@ -70,7 +70,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) / `e70ec62` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | pending | Local gates pass; PR/CI/merge pending |
+| DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | complete | `codex/aart-1-0-dist01-distribution` | [#58](https://github.com/M1F1/agent-artifacts/pull/58) | Local and replacement four-job Python 3.10/3.14 matrices pass; final ledger matrix pending |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
 
@@ -96,8 +96,8 @@ Files owned: upgrade command/parser/request/rules, local source revision evidenc
 Risks/migrations: no real index/home/network; wheel cannot contain operational registry/state;
   environment recreation does not invalidate immutable managed object Symlinks; legacy `local`
   state remains readable alongside snapshot-bound `local:<sha256>` evidence
-PR: pending
-CI: pending
+PR: #58 — https://github.com/M1F1/agent-artifacts/pull/58
+CI: replacement push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: MIG01 `e70ec62`; DIST01 pending
 ```
 
@@ -135,7 +135,7 @@ Merge: MIG01 `e70ec62`; DIST01 pending
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 | MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | final 4-job Python 3.10/3.14 matrix passed; exact protected merge verified |
-| DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | pending |
+| DIST01 | 86 pass | 406 files pass | pass | 188 source files pass | 1546 pass | 36 pass | 11-step pass | strict catalog/runtime + version pass | 85.54% overall (≥82%) | allowlisted `1.0.0a1` wheel/RECORD/import plus editable-wheel lifecycle pass | pass | replacement 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1437,3 +1437,12 @@ None.
   Ruff lint, mypy over 188 source modules, 1546 unit tests, 36 Python integration tests, the
   11-step shell E2E, strict validation/version checks, 85.54% overall branch coverage, hardened
   `1.0.0a1` packaging, and documentation checks.
+
+### 2026-08-10 — DIST01 implementation CI passed
+
+- Published implementation commit `0e2256f` and opened ready PR #58. The first push Python 3.14
+  job in run `31422591436` reproduced the missing editable build-backend prerequisite; Python 3.10
+  passed, and no runtime/package test failed before that boundary.
+- Published focused correction `f8b7f9c`. All four replacement push and pull-request quality jobs
+  passed on Python 3.10 and 3.14 in Actions runs `31422957299` and `31422960142`. This ledger update
+  records that evidence and triggers the final matrix before protected squash merge.
