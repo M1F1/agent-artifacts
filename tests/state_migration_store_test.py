@@ -60,6 +60,7 @@ def _candidate(destination: str) -> LegacyMigrationCandidate:
                 source_path="payload/SKILL.md",
             ),
         ),
+        legacy_file_digests=((destination, str(_digest("4"))),),
     )
 
 
@@ -169,6 +170,64 @@ class StateMigrationStoreTests(unittest.TestCase):
             self.assertIsInstance(result, Err)
             self.assertFalse(Path(plan.backup_path).exists())
             self.assertEqual(legacy_path.read_bytes(), b'{"repo":"changed","installed":[]}')
+
+    def test_mixed_user_legacy_and_unrelated_v2_state_refuses_both_overwrites(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            destination = str(home / ".claude/skills/code-review/SKILL.md")
+            paths = install_state_paths(
+                "user",
+                project_root=str(root / "project"),
+                user_home=str(home),
+                data_root=str(root / "data"),
+            )
+            legacy = _legacy(destination)
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(legacy)
+            service = StateMigrationService(LocalStateStore())
+            plan = service.prepare(paths, (_candidate(destination),)).value
+            unrelated = b'{"schema_version":2,"installations":[]}\n'
+            state_path = Path(paths.destination_path)
+            state_path.parent.mkdir(parents=True)
+            state_path.write_bytes(unrelated)
+
+            result = service.apply(plan)
+
+            self.assertIsInstance(result, Err)
+            self.assertEqual(legacy_path.read_bytes(), legacy)
+            self.assertEqual(state_path.read_bytes(), unrelated)
+            self.assertFalse(Path(plan.backup_path).exists())
+
+    def test_user_dry_run_refuses_an_existing_unrelated_v2_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            destination = str(home / ".claude/skills/code-review/SKILL.md")
+            paths = install_state_paths(
+                "user",
+                project_root=str(root / "project"),
+                user_home=str(home),
+                data_root=str(root / "data"),
+            )
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(_legacy(destination))
+            state_path = Path(paths.destination_path)
+            state_path.parent.mkdir(parents=True)
+            state_path.write_bytes(b'{"schema_version":2,"installations":[]}\n')
+
+            result = StateMigrationService(LocalStateStore()).prepare(
+                paths, (_candidate(destination),)
+            )
+
+            self.assertIsInstance(result, Err)
+            self.assertEqual(
+                result.diagnostics[0].code.value,
+                "state-migration-destination-occupied",
+            )
+            self.assertFalse(Path(paths.backup_directory).exists())
 
     def test_partial_apply_failure_preserves_usable_legacy_and_no_destination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -343,6 +402,115 @@ class StateMigrationStoreTests(unittest.TestCase):
 
             self.assertIsInstance(result, Err)
             self.assertEqual(target.read_bytes(), _legacy(".claude/skills/code-review/SKILL.md"))
+
+    def test_new_process_resumes_user_apply_after_journal_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            destination = str(home / ".claude/skills/code-review/SKILL.md")
+            paths = install_state_paths(
+                "user",
+                project_root=str(root / "project"),
+                user_home=str(home),
+                data_root=str(root / "data"),
+            )
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(_legacy(destination))
+            service = StateMigrationService(LocalStateStore())
+            plan = service.prepare(paths, (_candidate(destination),)).value
+            Path(plan.backup_path).parent.mkdir(parents=True)
+            Path(plan.backup_path).write_bytes(plan.legacy_content)
+            Path(plan.journal_path).parent.mkdir(parents=True)
+            Path(plan.journal_path).write_bytes(plan.journal_content)
+
+            resumed = StateMigrationService(LocalStateStore()).apply(plan)
+
+            self.assertIsInstance(resumed, Ok)
+            self.assertTrue(resumed.value.changed)
+            self.assertFalse(legacy_path.exists())
+            self.assertEqual(Path(plan.destination_path).read_bytes(), plan.replacement)
+
+    def test_new_process_resumes_project_apply_after_destination_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = ".claude/skills/code-review/SKILL.md"
+            paths = install_state_paths(
+                "project",
+                project_root=str(root / "project"),
+                user_home=str(root / "home"),
+                data_root=str(root / "data"),
+            )
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(_legacy(destination))
+            service = StateMigrationService(LocalStateStore())
+            plan = service.prepare(paths, (_candidate(destination),)).value
+            Path(plan.backup_path).parent.mkdir(parents=True)
+            Path(plan.backup_path).write_bytes(plan.legacy_content)
+            legacy_path.write_bytes(plan.replacement)
+
+            resumed = StateMigrationService(LocalStateStore()).apply(plan)
+
+            self.assertIsInstance(resumed, Ok)
+            self.assertEqual(Path(plan.journal_path).read_bytes(), plan.journal_content)
+
+    def test_durable_receipt_allows_rollback_in_a_later_process(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = ".claude/skills/code-review/SKILL.md"
+            paths = install_state_paths(
+                "project",
+                project_root=str(root / "project"),
+                user_home=str(root / "home"),
+                data_root=str(root / "data"),
+            )
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy = _legacy(destination)
+            legacy_path.write_bytes(legacy)
+            first = StateMigrationService(LocalStateStore())
+            plan = first.prepare(paths, (_candidate(destination),)).value
+            first.apply(plan)
+
+            second = StateMigrationService(LocalStateStore())
+            receipt = second.current_receipt(paths)
+            self.assertIsInstance(receipt, Ok)
+            self.assertIsNotNone(receipt.value)
+            rolled_back = second.rollback(receipt.value)
+
+            self.assertIsInstance(rolled_back, Ok)
+            self.assertEqual(legacy_path.read_bytes(), legacy)
+
+    def test_journal_collision_uses_suffix_and_does_not_hide_later_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = ".claude/skills/code-review/SKILL.md"
+            paths = install_state_paths(
+                "project",
+                project_root=str(root / "project"),
+                user_home=str(root / "home"),
+                data_root=str(root / "data"),
+            )
+            legacy_path = Path(paths.legacy_path)
+            legacy_path.parent.mkdir(parents=True)
+            legacy = _legacy(destination)
+            legacy_path.write_bytes(legacy)
+            service = StateMigrationService(LocalStateStore())
+            first_name = service.prepare(paths, (_candidate(destination),)).value
+            Path(first_name.journal_path).parent.mkdir(parents=True)
+            Path(first_name.journal_path).write_bytes(b"unrelated collision")
+
+            suffixed = service.prepare(paths, (_candidate(destination),)).value
+            self.assertTrue(suffixed.journal_path.endswith("-1.json"))
+            self.assertIsInstance(service.apply(suffixed), Ok)
+
+            receipt = StateMigrationService(LocalStateStore()).current_receipt(paths)
+            self.assertIsInstance(receipt, Ok)
+            self.assertIsNotNone(receipt.value)
+            self.assertEqual(receipt.value.plan.journal_path, suffixed.journal_path)
+            self.assertIsInstance(service.rollback(receipt.value), Ok)
+            self.assertEqual(legacy_path.read_bytes(), legacy)
 
 
 if __name__ == "__main__":

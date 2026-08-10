@@ -68,8 +68,8 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / pending | Public registry minimum/latest CI and replacement four-job Python 3.10/3.14 tool matrix passed; protected merge pending |
-| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
+| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / `0e63768` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
+| MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | complete | `codex/aart-1-0-mig01-compatibility-migration` | [#57](https://github.com/M1F1/agent-artifacts/pull/57) | Local gates and initial four-job Python 3.10/3.14 CI matrix pass; final ledger matrix pending |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
 | REL01 | Stable release gates and `1.0.0` | all | pending | — | — | Never start before all prior rows complete |
@@ -80,24 +80,27 @@ Copy and fill this section when a task becomes `in_progress`; clear it only afte
 or the task is recorded as blocked.
 
 ```text
-Task: SEP01 — Extract and prove the public reference-registry boundary
-Branch: codex/aart-1-0-sep01-reference-registry
-Worktree: /private/tmp/aart-sep01.HdStgo/worktree
+Task: MIG01 — Complete legacy catalog/command/config migration and compatibility window
+Branch: codex/aart-1-0-mig01-compatibility-migration
+Worktree: /private/tmp/aart-mig01.hzETM7/worktree
 Started: 2026-08-10
-Bounded contexts: deterministic committed-source export, explicit artifact licensing, fail-closed
-  public-tree audit, independent registry CI, and confidential-content-free registry bootstrap
-Red test and expected failure: `python -m unittest tests.public_registry_publication_test
-  tests.reference_registry_export_e2e_test` failed with the expected missing
-  `agent_artifacts.registry_publication` module and exporter script
-Focused tests: 32 importer/registry/publication/packaging/export tests pass; the exact committed
-  catalog exports twice to byte-identical 10-artifact/2-collection trees and runs outside checkout
-Files owned: legacy importer license option, public export/audit application and script, registry
-  boundary tests, reference/company registry documentation, LICENSE, TODO.md, and PROGRESS.md
-Risks/migrations: never export working-tree bytes or Git history; reject credentials, private paths,
-  absent licenses, invalid provenance, generated/cache files, symlinks, and any unexpected tree path
-PR: https://github.com/M1F1/agent-artifacts/pull/56 (ready)
-CI: public registry minimum/latest jobs and replacement four-job Python 3.10/3.14 tool matrix pass;
-  final ledger matrix pending
+Bounded contexts: explicit 0.1 state migration orchestration, canonical evidence resolution,
+  deterministic recovery/rollback, and bounded command/config compatibility adapters
+Red test and expected failure: `python -m unittest tests.install_state_migration_test
+  tests.state_migration_store_test tests.state_migration_orchestration_test
+  tests.migrate_cli_test` failed on missing separate 0.1 proof fields, collision planning,
+  durable receipts, process-restart recovery, migration orchestration/module, public parser/dispatch,
+  legacy default removal, and deprecation output
+Focused tests: 84 passed + 46 subtests across migration planner/store/orchestration/CLI/fixture and
+  legacy CLI regressions
+Files owned: application/legacy_state_migration.py, application/state_migration.py,
+  install_state migration model/ports/planner, io/state_store.py, commands/migrate.py, CLI request/
+  parser/rules/dispatch, source compatibility adapter, lifecycle symlink transition, committed 0.1
+  project/user fixtures and migration tests, README/SPEC/state docs, PROGRESS.md
+Risks/migrations: never infer ambiguous sources or effects; preserve exact old bytes and behavior on
+  failure; no default package-catalog fallback after successful migration
+PR: #57 — https://github.com/M1F1/agent-artifacts/pull/57
+CI: initial push/pull-request Python 3.10/3.14 matrix passed; final ledger matrix pending
 Merge: pending
 ```
 
@@ -134,6 +137,7 @@ Merge: pending
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
 | SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
+| MIG01 | 84 pass + 46 subtests | 404 files pass | pass | 188 source files pass | 1545 pass | 35 pass | 11-step pass | strict catalog/runtime + version pass | 85.58% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | initial 4-job Python 3.10/3.14 matrix passed; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1353,3 +1357,49 @@ None.
   minimum/latest registry contract and the tool's supported Python matrix. This ledger update
   records that evidence and triggers the final tool matrix before protected squash merge; SEP01's
   complete status becomes authoritative only on `main`.
+
+### 2026-08-10 — SEP01 merged; MIG01 started
+
+- Observed all four final ledger jobs pass and squash-merged ready PR #56 as `0e63768`; verified
+  exact `origin/main`, merged PR state, remote branch deletion, public registry visibility/default
+  branch, and preservation of unrelated root-worktree files.
+- Removed only the clean SEP01 temporary worktree/branch and created isolated MIG01 from exact merge
+  `0e63768`. Existing STATE01 already supplies pure strict legacy planning plus an atomic local
+  backup/apply/rollback adapter; MIG01 will expose the complete public workflow and bounded legacy
+  command/config compatibility without reintroducing an embedded default catalog.
+
+### 2026-08-10 — MIG01 compatibility migration and local gates complete
+
+- Added first-class `aart migrate state --from 0.1` dry-run/apply/rollback orchestration. Migration
+  resolves every legacy identity to exactly one enabled current source, supports explicit repeatable
+  `--source-map TYPE/NAME@PROFILE=ALIAS`, inspects only validated destinations, and never labels
+  retained legacy bytes as the current marketplace object.
+- Added committed project/user 0.1 fixtures covering skill, guideline, MCP, hook, and memory effects,
+  early manifests without install metadata, raw-file and legacy `repr(value)` hash verification,
+  key/list merge conversion, local/Git/package-era source resolution, Copy and Symlink transitions,
+  lifecycle status/update/uninstall, and exact rollback.
+- Made migration recovery durable across processes and interruption points: deterministic collision
+  suffixes, private backup before journal/destination writes, bounded no-follow receipt discovery,
+  resume after journal or destination writes, mixed-state refusal during review, compensation, and
+  rollback that does not load marketplace configuration. A colliding stale journal cannot hide the
+  later valid suffixed receipt.
+- The `code-review` pass found and fixed loose parsing before effect inspection, invalid legacy
+  identity misclassification, dry-run acceptance of unrelated user v2 state, rollback coupling to
+  current sources, ignored extra link metadata, and collision/receipt disagreement. Focused
+  regressions capture every correction; legacy memory mode remains explicit `null` because 0.1 did
+  not persist it, with in-place marker updates and the documented missing-block compatibility mode.
+- Removed the package-embedded operational catalog default. Legacy `--source`/`--repo` command paths
+  now require an explicit input and emit a compatibility warning; canonical marketplace behavior is
+  not silently routed through the old adapter.
+- Final local evidence: 84 focused tests plus 46 subtests pass. `make quality` passes Ruff format over
+  404 files, Ruff lint, mypy over 188 source modules, 1545 unit tests, 35 Python integration tests,
+  the 11-step shell E2E, strict validation/version checks, 85.58% overall branch coverage,
+  `1.0.0a1` packaging, and documentation checks.
+
+### 2026-08-10 — MIG01 implementation CI passed
+
+- Published implementation commit `223a457` and opened ready PR #57. All four initial push and
+  pull-request quality jobs passed on Python 3.10 and 3.14 in Actions runs `31420263209` and
+  `31420310320`.
+- This ledger update records the remote evidence and triggers the final matrix before protected
+  squash merge; MIG01's complete status becomes authoritative only on `main`.

@@ -133,7 +133,8 @@ Before applying an Install, the confirmation view shows the catalog source, sele
 resolved destination paths, harnesses, requested mode, selected rows, projected mode counts, and
 the ordered setup queue for setup-capable artifacts.
 User destinations are absolute. Symlink is rejected for a remote source before artifact selection;
-use flag mode with `--source DIR --link` to choose a durable local checkout.
+the configured marketplace can link a local source, while the bounded 0.1 CLI path requires an
+explicit `--source DIR --link`.
 
 Install, Update, Uninstall, Status, and Maintainer paths all end at a separate **Review** stage.
 `Finalize` is the only wizard decision that can dispatch the reviewed request. Back/edit, quit,
@@ -306,45 +307,45 @@ incompatible targets with a warning and include machine-readable skip reasons in
 The TUI uses the same compatibility rules, so profile selection hides artifacts that do not
 apply.
 
-### Use The Installed Catalog
+### Use The Configured Marketplace
 
-The installed `aart` package carries the reviewed catalog, so the tool already knows which
-artifacts are available.
+The installed `aart` package carries the compiler/tooling, schemas, profiles, and importers — not
+an operational artifact catalog. Configure and sync one or more registry, direct Git, or local
+sources in the TUI; their union becomes the local marketplace. A registry is optional.
+
+The old flag-mode catalog reader remains only for 0.1 compatibility and therefore requires an
+explicit source:
 
 ```sh
-aart list
-aart list --type skill
-aart list --bundle backend
-
-aart install code-review --profile tabnine
-aart install --bundle backend --profile tabnine,claude
-aart install --all --profile tabnine --dry-run
+aart list --source /path/to/catalog
+aart list --repo your-org/legacy-catalog
+aart install code-review --profile tabnine --source /path/to/catalog
 ```
+
+These commands print a compatibility warning and never reinterpret the path/repository as a
+canonical source alias.
 
 Bundles are curated sets such as "base" or "backend". They can include multiple artifact types
 and can extend other bundles, so team setup is one command instead of a pile of paths.
 
 ### Live-Link From A Local Catalog Checkout
 
-Choose **Symlink** (spelled `--link` in flag mode) when you want supported artifacts installed into
-your project to stay connected to a local catalog checkout instead of using the default **Copy**
-snapshot.
+Choose **Symlink** when you want supported artifacts installed into your project to stay connected
+to a configured local source instead of using the default **Copy** snapshot. In the bounded legacy
+flag mode, spell it `--link` and name the checkout explicitly.
 
 ```sh
-aart install code-review --profile tabnine --link
+aart install code-review --profile tabnine --source /path/to/catalog --link
 ```
 
-`--link` is opt-in and local-only. By default, `aart` uses the artifact catalog located beside
-the installed tool itself. Under the hood, the install source resolves to that local package
-root, and linkable directory artifacts are symlinked from there into your project. If `aart` was
-installed in editable mode from a local `agent-artifacts` checkout, those symlinks point back to
-that checkout.
+`--link` is opt-in and local-only. Canonical installs link to the managed local source/object
+boundary shown in Review; the executable environment is never the artifact source.
 
 Copy remains the recommended default install mode. With Symlink/`--link`, changes propagate only when the local
 source path changes, for example after local edits, `git pull`, branch switches, or
 `aart upstream update` in the catalog. Use `aart status --json` to see whether an installed
-artifact is `copy` or `symlink` and where a link points. Pass `--source DIR` only when you want
-to link from a different local catalog checkout than the one used by the installed `aart`.
+artifact is `copy` or `symlink` and where a link points. The legacy flag path requires
+`--source DIR`; the TUI uses the selected configured local source.
 
 ### Check, Update, And Uninstall
 
@@ -659,6 +660,7 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 | `aart update` | no by default | Re-apply reviewed artifacts; `--prune`, `--force` |
 | `aart uninstall` | no | Reverse installed files and merge entries |
 | `aart setup` | no by default | Review/run/retry/status/rollback declarative artifact setup |
+| `aart migrate state` | no | Dry-run/apply/rollback explicit 0.1 installation state |
 | `aart upgrade` | offline-capable | Reinstall the CLI itself |
 
 ### Maintainer Commands
@@ -683,11 +685,25 @@ flag-mode registry command family.
 **Context-dependent options:** Instead of exposing every option globally, `agent-artifacts`
 strictly attaches options only to the commands that consume them.
 
-**Catalog source** — Normal users rely on the catalog bundled with the installed tool. Maintainers
-can override that source with `--repo OWNER/NAME` (remote) or `--source DIR` (local checkout)
-when testing or maintaining a catalog. These are mutually exclusive. `--source` cannot be
-combined with `--version` since a local checkout has no ref to resolve. Remote-only commands
-like `check` and `upgrade` accept `--repo`/`--version` but not `--source`.
+**Catalog source** — Normal users use the configured federated marketplace; the executable wheel
+contains no implicit operational catalog. Legacy `list/install/update/setup --source DIR` and
+`--repo OWNER/NAME` remain explicit 0.1 compatibility adapters and print a deprecation warning.
+They are mutually exclusive and are never reinterpreted as canonical aliases. `--source` cannot be
+combined with `--version` since a local checkout has no ref to resolve. Remote-only commands like
+`check` and `upgrade` accept `--repo`/`--version` but not `--source`.
+
+**Installation-state migration** — Review before applying, and use the durable receipt to roll
+back from a later process:
+
+```bash
+aart migrate state --from 0.1 --dry-run
+aart migrate state --from 0.1 --apply
+aart migrate state --from 0.1 --rollback
+```
+
+Project scope is the default. Add `--scope user` for the old home-global manifest. If equal
+`TYPE/NAME` artifacts exist in multiple enabled sources, pass the exact repeatable mapping
+`--source-map TYPE/NAME@PROFILE=ALIAS`; AART never chooses by marketplace order during migration.
 
 **Consumer scope** — Commands that modify or inspect harness configuration (`install`, `update`,
 `uninstall`, `status`, `check`, `setup`) accept `--scope project|user`; Project is the default. In Project

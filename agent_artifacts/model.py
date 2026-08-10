@@ -511,3 +511,7 @@ class Request:
     reporting_action: Optional[str] = None
     reporting_input: Optional[str] = None
     reporting_output: Optional[str] = None
+    migration_action: Optional[str] = None
+    migration_from: Optional[str] = None
+    source_mappings: Tuple[str, ...] = ()
+    rollback: bool = False

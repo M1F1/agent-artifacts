@@ -103,6 +103,7 @@ def _candidate(scope: str = "project") -> LegacyMigrationCandidate:
                 source_path="payload/SKILL.md",
             ),
         ),
+        legacy_file_digests=((destination, str(_digest("4"))),),
     )
 
 
@@ -224,6 +225,42 @@ class StateMigrationPlanningTests(unittest.TestCase):
             "state-migration-proof-mismatch", {str(item.code) for item in result.diagnostics}
         )
 
+    def test_legacy_link_metadata_cannot_name_an_untracked_destination(self) -> None:
+        destination = ".claude/skills/code-review/SKILL.md"
+        legacy = dump_manifest(
+            Manifest(
+                "M1F1/agent-artifacts",
+                (
+                    ManifestEntry(
+                        "code-review",
+                        "skill",
+                        "claude",
+                        "pin:legacy-sha",
+                        files={destination: str(_digest("4"))},
+                        install=InstallProof(
+                            mode="copy",
+                            requested_mode="copy",
+                            links=(InstallLink(".claude/skills/other", "/legacy/other"),),
+                        ),
+                    ),
+                ),
+            )
+        ).encode()
+        paths = install_state_paths(
+            "project",
+            project_root="/workspace/project",
+            user_home="/Users/test",
+            data_root="/data/aart",
+        )
+
+        result = plan_legacy_migration(legacy, (_candidate(),), paths)
+
+        self.assertIsInstance(result, Err)
+        self.assertEqual(
+            result.diagnostics[0].code.value,
+            "state-migration-proof-mismatch",
+        )
+
     def test_plan_constructor_rejects_content_changed_after_review(self) -> None:
         paths = install_state_paths(
             "project",
@@ -249,7 +286,7 @@ class StateMigrationPlanningTests(unittest.TestCase):
                         merge=MergeProof(
                             ".claude/settings.json",
                             "hooks.PreToolUse",
-                            "key",
+                            "list",
                             {"matcher": "Edit|Write"},
                             str(_digest("4")),
                         ),
@@ -266,10 +303,13 @@ class StateMigrationPlanningTests(unittest.TestCase):
                     "copy",
                     _digest("4"),
                     json_path="hooks.PreToolUse",
-                    merge_mode="key",
+                    merge_mode="list",
                     identity_digest=json_digest(JsonObject((("matcher", "Edit|Write"),))),
+                    identity_evidence=JsonObject((("matcher", "Edit|Write"),)),
                 ),
             ),
+            legacy_file_digests=(),
+            legacy_merge_value_hash=str(_digest("4")),
         )
         paths = install_state_paths(
             "project",
@@ -281,9 +321,72 @@ class StateMigrationPlanningTests(unittest.TestCase):
         self.assertIsInstance(plan_legacy_migration(legacy, (candidate,), paths), Ok)
         forged = replace(
             candidate,
-            effects=(replace(candidate.effects[0], identity_digest=_digest("9")),),
+            effects=(
+                replace(
+                    candidate.effects[0],
+                    identity_digest=json_digest(JsonObject((("matcher", "Other"),))),
+                    identity_evidence=JsonObject((("matcher", "Other"),)),
+                ),
+            ),
         )
         self.assertIsInstance(plan_legacy_migration(legacy, (forged,), paths), Err)
+
+    def test_legacy_and_canonical_digests_are_distinct_proofs(self) -> None:
+        """0.1 hashes raw bytes; v2 hashes a framed filesystem snapshot."""
+
+        candidate = _candidate()
+        canonical = replace(
+            candidate,
+            effects=(replace(candidate.effects[0], installed_digest=_digest("8")),),
+        )
+        paths = install_state_paths(
+            "project",
+            project_root="/workspace/project",
+            user_home="/Users/test",
+            data_root="/data/aart",
+        )
+
+        migrated = plan_legacy_migration(_legacy(), (canonical,), paths)
+
+        self.assertIsInstance(migrated, Ok)
+        state = parse_install_state(migrated.value.replacement)
+        self.assertIsInstance(state, Ok)
+        self.assertEqual(state.value.installations[0].effects[0].installed_digest, _digest("8"))
+
+    def test_earliest_0_1_manifest_without_install_metadata_defaults_to_copy(self) -> None:
+        legacy = _legacy().replace(
+            b'      "install": {\n        "mode": "copy",\n        "requested_mode": "copy",\n        "links": []\n      },\n',
+            b"",
+        )
+        paths = install_state_paths(
+            "project",
+            project_root="/workspace/project",
+            user_home="/Users/test",
+            data_root="/data/aart",
+        )
+
+        migrated = plan_legacy_migration(legacy, (_candidate(),), paths)
+
+        self.assertIsInstance(migrated, Ok)
+        state = parse_install_state(migrated.value.replacement)
+        self.assertIsInstance(state, Ok)
+        self.assertEqual(state.value.installations[0].requested_mode, "copy")
+
+    def test_backup_collision_suffix_is_deterministic_and_review_bound(self) -> None:
+        paths = install_state_paths(
+            "project",
+            project_root="/workspace/project",
+            user_home="/Users/test",
+            data_root="/data/aart",
+        )
+
+        first = plan_legacy_migration(_legacy(), (_candidate(),), paths, collision_index=2)
+        second = plan_legacy_migration(_legacy(), (_candidate(),), paths, collision_index=2)
+
+        self.assertEqual(first, second)
+        self.assertIsInstance(first, Ok)
+        self.assertTrue(first.value.backup_path.endswith("-2.json"))
+        self.assertTrue(first.value.journal_path.endswith("-2.json"))
 
     def test_credential_bearing_legacy_subscription_is_not_copied_into_backup(self) -> None:
         legacy = dump_manifest(

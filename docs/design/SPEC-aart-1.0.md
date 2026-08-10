@@ -1161,6 +1161,7 @@ Migration command:
 ```text
 aart migrate state --from 0.1 --dry-run
 aart migrate state --from 0.1 --apply
+aart migrate state --from 0.1 --rollback
 ```
 
 It MUST:
@@ -1173,7 +1174,13 @@ It MUST:
 - never guess between multiple same-named source artifacts;
 - leave the 0.1 state usable on failure.
 
-### 24.3 Executable version transition
+Ambiguous identities are resolved with repeatable
+`--source-map TYPE/NAME@PROFILE=ALIAS`. A completed journal plus its exact backup is sufficient for
+rollback in a later process. Legacy `--source`/`--repo` inputs remain a disclosed compatibility
+path and are never treated as canonical aliases; an absent legacy source no longer falls back to
+package contents.
+
+### 25.3 Executable version transition
 
 The code version stays `0.1.48` until an implementation change starts the alpha train. Documentation
 alone does not bump the package. The first breaking implementation commit uses `1.0.0a1`; subsequent

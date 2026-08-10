@@ -1,0 +1,46 @@
+{
+  "repo": "M1F1/agent-artifacts",
+  "installed": [
+    {
+      "artifact": "review", "type": "skill", "profile": "claude",
+      "source": "main:7777777777777777777777777777777777777777",
+      "files": {"/fixture-home/.claude/skills/review": ""},
+      "installed_at": "2025-01-01T00:00:00Z"
+    },
+    {
+      "artifact": "review", "type": "guideline", "profile": "claude",
+      "source": "pin:7777777777777777777777777777777777777777",
+      "files": {"/fixture-home/.claude/rules/review.md": "sha256:072110ffaab997bba79dc72204fc858d65b12d7ff6d1a7fa7bdc6fca545575b2"},
+      "installed_at": "2025-01-01T00:00:00Z"
+    },
+    {
+      "artifact": "review", "type": "mcp", "profile": "claude",
+      "source": "pin:7777777777777777777777777777777777777777",
+      "files": {},
+      "merge": {
+        "file": "/fixture-home/.claude.json", "json_path": "mcpServers.review", "mode": "key",
+        "value_hash": "sha256:a15bc44217a41b691ec7a6772915f2f1ea38be5c41d16ee3afd30cecc82e1b5f",
+        "created_file": true, "overwrote": false
+      },
+      "installed_at": "2025-01-01T00:00:00Z"
+    },
+    {
+      "artifact": "review", "type": "hook", "profile": "claude",
+      "source": "pin:7777777777777777777777777777777777777777",
+      "files": {"/fixture-home/.claude/hooks/review": ""},
+      "merge": {
+        "file": "/fixture-home/.claude/settings.json", "json_path": "hooks.PreToolUse", "mode": "list",
+        "identity": {"matcher": "*"},
+        "value_hash": "sha256:27de4cf1b62533fd7d0e46bd35553ac04826b235e5233cdfe20a682ed33b2d40",
+        "created_file": true, "overwrote": false
+      },
+      "installed_at": "2025-01-01T00:00:00Z"
+    },
+    {
+      "artifact": "review", "type": "memory", "profile": "claude",
+      "source": "main:7777777777777777777777777777777777777777",
+      "files": {"/fixture-home/.claude/CLAUDE.md": "sha256:1d30cdaae9c9b5fc3c62592c3022866eab24ede4891f4364e800e8daa04f71ab"},
+      "installed_at": "2025-01-01T00:00:00Z"
+    }
+  ]
+}

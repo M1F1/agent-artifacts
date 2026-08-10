@@ -12,14 +12,16 @@ into a `Source`:
 * **Local** — when ``request.source_dir`` is set, ``root`` is that directory (made absolute);
   no network is touched. ``label()`` returns ``"local:<abspath>"`` — there is no commit to
   record, so the install command stores this sentinel verbatim.
-* **Remote** — otherwise ``request.repo`` (``"org/repo"``) is resolved at ``request.version``
+* **Remote** — when ``request.repo`` is explicit, ``"org/repo"`` is resolved at ``request.version``
   (default ``"main"``) via :func:`agent_artifacts.io.net.resolve_ref` → SHA, then materialised
   once through :func:`agent_artifacts.io.cache.ensure_snapshot`; ``root`` is that snapshot dir.
   ``label()`` returns ``"main:<sha>"`` (default branch) or ``"pin:<sha>"`` (explicit ref) via
   :func:`agent_artifacts.model.source_label`.
 
-Both backends produce **identical** catalogs from identical content (the whole point of the
-abstraction): downstream commands never branch on local-vs-remote.
+With neither option the bounded legacy adapter fails and points to the configured marketplace;
+the executable package is not an operational catalog. Both explicit backends produce **identical**
+catalogs from identical content (the whole point of the abstraction): downstream commands never
+branch on local-vs-remote.
 
 Remote testing
 --------------
@@ -299,9 +301,9 @@ def open_source(
     """Resolve a `Request` into a `Source` (local dir or remote snapshot).
 
     Local (``request.source_dir`` set): offline; ``root`` is that dir (absolute), label
-    ``"local:<abspath>"``. Remote: ``resolve_ref`` (bind — propagate ``Err`` fail-soft) →
+    ``"local:<abspath>"``. Explicit remote: ``resolve_ref`` (bind — propagate ``Err`` fail-soft) →
     ``ensure_snapshot``; label ``"pin:<sha>"`` for an explicit ``request.version`` else
-    ``"main:<sha>"``.
+    ``"main:<sha>"``. With neither source option, fail with configured-marketplace guidance.
 
     ``opener`` / ``token`` are forwarded to the network layer (testability without live
     network; ``token`` falls back to ``$GITHUB_TOKEN``). ``reader`` overrides the bytes
@@ -316,12 +318,12 @@ def open_source(
         return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
 
     if not request.repo:
-        # Default to the package's installation root (where skills/, bundles/ live)
-        import agent_artifacts
-
-        pkg_dir = os.path.dirname(os.path.abspath(agent_artifacts.__file__))
-        root = os.path.dirname(pkg_dir)
-        return Ok(Source(root=root, _label=f"local:{root}", _read=read_fn))
+        return Err(
+            "the package-embedded catalog default was removed in AART 1.0; "
+            "use the configured marketplace in the TUI, or pass explicit legacy --source DIR "
+            "or --repo OWNER/NAME during the compatibility window",
+            code=2,
+        )
 
     repo = request.repo
     auth = token if token is not None else os.environ.get("GITHUB_TOKEN")
