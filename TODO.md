@@ -27,7 +27,10 @@ Product requirements:
 - [x] Implement strict registry, native entry, committed lock, and compiled index schemas.
 - [x] Implement strict JSON schemas and canonical writers for user configuration and organization
       policy.
-- [ ] Implement remaining strict JSON schemas for outcomes and manifest v2 documents.
+- [x] Implement the strict canonical installation manifest v2 schema and migration evidence model,
+      documented in
+      [`docs/state/installation-state-v2.md`](docs/state/installation-state-v2.md).
+- [ ] Implement the remaining strict JSON schemas for structured command outcomes.
 - [x] Implement SemVer bounds, protocol/capability negotiation, and canonical JSON/tree digests.
 - [x] Implement qualified marketplace resolution and ambiguity diagnostics without silent source
       shadowing.
@@ -98,7 +101,8 @@ Product requirements:
       canonical native source.
 - [ ] Promote the converted top-level 0.1.x catalog into the canonical registry layout during the
       reviewed SEP01 migration.
-- [ ] Add dry-run/apply/backup/rollback migration for existing 0.1.x installation state.
+- [x] Add reviewed dry-run/apply/backup/rollback migration primitives for existing 0.1.x
+      installation state; MIG01 supplies the final public compatibility orchestration.
 - [ ] Test direct-source-only, multi-registry, company-plus-team, native-reference, foreign-import,
       collision, trust, offline, concurrency, Copy/Symlink, setup, and reporting fixtures.
 - [ ] Test local editable and local-wheel installation without an embedded operational registry or
