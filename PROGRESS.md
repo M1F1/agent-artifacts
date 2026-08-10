@@ -5,7 +5,7 @@
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0a1`
 - **Execution status:** In progress
-- **Next task:** `SEP01`
+- **Next task:** `MIG01`
 - **Last updated:** 2026-08-10
 
 ## Status rules
@@ -68,7 +68,7 @@ short note. Do not mark work complete from memory or commentary alone.
 | TUI02 | Consumer marketplace/cart/review | TUI01,LIFE01 | complete | `codex/aart-1-0-tui02-consumer-marketplace` | [#53](https://github.com/M1F1/agent-artifacts/pull/53) / `d37feb8` | Two replacement four-job Python 3.10/3.14 CI matrices passed after the recorded platform-fixture fix; squash merge and branch deletion verified |
 | TUI03 | Maintainer curation/security UX | TUI02,REG01 | complete | `codex/aart-1-0-tui03-maintainer-curation` | [#54](https://github.com/M1F1/agent-artifacts/pull/54) / `7089147` | Two four-job Python 3.10/3.14 matrices passed; squash merge and branch deletion verified |
 | RPT01 | Optional registry-owned usage reporting | TUI02,CFG01,SEC03 | complete | `codex/aart-1-0-rpt01-usage-reporting` | [#55](https://github.com/M1F1/agent-artifacts/pull/55) / `716051e` | Final four-job Python 3.10/3.14 matrix passed; protected squash merge and exact `origin/main` verified |
-| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | in_progress | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / pending | Public registry created from one audited root commit; minimum/latest registry CI passed; replacement tool CI pending |
+| SEP01 | Public reference-registry boundary | TUI03,REG01,IMP01 | complete | `codex/aart-1-0-sep01-reference-registry` | [#56](https://github.com/M1F1/agent-artifacts/pull/56) / pending | Public registry minimum/latest CI and replacement four-job Python 3.10/3.14 tool matrix passed; protected merge pending |
 | MIG01 | Complete 0.1.x compatibility migration | SEP01,STATE01 | pending | — | — | No silent reinterpretation |
 | DIST01 | Local wheel/editable Nexus readiness | MIG01,SEP01 | pending | — | — | No operational registry in wheel |
 | E2E01 | Full system/fault-injection matrix | DIST01,RPT01 | pending | — | — | Hermetic end-to-end proof |
@@ -96,8 +96,8 @@ Files owned: legacy importer license option, public export/audit application and
 Risks/migrations: never export working-tree bytes or Git history; reject credentials, private paths,
   absent licenses, invalid provenance, generated/cache files, symlinks, and any unexpected tree path
 PR: https://github.com/M1F1/agent-artifacts/pull/56 (ready)
-CI: initial matrix exposed Python 3.10 wheel-builder and detached PR-merge fixture assumptions;
-  test-only compatibility fix passes the complete local quality wrapper; replacement matrix pending
+CI: public registry minimum/latest jobs and replacement four-job Python 3.10/3.14 tool matrix pass;
+  final ledger matrix pending
 Merge: pending
 ```
 
@@ -133,6 +133,7 @@ Merge: pending
 | TUI02 | 36 focused; 167 TUI/consumer pass | 367 files pass | pass | 172 source files pass | 1452 pass | 28 pass | 11-step pass | stdlib-only runtime pass | 86.26% overall; 87.98% focused consumer contexts | `1.0.0a1` wheel/import pass | pass | local pass; 2× replacement 4-job Python 3.10/3.14 matrices passed |
 | TUI03 | 57 focused | 375 files pass | pass | 175 source files pass | 1472 pass | 29 pass | 11-step pass | stdlib-only runtime pass | 86.06% overall; 91.19% focused curation contexts | `1.0.0a1` wheel/import pass | pass | local Python 3.11.0 complete quality wrapper and first 4-job Python 3.10/3.14 matrix pass; final ledger matrix pending |
 | RPT01 | 32 reporting; 56 cross-context regressions | 395 files pass | pass | 185 source files pass | 1506 pass | 29 pass | 11-step pass | stdlib-only runtime/version pass | 85.74% overall (≥82%) | `1.0.0a1` wheel/import pass | pass | replacement 4-job Python 3.10/3.14 matrix passed after one format-only CI correction; final ledger matrix pending |
+| SEP01 | 32 publication/export | 399 files pass | pass | 186 source files pass | 1519 pass | 31 pass | 11-step pass | strict registry + stdlib/version pass | 85.83% overall; 92.81% publication boundary | `1.0.0a1` wheel/import/no-registry-roots pass | pass | registry minimum/latest jobs and replacement 4-job Python 3.10/3.14 tool matrix pass after recorded test-fixture corrections; final ledger matrix pending |
 
 Append one row per completed task. Record commands/versions or link the PR check summary when the
 table would otherwise become unreadable. Failed attempts belong in the work log, not hidden.
@@ -1343,3 +1344,12 @@ None.
   `FETCH_HEAD`. The fixture now uses `--update-shallow` and a direct
   `HEAD:refs/heads/export` refspec. This exact operation succeeds against a local detached
   `--depth=1` clone, and both corrected reference-export E2E tests pass locally.
+
+### 2026-08-10 — SEP01 implementation CI passed
+
+- Published shallow-source correction `62c5ffe`; all four replacement push/pull-request quality
+  jobs passed on Python 3.10 and 3.14 in Actions runs `31416477266` and `31416480846`.
+- Together with public registry run `31415376543`, remote evidence now proves both the independent
+  minimum/latest registry contract and the tool's supported Python matrix. This ledger update
+  records that evidence and triggers the final tool matrix before protected squash merge; SEP01's
+  complete status becomes authoritative only on `main`.
