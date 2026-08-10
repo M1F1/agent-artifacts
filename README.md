@@ -1,15 +1,16 @@
 # agent-artifacts (`aart`)
 
 > [!IMPORTANT]
-> The current implementation is the `1.0.0a1` development train. It separates the compiler from
+> The current implementation is stable `1.0.0`. It separates the compiler from
 > federated artifact sources and optional registries; the retained 0.1 compatibility sections are
 > marked below. See the
 > [AART 1.0 PRD](docs/product/PRD-aart-1.0.md),
 > [technical specification](docs/design/SPEC-aart-1.0.md), and
-> [implementation plan](PLAN.md) with its [progress ledger](PROGRESS.md), plus the
+> [implementation plan](PLAN.md) with its [progress ledger](PROGRESS.md), the
+> [1.0 release checklist](docs/release/release-checklist-v1.md), plus the
 > [tracking issue #27](https://github.com/M1F1/agent-artifacts/issues/27).
 
-The `1.0.0a1` migration now provides the canonical compiler, federated sources, registry quality
+The `1.0.0` release provides the canonical compiler, federated sources, registry quality
 gate, and a fail-closed public export boundary. The operational reference marketplace lives in the
 independently versioned
 [`M1F1/agent-artifacts-registry`](https://github.com/M1F1/agent-artifacts-registry) repository; it
@@ -54,7 +55,7 @@ Or build and install the zero-runtime-dependency wheel:
 ```sh
 cd /path/to/agent-artifacts
 make wheel
-python -m pip install --no-index --no-deps dist/agent_artifacts-1.0.0a1-py3-none-any.whl
+python -m pip install --no-index --no-deps dist/agent_artifacts-1.0.0-py3-none-any.whl
 ```
 
 An installed AART replaces itself only from an explicit reviewed local input. Preview first:
@@ -62,7 +63,7 @@ An installed AART replaces itself only from an explicit reviewed local input. Pr
 ```sh
 aart upgrade --source-checkout /path/to/agent-artifacts --dry-run
 aart upgrade --source-checkout /path/to/agent-artifacts
-# or: aart upgrade --wheel /path/to/agent_artifacts-1.0.0a1-py3-none-any.whl
+# or: aart upgrade --wheel /path/to/agent_artifacts-1.0.0-py3-none-any.whl
 ```
 
 These paths always pass `--no-index --no-deps` to pip. Editable replacement also disables build
@@ -774,6 +775,8 @@ make test             # broad Python regression suite + bash E2E compatibility a
 make validate         # catalog integrity + zero-runtime-dependency import gate
 make packaging-check  # build/import a wheel in a throwaway source copy
 python scripts/distribution_smoke.py --json  # editable -> wheel -> recreated environment lifecycle
+make system-matrix    # all 13 hermetic AART 1.0 acceptance/fault scenarios
+make release-check REGISTRY=/path/to/agent-artifacts-registry  # stable release checklist
 make wheel            # release build: stamps the commit and writes dist/*.whl
 make version-check    # validate source version consistency and stable-release policy
 make version-show     # print the current canonical version
@@ -799,14 +802,17 @@ make docs-check           # Markdown links/fences and PLAN/PROGRESS consistency
 packaging locations, then verifies that repository files are byte-for-byte unchanged. CI invokes
 that same command on Python 3.10 and the latest stable feature series, currently Python 3.14.
 
-Version changes are deliberate release actions. The development train starts at `1.0.0a1`:
+Version changes are deliberate release actions. A prerelease train is finalized explicitly:
 
 ```sh
 make version-bump-alpha                # explicitly write the next 1.0.0aN
 make version-set VERSION=1.0.0rc1      # explicitly write another validated prerelease
+make version-finalize                  # prerelease -> stable core after every release task passes
 ```
 
-Setting or tagging stable `1.0.0` fails closed until every task through `REL01` is complete.
+Setting, finalizing, or tagging stable `1.0.0` fails closed until every task through `REL01` is
+complete. See the [changelog](CHANGELOG.md), [compatibility matrix](docs/release/compatibility-v1.md),
+and [0.1.x migration guide](docs/release/migration-v1.md).
 Generated `dist/*.whl` files are local/release outputs and are not committed; GitHub release jobs
 verify that the tag and source version match before building and uploading a wheel.
 

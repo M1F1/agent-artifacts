@@ -5,9 +5,10 @@
 #     pip install --no-index dist/agent_artifacts-<v>-py3-none-any.whl
 
 PYTHON ?= python
+REGISTRY ?=
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration e2e system-matrix wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-set
+.PHONY: test unit integration e2e system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
 
 # Backwards-compatible aggregate. The Python discovery remains the broad unit/regression gate.
 test: unit e2e
@@ -23,6 +24,13 @@ e2e:
 
 system-matrix:
 	$(PYTHON) scripts/system_matrix.py
+
+release-freeze:
+	$(PYTHON) scripts/release.py freeze --write
+
+release-check:
+	@test -n "$(REGISTRY)" || (echo "REGISTRY=/path/to/agent-artifacts-registry is required" >&2; exit 2)
+	$(PYTHON) scripts/release.py check --registry "$(REGISTRY)"
 
 # Stamp the git commit, then build the stdlib wheel into dist/.
 wheel:
@@ -71,6 +79,9 @@ version-next-alpha:
 
 version-bump-alpha:
 	$(PYTHON) scripts/version.py bump-alpha --write
+
+version-finalize:
+	$(PYTHON) scripts/version.py finalize --write
 
 version-set:
 	$(PYTHON) scripts/version.py set "$(VERSION)" --write

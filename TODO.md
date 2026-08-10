@@ -20,6 +20,8 @@ Product requirements:
       runtime conversion.
 - [x] Write the AART 1.0 PRD and technical specification.
 - [x] Start implementation versions at `1.0.0a1`; do not tag `1.0.0` before the release gates pass.
+- [x] Freeze the 1.0 schemas, publish compatibility/migration/release evidence, and finalize stable
+      `1.0.0` only through the fail-closed REL01 checklist.
 
 ### Protocol and compiler
 
@@ -30,11 +32,12 @@ Product requirements:
 - [x] Implement the strict canonical installation manifest v2 schema and migration evidence model,
       documented in
       [`docs/state/installation-state-v2.md`](docs/state/installation-state-v2.md).
-- [ ] Implement the remaining strict JSON schemas for structured command outcomes.
+- [x] Implement strict schema-v1 structured command outcomes and shared terminal summaries.
 - [x] Implement SemVer bounds, protocol/capability negotiation, and canonical JSON/tree digests.
 - [x] Implement qualified marketplace resolution and ambiguity diagnostics without silent source
       shadowing.
-- [ ] Parse user-entered qualified coordinates at the future CLI/TUI application boundary.
+- [x] Resolve user selections as source-qualified marketplace coordinates at CLI/TUI application
+      boundaries; ambiguous unqualified identities fail closed.
 - [x] Implement deterministic registry-input hashing, graph validation, index generation, and
       frozen registry lock resolution.
 - [x] Implement typed deterministic compiler phases, accumulated diagnostics, immutable candidate
@@ -82,7 +85,7 @@ Product requirements:
       prune, proven-effect uninstall, per-selection outcomes, scope isolation, and CAS-reference
       release, documented in
       [`canonical-lifecycle-v1.md`](docs/installation/canonical-lifecycle-v1.md).
-- [ ] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
+- [x] Migrate project/user manifests, scope/profile compatibility, managed merges, uninstall proof,
       setup state, and structured outcomes to manifest v2.
 - [x] Add the Sources/health stage to the persistent TUI while preserving Backspace state, basket,
       Review/Finalize, descriptions, modes, scopes, and explicit outcomes, documented in
@@ -118,7 +121,7 @@ Product requirements:
       and policy gates based on worst/unknown status rather than average alone, documented in
       [`attestations-v1.md`](docs/security/attestations-v1.md). Cryptographic signing remains a
       separately versioned future protocol.
-- [ ] Show provider, rules version, evidence age, coverage, risk range, and remediation details in
+- [x] Show provider, rules version, evidence age, coverage, risk range, and remediation details in
       CLI/TUI marketplace, review, maintainer, and outcome views.
 - [x] Test malicious provider output, timeout, crash, stale/mismatched evidence, partial bundle
       coverage, offline behavior, and policy enforcement.
@@ -135,9 +138,9 @@ Product requirements:
       reviewed SEP01 migration.
 - [x] Add reviewed dry-run/apply/backup/rollback migration primitives for existing 0.1.x
       installation state; MIG01 supplies the final public compatibility orchestration.
-- [ ] Test direct-source-only, multi-registry, company-plus-team, native-reference, foreign-import,
+- [x] Test direct-source-only, multi-registry, company-plus-team, native-reference, foreign-import,
       collision, trust, offline, concurrency, Copy/Symlink, setup, and reporting fixtures.
-- [ ] Test local editable and local-wheel installation without an embedded operational registry or
+- [x] Test local editable and local-wheel installation without an embedded operational registry or
       checkout-relative runtime data.
 - [x] Prove deleting/recreating the Python environment does not break managed artifact symlinks.
 - [x] Run registry CI with the minimum supported and latest compatible AART versions.

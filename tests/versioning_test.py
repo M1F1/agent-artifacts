@@ -64,6 +64,15 @@ class VersionValueTest(unittest.TestCase):
         with self.assertRaises(versioning.VersionError):
             versioning.next_alpha(versioning.parse_version("1.0.0"))
 
+    def test_finalize_candidate_preserves_core_and_requires_a_prerelease(self):
+        versioning = _load_script("version")
+        for raw in ("1.0.0a7", "1.0.0b2", "1.0.0rc3"):
+            self.assertEqual(
+                str(versioning.finalize_candidate(versioning.parse_version(raw))), "1.0.0"
+            )
+        with self.assertRaises(versioning.VersionError):
+            versioning.finalize_candidate(versioning.parse_version("1.0.0"))
+
 
 class VersionFilesTest(unittest.TestCase):
     def test_explicit_write_updates_both_version_files(self):
@@ -125,9 +134,9 @@ class VersionFilesTest(unittest.TestCase):
 
 
 class RepositoryReleaseContractTest(unittest.TestCase):
-    def test_repository_starts_the_first_alpha(self):
+    def test_repository_is_the_stable_1_0_0_release(self):
         versioning = _load_script("version")
-        self.assertEqual(str(versioning.read_version(ROOT)), "1.0.0a1")
+        self.assertEqual(str(versioning.read_version(ROOT)), "1.0.0")
         self.assertEqual(versioning.check_version(ROOT), ())
 
     def test_hook_is_non_mutating_and_release_workflow_checks_tag(self):

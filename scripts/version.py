@@ -65,6 +65,12 @@ def next_alpha(version: Version) -> Version:
     return Version(version.major, version.minor, version.patch, "a", version.phase_number + 1)
 
 
+def finalize_candidate(version: Version) -> Version:
+    if version.stable:
+        raise VersionError("finalize requires an existing alpha, beta, or release candidate")
+    return Version(version.major, version.minor, version.patch)
+
+
 def _extract(pattern: re.Pattern[str], text: str, label: str) -> str:
     matches = pattern.findall(text)
     if len(matches) != 1:
@@ -90,7 +96,7 @@ def read_version(root: Path = ROOT) -> Version:
     return parse_version(init_version)
 
 
-def _task_states(progress: str) -> tuple[tuple[str, str], ...]:
+def task_states(progress: str) -> tuple[tuple[str, str], ...]:
     if "## Task ledger" not in progress or "## Current-task template" not in progress:
         raise VersionError("PROGRESS.md has no bounded task ledger")
     ledger = progress.split("## Task ledger", 1)[1].split("## Current-task template", 1)[0]
@@ -112,7 +118,7 @@ def _task_states(progress: str) -> tuple[tuple[str, str], ...]:
 
 def release_ready(root: Path = ROOT) -> bool:
     progress = (root / "PROGRESS.md").read_text(encoding="utf-8")
-    return all(status == "complete" for _task, status in _task_states(progress))
+    return all(status == "complete" for _task, status in task_states(progress))
 
 
 def ensure_allowed(root: Path, version: Version) -> None:
@@ -175,6 +181,8 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("next-alpha", help="print the next alpha without writing files")
     bump = commands.add_parser("bump-alpha", help="explicitly advance X.Y.ZaN")
     bump.add_argument("--write", action="store_true", help="required acknowledgement to write")
+    finalize = commands.add_parser("finalize", help="finalize the current prerelease core version")
+    finalize.add_argument("--write", action="store_true", help="required acknowledgement to write")
     set_command = commands.add_parser("set", help="explicitly set a validated version")
     set_command.add_argument("version")
     set_command.add_argument("--write", action="store_true", help="required acknowledgement")
@@ -201,6 +209,12 @@ def main(argv: tuple[str, ...] | None = None, root: Path = ROOT) -> int:
                 raise VersionError(f"refusing to write {candidate} without --write")
             write_version(root, candidate)
             print(f"version set: {candidate}")
+        elif args.command == "finalize":
+            candidate = finalize_candidate(read_version(root))
+            if not args.write:
+                raise VersionError(f"refusing to write {candidate} without --write")
+            write_version(root, candidate)
+            print(f"version finalized: {candidate}")
         elif args.command == "set":
             candidate = parse_version(args.version)
             if not args.write:
