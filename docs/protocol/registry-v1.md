@@ -7,9 +7,11 @@ reference fixture at `tests/fixtures/protocol/registry-v1/` exercises both forms
 ## Authored inputs
 
 `aart-registry.json` declares protocol compatibility, required compiler capabilities, a default
-channel, and optional service advertisements. A service advertisement is inert: for example, a
-`github-issues` usage destination does not enable reporting without separate user or organization
-policy. Authored registry, entry, artifact, and index documents cannot assign effective trust.
+channel, and optional service advertisements. A `github-issues` usage advertisement makes that
+registry eligible for the default prompt-only, per-registry reporting flow; it can never enable
+automatic submission. Users and organization policy can disable prompts or select one explicit
+central destination. Authored registry, entry, artifact, and index documents cannot assign
+effective trust.
 
 Each `entries/<type>/<name>.json` native reference records a credential-free Git URL, a reviewable
 requested ref, the canonical package path ending in `<type>/<name>`, and a review record. A

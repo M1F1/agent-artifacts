@@ -4,17 +4,22 @@ import unittest
 
 from agent_artifacts.configuration.model import ReportingMode
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.reporting.application import ReportingApplicationService
+from agent_artifacts.reporting.application import (
+    RegistryReportingRoute,
+    ReportingApplicationService,
+)
 from agent_artifacts.reporting.model import (
     ReportingDestination,
     ReportingSubmission,
     UsageReport,
     UsageResult,
 )
+from agent_artifacts.reporting.projection import RegistryUsageReport
 
 
-def _event() -> UsageReport:
+def _event(name: str = "review") -> UsageReport:
     return UsageReport(
         "1.0.0a1",
         "tui",
@@ -23,7 +28,7 @@ def _event() -> UsageReport:
         (
             UsageResult(
                 "skill",
-                "review",
+                name,
                 "codex",
                 "project",
                 "copy",
@@ -127,6 +132,45 @@ class ReportingApplicationTest(unittest.TestCase):
         assert isinstance(submitted, Err), submitted
         self.assertEqual(submitted.diagnostics[0].code.value, "reporting-invalid")
         self.assertNotIn("secret", submitted.diagnostics[0].message)
+
+    def test_registry_routes_partition_payloads_and_deduplicate_the_same_endpoint(self) -> None:
+        company = ReportingDestination(ReportingMode.PROMPT, "github.com", "org/company-usage")
+        public = ReportingDestination(ReportingMode.PROMPT, "github.com", "org/public-usage")
+        service = ReportingApplicationService(
+            None,
+            browser=lambda _plan: Ok(ReportingSubmission("browser-opened")),
+            authenticated=lambda _plan: self.fail("automatic provider used for prompt routes"),
+            routes=(
+                RegistryReportingRoute(SourceAlias("company"), company),
+                RegistryReportingRoute(SourceAlias("company-release"), company),
+                RegistryReportingRoute(SourceAlias("public"), public),
+            ),
+        )
+        routed = (
+            RegistryUsageReport(SourceAlias("company"), _event("review")),
+            RegistryUsageReport(SourceAlias("company-release"), _event("lint")),
+            RegistryUsageReport(SourceAlias("public"), _event("search")),
+        )
+        combined = UsageReport(
+            "1.0.0a1",
+            "tui",
+            "darwin",
+            "install",
+            tuple(result for item in routed for result in item.report.results),
+        )
+
+        prepared = service.prepare_routed(combined, routed)
+
+        assert isinstance(prepared, Ok), prepared
+        self.assertEqual(len(prepared.value), 2)
+        by_repository = {plan.destination.repository: plan for plan in prepared.value}
+        company_payload = by_repository["org/company-usage"].payload.decode("utf-8")
+        public_payload = by_repository["org/public-usage"].payload.decode("utf-8")
+        self.assertIn('"artifact_name":"review"', company_payload)
+        self.assertIn('"artifact_name":"lint"', company_payload)
+        self.assertNotIn('"artifact_name":"search"', company_payload)
+        self.assertIn('"artifact_name":"search"', public_payload)
+        self.assertNotIn("company-release", company_payload)
 
 
 if __name__ == "__main__":

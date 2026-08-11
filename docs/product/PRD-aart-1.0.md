@@ -400,14 +400,18 @@ that deployment.
 
 ### Reporting requirements
 
-- **RPT-001:** Reporting is disabled when no destination is configured.
-- **RPT-002:** A default/company registry may provide a policy-approved issue destination.
+- **RPT-001:** Reporting defaults to consent-based prompts routed per advertising artifact registry;
+  explicit `disabled` performs no reporting work.
+- **RPT-002:** Each artifact registry may advertise its own issue destination; an explicit
+  default/company registry may instead centralize reports under policy.
 - **RPT-003:** Reports never route implicitly to an artifact upstream.
 - **RPT-004:** Events remain versioned, allowlist-based, bounded, redacted, and independent per
   terminal artifact/setup result.
 - **RPT-005:** Interactive reporting previews the exact payload and never blocks installation.
 - **RPT-006:** Deployment policy supports disabled, prompt, or authenticated automatic submission.
 - **RPT-007:** Registry-owned ingestion/dashboard workflows treat issue content as untrusted input.
+- **RPT-008:** Per-registry routing partitions results before serialization, deduplicates identical
+  endpoints, and never reveals source aliases or another registry's results.
 
 ## 12. TUI requirements
 
@@ -569,7 +573,8 @@ registries are not pinned to one exact AART patch release.
 - Consumer installation never performs implicit foreign conversion.
 - JSON is the protocol serialization format to preserve Python 3.10 stdlib-only runtime.
 - Managed Symlink installs target immutable content and change only through explicit update.
-- Usage reporting has no implicit destination and is disabled when unconfigured.
+- Usage reporting defaults to per-registry, default-No prompts and supports an explicit disabled
+  mode or a policy-selected central destination.
 - Security status is evidence-based, digest-bound, optional-provider friendly, and never a “safe”
   certificate.
 - The public reference-registry remote is `M1F1/agent-artifacts-registry` with `PUBLIC` visibility;

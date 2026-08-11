@@ -350,7 +350,7 @@ def _reporting(value: JsonValue) -> Result[ReportingSettings]:
     if isinstance(fields, Err):
         return fields
     mode = _enum(
-        fields.value.get("mode", "disabled"), ReportingMode, CONFIG_INVALID, "reporting mode"
+        fields.value.get("mode", "prompt"), ReportingMode, CONFIG_INVALID, "reporting mode"
     )
     if isinstance(mode, Err):
         return mode

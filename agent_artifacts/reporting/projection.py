@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent_artifacts.consumer.model import ConsumerOutcome, ConsumerReview
-from agent_artifacts.domain.identifiers import ObjectDigest
+from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 
 from .model import ReportingFailure, UsageReport, UsageResult
 
@@ -42,6 +42,22 @@ class SetupReportState:
             )
         ):
             raise ValueError("setup report state is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryUsageReport:
+    """One privacy-bounded event routed internally to its marketplace registry alias.
+
+    The alias is routing metadata only.  It is deliberately absent from ``UsageReport`` and its
+    serialized payload, so a destination never learns how the user named the configured source.
+    """
+
+    source_alias: SourceAlias
+    report: UsageReport
+
+    def __post_init__(self) -> None:
+        if not self.source_alias.value or not isinstance(self.report, UsageReport):
+            raise ValueError("registry usage report route is invalid")
 
 
 def _artifact_failure(status: str) -> ReportingFailure | None:
@@ -133,4 +149,48 @@ def usage_report_from_consumer(
     )
 
 
-__all__ = ["SetupReportState", "usage_report_from_consumer"]
+def usage_reports_by_registry_from_consumer(
+    review: ConsumerReview,
+    outcome: ConsumerOutcome,
+    setup: tuple[SetupReportState, ...],
+    *,
+    aart_version: str,
+    interface: str,
+) -> tuple[RegistryUsageReport, ...]:
+    """Partition a session before serialization so registries see only their own artifacts."""
+
+    combined = usage_report_from_consumer(
+        review,
+        outcome,
+        setup,
+        aart_version=aart_version,
+        interface=interface,
+    )
+    source_by_key = {item.key: item.coordinate.source for item in review.items}
+    ordered_keys = tuple(sorted(source_by_key))
+    if len(ordered_keys) != len(combined.results):
+        raise ValueError("consumer reporting routes do not match projected results")
+    partitioned: dict[SourceAlias, list[UsageResult]] = {}
+    for key, result in zip(ordered_keys, combined.results, strict=True):
+        partitioned.setdefault(source_by_key[key], []).append(result)
+    return tuple(
+        RegistryUsageReport(
+            alias,
+            UsageReport(
+                combined.aart_version,
+                combined.interface,
+                combined.platform,
+                combined.action,
+                tuple(partitioned[alias]),
+            ),
+        )
+        for alias in sorted(partitioned, key=lambda item: item.value)
+    )
+
+
+__all__ = [
+    "RegistryUsageReport",
+    "SetupReportState",
+    "usage_report_from_consumer",
+    "usage_reports_by_registry_from_consumer",
+]

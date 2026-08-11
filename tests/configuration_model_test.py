@@ -51,7 +51,7 @@ class ConfigurationModelTest(unittest.TestCase):
             lambda: SyncSettings(SyncMode.AUTO, -1),
             lambda: SyncSettings(SyncMode.AUTO, True),
             lambda: ReportingSettings("disabled", None),  # type: ignore[arg-type]
-            lambda: ReportingSettings(ReportingMode.PROMPT, None),
+            lambda: ReportingSettings(ReportingMode.AUTOMATIC, None),
             lambda: ReportingSettings(ReportingMode.DISABLED, SourceAlias("")),
             lambda: UserConfiguration(2, (source,), None, SyncSettings(), ReportingSettings()),
             lambda: UserConfiguration(

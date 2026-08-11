@@ -11,7 +11,12 @@ from agent_artifacts.application.configuration import (
     ConfigurationRequest,
     load_configuration,
 )
-from agent_artifacts.configuration.model import UserConfiguration
+from agent_artifacts.configuration.model import (
+    ReportingMode,
+    SourceKind,
+    UserConfiguration,
+    git_location_parts,
+)
 from agent_artifacts.configuration.paths import Platform, resolve_config_paths
 from agent_artifacts.configuration.policy import (
     EffectiveConfiguration,
@@ -38,13 +43,18 @@ from agent_artifacts.sources.model import (
     source_store_paths,
 )
 
-from .application import ReportingApplicationService, ReportingProvider
+from .application import (
+    RegistryReportingRoute,
+    ReportingApplicationService,
+    ReportingProvider,
+)
 from .destination import configured_reporting_source, destination_from_services
 from .io import GitHubIssueProvider, browser_provider
 from .model import ReportingDestination
 
 REPORTING_RUNTIME_INVALID = DiagnosticCode("reporting-runtime-invalid")
 CurrentSourcePort = Callable[[CurrentSourceRequest], Result[CurrentSource | None]]
+_PUBLIC_GIT_HOSTS = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
 
 
 def _error(message: str) -> Err:
@@ -113,6 +123,49 @@ def reporting_destination_from_current(
     )
 
 
+def reporting_routes_from_current(
+    effective: EffectiveConfiguration,
+    data_root: str,
+    read_current: CurrentSourcePort = read_current_source,
+) -> tuple[RegistryReportingRoute, ...]:
+    """Discover prompt-only routes from enabled registry snapshots without fetching.
+
+    Missing, stale, or non-reporting registries are simply omitted: analytics availability never
+    changes an artifact outcome.  Source aliases remain local routing keys and are never serialized.
+    """
+
+    settings = effective.configuration.reporting
+    if settings.mode is not ReportingMode.PROMPT or settings.destination is not None:
+        return ()
+    routes = []
+    for source in effective.configuration.sources:
+        if not source.enabled or source.kind is not SourceKind.REGISTRY_GIT:
+            continue
+        location = git_location_parts(source.location)
+        if location is None:
+            continue
+        if effective.policy.reporting.deny_public_destinations and location[0] in _PUBLIC_GIT_HOSTS:
+            continue
+        current = read_current(
+            CurrentSourceRequest(
+                source_store_paths(data_root, source_instance_id(source)),
+                source.alias,
+            )
+        )
+        if isinstance(current, Err) or current.value is None:
+            continue
+        services = _coherent_services(current.value)
+        if isinstance(services, Err) or not any(
+            service.name == "usage_reporting" for service in services.value
+        ):
+            continue
+        destination = destination_from_services(ReportingMode.PROMPT, source, services.value)
+        if isinstance(destination, Err):
+            continue
+        routes.append(RegistryReportingRoute(source.alias, destination.value))
+    return tuple(sorted(routes, key=lambda route: route.source_alias.value))
+
+
 def load_local_reporting_service(
     *,
     user_home: str | None,
@@ -154,11 +207,13 @@ def load_local_reporting_service(
     destination = reporting_destination_from_current(effective, paths.data_root)
     if isinstance(destination, Err):
         return destination
+    routes = reporting_routes_from_current(effective, paths.data_root)
     return Ok(
         ReportingApplicationService(
             destination.value,
             browser or browser_provider(),
             authenticated or GitHubIssueProvider(),
+            routes,
         )
     )
 
@@ -167,4 +222,5 @@ __all__ = [
     "REPORTING_RUNTIME_INVALID",
     "load_local_reporting_service",
     "reporting_destination_from_current",
+    "reporting_routes_from_current",
 ]

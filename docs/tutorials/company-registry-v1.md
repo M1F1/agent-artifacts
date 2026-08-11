@@ -10,8 +10,9 @@ possible when organization policy permits them.
    `company/skill/review` and `team/skill/review`; select the qualified row when names collide.
 4. Review the locally derived trust class, registry review/provenance, digest-bound security
    evidence, compatibility, setup capabilities, scope, mode, and destinations before Finalize.
-5. If reporting is configured by user or organization policy, preview the redacted session event.
-   Reporting failure never changes installation success. With no destination, no issue is created.
+5. Preview any default-No redacted report offered separately to the registries that supplied the
+   selected artifacts. User or organization configuration may disable prompts or select one
+   central destination. Reporting failure never changes installation success.
 
 Maintainers work in an explicit writable registry checkout. Before a PR they run:
 

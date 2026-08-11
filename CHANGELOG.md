@@ -3,6 +3,18 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## Unreleased
+
+### Changed
+
+- New user configurations default to consent-based `prompt` reporting. Without an explicit central
+  destination, results are partitioned by the registry through which each artifact was selected.
+- Each advertising registry receives only its own artifact results. Source aliases stay local,
+  identical endpoints are deduplicated, direct sources are omitted, and every proposed Issue keeps
+  both default-No confirmations.
+- Explicit `disabled` remains silent, while `automatic` still requires one explicit destination and
+  can never be enabled by a registry advertisement.
+
 ## 1.2.0 — 2026-08-11
 
 Minor release adding collection selection to the canonical marketplace lifecycle and advisory

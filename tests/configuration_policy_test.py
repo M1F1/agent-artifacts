@@ -205,7 +205,7 @@ class ConfigurationPolicyTest(unittest.TestCase):
         invalid_runtime = (
             RuntimeOverrides(max_age_seconds=-1),
             RuntimeOverrides(default_registry=SourceAlias("missing")),
-            RuntimeOverrides(reporting_mode=ReportingMode.PROMPT),
+            RuntimeOverrides(reporting_mode=ReportingMode.AUTOMATIC),
         )
         for overrides in invalid_runtime:
             with self.subTest(overrides=overrides):

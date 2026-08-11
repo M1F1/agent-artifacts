@@ -5,6 +5,7 @@ import unittest
 from agent_artifacts.configuration.model import (
     OrganizationPolicy,
     ReportingMode,
+    ReportingPolicy,
     ReportingSettings,
     SourceKind,
     SyncSettings,
@@ -13,7 +14,10 @@ from agent_artifacts.configuration.model import (
 from agent_artifacts.configuration.policy import EffectiveConfiguration
 from agent_artifacts.domain.identifiers import SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.reporting.runtime import reporting_destination_from_current
+from agent_artifacts.reporting.runtime import (
+    reporting_destination_from_current,
+    reporting_routes_from_current,
+)
 from agent_artifacts.sources.model import CurrentSource, make_source_candidate, source_instance_id
 from tests.marketplace_fixtures import configured_source
 from tests.registry_fixture_test import _snapshot
@@ -74,6 +78,75 @@ class ReportingRuntimeTest(unittest.TestCase):
         assert isinstance(result, Ok) and result.value is not None, result
         self.assertEqual(result.value.host, "github.company.example")
         self.assertEqual(result.value.repository, "M1F1/agent-artifacts-registry")
+
+    def test_default_prompt_discovers_each_registry_route_without_a_central_destination(
+        self,
+    ) -> None:
+        source = configured_source(
+            "registry",
+            SourceKind.REGISTRY_GIT,
+            location="https://github.company.example/agents/registry.git",
+        )
+        effective = EffectiveConfiguration(
+            UserConfiguration(
+                1,
+                (source,),
+                source.alias,
+                SyncSettings(),
+                ReportingSettings(ReportingMode.PROMPT),
+            ),
+            OrganizationPolicy(1),
+            (),
+        )
+        candidate = make_source_candidate(
+            source_instance_id(source), source.alias, "a" * 40, _snapshot()
+        )
+        assert isinstance(candidate, Ok), candidate
+        current = CurrentSource(candidate.value, SourceId("reference-registry"), 1, "/snapshot")
+
+        central = reporting_destination_from_current(
+            effective, "/managed/data", lambda _request: Ok(current)
+        )
+        routes = reporting_routes_from_current(
+            effective, "/managed/data", lambda _request: Ok(current)
+        )
+
+        assert isinstance(central, Ok), central
+        self.assertIsNone(central.value)
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(routes[0].source_alias, source.alias)
+        self.assertEqual(routes[0].destination.repository, "M1F1/agent-artifacts-registry")
+
+    def test_default_prompt_honors_public_destination_policy_without_reading_snapshot(self) -> None:
+        source = configured_source(
+            "public",
+            SourceKind.REGISTRY_GIT,
+            location="https://github.com/M1F1/agent-artifacts-registry.git",
+        )
+        effective = EffectiveConfiguration(
+            UserConfiguration(
+                1,
+                (source,),
+                source.alias,
+                SyncSettings(),
+                ReportingSettings(ReportingMode.PROMPT),
+            ),
+            OrganizationPolicy(
+                1,
+                reporting=ReportingPolicy(deny_public_destinations=True),
+            ),
+            (),
+        )
+        calls = []
+
+        routes = reporting_routes_from_current(
+            effective,
+            "/managed/data",
+            lambda request: calls.append(request) or Ok(None),
+        )
+
+        self.assertEqual(routes, ())
+        self.assertEqual(calls, [])
 
     def test_missing_or_incoherent_registry_snapshot_fails_closed(self) -> None:
         source = configured_source("registry", SourceKind.REGISTRY_GIT)

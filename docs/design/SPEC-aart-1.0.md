@@ -458,7 +458,8 @@ aart.index.json
 }
 ```
 
-`services` advertises capabilities only. It MUST NOT enable reporting without user/policy config.
+`services` advertises capabilities only. It MAY make a registry eligible for the default
+prompt-only, per-registry reporting flow, but MUST NOT enable automatic submission.
 
 ### 10.2 Registry entry
 
@@ -1135,15 +1136,15 @@ install/update operations on the same manifest serialize and revalidate precondi
 
 ## 24. Reporting integration
 
-Reporting configuration is independent from source configuration. A registry service declaration is
-only a suggested endpoint. Effective destination requires user config or organization policy.
+Reporting configuration is independent from source configuration. A registry service declaration
+is a prompt-only endpoint for results selected through that registry. An explicit user or
+organization destination centralizes reporting and is mandatory for automatic submission.
 
-When unconfigured:
-
-- no reporting prompt is shown;
-- no issue URL is opened;
-- no report queue is written;
-- installation behavior is unchanged.
+The default unconfigured mode is prompt. Results are partitioned by artifact registry before
+serialization, aliases for the same endpoint are deduplicated, and each destination receives a
+separate default-No consent flow. Registries without an advertisement and direct sources receive no
+report. Explicit `disabled` performs no source read, prompt, preview, queue, browser, or network
+operation.
 
 When configured, session results use a versioned allowlist event, preview in interactive prompt
 mode, and target only the configured GitHub/GitHub Enterprise repository. Browser prefill is the

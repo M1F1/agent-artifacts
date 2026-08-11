@@ -79,14 +79,14 @@ class SyncSettings:
 
 @dataclass(frozen=True, slots=True)
 class ReportingSettings:
-    mode: ReportingMode = ReportingMode.DISABLED
+    mode: ReportingMode = ReportingMode.PROMPT
     destination: SourceAlias | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, ReportingMode):
             raise ValueError("reporting mode is invalid")
-        if self.mode is not ReportingMode.DISABLED and self.destination is None:
-            raise ValueError("enabled reporting requires an explicit destination")
+        if self.mode is ReportingMode.AUTOMATIC and self.destination is None:
+            raise ValueError("automatic reporting requires an explicit destination")
         if self.destination is not None and not self.destination.value:
             raise ValueError("reporting destination must be non-empty")
 
