@@ -103,6 +103,35 @@ class VersionFilesTest(unittest.TestCase):
                 (root / "agent_artifacts/runtime_contract.py").read_text(),
             )
 
+    def test_writing_a_version_preserves_each_file_trailing_newline(self):
+        """A bump must not leave the repository failing `ruff format --check`.
+
+        The version patterns previously ended in ``\\s*$``, which consumed the matched line's
+        newline, so every release bump silently stripped the final newline from the files it
+        touched.
+        """
+
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw)
+            touched = (
+                root / "agent_artifacts" / "__init__.py",
+                root / "pyproject.toml",
+                root / "agent_artifacts" / "runtime_contract.py",
+            )
+            for path in touched:
+                self.assertTrue(
+                    path.read_text().endswith("\n"), f"fixture precondition: {path.name}"
+                )
+
+            versioning.write_version(root, versioning.parse_version("1.0.0a1"))
+
+            for path in touched:
+                self.assertTrue(
+                    path.read_text().endswith("\n"),
+                    f"{path.name} lost its trailing newline during a version bump",
+                )
+
     def test_check_reports_mismatched_files_without_mutation(self):
         versioning = _load_script("version")
         with tempfile.TemporaryDirectory() as raw:
@@ -174,9 +203,20 @@ class VersionFilesTest(unittest.TestCase):
 
 
 class RepositoryReleaseContractTest(unittest.TestCase):
-    def test_repository_is_the_stable_1_0_0_release(self):
+    def test_repository_version_matches_its_release_contract(self):
+        """The tree is at the exact stable version its release contract governs.
+
+        Bound to ``release.EXPECTED_VERSION`` rather than a literal so the single source of truth
+        stays in the release contract and a bump does not need this assertion edited.
+        """
+
         versioning = _load_script("version")
-        self.assertEqual(str(versioning.read_version(ROOT)), "1.0.0")
+        release = _load_script("release")
+
+        version = versioning.read_version(ROOT)
+
+        self.assertEqual(str(version), release.EXPECTED_VERSION)
+        self.assertTrue(version.stable)
         self.assertEqual(versioning.check_version(ROOT), ())
 
     def test_hook_is_non_mutating_and_release_workflow_checks_tag(self):

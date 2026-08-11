@@ -16,15 +16,18 @@ _VERSION_RE = re.compile(
     r"(?P<patch>0|[1-9]\d*)"
     r"(?:(?P<phase>a|b|rc)(?P<number>0|[1-9]\d*))?$"
 )
-_INIT_RE = re.compile(r'(?m)^__version__\s*=\s*"([^"]+)"\s*$')
-_PROJECT_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"\s*$')
+# Trailing horizontal whitespace only: ``\s*$`` would consume the line's newline, so writing the
+# replacement back stripped the file's final newline and left every version bump failing
+# format-check.
+_INIT_RE = re.compile(r'(?m)^__version__\s*=\s*"([^"]+)"[ \t]*$')
+_PROJECT_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"[ \t]*$')
 _RUNTIME_CONTRACT_RE = re.compile(
     r"(?m)^EXECUTABLE_VERSION\s*=\s*SemVer\("
     r"(?P<major>0|[1-9]\d*),\s*"
     r"(?P<minor>0|[1-9]\d*),\s*"
     r"(?P<patch>0|[1-9]\d*)"
     r'(?:,\s*\("(?P<phase>a|b|rc)",\s*(?P<number>0|[1-9]\d*)\))?'
-    r"\)\s*$"
+    r"\)[ \t]*$"
 )
 _TASK_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*\d+$")
 
