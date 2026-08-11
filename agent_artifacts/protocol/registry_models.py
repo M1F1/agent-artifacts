@@ -124,6 +124,7 @@ class IndexArtifact:
     review: ReviewRecord | None = None
     provenance: IndexProvenance | None = None
     collections: tuple[str, ...] = ()
+    requires_aart: VersionBounds = VersionBounds()
 
 
 @dataclass(frozen=True, slots=True)

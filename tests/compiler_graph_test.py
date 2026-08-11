@@ -64,6 +64,7 @@ def _artifact(
     effects: tuple[str, ...] = ("copy-tree",),
     setup: IndexSetup | None = None,
     provenance: IndexProvenance | None = None,
+    requires_aart: VersionBounds | None = None,
 ) -> IndexArtifact:
     return IndexArtifact(
         SourceId(source_id),
@@ -78,6 +79,7 @@ def _artifact(
         setup,
         ReviewRecord("approved", "company-v1"),
         provenance,
+        requires_aart=requires_aart or VersionBounds(),
     )
 
 
@@ -114,6 +116,7 @@ def _target(**changes: object) -> CompatibilityTarget:
         "scope": "project",
         "mode": "copy",
         "effects": ("copy-tree",),
+        "aart_version": SemVer(1, 1, 1),
         "setup_capabilities": (Capability("keychain-secret"),),
         "require_setup": True,
     }
@@ -122,6 +125,48 @@ def _target(**changes: object) -> CompatibilityTarget:
 
 
 class CompilerGraphTest(unittest.TestCase):
+    def test_artifact_aart_bounds_are_checked_per_selection(self) -> None:
+        artifact = _artifact(
+            "new-runtime",
+            requires_aart=VersionBounds(
+                min_inclusive=SemVer(1, 1, 0),
+                max_exclusive=SemVer(2, 0, 0),
+            ),
+        )
+        compiled = compile_marketplace_graph(
+            (_source("company", artifacts=(artifact,)),),
+            available_capabilities=(),
+        )
+        assert isinstance(compiled, Ok)
+        marketplace_artifact = compiled.value.artifacts[0]
+
+        supported = evaluate_compatibility(
+            marketplace_artifact,
+            _target(aart_version=SemVer(1, 1, 1)),
+        )
+        too_old = evaluate_compatibility(
+            marketplace_artifact,
+            _target(aart_version=SemVer(1, 0, 0)),
+        )
+        too_new = evaluate_compatibility(
+            marketplace_artifact,
+            _target(aart_version=SemVer(2, 0, 0)),
+        )
+
+        self.assertTrue(supported.compatible)
+        self.assertEqual(
+            tuple(reason.code for reason in too_old.reasons),
+            ("aart-version-unsupported",),
+        )
+        self.assertEqual(
+            tuple(reason.code for reason in too_new.reasons),
+            ("aart-version-unsupported",),
+        )
+        self.assertIn(
+            b'"requires_aart":{"max_exclusive":"2.0.0","min_inclusive":"1.1.0"}',
+            marketplace_graph_bytes(compiled.value),
+        )
+
     def test_graph_is_deterministic_and_preserves_external_reference_provenance(self) -> None:
         external = _artifact(
             "atlassian",
@@ -381,11 +426,12 @@ class CompilerGraphTest(unittest.TestCase):
             (artifact.coordinate,),
         )
         invalid_target_values = (
-            ("", "darwin", "project", "copy", ("copy-tree",), (), True),
-            ("claude", "darwin", "invalid", "copy", ("copy-tree",), (), True),
-            ("claude", "darwin", "project", "invalid", ("copy-tree",), (), True),
-            ("claude", "darwin", "project", "copy", ("invalid",), (), True),
-            ("claude", "darwin", "project", "copy", ("copy-tree",), (), "yes"),
+            ("", "darwin", "project", "copy", ("copy-tree",), SemVer(1, 1, 1), (), True),
+            ("claude", "darwin", "invalid", "copy", ("copy-tree",), SemVer(1, 1, 1), (), True),
+            ("claude", "darwin", "project", "invalid", ("copy-tree",), SemVer(1, 1, 1), (), True),
+            ("claude", "darwin", "project", "copy", ("invalid",), SemVer(1, 1, 1), (), True),
+            ("claude", "darwin", "project", "copy", ("copy-tree",), "1.1.1", (), True),
+            ("claude", "darwin", "project", "copy", ("copy-tree",), SemVer(1, 1, 1), (), "yes"),
         )
         factories = (
             lambda: CollectionCoordinate(SourceAlias(""), "tools"),

@@ -24,6 +24,7 @@ from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject, JsonValue, canonical_json_bytes
+from agent_artifacts.protocol.semver import SemVer, version_bounds_label
 
 from .model import (
     ArtifactQuery,
@@ -371,9 +372,12 @@ def _source_json(source: MarketplaceSourceView) -> JsonObject:
     )
 
 
-def _item_json(item: MarketplaceItem) -> JsonObject:
+def _item_json(
+    item: MarketplaceItem,
+    executable_version: SemVer | None = None,
+) -> JsonObject:
     artifact = item.artifact.artifact
-    return JsonObject(
+    entries: list[tuple[str, JsonValue]] = list(
         (
             ("collections", JsonArray(tuple(artifact.collections))),
             ("coordinate", str(item.coordinate)),
@@ -388,13 +392,61 @@ def _item_json(item: MarketplaceItem) -> JsonObject:
             ("trust_evidence_digest", str(item.trust.evidence_digest)),
         )
     )
+    bounds = artifact.requires_aart
+    if bounds.min_inclusive is not None or bounds.max_exclusive is not None:
+        entries.append(
+            (
+                "requires_aart",
+                JsonObject(
+                    tuple(
+                        entry
+                        for entry in (
+                            (
+                                "min_inclusive",
+                                None if bounds.min_inclusive is None else str(bounds.min_inclusive),
+                            ),
+                            (
+                                "max_exclusive",
+                                None if bounds.max_exclusive is None else str(bounds.max_exclusive),
+                            ),
+                        )
+                        if entry[1] is not None
+                    )
+                ),
+            )
+        )
+    if executable_version is not None:
+        compatible = bounds.allows(executable_version)
+        entries.append(("aart_compatible", compatible))
+        if not compatible:
+            entries.append(
+                (
+                    "compatibility_notice",
+                    f"Requires AART {version_bounds_label(bounds)}; running AART "
+                    f"{executable_version} may not support this artifact, so installation is "
+                    "disabled.",
+                )
+            )
+    return JsonObject(tuple(entries))
 
 
-def marketplace_catalog_bytes(catalog: MarketplaceCatalog) -> bytes:
+def marketplace_catalog_bytes(
+    catalog: MarketplaceCatalog,
+    *,
+    executable_version: SemVer | None = None,
+) -> bytes:
     return canonical_json_bytes(
         JsonObject(
             (
-                ("artifacts", JsonArray(tuple(_item_json(item) for item in catalog.items))),
+                (
+                    "artifacts",
+                    JsonArray(
+                        tuple(
+                            _item_json(item, executable_version=executable_version)
+                            for item in catalog.items
+                        )
+                    ),
+                ),
                 (
                     "collections",
                     JsonArray(
@@ -424,7 +476,11 @@ def marketplace_catalog_bytes(catalog: MarketplaceCatalog) -> bytes:
     )
 
 
-def render_marketplace(catalog: MarketplaceCatalog) -> str:
+def render_marketplace(
+    catalog: MarketplaceCatalog,
+    *,
+    executable_version: SemVer | None = None,
+) -> str:
     lines = [
         f"source {source.alias.value} [{source.health.value}] "
         f"{source.kind.value} {redact_text(source.origin)}"
@@ -432,6 +488,15 @@ def render_marketplace(catalog: MarketplaceCatalog) -> str:
     ]
     for item in catalog.items:
         artifact = item.artifact.artifact
+        bounds = artifact.requires_aart
+        requirement = ""
+        if bounds.min_inclusive is not None or bounds.max_exclusive is not None:
+            availability = (
+                ""
+                if executable_version is None or bounds.allows(executable_version)
+                else f", unavailable on {executable_version}"
+            )
+            requirement = f" requires AART {version_bounds_label(bounds)}{availability}"
         provenance = artifact.provenance
         origin = (
             f"{redact_text(provenance.origin_url)}@{provenance.resolved_commit}:{provenance.path}"
@@ -440,7 +505,8 @@ def render_marketplace(catalog: MarketplaceCatalog) -> str:
         )
         lines.append(
             f"{item.coordinate} [{item.trust.kind.value}] [{item.source.health.value}] "
-            f"{redact_text(artifact.summary)} object={artifact.object_digest} origin={origin}"
+            f"{redact_text(artifact.summary)}{requirement} object={artifact.object_digest} "
+            f"origin={origin}"
         )
     for collection in catalog.collections:
         lines.append(

@@ -121,7 +121,7 @@ def _replaced(entries, raw_path: str, replacement):
     return [replacement if str(entry.path) == raw_path else entry for entry in entries]
 
 
-def _load(entries, *, origin=None):
+def _load(entries, *, origin=None, executable_version: str = "1.5.0"):
     from agent_artifacts.protocol.capabilities import parse_capability
     from agent_artifacts.protocol.native_tree import (
         SnapshotOrigin,
@@ -136,12 +136,27 @@ def _load(entries, *, origin=None):
     )
     return load_native_source(
         snapshot,
-        executable_version=_unwrap(parse_semver("1.5.0")),
+        executable_version=_unwrap(parse_semver(executable_version)),
         available_capabilities=(_unwrap(parse_capability("artifact-manifest-v1")),),
     )
 
 
 class NativeSourceLoaderTest(unittest.TestCase):
+    def test_artifact_version_bounds_do_not_make_the_whole_source_incompatible(self):
+        entries = _five_package_entries()
+        manifest_path = "artifacts/skill/review/artifact.json"
+        manifest = _artifact_document(
+            "skill",
+            "review",
+            "aart-skill-v1",
+            requires_aart={"min_inclusive": "1.1.0"},
+        )
+        entries = _replaced(entries, manifest_path, _json_entry(manifest_path, manifest))
+
+        loaded = _load(entries, executable_version="1.0.0")
+
+        self.assertEqual(len(_unwrap(loaded).artifacts), 5)
+
     def test_documented_reference_fixture_is_executable_protocol_evidence(self):
         from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
         from agent_artifacts.protocol.paths import parse_relative_path

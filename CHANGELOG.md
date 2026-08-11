@@ -3,6 +3,30 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 1.1.1 — 2026-08-11
+
+Patch release implementing the per-artifact AART compatibility boundary documented for `1.1.0`.
+The field is opt-in and manually maintained; ordinary executable changes do not raise artifact
+minimums.
+
+### Fixed
+
+- Native artifact manifests and compiled registry index records now accept an optional
+  `requires_aart` half-open version range.
+- Compatibility checks reject only a selected artifact outside that range; an unrestricted
+  artifact behaves exactly as before.
+- Registry compilation propagates the bound deterministically, marketplace JSON exposes it when
+  present, and install/security verification detects a manifest/index mismatch.
+
+### Compatibility
+
+- Existing artifacts omit `requires_aart` and gain no new restriction.
+- A producer adds or raises the field only when that artifact actually depends on executable
+  behavior unavailable in an older AART version; a patch release alone is never a reason.
+- `1.1.0` did not parse this documented field. Therefore a source that begins authoring it must
+  advertise `1.1.1` as its source-level parser floor, even when an individual artifact's functional
+  minimum is `1.1.0`.
+
 ## 1.1.0 — 2026-08-11
 
 Canonical non-interactive agent surface over configured sources, and a ref-aware managed source

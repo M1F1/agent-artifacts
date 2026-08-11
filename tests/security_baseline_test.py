@@ -34,7 +34,7 @@ from agent_artifacts.protocol.registry_models import (
     LockedArtifact,
     ReviewRecord,
 )
-from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.security import (
     BASELINE_RULES_DIGEST,
     AssessmentCoverage,
@@ -515,6 +515,15 @@ class SecurityBaselineEvidenceTest(unittest.TestCase):
 
         shape = _scan(candidate, replace(indexed, summary="Different summary."))
         self.assertIn("manifest-index-mismatch", {item.rule_id for item in shape.findings})
+
+        bounds = _scan(
+            candidate,
+            replace(
+                indexed,
+                requires_aart=VersionBounds(min_inclusive=SemVer(2, 0, 0)),
+            ),
+        )
+        self.assertIn("manifest-index-mismatch", {item.rule_id for item in bounds.findings})
 
         payload = _scan(
             candidate,

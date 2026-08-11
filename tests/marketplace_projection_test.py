@@ -23,6 +23,7 @@ from agent_artifacts.marketplace.model import (
 from agent_artifacts.protocol.native_models import ArtifactSelector, CollectionManifest
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.registry_models import IndexProvenance, ReviewRecord
+from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from tests.marketplace_fixtures import (
     artifact,
     configured_source,
@@ -44,6 +45,7 @@ class MarketplaceProjectionTest(unittest.TestCase):
             "atlassian",
             review=ReviewRecord("approved", "registry-v1"),
             provenance=provenance("atlassian"),
+            requires_aart=VersionBounds(min_inclusive=SemVer(1, 1, 0)),
         )
         catalog = build_marketplace(
             graph((registry, "registry-id", (indexed,))),
@@ -64,9 +66,12 @@ class MarketplaceProjectionTest(unittest.TestCase):
 
         found = search_marketplace(catalog.value, MarketplaceQuery(text="ATLASSIAN"))
         absent = search_marketplace(catalog.value, MarketplaceQuery(text="database"))
-        encoded = marketplace_catalog_bytes(catalog.value)
+        encoded = marketplace_catalog_bytes(
+            catalog.value,
+            executable_version=SemVer(1, 0, 0),
+        )
         payload = json.loads(encoded)
-        rendered = render_marketplace(catalog.value)
+        rendered = render_marketplace(catalog.value, executable_version=SemVer(1, 0, 0))
 
         self.assertEqual(len(found), 1)
         self.assertEqual(absent, ())
@@ -80,11 +85,15 @@ class MarketplaceProjectionTest(unittest.TestCase):
         self.assertEqual(item["payload_digest"], "sha256:" + "2" * 64)
         self.assertEqual(item["object_digest"], "sha256:" + "3" * 64)
         self.assertEqual(item["provenance"]["resolved_commit"], "b" * 40)
+        self.assertEqual(item["requires_aart"], {"min_inclusive": "1.1.0"})
+        self.assertFalse(item["aart_compatible"])
+        self.assertIn("installation is disabled", item["compatibility_notice"])
         self.assertIn("trust_evidence_digest", item)
         self.assertIn("registry/skill/atlassian@1.0.0", rendered)
         self.assertIn("registry-reviewed", rendered)
         self.assertIn("sha256:" + "3" * 64, rendered)
         self.assertIn("https://upstream.example/atlassian.git", rendered)
+        self.assertIn("requires AART >=1.1.0, unavailable on 1.0.0", rendered)
 
     def test_filtering_by_kind_source_and_removed_policy_is_deterministic(self) -> None:
         source = configured_source("direct", SourceKind.SOURCE_GIT)
@@ -169,6 +178,7 @@ class MarketplaceProjectionTest(unittest.TestCase):
         assert isinstance(catalog, Ok)
 
         payload = json.loads(marketplace_catalog_bytes(catalog.value))
+        self.assertNotIn("requires_aart", payload["artifacts"][0])
         self.assertEqual(payload["collections"][0]["coordinate"], "direct/collection/starter")
         self.assertEqual(
             payload["collections"][0]["members"],

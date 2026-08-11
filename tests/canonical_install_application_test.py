@@ -29,7 +29,7 @@ from agent_artifacts.protocol.native_models import (
 from agent_artifacts.protocol.native_schema import artifact_manifest_to_json
 from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
 from agent_artifacts.protocol.paths import parse_relative_path
-from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.store.model import (
     ObjectPublishCommand,
     ReferenceKind,
@@ -52,7 +52,12 @@ def _path(raw: str):
     return parsed.value
 
 
-def _fixture(root: Path, kind: str):
+def _fixture(
+    root: Path,
+    kind: str,
+    *,
+    requires_aart: VersionBounds | None = None,
+):
     payloads = {
         "skill": (("payload/SKILL.md", b"# Installed\n", False),),
         "hook": (
@@ -84,6 +89,7 @@ def _fixture(root: Path, kind: str):
         PayloadSpec(_path("payload"), PAYLOAD_FORMAT_BY_TYPE[kind]),  # type: ignore[index]
         CompatibilitySpec(("claude",), ("darwin",)),
         InstallSpec(("project",), ("copy",), effects),  # type: ignore[arg-type]
+        requires_aart=VersionBounds() if requires_aart is None else requires_aart,
     )
     candidate_result = make_object_candidate(
         (
@@ -113,7 +119,12 @@ def _fixture(root: Path, kind: str):
     assert isinstance(payload, Ok)
     source = configured_source("direct", SourceKind.SOURCE_GIT)
     indexed = replace(
-        artifact("direct-source", "review", kind=kind),
+        artifact(
+            "direct-source",
+            "review",
+            kind=kind,
+            requires_aart=requires_aart,
+        ),
         manifest_digest=json_digest(artifact_manifest_to_json(manifest)),
         payload_digest=payload.value,
         object_digest=candidate.digest,
@@ -146,6 +157,32 @@ def _fixture(root: Path, kind: str):
 
 
 class CanonicalInstallApplicationTest(unittest.TestCase):
+    def test_prepare_rejects_only_a_selected_artifact_that_needs_a_newer_aart(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            project, paths, location, request, catalog, effective = _fixture(
+                Path(raw),
+                "skill",
+                requires_aart=VersionBounds(min_inclusive=SemVer(2, 0, 0)),
+            )
+
+            planned = prepare_install(
+                request,
+                catalog,
+                effective,
+                builtin()["claude"],
+                location,
+                paths,
+                LocalInstallAdapter(),
+            )
+
+            self.assertIsInstance(planned, Err)
+            assert isinstance(planned, Err)
+            self.assertEqual(planned.diagnostics[0].code.value, "artifact-incompatible")
+            self.assertIn("requires AART >=2.0.0", planned.diagnostics[0].message)
+            self.assertIn("may not support behavior", planned.diagnostics[0].message)
+            self.assertIn("installation is disabled", planned.diagnostics[0].message)
+            self.assertFalse((project / ".claude/skills/review").exists())
+
     def test_finalize_applies_reviewed_copy_and_pins_manifest_v2_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             project, paths, location, request, catalog, effective = _fixture(Path(raw), "skill")

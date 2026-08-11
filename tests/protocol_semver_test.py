@@ -73,7 +73,12 @@ class SemVerTest(unittest.TestCase):
         )
 
     def test_bounds_are_min_inclusive_max_exclusive_and_validate_order(self):
-        from agent_artifacts.protocol.semver import parse_semver, version_bounds
+        from agent_artifacts.protocol.semver import (
+            VersionBounds,
+            parse_semver,
+            version_bounds,
+            version_bounds_label,
+        )
 
         minimum = _unwrap(parse_semver("1.0.0"))
         maximum = _unwrap(parse_semver("2.0.0"))
@@ -85,6 +90,9 @@ class SemVerTest(unittest.TestCase):
         self.assertFalse(bounds.allows(maximum))
         self.assertEqual(_code(version_bounds(maximum, minimum)), "protocol-version-bounds-invalid")
         self.assertEqual(_code(version_bounds(minimum, minimum)), "protocol-version-bounds-invalid")
+        self.assertEqual(version_bounds_label(bounds), ">=1.0.0,<2.0.0")
+        self.assertEqual(version_bounds_label(VersionBounds(minimum)), ">=1.0.0")
+        self.assertEqual(version_bounds_label(VersionBounds()), "any")
 
 
 if __name__ == "__main__":

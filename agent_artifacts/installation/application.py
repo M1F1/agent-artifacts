@@ -50,6 +50,7 @@ from agent_artifacts.protocol.native_schema import (
 )
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.protocol.paths import parse_relative_path
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.store.model import ObjectReadRequest, ObjectStorePaths, StoredObject
 
 from .model import (
@@ -294,6 +295,7 @@ def _validate_object_evidence(stored: StoredObject, indexed) -> Result[None]:
         or manifest.payload.format != expected_format
         or manifest.compatibility != indexed.compatibility
         or manifest.install != indexed.install
+        or manifest.requires_aart != indexed.requires_aart
         or not setup_matches
         or not provenance_matches
         or manifest_digest != indexed.manifest_digest
@@ -1003,6 +1005,7 @@ def prepare_install(
         request.scope,
         request.mode,
         ("copy-tree", "managed-block", "merge-json", "write-file"),
+        EXECUTABLE_VERSION,
         require_setup=False,
     )
     compatibility = evaluate_compatibility(item.artifact, target)

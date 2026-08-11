@@ -799,7 +799,12 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
             "collections",
         }
     )
-    validated = validate_object_fields(parsed.value, required=required, location=_location(path))
+    validated = validate_object_fields(
+        parsed.value,
+        required=required,
+        optional=frozenset({"requires_aart"}),
+        location=_location(path),
+    )
     if isinstance(validated, Err):
         return validated
     item = validated.value
@@ -839,6 +844,16 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
     version = parse_semver(raw_version.value, location=_location(path))
     if isinstance(version, Err):
         return version
+    requires_aart = VersionBounds()
+    if "requires_aart" in item.keys():
+        parsed_bounds = _bounds(
+            _field(item, "requires_aart"),
+            REGISTRY_INDEX_INVALID,
+            path=path,
+        )
+        if isinstance(parsed_bounds, Err):
+            return parsed_bounds
+        requires_aart = parsed_bounds.value
     compatibility_object = _object(
         _field(item, "compatibility"), REGISTRY_INDEX_INVALID, "compatibility", path=path
     )
@@ -917,6 +932,7 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
             review,
             provenance.value,
             collections.value,
+            requires_aart,
         )
     )
 
@@ -1175,7 +1191,7 @@ def _index_artifact_json(artifact: IndexArtifact) -> JsonObject:
                 ("path", str(artifact.provenance.path)),
             )
         )
-    return _json_object(
+    entries: list[tuple[str, JsonValue]] = list(
         (
             ("source_id", str(artifact.source_id)),
             ("type", artifact.identity.kind),
@@ -1210,6 +1226,12 @@ def _index_artifact_json(artifact: IndexArtifact) -> JsonObject:
             ("collections", _string_array(artifact.collections)),
         )
     )
+    if (
+        artifact.requires_aart.min_inclusive is not None
+        or artifact.requires_aart.max_exclusive is not None
+    ):
+        entries.append(("requires_aart", _bounds_json(artifact.requires_aart)))
+    return _json_object(entries)
 
 
 def registry_index_to_json(index: RegistryIndex) -> JsonObject:

@@ -97,6 +97,17 @@ class VersionBounds:
         return self.max_exclusive is None or version < self.max_exclusive
 
 
+def version_bounds_label(bounds: VersionBounds) -> str:
+    """Render a stable compact label for human diagnostics and read-only projections."""
+
+    parts = []
+    if bounds.min_inclusive is not None:
+        parts.append(f">={bounds.min_inclusive}")
+    if bounds.max_exclusive is not None:
+        parts.append(f"<{bounds.max_exclusive}")
+    return ",".join(parts) if parts else "any"
+
+
 def _error(code: DiagnosticCode, message: str, location: SourceLocation | None) -> Err:
     return Err((Diagnostic(code, Severity.ERROR, message, location),))
 

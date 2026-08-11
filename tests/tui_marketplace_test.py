@@ -14,6 +14,7 @@ from agent_artifacts.lifecycle import (
 from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.protocol.native_models import InstallSpec
 from agent_artifacts.protocol.registry_models import ReviewRecord
+from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
 from agent_artifacts.security.attestations import AttestationTrust
 from agent_artifacts.security.model import (
@@ -95,6 +96,32 @@ def _security(item) -> ArtifactSecurityEvidence:
 
 
 class TuiMarketplaceTest(unittest.TestCase):
+    def test_newer_aart_requirement_stays_visible_but_cannot_enter_the_basket(self) -> None:
+        source = configured_source("team", SourceKind.SOURCE_GIT)
+        future = artifact(
+            "team-source",
+            "future",
+            requires_aart=VersionBounds(min_inclusive=SemVer(2, 0, 0)),
+        )
+        result = build_marketplace(
+            graph((source, "team-source", (future,))),
+            effective_configuration((source,)),
+            (source_state(source, "team-source", display_order=0),),
+        )
+        assert isinstance(result, Ok), result
+
+        rows = project_marketplace_rows(
+            result.value,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertFalse(rows[0].compatible)
+        self.assertIn("unavailable", render_marketplace_row(rows[0]))
+        self.assertEqual(rows[0].reasons[0].code, "aart-version-unsupported")
+        self.assertIn("requires AART >=2.0.0", rows[0].reasons[0].message)
+        self.assertEqual(reconcile_marketplace_basket((rows[0].key,), rows).retained, ())
+
     def test_collision_rows_stay_qualified_and_expose_value_trust_health_and_security(self) -> None:
         catalog = _catalog()
         evidence = (_security(catalog.items[0]),)

@@ -511,6 +511,7 @@ def _metadata_findings(
         or manifest.payload.format != expected_format
         or manifest.compatibility != request.artifact.compatibility
         or manifest.install != request.artifact.install
+        or manifest.requires_aart != request.artifact.requires_aart
         or not _setup_matches(manifest, request.artifact)
     ):
         findings.append(_finding("manifest-index-mismatch", path=entry.path))

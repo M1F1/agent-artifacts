@@ -36,6 +36,7 @@ def _manifest_json(name: str) -> str:
       "name": "{name}",
       "version": "1.2.0",
       "summary": "Use {name} during agent work.",
+      "requires_aart": {{"min_inclusive": "1.1.0", "max_exclusive": "2.0.0"}},
       "payload": {{"root": "payload", "format": "aart-skill-v1"}},
       "compatibility": {{"profiles": ["tabnine", "claude"], "platforms": ["linux", "darwin"]}},
       "install": {{"scopes": ["user", "project"], "modes": ["symlink", "copy"], "effects": ["copy-tree"]}}
@@ -129,6 +130,8 @@ class RegistryIndexTest(unittest.TestCase):
 
         self.assertEqual(str(record.identity), "skill/code-review")
         self.assertEqual(record.summary, "Use code-review during agent work.")
+        self.assertEqual(str(record.requires_aart.min_inclusive), "1.1.0")
+        self.assertEqual(str(record.requires_aart.max_exclusive), "2.0.0")
         self.assertEqual(record.collections, ())
         self.assertIsNone(record.provenance)
 
@@ -173,6 +176,7 @@ class RegistryIndexTest(unittest.TestCase):
         encoded = canonical_json_bytes(registry_index_to_json(left.value))
         reparsed = parse_registry_index(encoded)
         self.assertEqual(reparsed, left)
+        self.assertIn(b'"requires_aart":{"max_exclusive":"2.0.0","min_inclusive":"1.1.0"}', encoded)
         self.assertNotIn(b"trust", encoded)
         self.assertNotIn(b"payload_bytes", encoded)
 

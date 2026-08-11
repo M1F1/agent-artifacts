@@ -40,7 +40,7 @@ from agent_artifacts.protocol.registry_models import (
     IndexProvenance,
     ReviewRecord,
 )
-from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.sources.model import (
     CurrentSource,
     assess_source_health,
@@ -143,6 +143,7 @@ def artifact(
     review: ReviewRecord | None = None,
     object_character: str = "3",
     provenance: IndexProvenance | None = None,
+    requires_aart: VersionBounds | None = None,
 ) -> IndexArtifact:
     return IndexArtifact(
         SourceId(source_id),
@@ -156,6 +157,7 @@ def artifact(
         InstallSpec(("project",), ("copy",), ("copy-tree",)),
         review=review,
         provenance=provenance,
+        requires_aart=VersionBounds() if requires_aart is None else requires_aart,
     )
 
 

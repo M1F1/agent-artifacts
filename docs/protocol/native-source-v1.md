@@ -32,8 +32,11 @@ payloads are:
 | `hook` | `aart-hook-v1` | strict JSON object at `payload/hook.json`, plus optional resources |
 
 The manifest also requires a one-line summary, SemVer, explicit profile/platform compatibility,
-install scopes/modes/effects, and an optional package-relative setup recipe. Optional authors,
-license, and HTTPS homepage fields are informational only and never assign trust.
+install scopes/modes/effects, and an optional package-relative setup recipe. It may declare
+`requires_aart` as a half-open executable-version range. This bound is artifact-local and opt-in:
+omitting it adds no restriction, and maintainers raise it only when the artifact actually depends
+on newer executable behavior. A routine AART release never changes it automatically. Optional
+authors, license, and HTTPS homepage fields are informational only and never assign trust.
 
 ## Provenance and collections
 

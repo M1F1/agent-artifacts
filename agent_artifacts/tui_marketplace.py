@@ -22,6 +22,7 @@ from agent_artifacts.lifecycle.model import LifecycleItem
 from agent_artifacts.marketplace.model import MarketplaceCatalog, MarketplaceItem
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_models import InstallEffect
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
 
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
@@ -223,6 +224,7 @@ def _compatibility(
                 target.scope,
                 target.mode,
                 _AVAILABLE_EFFECTS,
+                EXECUTABLE_VERSION,
                 target.setup_capabilities,
                 require_setup=True,
             ),
