@@ -2,7 +2,7 @@
 
 - **Plan:** [PLAN.md](PLAN.md)
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
-- **CB01 issue:** create/link a post-1.0 follow-up issue before opening its review PR
+- **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
 - **Current code version:** `1.0.0`
 - **Execution status:** `v1.0.0` released from merged REL01
@@ -12,16 +12,17 @@
 ## Post-v1.0.0 catalog-boundary follow-up
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
+- **Issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Branch:** `codex/remove-legacy-root-catalog`
 - **Status:** `CB01` locally complete and pushed; this addendum does not modify frozen `v1.0.0`
   release evidence.
 - **Last updated:** 2026-08-11
-- **Next checkpoint:** create/link the post-1.0 issue before opening a CB01 review PR. Do not
-  merge/tag/release as part of this checkpoint.
+- **Next checkpoint:** CB01 review PR against `main`, linked to #61. Merge, tag, and release remain
+  separately authorized actions and are not part of this checkpoint.
 
 | ID | Task | Status | Evidence / next action |
 |---|---|---|---|
-| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | complete | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes. Locally committed/pushed as `9bdb24d`; a post-1.0 issue and review PR remain before merge. |
+| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | complete | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes. Locally committed/pushed as `9bdb24d`; tracked by issue #61 and under review before merge. |
 | LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | pending | Keep separate from CB01; legacy lifecycle commands remain explicit compatibility adapters until this task passes its own E2E matrix. |
 | SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | pending | The current store remains origin-keyed for compatibility; CB01 rejects a second ref for the same Git origin rather than sharing a pointer. Add a versioned migration/rebind before enabling multi-ref sources. |
 | CFG02 | Atomic source-management configuration writes | pending | Add a configuration lock plus expected-digest CAS. The current post-sync re-read detects ordinary drift but cannot prevent a writer that races between that read and atomic replacement. |
@@ -62,6 +63,13 @@
   source files, all unit tests, integration/E2E, validation, coverage, packaging, and docs.
 - Committed and pushed the locally complete CB01 implementation as `9bdb24d`
   (`codex/remove-legacy-root-catalog`). No issue/PR, merge, tag, or release was created.
+- Opened post-1.0 tracking issue #61 for the catalog-boundary program (CB01, LIFE02, SRC02, CFG02,
+  REG02, REL02). Released issue #27 stays closed and historical.
+- Re-ran the complete quality matrix on the final branch state rather than trusting the earlier
+  green run: `format-check, lint, typecheck, unit, integration, e2e, validate, coverage,
+  packaging-check, docs-check` all pass, total branch coverage 85.12%, `version check OK: 1.0.0`.
+- Opened the CB01 review PR against `main`. Merge, tag, and release remain unauthorized and
+  deliberately not performed.
 
 ## Status rules
 
