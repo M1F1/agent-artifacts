@@ -106,6 +106,17 @@ class UserConfiguration:
         aliases = tuple(item.alias for item in ordered)
         if len(set(aliases)) != len(aliases):
             raise ValueError("configured source aliases must be unique")
+        git_origins = tuple(
+            git_origin_key(item.kind, item.location) for item in ordered if item.is_git
+        )
+        if len(set(git_origins)) != len(git_origins):
+            # Source-store identity intentionally excludes ``ref`` in v1 so one mirror/current
+            # pointer cannot safely represent two revisions of the same Git origin.  Keep the
+            # invariant here as well as in first-run addition planning: configuration may also
+            # arrive through a hand-authored file or a policy-preprovisioned installation.
+            raise ValueError(
+                "configured Git source origins must be unique until ref-aware source storage exists"
+            )
         object.__setattr__(self, "sources", ordered)
 
 
@@ -260,3 +271,17 @@ def git_location_parts(location: str) -> tuple[str, str] | None:
         return None
     path = _valid_repository_path(parsed.path)
     return None if path is None else (parsed.hostname.casefold(), path)
+
+
+def git_origin_key(kind: SourceKind, location: str) -> tuple[str, ...]:
+    """Return the configured-source identity for one Git transport location.
+
+    HTTPS, SSH, SCP-style URLs, host casing, and an optional trailing ``.git`` all denote the
+    same Git origin for the source-store invariant.  Keep ``kind`` in the key: a registry and a
+    direct native source use different validation/publishing contracts even if hosted together.
+    Invalid direct construction retains its raw location as a deterministic fallback; schema-safe
+    callers always receive the normalized three-part key.
+    """
+
+    parsed = git_location_parts(location)
+    return (kind.value, *parsed) if parsed is not None else (kind.value, location)

@@ -12,8 +12,6 @@ from agent_artifacts.model import Err, Ok, Request
 from agent_artifacts.setup import parse_installer
 from agent_artifacts.source import open_source
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-
 
 def recipe(**changes: object) -> bytes:
     value: dict[str, object] = {
@@ -226,22 +224,6 @@ class SetupSourceTests(unittest.TestCase):
 
             self.assertIsInstance(result, Err)
             self.assertIn("regular file", result.reason)
-
-
-class AuthoringAssetsTests(unittest.TestCase):
-    def test_schema_is_closed_world_and_template_uses_the_runtime_parser(self):
-        assets = REPO_ROOT / "skills" / "author-aart-installer" / "assets"
-        schema = json.loads((assets / "installer.schema.json").read_text(encoding="utf-8"))
-        template = (assets / "installer.template.json").read_bytes()
-
-        self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
-        parsed = parse_installer(
-            template,
-            artifact_key="mcp/example",
-            descriptor_path="mcp/example/setup/installer.json",
-        )
-        self.assertIsInstance(parsed, Ok, getattr(parsed, "reason", ""))
 
 
 if __name__ == "__main__":

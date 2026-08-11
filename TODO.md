@@ -3,6 +3,27 @@
 Backup implementation tracker. GitHub issues remain the source of truth for discussion and status;
 keep this file aligned with them.
 
+## Post-1.0.0 follow-ups
+
+Execution order, acceptance criteria, and handoff steps live in
+[`docs/plan/PLAN-post-v1-catalog-boundary.md`](docs/plan/PLAN-post-v1-catalog-boundary.md).
+
+- [ ] Create/link a new post-1.0 GitHub issue for CB01 before its review PR. Issue #27 is the
+      completed historical 1.0 program, not the source of truth for this follow-up.
+- [ ] Expose the full canonical non-interactive lifecycle for agents: qualified marketplace
+      install, update, uninstall, and setup. `aart source add/list` and `aart marketplace list`
+      bootstrap and inspect the marketplace, while retained `list/install/update/setup --source`
+      commands are explicit 0.1 compatibility adapters.
+- [ ] Add a configuration-scoped lock and expected-digest compare-and-swap write path for source
+      additions and source-selection changes. A fresh re-read after sync is not enough to prevent
+      a concurrent configuration writer from being lost.
+- [ ] Update the registry-owned `agent-artifacts` and `author-aart-installer` skills in a separate
+      `M1F1/agent-artifacts-registry` PR: rewrite the stale embedded-catalog instructions, bump
+      both artifact versions to `2.0.0`, remove invalid legacy provenance, and regenerate lock and
+      index through registry gates.
+- [ ] Define a new versioned release contract before the next AART release. Preserve the immutable
+      `v1.0.0` schema-freeze/release evidence rather than rewriting it for post-release changes.
+
 ## [#27 — AART 1.0: federated artifact compiler and optional registries](https://github.com/M1F1/agent-artifacts/issues/27)
 
 Product requirements:

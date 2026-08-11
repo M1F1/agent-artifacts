@@ -18,8 +18,14 @@ from agent_artifacts.configuration.model import (
     SourceKind,
     UserConfiguration,
     git_location_parts,
+    git_origin_key,
 )
-from agent_artifacts.configuration.policy import RuntimeOverrides, apply_configuration
+from agent_artifacts.configuration.policy import (
+    RuntimeOverrides,
+    apply_configuration,
+    apply_configuration_for_source_management,
+)
+from agent_artifacts.configuration.schema import validate_configured_source
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
@@ -175,6 +181,64 @@ class SourceManagementRequest:
             raise ValueError("source-management request is invalid")
         if self.operations != _configuration_operations(self.before, self.after):
             raise ValueError("source-management operations do not match the reviewed values")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAdditionRequest:
+    """One reviewed first-use source addition, kept separate from toggle-only management.
+
+    ``SourceManagementRequest`` deliberately permits only enabled/default changes to already
+    configured sources.  Adding an origin is a different trust boundary: it has its own immutable
+    request, explicit source value, synchronization step, and confirmation in the TUI.
+    """
+
+    before: UserConfiguration
+    after: UserConfiguration
+    policy: OrganizationPolicy
+    source: ConfiguredSource
+    make_default: bool
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.before, UserConfiguration)
+            or not isinstance(self.after, UserConfiguration)
+            or not isinstance(self.policy, OrganizationPolicy)
+            or not isinstance(self.source, ConfiguredSource)
+            or not isinstance(self.make_default, bool)
+        ):
+            raise ValueError("source-addition request is invalid")
+        validated = validate_configured_source(self.source)
+        if isinstance(validated, Err) or validated.value != self.source:
+            raise ValueError("source addition source is not schema-safe")
+        if (
+            self.before.schema_version != self.after.schema_version
+            or self.before.sync != self.after.sync
+            or self.before.reporting != self.after.reporting
+        ):
+            raise ValueError("source addition may not change unrelated configuration")
+        before_by_alias = {item.alias: item for item in self.before.sources}
+        after_by_alias = {item.alias: item for item in self.after.sources}
+        if (
+            self.source.alias in before_by_alias
+            or after_by_alias.get(self.source.alias) != self.source
+        ):
+            raise ValueError("source addition must add its exact new source once")
+        if any(
+            existing.kind is self.source.kind and existing.location == self.source.location
+            for existing in self.before.sources
+        ):
+            raise ValueError("source addition may not duplicate a configured source origin")
+        if set(after_by_alias) != set(before_by_alias) | {self.source.alias}:
+            raise ValueError("source addition may not remove or replace configured sources")
+        if any(after_by_alias[alias] != source for alias, source in before_by_alias.items()):
+            raise ValueError("source addition may not change existing configured sources")
+        expected_default = self.source.alias if self.make_default else self.before.default_registry
+        if self.after.default_registry != expected_default:
+            raise ValueError("source addition default registry is inconsistent")
+        if self.make_default and not self.source.is_registry:
+            raise ValueError("only a new registry may become the default registry")
+        if not self.source.enabled:
+            raise ValueError("a newly added source must be enabled")
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +470,77 @@ def plan_source_management(
     return Ok(SourceSelection(aliases, default, no_source, request, snapshot))
 
 
+def plan_source_addition(
+    view: SourceStageView,
+    source: ConfiguredSource,
+    *,
+    make_default: bool | None = None,
+) -> Result[SourceAdditionRequest]:
+    """Plan one explicit source-onboarding write without synchronizing or saving anything.
+
+    The caller must use the schema parser for raw terminal input.  This pure planner owns the
+    configuration and organization-policy boundary, while the runtime later acquires a validated
+    snapshot before atomically persisting the reviewed value.
+    """
+
+    if not isinstance(source, ConfiguredSource):
+        return _error("source addition requires a configured source value")
+    validated = validate_configured_source(source)
+    if isinstance(validated, Err):
+        return validated
+    source = validated.value
+    if not source.enabled:
+        return _error("new source must be enabled")
+    if any(existing.alias == source.alias for existing in view.configuration.sources):
+        return _error(f"source alias is already configured: {source.alias}")
+    same_origin = tuple(
+        existing.alias
+        for existing in view.configuration.sources
+        if existing.is_git
+        and source.is_git
+        and git_origin_key(existing.kind, existing.location)
+        == git_origin_key(source.kind, source.location)
+    )
+    if same_origin:
+        return _error(
+            "source origin is already configured as "
+            + ", ".join(alias.value for alias in same_origin),
+            "reuse that source alias; configuring one Git origin at multiple refs requires the "
+            "separate source-store migration feature",
+        )
+    if source.kind is not SourceKind.REGISTRY_GIT and not view.allow_direct_sources:
+        return _error("direct sources are disabled by organization policy")
+    if source.is_git and git_location_parts(source.location) is None:
+        return _error("source has an invalid Git origin")
+    chosen_default = (
+        source.is_registry and not any(row.source.is_registry for row in view.rows)
+        if make_default is None
+        else make_default
+    )
+    if chosen_default and not source.is_registry:
+        return _error("only a registry source can become the default registry")
+    desired = replace(
+        view.configuration,
+        sources=(*view.configuration.sources, source),
+        default_registry=source.alias if chosen_default else view.configuration.default_registry,
+    )
+    allowed = apply_configuration_for_source_management(desired, view.policy)
+    if isinstance(allowed, Err):
+        return allowed
+    try:
+        return Ok(
+            SourceAdditionRequest(
+                view.configuration,
+                desired,
+                view.policy,
+                source,
+                chosen_default,
+            )
+        )
+    except ValueError as error:
+        return _error(str(error))
+
+
 def _source_kind(source: ConfiguredSource) -> str:
     if source.kind is SourceKind.REGISTRY_GIT:
         return "registry"
@@ -447,9 +582,7 @@ def render_source_stage(view: SourceStageView) -> tuple[str, ...]:
     )
     lines: tuple[str, ...] = (heading,)
     if not view.rows:
-        lines += (
-            "No sources are configured. Add a registry or direct source with `aart source add`.",
-        )
+        lines += ("No sources are configured. In the Sources stage, choose Add to configure one.",)
     if view.unconfigured_recommended:
         lines += (
             "Organization-recommended source aliases still need configuration: "
@@ -466,3 +599,20 @@ def render_source_stage(view: SourceStageView) -> tuple[str, ...]:
     else:
         lines += ("Organization policy requires the listed required source(s).",)
     return lines
+
+
+def render_source_addition_review(request: SourceAdditionRequest) -> tuple[str, ...]:
+    """Render the bounded, credential-free review surface before source acquisition/write."""
+
+    source = request.source
+    origin = _origin(source)
+    ref = "" if source.ref is None else f"; ref: {source.ref}"
+    default = "; becomes the default registry" if request.make_default else ""
+    return (
+        "Source setup review:",
+        f"  alias: {source.alias}",
+        f"  kind: {_source_kind(source)}",
+        f"  origin: {origin}{ref}",
+        "  next: download and validate one immutable source snapshot, then save this source",
+        f"  effect: enable {source.alias}{default}",
+    )

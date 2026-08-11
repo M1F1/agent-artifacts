@@ -19,10 +19,12 @@ from agent_artifacts.consumer.runtime import (
     _graph_source,
     _registry_security_evidence,
     load_local_consumer_service,
+    load_read_only_marketplace,
 )
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import SourceId
 from agent_artifacts.domain.result import Err, Ok
+from agent_artifacts.io.config_store import read_configuration
 from agent_artifacts.io.source_store import publish_source_snapshot
 from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.marketplace.model import MarketplaceSourceState
@@ -124,6 +126,124 @@ def _promoted_registry_snapshot(*, include_owned: bool = True):
 
 
 class ConsumerRuntimeTest(unittest.TestCase):
+    def test_persisted_partial_required_source_configuration_cannot_load_content(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            home = root / "home"
+            project = root / "project"
+            home.mkdir()
+            project.mkdir()
+            xdg = {
+                "XDG_CONFIG_HOME": str(home / ".config"),
+                "XDG_DATA_HOME": str(home / ".local/share"),
+                "XDG_CACHE_HOME": str(home / ".cache"),
+            }
+            platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
+            paths = resolve_config_paths(
+                platform,
+                home=str(home),
+                xdg_config_home=xdg["XDG_CONFIG_HOME"],
+                xdg_data_home=xdg["XDG_DATA_HOME"],
+                xdg_cache_home=xdg["XDG_CACHE_HOME"],
+            )
+            source = configured_source("company", SourceKind.REGISTRY_GIT)
+            configuration = effective_configuration(
+                (source,), default_registry="company"
+            ).configuration
+            config_path = Path(paths.user_config_file)
+            config_path.parent.mkdir(parents=True)
+            config_path.write_bytes(user_configuration_bytes(configuration))
+
+            with (
+                mock.patch.dict(os.environ, xdg, clear=False),
+                mock.patch(
+                    "agent_artifacts.consumer.runtime.read_configuration",
+                    side_effect=lambda request: (
+                        Ok(b'{"schema_version":1,"required_sources":["company","team"]}')
+                        if request.path == paths.policy_file
+                        else read_configuration(request)
+                    ),
+                ),
+            ):
+                loaded = load_local_consumer_service(
+                    project=str(project),
+                    user_home=str(home),
+                )
+
+            self.assertIsInstance(loaded, Err)
+            assert isinstance(loaded, Err)
+            self.assertEqual(loaded.diagnostics[0].code.value, "source-policy-denied")
+
+    def test_read_only_marketplace_does_not_materialize_native_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            data_root = root / "data"
+            source = configured_source("team", SourceKind.SOURCE_GIT)
+            candidate = make_source_candidate(
+                source_instance_id(source),
+                source.alias,
+                "a" * 40,
+                native_snapshot(),
+            )
+            assert isinstance(candidate, Ok), candidate
+            published = publish_source_snapshot(
+                SourcePublishCommand(
+                    source_store_paths(str(data_root), source_instance_id(source)),
+                    ValidatedSourceCandidate(candidate.value, SourceId("reference-native-source")),
+                    90,
+                )
+            )
+            assert isinstance(published, Ok), published
+
+            listed = load_read_only_marketplace(
+                effective_configuration((source,)),
+                data_root=str(data_root),
+            )
+
+            self.assertIsInstance(listed, Ok)
+            assert isinstance(listed, Ok)
+            self.assertEqual(len(listed.value.items), 1)
+            digest = listed.value.items[0].artifact.artifact.object_digest.value
+            self.assertFalse(
+                (
+                    Path(object_store_paths(str(data_root)).objects) / digest[:2] / digest[2:]
+                ).exists()
+            )
+
+    def test_read_only_marketplace_verifies_but_does_not_materialize_registry_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            data_root = root / "data"
+            source = configured_source("company", SourceKind.REGISTRY_GIT)
+            candidate = make_source_candidate(
+                source_instance_id(source),
+                source.alias,
+                "a" * 40,
+                _promoted_registry_snapshot(),
+            )
+            assert isinstance(candidate, Ok), candidate
+            published = publish_source_snapshot(
+                SourcePublishCommand(
+                    source_store_paths(str(data_root), source_instance_id(source)),
+                    ValidatedSourceCandidate(candidate.value, SourceId("test-registry")),
+                    90,
+                )
+            )
+            assert isinstance(published, Ok), published
+
+            listed = load_read_only_marketplace(
+                effective_configuration((source,), default_registry="company"),
+                data_root=str(data_root),
+            )
+
+            self.assertIsInstance(listed, Ok)
+            assert isinstance(listed, Ok)
+            self.assertEqual(len(listed.value.items), 2)
+            store = Path(object_store_paths(str(data_root)).objects)
+            for item in listed.value.items:
+                digest = item.artifact.artifact.object_digest.value
+                self.assertFalse((store / digest[:2] / digest[2:]).exists())
+
     def test_reference_only_registry_is_a_valid_marketplace_source(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             source = configured_source("company", SourceKind.REGISTRY_GIT)

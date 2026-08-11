@@ -58,6 +58,18 @@ def _run_migrate(request: Request) -> int:
     return migrate.run(request)
 
 
+def _run_source(request: Request) -> int:
+    from .commands import source
+
+    return source.run(request)
+
+
+def _run_marketplace(request: Request) -> int:
+    from .commands import marketplace
+
+    return marketplace.run(request)
+
+
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
     "list": list_cmd.run,
@@ -73,6 +85,8 @@ DISPATCH: dict[str, Callable[[Request], int]] = {
     "security": _run_security,
     "reporting": _run_reporting,
     "migrate": _run_migrate,
+    "source": _run_source,
+    "marketplace": _run_marketplace,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
@@ -434,6 +448,90 @@ def build_parser() -> argparse.ArgumentParser:
     operation.add_argument("--apply", action="store_true", help="apply the reviewed migration")
     operation.add_argument("--rollback", action="store_true", help="restore exact 0.1 state")
     _add_json(p_state)
+
+    # source ------------------------------------------------------------------ #
+    p = sub.add_parser(
+        "source",
+        formatter_class=_HELP_FORMATTER,
+        help="add and inspect configured canonical source origins",
+        description=(
+            "Manage configured registry/direct/local origins for the canonical marketplace. "
+            "`source add` validates and snapshots the exact source before saving it, so it is "
+            "safe for non-interactive agent use."
+        ),
+    )
+    source_sub = p.add_subparsers(dest="source_action", metavar="ACTION", required=True)
+    p_add_source = source_sub.add_parser(
+        "add",
+        help="synchronize, validate, then persist one source origin",
+        description=(
+            "Parse one exact source, validate a fresh immutable snapshot, then atomically save "
+            "the source configuration. No interactive confirmation is required because all "
+            "origin/default choices are explicit command arguments."
+        ),
+    )
+    p_add_source.add_argument(
+        "--alias", dest="source_alias", required=True, metavar="ALIAS", help="source alias slug"
+    )
+    p_add_source.add_argument(
+        "--kind",
+        dest="source_kind",
+        choices=("registry-git", "source-git", "source-local"),
+        required=True,
+        help="registry-git, source-git, or source-local",
+    )
+    p_add_source.add_argument(
+        "--location",
+        dest="source_location",
+        required=True,
+        metavar="URL_OR_PATH",
+        help="credential-free Git URL or normalized absolute local path",
+    )
+    p_add_source.add_argument(
+        "--ref",
+        metavar="REF",
+        help="Git ref (defaults to main; not valid for source-local)",
+    )
+    source_default = p_add_source.add_mutually_exclusive_group()
+    source_default.add_argument(
+        "--default",
+        dest="source_make_default",
+        action="store_const",
+        const=True,
+        help="make this registry the default registry",
+    )
+    source_default.add_argument(
+        "--no-default",
+        dest="source_make_default",
+        action="store_const",
+        const=False,
+        help="preserve the current default registry",
+    )
+    _add_json(p_add_source)
+
+    p_source_list = source_sub.add_parser(
+        "list",
+        help="show configured origins and managed snapshot health",
+    )
+    _add_json(p_source_list)
+
+    # marketplace ------------------------------------------------------------- #
+    p = sub.add_parser(
+        "marketplace",
+        formatter_class=_HELP_FORMATTER,
+        help="browse the configured canonical marketplace",
+        description=(
+            "Read the local, already-validated configured source snapshots as one canonical "
+            "marketplace. This is the agent-facing browse command; legacy list/install/update "
+            "commands retain their explicit legacy source compatibility contract."
+        ),
+    )
+    marketplace_sub = p.add_subparsers(dest="marketplace_action", metavar="ACTION", required=True)
+    p_marketplace_list = marketplace_sub.add_parser(
+        "list",
+        help="emit all canonical marketplace sources and artifacts",
+    )
+    _add_json(p_marketplace_list)
 
     # upstream ---------------------------------------------------------------- #
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
@@ -967,6 +1065,12 @@ def _to_request(args: argparse.Namespace) -> Request:
         migration_action=getattr(args, "migration_action", None),
         migration_from=getattr(args, "migration_from", None),
         source_mappings=tuple(getattr(args, "source_map", ()) or ()),
+        source_action=getattr(args, "source_action", None),
+        source_alias=getattr(args, "source_alias", None),
+        source_kind=getattr(args, "source_kind", None),
+        source_location=getattr(args, "source_location", None),
+        source_make_default=getattr(args, "source_make_default", None),
+        marketplace_action=getattr(args, "marketplace_action", None),
         rollback=bool(getattr(args, "rollback", False)),
         upgrade_wheel=getattr(args, "upgrade_wheel", None),
         upgrade_source_checkout=getattr(args, "upgrade_source_checkout", None),

@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Callable, Protocol, Sized
 
 from agent_artifacts.configuration.model import OrganizationPolicy, UserConfiguration
-from agent_artifacts.configuration.policy import RuntimeOverrides, apply_configuration
+from agent_artifacts.configuration.policy import (
+    RuntimeOverrides,
+    apply_configuration,
+    apply_configuration_for_source_management,
+)
 from agent_artifacts.domain.result import Err, Ok, Result
 
 
@@ -21,6 +25,16 @@ class ReviewedSourceManagement(Protocol):
 
     @property
     def operations(self) -> Sized: ...
+
+
+class ReviewedSourceAddition(Protocol):
+    """Application-facing contract for one separately reviewed source-origin addition."""
+
+    @property
+    def after(self) -> UserConfiguration: ...
+
+    @property
+    def policy(self) -> OrganizationPolicy: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,3 +61,22 @@ def finalize_source_management(
     if isinstance(saved, Err):
         return saved
     return Ok(SourceManagementReceipt(True, len(request.operations)))
+
+
+def finalize_source_addition(
+    request: ReviewedSourceAddition,
+    save: SaveSourceConfigurationPort,
+) -> Result[SourceManagementReceipt]:
+    """Persist a source already synchronized and explicitly approved by first-use onboarding.
+
+    Synchronization belongs to the runtime boundary before this function is called.  This function
+    only rechecks policy and crosses the single durable user-configuration write boundary.
+    """
+
+    checked = apply_configuration_for_source_management(request.after, request.policy)
+    if isinstance(checked, Err):
+        return checked
+    saved = save(request.after, request.policy)
+    if isinstance(saved, Err):
+        return saved
+    return Ok(SourceManagementReceipt(True, 1))

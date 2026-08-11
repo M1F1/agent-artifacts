@@ -89,13 +89,19 @@ def _locked_override_diagnostics(
 
 
 def _policy_diagnostics(
-    configuration: UserConfiguration, policy: OrganizationPolicy
+    configuration: UserConfiguration,
+    policy: OrganizationPolicy,
+    *,
+    allow_missing_required_sources: bool = False,
 ) -> tuple[Diagnostic, ...]:
     diagnostics: list[Diagnostic] = []
     enabled = {source.alias: source for source in configuration.sources if source.enabled}
-    for required in policy.required_sources:
-        if required not in enabled:
-            diagnostics.append(_denied(f"required source {required} is not configured and enabled"))
+    if not allow_missing_required_sources:
+        for required in policy.required_sources:
+            if required not in enabled:
+                diagnostics.append(
+                    _denied(f"required source {required} is not configured and enabled")
+                )
     for source in enabled.values():
         if policy.allow_direct_sources is False and source.kind is not SourceKind.REGISTRY_GIT:
             diagnostics.append(
@@ -126,12 +132,14 @@ def _policy_diagnostics(
     return tuple(diagnostics)
 
 
-def apply_configuration(
+def _apply_configuration(
     user: UserConfiguration,
     overrides: RuntimeOverrides,
     policy: OrganizationPolicy,
+    *,
+    allow_missing_required_sources: bool,
 ) -> Result[EffectiveConfiguration]:
-    """Apply built-in/user/runtime/policy precedence and validate the effective value."""
+    """Apply precedence and policy, with a narrowly scoped source-onboarding exception."""
 
     locked_diagnostics = _locked_override_diagnostics(overrides, policy)
     if locked_diagnostics:
@@ -178,7 +186,11 @@ def apply_configuration(
         default = sources.get(effective.default_registry)
         if default is None or not default.is_registry:
             return _invalid("effective default registry must name an enabled registry")
-    diagnostics = _policy_diagnostics(effective, policy)
+    diagnostics = _policy_diagnostics(
+        effective,
+        policy,
+        allow_missing_required_sources=allow_missing_required_sources,
+    )
     if diagnostics:
         return Err(diagnostics)
     locked_fields = tuple(
@@ -192,3 +204,40 @@ def apply_configuration(
         )
     )
     return Ok(EffectiveConfiguration(effective, policy, locked_fields))
+
+
+def apply_configuration(
+    user: UserConfiguration,
+    overrides: RuntimeOverrides,
+    policy: OrganizationPolicy,
+) -> Result[EffectiveConfiguration]:
+    """Apply built-in/user/runtime/policy precedence for a content-capable operation."""
+
+    return _apply_configuration(
+        user,
+        overrides,
+        policy,
+        allow_missing_required_sources=False,
+    )
+
+
+def apply_configuration_for_source_management(
+    user: UserConfiguration,
+    policy: OrganizationPolicy,
+    overrides: RuntimeOverrides | None = None,
+) -> Result[EffectiveConfiguration]:
+    """Validate a source-management state without authorizing marketplace content.
+
+    Organizations may require several source aliases.  A user must be able to synchronize and
+    persist each allowed alias one at a time, but the ordinary content configuration path remains
+    fail-closed until all required aliases are enabled.  This helper bypasses *only* that missing
+    alias check; all origin, direct-source, reporting, and default-registry constraints remain in
+    force.
+    """
+
+    return _apply_configuration(
+        user,
+        RuntimeOverrides() if overrides is None else overrides,
+        policy,
+        allow_missing_required_sources=True,
+    )

@@ -173,6 +173,12 @@ def _snapshot_from_archive(
 
 
 def _resolved_expressions(ref: str) -> tuple[str, ...]:
+    if ref.startswith("refs/heads/"):
+        # The bare managed mirror fetches ordinary remote branches under
+        # ``refs/remotes/origin/*``.  Users may still provide the familiar fully qualified local
+        # branch spelling, so resolve it against the fetched remote tracking ref rather than a
+        # non-existent local branch ref.
+        return (f"refs/remotes/origin/{ref.removeprefix('refs/heads/')}^{{commit}}",)
     if ref.startswith("refs/") or _COMMIT_RE.fullmatch(ref) is not None:
         return (f"{ref}^{{commit}}",)
     return (

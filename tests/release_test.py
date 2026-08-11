@@ -22,6 +22,11 @@ def _fixture_root(raw: str, release, *, complete: bool = True) -> Path:
     package = root / "agent_artifacts"
     package.mkdir(exist_ok=True)
     (package / "__init__.py").write_text('__version__ = "1.0.0"\n', encoding="utf-8")
+    (package / "runtime_contract.py").write_text(
+        "from agent_artifacts.protocol.semver import SemVer\n"
+        "EXECUTABLE_VERSION = SemVer(1, 0, 0)\n",
+        encoding="utf-8",
+    )
     (root / "pyproject.toml").write_text(
         '[project]\nname = "agent-artifacts"\nversion = "1.0.0"\ndependencies = []\n',
         encoding="utf-8",

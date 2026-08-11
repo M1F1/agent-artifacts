@@ -6,6 +6,10 @@ Companion to [../design/DESIGN-symlink-install.md](../design/DESIGN-symlink-inst
 skills and hook payload directories, manifest/status metadata, update/uninstall/check handling,
 agent instructions, and verification.
 
+> Historical implementation plan. Paths below refer to the pre-1.0 embedded legacy catalog; live
+> operational artifacts now belong in an explicit external source or registry, never this tool
+> repository.
+
 This is a medium-sized feature because the user-facing flag is small, but the correctness
 contract spans the model, executor, manifest, status, update, uninstall, and agent instructions.
 The default remains copy installs. Symlink mode is explicit, local-only, and visible in metadata.

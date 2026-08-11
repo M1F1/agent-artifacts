@@ -956,7 +956,12 @@ class SourceErrorTests(unittest.TestCase):
         read = _scripted_reader(["1", "1", "install", "1", ""])
         write, lines = _collector()
         with mock.patch.object(tui, "_dispatch") as disp:
-            rc = tui._run_text(read, write, source_factory=lambda _r: Ok(_EmptySource()))
+            rc = tui._run_text(
+                read,
+                write,
+                source_factory=lambda _r: Ok(_EmptySource()),
+                source_dir=FIXTURES,
+            )
         self.assertEqual(rc, 0)
         disp.assert_not_called()
         self.assertTrue(any("No installable artifacts" in ln for ln in lines))

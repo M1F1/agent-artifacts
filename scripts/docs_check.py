@@ -107,7 +107,12 @@ def _repository_markdown(root: Path) -> tuple[Path, ...]:
         capture_output=True,
         check=True,
     )
-    return tuple(root / raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
+    return tuple(
+        path
+        for raw in result.stdout.split(b"\0")
+        if raw
+        if (path := root / raw.decode("utf-8")).is_file()
+    )
 
 
 def _structure_diagnostics(root: Path) -> tuple[Diagnostic, ...]:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Callable
 
 from agent_artifacts.configuration.model import (
@@ -16,6 +16,7 @@ from agent_artifacts.configuration.policy import (
     EffectiveConfiguration,
     RuntimeOverrides,
     apply_configuration,
+    apply_configuration_for_source_management,
 )
 from agent_artifacts.configuration.schema import (
     parse_organization_policy,
@@ -187,24 +188,24 @@ def load_configuration(
             )
         else:
             configuration = parsed_user.value
-    evaluation_policy = policy.value
-    previewed_required_sources = bool(
-        first_run is not None and not request.content_required and policy.value.required_sources
+    effective = (
+        apply_configuration(configuration, request.overrides, policy.value)
+        if request.content_required
+        else apply_configuration_for_source_management(
+            configuration,
+            policy.value,
+            request.overrides,
+        )
     )
-    if previewed_required_sources:
-        evaluation_policy = replace(policy.value, required_sources=())
-    effective = apply_configuration(configuration, request.overrides, evaluation_policy)
     if isinstance(effective, Err):
         return effective
-    if previewed_required_sources:
-        effective = Ok(replace(effective.value, policy=policy.value))
     if request.content_required and not any(
         source.enabled for source in effective.value.configuration.sources
     ):
         return _failure(
             "no-source-configured",
             "this content operation requires at least one enabled source",
-            "aart source add",
+            "run `aart source add --help` to configure one non-interactively, or use Add in the TUI Sources stage, then retry",
         )
     return Ok(
         LoadedConfiguration(
@@ -224,6 +225,27 @@ def save_user_configuration(
     ports: ConfigurationPorts,
 ) -> Result[ConfigWriteReceipt]:
     allowed = apply_configuration(configuration, RuntimeOverrides(), policy)
+    if isinstance(allowed, Err):
+        return allowed
+    return ports.write(
+        ConfigDocument(paths.user_config_file, user_configuration_bytes(configuration))
+    )
+
+
+def save_user_configuration_for_source_management(
+    configuration: UserConfiguration,
+    policy: OrganizationPolicy,
+    paths: ConfigPaths,
+    ports: ConfigurationPorts,
+) -> Result[ConfigWriteReceipt]:
+    """Persist a policy-valid source-onboarding state without enabling content operations.
+
+    This is intentionally separate from :func:`save_user_configuration`: it is usable only by the
+    reviewed source-management boundary, and it permits missing required aliases while preserving
+    every other organization policy constraint.
+    """
+
+    allowed = apply_configuration_for_source_management(configuration, policy)
     if isinstance(allowed, Err):
         return allowed
     return ports.write(

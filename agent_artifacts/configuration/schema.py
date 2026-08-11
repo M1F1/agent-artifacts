@@ -32,6 +32,7 @@ from .model import (
     SyncSettings,
     UserConfiguration,
     git_location_parts,
+    git_origin_key,
 )
 
 CONFIG_INVALID = DiagnosticCode("config-invalid")
@@ -147,6 +148,107 @@ def _safe_ref(raw: str) -> bool:
     )
 
 
+def configured_source_from_input(
+    alias: str,
+    kind: SourceKind,
+    location: str,
+    ref: str | None = None,
+) -> Result[ConfiguredSource]:
+    """Parse one user-supplied source using the configuration schema's safety rules.
+
+    A source entered through an interactive flow is enabled by default.  Call
+    :func:`validate_configured_source` when preserving an existing source's
+    enabled state.
+    """
+
+    if not isinstance(kind, SourceKind):
+        return _error(CONFIG_INVALID, "source kind has an unsupported value")
+    parsed_alias = _alias(alias, CONFIG_INVALID, "source alias")
+    if isinstance(parsed_alias, Err):
+        return parsed_alias
+    if kind is SourceKind.SOURCE_LOCAL:
+        if ref is not None:
+            return _error(CONFIG_INVALID, "local sources do not have Git refs")
+        parsed_location = _string(location, CONFIG_INVALID, "source path")
+        if isinstance(parsed_location, Err):
+            return parsed_location
+        if (
+            not posixpath.isabs(parsed_location.value)
+            or posixpath.normpath(parsed_location.value) != parsed_location.value
+        ):
+            return _error(CONFIG_INVALID, "local source path must be normalized and absolute")
+        return Ok(
+            ConfiguredSource(
+                parsed_alias.value,
+                kind,
+                parsed_location.value,
+                None,
+                True,
+            )
+        )
+
+    parsed_location = _string(location, CONFIG_INVALID, "source URL")
+    parsed_ref = _string(
+        "main" if ref is None else ref,
+        CONFIG_INVALID,
+        "source ref",
+    )
+    if isinstance(parsed_location, Err):
+        return parsed_location
+    if isinstance(parsed_ref, Err):
+        return parsed_ref
+    if git_location_parts(parsed_location.value) is None:
+        return _error(CONFIG_INVALID, "source URL must be a safe credential-free Git location")
+    if not _safe_ref(parsed_ref.value):
+        return _error(CONFIG_INVALID, "source ref is unsafe")
+    return Ok(
+        ConfiguredSource(
+            parsed_alias.value,
+            kind,
+            parsed_location.value,
+            parsed_ref.value,
+            True,
+        )
+    )
+
+
+def validate_configured_source(source: ConfiguredSource) -> Result[ConfiguredSource]:
+    """Return a canonical, schema-safe configured source without serializing it."""
+
+    if not isinstance(source, ConfiguredSource):
+        return _error(CONFIG_INVALID, "configured source has an invalid value")
+    if not isinstance(source.alias, SourceAlias):
+        return _error(CONFIG_INVALID, "source alias has an invalid value")
+    if not isinstance(source.kind, SourceKind):
+        return _error(CONFIG_INVALID, "source kind has an unsupported value")
+    if not isinstance(source.location, str):
+        return _error(CONFIG_INVALID, "source location has an invalid value")
+    if source.ref is not None and not isinstance(source.ref, str):
+        return _error(CONFIG_INVALID, "source ref has an invalid value")
+    if source.kind is not SourceKind.SOURCE_LOCAL and source.ref is None:
+        return _error(CONFIG_INVALID, "Git sources require a ref")
+    if not isinstance(source.enabled, bool):
+        return _error(CONFIG_INVALID, "source enabled must be a boolean")
+
+    parsed = configured_source_from_input(
+        source.alias.value,
+        source.kind,
+        source.location,
+        source.ref,
+    )
+    if isinstance(parsed, Err):
+        return parsed
+    return Ok(
+        ConfiguredSource(
+            parsed.value.alias,
+            parsed.value.kind,
+            parsed.value.location,
+            parsed.value.ref,
+            source.enabled,
+        )
+    )
+
+
 def _source(value: JsonValue) -> Result[ConfiguredSource]:
     object_result = _object(value, CONFIG_INVALID, "source")
     if isinstance(object_result, Err):
@@ -174,12 +276,7 @@ def _source(value: JsonValue) -> Result[ConfiguredSource]:
         location = _string(fields.value["path"], CONFIG_INVALID, "source path")
         if isinstance(location, Err):
             return location
-        if (
-            not posixpath.isabs(location.value)
-            or posixpath.normpath(location.value) != location.value
-        ):
-            return _error(CONFIG_INVALID, "local source path must be normalized and absolute")
-        return Ok(
+        return validate_configured_source(
             ConfiguredSource(alias.value, kind_result.value, location.value, None, enabled.value)
         )
     location = _string(fields.value["url"], CONFIG_INVALID, "source URL")
@@ -188,11 +285,7 @@ def _source(value: JsonValue) -> Result[ConfiguredSource]:
         return location
     if isinstance(ref, Err):
         return ref
-    if git_location_parts(location.value) is None:
-        return _error(CONFIG_INVALID, "source URL must be a safe credential-free Git location")
-    if not _safe_ref(ref.value):
-        return _error(CONFIG_INVALID, "source ref is unsafe")
-    return Ok(
+    return validate_configured_source(
         ConfiguredSource(alias.value, kind_result.value, location.value, ref.value, enabled.value)
     )
 
@@ -209,6 +302,14 @@ def _sources(value: JsonValue) -> Result[tuple[ConfiguredSource, ...]]:
     aliases = tuple(source.alias for source in sources)
     if len(set(aliases)) != len(aliases):
         return _error(CONFIG_INVALID, "source aliases must be unique")
+    git_origins = tuple(
+        git_origin_key(source.kind, source.location) for source in sources if source.is_git
+    )
+    if len(set(git_origins)) != len(git_origins):
+        return _error(
+            CONFIG_INVALID,
+            "Git source origins must be unique until ref-aware source storage exists",
+        )
     return Ok(tuple(sources))
 
 

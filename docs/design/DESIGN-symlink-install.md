@@ -1,10 +1,14 @@
 # agent-artifacts - Design: opt-in symlink install mode
 
-Companion to [DESIGN.md](DESIGN.md), focused on consumer-side installs that should stay
-live-linked to a local catalog checkout instead of being copied into every project.
+> **Historical 0.1 design (2026-06-29).** This document records the original live-link proposal
+> for an *explicit external legacy checkout*. It is not the default AART 1.0 model: the tool
+> repository no longer contains a catalog, and canonical Symlink installs point at verified
+> immutable managed objects rather than an editable checkout. For the current boundary, see
+> [README.md](../../README.md) and
+> [PLAN-post-v1-catalog-boundary.md](../plan/PLAN-post-v1-catalog-boundary.md).
 
-**Status (2026-06-29):** implemented for local directory artifacts. Copy remains the default;
-`--link` is opt-in and records visible install metadata in the consumer manifest/status output.
+Companion to [DESIGN.md](DESIGN.md), focused on historical consumer-side installs that stay
+live-linked to an explicit local legacy catalog checkout instead of being copied into every project.
 
 ## 1. Goal and scope
 
@@ -20,8 +24,7 @@ physically installed as directories.
 **In scope**
 
 - Add an explicit opt-in symlink mode, with copy mode still the default.
-- Support symlink mode only for stable local sources, primarily `--source DIR` and the editable
-  default source checkout.
+- Support this historical live-link mode only for a stable explicit local source: `--source DIR`.
 - Record install mode and link targets in the consumer manifest.
 - Make the mode visible to humans and agents through install output, `status`, and JSON.
 - Keep catalog listing and installed-state reporting distinct.
@@ -65,15 +68,15 @@ for directory links, then carry that proof into `ManifestEntry` and `status`.
 Add an opt-in install mode flag:
 
 ```sh
-aart install code-review --profile tabnine --link
-aart install --bundle backend --profile tabnine --link
+aart install code-review --profile tabnine --source /path/to/legacy-catalog --link
+aart install --bundle backend --profile tabnine --source /path/to/legacy-catalog --link
 ```
 
 Equivalent long-form spelling is acceptable if the CLI wants an extensible enum:
 
 ```sh
-aart install code-review --profile tabnine --install-mode symlink
-aart install code-review --profile tabnine --install-mode copy
+aart install code-review --profile tabnine --source /path/to/legacy-catalog --install-mode symlink
+aart install code-review --profile tabnine --source /path/to/legacy-catalog --install-mode copy
 ```
 
 Proposal: expose `--link` as the friendly flag and model it internally as
@@ -82,15 +85,16 @@ Proposal: expose `--link` as the friendly flag and model it internally as
 Default remains copy:
 
 ```sh
-aart install code-review --profile tabnine
+aart install code-review --profile tabnine --source /path/to/legacy-catalog
 ```
 
 ### Local-source requirement
 
 Symlink mode is valid only when the source root is a durable local checkout:
 
-- `--source DIR`: allowed.
-- editable default source rooted at the local `agent-artifacts` checkout: allowed.
+- `--source DIR`: allowed for an external legacy checkout.
+- an editable default source rooted at the `agent-artifacts` tool checkout: removed; the tool
+  checkout is never catalog content.
 - remote `--repo` snapshot/cache: rejected with `USAGE (2)`.
 
 Reason: linking to cache materialization would make installs depend on cache retention and
@@ -102,7 +106,7 @@ Symlink mode applies to install actions that place a directory tree into the pro
 
 | Artifact type | Current install action | Symlink behavior |
 | --- | --- | --- |
-| `skill` | `CopyTree(skills/<name>, profile skills dir)` | Link the installed skill directory to the source skill directory. |
+| `skill` | `CopyTree(source skill directory, profile skills dir)` | Link the installed skill directory to the source skill directory. |
 | `hook` | `CopyTree(hooks/<name>, scripts dir)` plus `MergeJson` registration | Link the hook payload directory, still merge the registration normally. |
 | `guideline` | `WriteFile` | Not linkable in v1. |
 | `memory` | `WriteFile` | Not linkable in v1. |
@@ -170,14 +174,14 @@ Add optional install metadata to `ManifestEntry`:
   "artifact": "code-review",
   "type": "skill",
   "profile": "claude",
-  "source": "local:/Users/mifi/code/agent-artifacts",
+  "source": "local:/work/company-agent-artifacts",
   "install": {
     "mode": "symlink",
     "requested_mode": "symlink",
     "links": [
       {
         "path": ".claude/skills/code-review",
-        "target": "/Users/mifi/code/agent-artifacts/skills/code-review",
+        "target": "/work/company-agent-artifacts/skills/code-review",
         "target_kind": "dir"
       }
     ]
@@ -217,8 +221,8 @@ Human output:
 repo: M1F1/agent-artifacts
 1 installed artifact(s):
 
-  skill/code-review  profile=claude  source=local:/Users/mifi/code/agent-artifacts  install=symlink
-    .claude/skills/code-review: ok (symlink -> /Users/mifi/code/agent-artifacts/skills/code-review)
+  skill/code-review  profile=claude  source=local:/work/company-agent-artifacts  install=symlink
+    .claude/skills/code-review: ok (symlink -> /work/company-agent-artifacts/skills/code-review)
 ```
 
 JSON output:
@@ -231,14 +235,14 @@ JSON output:
       "artifact": "code-review",
       "type": "skill",
       "profile": "claude",
-      "source": "local:/Users/mifi/code/agent-artifacts",
+      "source": "local:/work/company-agent-artifacts",
       "install": {
         "mode": "symlink",
         "requested_mode": "symlink",
         "links": [
           {
             "path": ".claude/skills/code-review",
-            "target": "/Users/mifi/code/agent-artifacts/skills/code-review",
+            "target": "/work/company-agent-artifacts/skills/code-review",
             "target_exists": true
           }
         ]
@@ -248,7 +252,7 @@ JSON output:
           "path": ".claude/skills/code-review",
           "state": "ok (symlink)",
           "kind": "symlink",
-          "target": "/Users/mifi/code/agent-artifacts/skills/code-review",
+          "target": "/work/company-agent-artifacts/skills/code-review",
           "target_exists": true
         }
       ]
@@ -300,17 +304,18 @@ Check:
 
 ## 9. `list` versus `status`
 
-Plain `aart list` should stay a catalog command. It answers "what artifacts does this source
-offer?" and intentionally does not read a consumer project.
+`aart list --source DIR` remains a legacy catalog command. It answers "what artifacts does this
+external source offer?" and intentionally does not read a consumer project. Canonical discovery is
+`aart marketplace list --json`; bare `aart list` is not configured-marketplace onboarding.
 
 Installed mode belongs in:
 
 - `.agent-artifacts/manifest.json`
 - `aart status`
 - `aart status --json`
-- `aart install --json`
-- `aart update --json`
-- the `skills/agent-artifacts/SKILL.md` agent instructions
+- `aart install --source DIR --json` (legacy compatibility)
+- `aart update --source DIR --json` (legacy compatibility)
+- the public-registry `agent-artifacts` skill instructions
 
 If the CLI later adds an installed-state list alias, it should be explicit, for example:
 
@@ -323,13 +328,15 @@ with project-local metadata.
 
 ## 10. Agent information contract
 
-After implementation, update [`skills/agent-artifacts/SKILL.md`](../../skills/agent-artifacts/SKILL.md)
+After implementation, update the
+[`agent-artifacts` skill in the public reference registry](https://github.com/M1F1/agent-artifacts-registry/tree/main/artifacts/skill/agent-artifacts)
 so agents know:
 
 - Use `aart status --json` to inspect installed artifacts and install modes.
 - Treat missing `install` metadata as `copy` for backward compatibility.
-- For `install.mode == "symlink"`, changes under `install.links[].target` are live and do
-  not require `aart update` to propagate.
+- For canonical `install.mode == "symlink"`, the target is a verified immutable managed object;
+  source pulls do not alter it. The historical live-link behavior applies only to explicit legacy
+  `--source DIR --link` installs.
 - Report broken or retargeted links to the user instead of silently reinstalling.
 - Prefer `--link` only when the user asks for shared/local/live installs.
 

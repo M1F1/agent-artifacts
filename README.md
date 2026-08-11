@@ -78,6 +78,25 @@ cd /path/to/your/project
 aart
 ```
 
+For an agent or other non-interactive caller, configure the exact source first and then read the
+canonical local marketplace as JSON:
+
+```sh
+aart source add \
+  --alias company-registry \
+  --kind registry-git \
+  --location https://github.example.com/company/agent-artifacts-registry.git \
+  --ref main \
+  --json
+aart marketplace list --json
+```
+
+`source add` fetches, validates, and stores a managed immutable snapshot before it writes the
+origin configuration. `source list --json` reports configured-origin health. The existing
+`list/install/update/setup --source` and `--repo` commands remain explicit 0.1 compatibility
+adapters; canonical agent install/update lifecycle commands are a follow-up, so callers must not
+assume that `source add` reroutes those legacy commands.
+
 The bare `aart` command first asks which path you need:
 
 - **User** installs, updates, or removes harness artifacts from reviewed catalog subscriptions.
@@ -100,13 +119,16 @@ applicable stage. Confirmed choices, the artifact/bundle basket, and the curses 
 position are retained. If an earlier edit makes only some basket rows invalid, the wizard removes
 only those rows and prints the reason. Quitting with a non-empty basket asks before discarding it.
 
-The **Sources** stage reads the user configuration and managed source pointers without fetching or
-writing. It shows registry/direct/local kind, enabled/default state, current/stale/offline/invalid/
-incompatible health, organization-required or recommended status, and exact locally derived
-company review. Registry use remains optional unless organization policy names a required source;
-an unconfigured user may continue without sources and exit cleanly. Toggling sources creates an
-immutable enable/disable/default request. That request is saved only with the final reviewed
-`Finalize`, never while browsing or moving back. See
+The ordinary **Sources** screen reads the user configuration and managed source pointers without
+fetching or writing. It shows registry/direct/local kind, enabled/default state,
+current/stale/offline/invalid/incompatible health, organization-required or recommended status,
+and exact locally derived company review. Its explicit **Add source** action is a separate reviewed
+flow: it synchronizes and validates a snapshot, then saves the new origin. Registry use remains
+optional unless organization policy names a required source; an unconfigured user may continue
+without sources and exit cleanly. If policy requires several aliases, Add saves each approved,
+synchronized source one at a time; marketplace content remains blocked until all required aliases
+are enabled. Toggling sources creates an immutable enable/disable/default request. That request is
+saved only with the final reviewed `Finalize`, never while browsing or moving back. See
 [`source-management-v1.md`](docs/tui/source-management-v1.md).
 
 Artifact and bundle selectors explain every choice in one line. In the full-screen selector,
@@ -157,18 +179,22 @@ already-absent, and preserved-user-content items visible. Warnings appear with t
 recoverable failures end with a `next:` instruction while retaining their established non-zero
 exit code.
 
-Prefer more command line examples?
+For people, launch `aart` with no subcommand and follow the guided source, cart, review, and
+Finalize flow. For agents or automation, configure one explicit source and inspect the resulting
+local marketplace with JSON:
 
 ```sh
-aart list
-aart install code-review --profile tabnine
-aart install --bundle backend --profile tabnine,claude
-aart status
+aart source add --alias reference --kind registry-git \
+  --location https://github.com/M1F1/agent-artifacts-registry.git \
+  --ref main --default --json
+aart source list --json
+aart marketplace list --json
 ```
 
-**TL;DR:** ask an agent to use the `agent-artifacts` skill for guided onboarding. It will ask
-what you are trying to do, explain the relevant `aart` options, recommend a plan, wait for your
-confirmation, and then run the right commands.
+`marketplace list` is deliberately read-only. Canonical non-interactive install/update/uninstall
+commands are tracked as `LIFE02`; until then, use the TUI for canonical lifecycle actions. Bare
+`aart list` and `aart install` are legacy compatibility commands, not configured-marketplace
+onboarding.
 
 ---
 
@@ -199,10 +225,14 @@ uses explicit destinations verified for each harness and stores separate state i
 `<project>/.agent-artifacts/manifest.json`; status, update, and uninstall read only the selected
 scope and never cross between them.
 
+The TUI is the canonical way to choose project/user scope, Copy/Symlink, and an install/update
+review. The remaining flag-mode lifecycle commands are retained only for an explicit external
+legacy catalog until `LIFE02` exposes their canonical JSON equivalents:
+
 ```sh
-aart install code-review --profile claude --scope user
+aart install code-review --profile claude --scope user --source /path/to/legacy-catalog
 aart status --scope user
-aart update --scope user
+aart update --scope user --source /path/to/legacy-catalog
 aart uninstall code-review --profile claude --scope user
 ```
 
@@ -223,8 +253,9 @@ User-global destinations include Claude's `~/.claude/` files and `~/.claude.json
 `~/.vibe/skills/`. The exact target matrix and official references are recorded in
 `docs/design/DESIGN-install-scope.md`.
 
-MCP artifacts can be a single `mcp/<name>.json` file, or a directory like
-`mcp/<name>/mcp.json` with supporting docs such as `SETUP.md`. Harness installs merge only the
+An external legacy 0.1 source can describe an MCP as a single `mcp/<name>.json` file or a
+directory such as `mcp/<name>/mcp.json` with supporting docs. A canonical registry instead owns
+`artifacts/mcp/<name>/`, with a manifest and `payload/` directory. Harness installs merge only the
 JSON server definition. `SETUP.md` stays optional human reference; guided setup is declared by a
 strict `setup/installer.json` contract.
 
@@ -243,8 +274,9 @@ rollback limits. Consent is per effect and defaults to No. One item is one trans
 rolls back that item's completed reversible steps, preserves earlier successful items, and
 continues unless Stop was explicitly selected.
 
-Flag-mode artifact installation never auto-runs setup. Use the setup runner after the matching
-artifact/profile has been installed:
+Flag-mode artifact installation never auto-runs setup. The following setup runner is legacy
+installed-state compatibility, not the future configured-marketplace CLI lifecycle; use the TUI
+for canonical setup review until `LIFE02`:
 
 ```sh
 aart setup run mcp/atlassian --profile tabnine --scope user
@@ -269,9 +301,10 @@ can inherit; close/reopen the shell and restart the harness as instructed. GUI a
 Non-macOS hosts record `unsupported` before invoking effect adapters. An optional hash-bound
 custom entrypoint may implement the reviewed `plan/apply/verify/rollback` protocol in a private
 `0700` run directory with a minimal environment and `shell=False`; it remains trusted reviewed
-code, not a sandbox. Catalog authors should use
-[`skills/author-aart-installer/SKILL.md`](skills/author-aart-installer/SKILL.md) and the full trust
-model in [`docs/design/DESIGN-setup-installers.md`](docs/design/DESIGN-setup-installers.md).
+code, not a sandbox. The current public-registry `author-aart-installer` skill is a legacy import;
+`REG02` will rewrite it as a registry-owned v2 skill before it is advertised for the new workflow.
+Until then, catalog authors should follow the full trust model in
+[`docs/design/DESIGN-setup-installers.md`](docs/design/DESIGN-setup-installers.md).
 
 Artifacts can declare that they only fit specific profiles. JSON descriptors use:
 
@@ -309,6 +342,14 @@ apply.
 The installed `aart` package carries the compiler/tooling, schemas, profiles, and importers — not
 an operational artifact catalog. Configure and sync one or more registry, direct Git, or local
 sources in the TUI; their union becomes the local marketplace. A registry is optional.
+
+Agents use the same explicit sources without opening the TUI:
+
+```sh
+aart source add --alias team --kind source-git \
+  --location https://github.com/example/team-agent-artifacts.git --ref main --json
+aart marketplace list --json
+```
 
 The old flag-mode catalog reader remains only for 0.1 compatibility and therefore requires an
 explicit source:
@@ -349,13 +390,17 @@ editing or pulling the original source does not silently change an installed art
 Every install is recorded in `.agent-artifacts/manifest.json` with files, hashes, source
 commit, install mode, and link targets. Freshness checks are opt-in, never ambient.
 
+Until `LIFE02`, the following are installed-state/legacy lifecycle commands. They do not turn a
+configured marketplace into an implicit source; use the TUI for canonical marketplace lifecycle
+work and provide `--source` for any legacy catalog lookup:
+
 ```sh
 aart status
 aart status --json
 
 aart check
-aart update
-aart update --prune
+aart update --source /path/to/legacy-catalog
+aart update --prune --source /path/to/legacy-catalog
 
 aart uninstall code-review --profile tabnine
 aart uninstall --all --profile tabnine --dry-run
@@ -395,15 +440,18 @@ drift, then print exact `git diff`, registry validate, and audit commands. AART 
 pushes, or writes consumer managed snapshots/CAS from this path. See
 [`maintainer-curation-v1.md`](docs/tui/maintainer-curation-v1.md).
 
-The following section documents the retained 0.1.x catalog compatibility workflow.
+### Legacy 0.1 catalog compatibility (external checkout)
 
-Maintainer mode is for people editing the source-of-truth catalog repo itself. In this repo,
-you add or edit artifacts under `skills/`, `guidelines/`, `mcp/`, `hooks/`, and `memory/`,
-compose them into `bundles/`, and optionally track third-party origins in `upstreams.json`.
+The following section documents the retained 0.1.x workflow for an explicit external catalog
+checkout. The AART tool repository intentionally contains no operational artifact catalog.
 
-Consumer `aart update` never talks directly to third-party upstream repos. Maintainers import
-or update artifacts here, review the diff, and merge the catalog change. Users then install or
-update from the reviewed catalog.
+Maintainer mode can open a source-of-truth legacy catalog repo. In that external checkout, authors
+add or edit artifacts under `skills/`, `guidelines/`, `mcp/`, `hooks/`, and `memory/`, compose
+them into `bundles/`, and optionally track third-party origins in `upstreams.json`.
+
+Consumer `aart update` never talks directly to third-party upstream repos. Maintainers import or
+update artifacts in that checkout, review the diff, and merge the catalog change. Users then
+install or update from the reviewed source.
 
 In the interactive Maintainer path, the absolute active catalog checkout is always shown. Every
 add, import, or upstream update runs catalog validation, shows a dry-run preview, asks for explicit
@@ -443,20 +491,20 @@ aart upstream validate --source .
 aart upstream health --source .
 aart list --source .
 aart list --source . --json
-make validate
 ```
 
 `upstream health` summarizes artifact counts by type, tracked and untracked artifacts, validation
 errors, and tracked origins requiring attention. A missing `upstreams.json` is valid and means the
 catalog currently has no tracked third-party origins.
 
-Use `--source .` when you want the CLI to read the working tree you are editing, not the
-catalog bundled inside the installed package.
+Use `--source .` when you want the CLI to read the external working tree you are editing. In
+contrast, `make validate` validates the code-only AART tool checkout and rejects embedded
+legacy/canonical catalog paths, including dangling root symlinks.
 
 ### Test A Catalog Source
 
 Maintainers can point ordinary list/install/update commands at a local checkout or published
-remote catalog to verify catalog changes before users receive a new tool build.
+remote catalog to verify catalog changes before users receive the reviewed source revision.
 
 ```sh
 aart list --source .
@@ -469,7 +517,7 @@ aart install code-review --version v2.1 --repo your-org/ai-catalog --profile tab
 
 ### Create Or Edit Artifacts Manually
 
-Artifacts live in predictable locations:
+In an external legacy checkout, artifacts live in predictable locations:
 
 | Type | Catalog path | Required entry point |
 |------|--------------|----------------------|
@@ -504,13 +552,12 @@ After editing, validate and smoke-test the install plan:
 aart list --source . --type skill
 aart install code-review --source . --profile tabnine --dry-run
 aart install --bundle backend --source . --profile tabnine --dry-run
-make validate
 ```
 
 ### Create Or Edit Bundles
 
-Bundles live in `bundles/<name>.json`. A bundle can include artifacts, extend other bundles,
-and pin selected artifacts to a ref for reproducible installs.
+In an external legacy checkout, bundles live in `bundles/<name>.json`. A bundle can include
+artifacts, extend other bundles, and pin selected artifacts to a ref for reproducible installs.
 
 ```json
 {
@@ -536,7 +583,6 @@ To create a bundle, add a new `bundles/<name>.json`. To edit one, change `includ
 ```sh
 aart list --source . --bundle backend
 aart install --bundle backend --source . --profile tabnine,claude --dry-run
-make validate
 ```
 
 `includes` supports `skills`, `guidelines`, `mcp`, `hooks`, and `memory`. `extends` composes
@@ -650,13 +696,12 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 
 | Command | Network | Does |
 |---------|:------:|------|
-| `aart list` | no | List artifacts in the configured local marketplace (`--type`, `--bundle`, `--json`) |
-| `aart install` | no | Install selected marketplace artifacts/collections into one or more profiles |
-| `aart status` | no | Show installed artifacts, install mode, link state, and local drift |
-| `aart check` | yes | Compare installed/CLI commit against the source |
-| `aart update` | no by default | Re-apply reviewed artifacts; `--prune`, `--force` |
-| `aart uninstall` | no | Reverse installed files and merge entries |
-| `aart setup` | no by default | Review/run/retry/status/rollback declarative artifact setup |
+| `aart source add` | source-dependent | Validate/snapshot one canonical registry/direct/local source, then persist it |
+| `aart source list` | no | Show configured origins and managed snapshot health |
+| `aart marketplace list` | no | List the configured canonical marketplace (`--json` is agent-safe) |
+| `aart list/install/update/setup --source DIR` or `--repo OWNER/NAME` | source-dependent | Explicit 0.1 compatibility catalog commands; not canonical marketplace lifecycle commands |
+| `aart status` / `aart check` | local / source-dependent | Legacy installed-state compatibility inspection; canonical lifecycle remains TUI-first |
+| `aart update` / `aart uninstall` / `aart setup` | varies | Legacy installed-state compatibility commands; canonical JSON lifecycle is deferred to `LIFE02` |
 | `aart migrate state` | no | Dry-run/apply/rollback explicit 0.1 installation state |
 | `aart upgrade --wheel FILE` | no | Reinstall the CLI from one exact local wheel, index-free |
 | `aart upgrade --source-checkout DIR` | no | Reinstall editable from one exact local checkout, index-free |
@@ -762,8 +807,9 @@ same immutable result, so counts and item identities cannot diverge between fron
 Existing command-specific JSON fields remain available. Consumers should use `summary` for final
 selected/changed counts, status item lists, actual modes, warnings, and safe recovery guidance.
 
-> **Agents:** there's a dedicated skill at [`skills/agent-artifacts/SKILL.md`](skills/agent-artifacts/SKILL.md)
-> teaching an agent to drive this CLI (always `--json`, never the TUI).
+> **Agents:** the dedicated
+> [`agent-artifacts` skill in the public reference registry](https://github.com/M1F1/agent-artifacts-registry/tree/main/artifacts/skill/agent-artifacts)
+> teaches an agent to drive this CLI (always `--json`, never the human TUI).
 
 ---
 
@@ -772,7 +818,7 @@ selected/changed counts, status item lists, actual modes, warnings, and safe rec
 ```sh
 make quality          # canonical non-mutating local/CI gate suite
 make test             # broad Python regression suite + bash E2E compatibility alias
-make validate         # catalog integrity + zero-runtime-dependency import gate
+make validate         # code-only repository boundary + zero-runtime-dependency import gate
 make packaging-check  # build/import a wheel in a throwaway source copy
 python scripts/distribution_smoke.py --json  # editable -> wheel -> recreated environment lifecycle
 make system-matrix    # all 13 hermetic AART 1.0 acceptance/fault scenarios

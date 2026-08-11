@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical catalog and zero-runtime-dependency validation gate."""
+"""Code-only checkout boundary and zero-runtime-dependency validation gate."""
 
 from __future__ import annotations
 
@@ -8,6 +8,20 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+EMBEDDED_CATALOG_PATHS = (
+    "skills",
+    "guidelines",
+    "mcp",
+    "hooks",
+    "memory",
+    "bundles",
+    "artifacts",
+    "collections",
+    "aart-source.json",
+    "aart-registry.json",
+    "aart.lock.json",
+    "aart.index.json",
+)
 
 
 def non_stdlib_imports(package_root: Path) -> tuple[str, ...]:
@@ -29,28 +43,32 @@ def non_stdlib_imports(package_root: Path) -> tuple[str, ...]:
     return tuple(sorted(set(violations)))
 
 
-def catalog_diagnostics(root: Path) -> tuple[str, ...]:
-    from agent_artifacts.catalog import validate_catalog
-    from agent_artifacts.model import Err, Request
-    from agent_artifacts.source import open_source
+def operational_catalog_diagnostics(root: Path) -> tuple[str, ...]:
+    """Reject embedded legacy or canonical catalog content from the tool checkout.
 
-    source = open_source(Request(command="list", source_dir=str(root)))
-    if isinstance(source, Err):
-        return (f"source error: {source.reason}",)
-    catalog = source.value.catalog()
-    if isinstance(catalog, Err):
-        return (f"catalog error: {catalog.reason}",)
-    return tuple(f"catalog: {error.reason}" for error in validate_catalog(catalog.value))
+    ``Path.exists`` alone misses dangling symbolic links, which would let a future checkout appear
+    code-only locally while turning into a catalog when its target appears.  A tool repository must
+    not carry either the legacy roots or the canonical source/registry markers at its own root.
+    """
+
+    return tuple(
+        f"repository contains embedded operational catalog path: {name}"
+        for name in EMBEDDED_CATALOG_PATHS
+        if (root / name).exists() or (root / name).is_symlink()
+    )
 
 
 def main() -> int:
-    diagnostics = (*non_stdlib_imports(ROOT / "agent_artifacts"), *catalog_diagnostics(ROOT))
+    diagnostics = (
+        *non_stdlib_imports(ROOT / "agent_artifacts"),
+        *operational_catalog_diagnostics(ROOT),
+    )
     for diagnostic in diagnostics:
         print(diagnostic)
     if diagnostics:
         print(f"validation FAILED: {len(diagnostics)} diagnostic(s)")
         return 1
-    print("validation OK: catalog valid and runtime imports are stdlib-only")
+    print("validation OK: repository boundary and runtime imports are valid")
     return 0
 
 
