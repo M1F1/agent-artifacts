@@ -5,21 +5,20 @@
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
 - **Current code version:** `1.1.1`
-- **Execution status:** `v1.0.0` released from merged REL01
-- **Next task:** CB01 — post-release catalog boundary and source onboarding follow-up
+- **Execution status:** `v1.1.1` released; post-1.0 catalog-boundary program complete
+- **Next task:** none in the current plan
 - **Last updated:** 2026-08-11
 
 ## Post-v1.0.0 catalog-boundary follow-up
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
 - **Issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
-- **Branches:** `codex/remove-legacy-root-catalog` (CB01), `codex/aart-life02-marketplace-lifecycle`
-  (LIFE02, stacked on CB01 because it extends the `marketplace` command surface CB01 introduces)
-- **Status:** `CB01` in review as PR #62 with green CI; `LIFE02` locally complete. This addendum
-  does not modify frozen `v1.0.0` release evidence.
+- **Branches:** all executable follow-ups merged to `M1F1/agent-artifacts`; REG02 merged separately
+  to `M1F1/agent-artifacts-registry`.
+- **Status:** complete. AART `v1.1.1` supplies the missing per-artifact compatibility boundary, and
+  registry PR #1 publishes the rewritten skills and generated registry evidence.
 - **Last updated:** 2026-08-11
-- **Next checkpoint:** LIFE02 review PR stacked on CB01, linked to #61. Merge, tag, and release
-  remain separately authorized actions and are not part of this checkpoint.
+- **Next checkpoint:** none; future work requires a new plan/task rather than extending REG02.
 
 | ID | Task | Status | Evidence / next action |
 |---|---|---|---|
@@ -27,7 +26,7 @@
 | LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | complete | JSON-first lifecycle over the existing canonical application services. Coordinates are `<source>/<kind>/<name>[@<version>]`; an unqualified `<kind>/<name>` resolves only when unique, otherwise a deterministic ambiguity diagnostic names every valid coordinate. Without `--yes` every action stops after Review and changes nothing; `--yes` finalizes the digest of the review computed in the same process. Setup authorizations are never implied (`--authorize-untrusted-source`, `--authorize-custom-entrypoint`, `--approve-setup-effects`). Legacy `--source`/`--repo` are rejected on these subcommands. Real temporary-home/project E2E covers Copy, managed Symlink into the object store, user scope, update no-op, status, uninstall, offline, and JSON diagnostics. Full `make quality` passes. Setup *execution* E2E is deliberately not added — see the residual note below. |
 | SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | complete | Source identity is now `(kind, location, ref)`, so two refs of one Git origin own separate mirrors, snapshots, and pointers instead of sharing one. The uniqueness invariant moved from origin to (origin, ref) in all four places that enforced it: configuration model, schema parser, addition planner, and `SourceAdditionRequest`. `<data_root>/sources/store.json` records layout v2 and is written only after every rebind succeeds. Migration planning is pure and refuses to guess: a legacy+ref-aware pair is a conflict, and one legacy directory claimable by two configured refs is an explicit ambiguity naming both aliases. Applying uses atomic renames, never renames onto an existing directory, is idempotent, and resumes from a partially applied state. Adds `aart source sync`, `health`, and `doctor [--apply]`, none of which may change source identity, configuration, or policy. Design: `docs/design/DESIGN-src02-ref-aware-sources.md`. Full `make quality` passes. |
 | CFG02 | Atomic source-management configuration writes | complete | Adds a configuration-scoped lock plus an expected-digest compare-and-swap writer (`agent_artifacts/io/config_cas.py`). `LoadedConfiguration` now carries `observed_digest`, and both reviewed source-management finalizers — CLI `source add` and the TUI source selection/addition — name that exact state; the compare runs under the lock immediately before the atomic replace, closing the window a pre-write re-read alone cannot. A losing writer gets a deterministic `config-write-conflict` retry diagnostic and never overwrites. The writer is an injected port (`ConfigurationPorts.write_checked`), so the application layer states the contract and io implements it. A crashed lock holder is reclaimed only when both old and provably gone; a live holder is never stolen from. Tests cover the isolated writer (11), the wired CLI path including a writer injected mid-sync (4), lock release on both success and refusal, and idempotent retry. Full `make quality` passes. |
-| REG02 | Registry-owned agent skills | pending | AART `1.1.1` adds the missing per-artifact `requires_aart` parser/compiler/runtime boundary without automatically raising artifact minimums. Release this patch, then finish the separate `M1F1/agent-artifacts-registry` PR: rewrite the two skills to `2.0.0` and regenerate lock/index. |
+| REG02 | Registry-owned agent skills | complete | AART PR [#67](https://github.com/M1F1/agent-artifacts/pull/67) released `v1.1.1` with optional, manual per-artifact `requires_aart`; missing bounds remain unrestricted, incompatible artifacts remain visible, and installation is blocked with a reason. Registry PR [#1](https://github.com/M1F1/agent-artifacts-registry/pull/1) rewrites `agent-artifacts` and `author-aart-installer` as registry-owned `2.0.0` skills, removes their stale legacy provenance, adds the requested `>=1.1.0` artifact bounds to all three skills, regenerates lock/index, and pins CI to released AART `v1.1.1` with format/validate/lock/build/audit/minimum/latest gates. Both PR and post-merge CI passed. No executable version was raised for this documentation update. |
 | REL02 | Next executable release contract | complete | Version `1.1.0`, not the originally guessed `1.0.1`: LIFE02 and SRC02 add eleven public CLI commands, which is a SemVer MINOR change. Adds a versioned release contract (`RELEASE_CONTRACT_VERSION = 2`) with `schema-freeze-v2.json`, `release-checklist-v2.md`, `compatibility-v2.md`, and `github-release-v1.1.0.md`. REL01's `1.0.0` evidence is untouched and never regenerated; the v2 freeze differs from v1 in exactly one input, `agent_artifacts/configuration/schema.py`, from SRC02's relaxed origin-and-ref rule. `compatibility-v2.md` records the one-directional configuration compatibility: every `1.0.0` config still loads, but a `1.1.0` multi-ref config is rejected by `1.0.0`, which is why REG02 must raise `requires_aart` to `>=1.1.0`. |
 
 ### 2026-08-11 — CB01 work log
