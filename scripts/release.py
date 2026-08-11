@@ -17,9 +17,13 @@ from typing import Any, Callable, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
-EXPECTED_VERSION = "1.0.0"
+# The release series this checklist governs.  REL01's `1.0.0` evidence is immutable: its
+# schema freeze, checklist, and release notes are never regenerated or edited.  A new release
+# series adds its own contract here and its own versioned documents beside the frozen ones.
+EXPECTED_VERSION = "1.1.0"
+RELEASE_CONTRACT_VERSION = 2
 REFERENCE_REGISTRY_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry"
-SCHEMA_FREEZE_PATH = "docs/release/schema-freeze-v1.json"
+SCHEMA_FREEZE_PATH = f"docs/release/schema-freeze-v{RELEASE_CONTRACT_VERSION}.json"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SCHEMA_INPUTS = (
     "agent_artifacts/configuration/schema.py",
@@ -40,12 +44,9 @@ SCHEMA_INPUTS = (
 )
 REQUIRED_RELEASE_DOCS = (
     "CHANGELOG.md",
-    "docs/release/migration-v1.md",
-    "docs/release/compatibility-v1.md",
-    "docs/release/release-checklist-v1.md",
-    "docs/release/github-release-v1.0.0.md",
-    "docs/tutorials/direct-source-v1.md",
-    "docs/tutorials/company-registry-v1.md",
+    f"docs/release/compatibility-v{RELEASE_CONTRACT_VERSION}.md",
+    f"docs/release/release-checklist-v{RELEASE_CONTRACT_VERSION}.md",
+    f"docs/release/github-release-v{EXPECTED_VERSION}.md",
 )
 RELEASE_CHECKS = (
     "repository",
@@ -221,7 +222,8 @@ def _repository_diagnostics(
                 _diagnostic(
                     "repository",
                     "release-doc-missing",
-                    f"required 1.0.0 release document is missing or incomplete: {relative}",
+                    f"required {EXPECTED_VERSION} release document is missing "
+                    f"or incomplete: {relative}",
                 )
             )
     if require_clean:
