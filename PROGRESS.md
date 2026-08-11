@@ -4,24 +4,25 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `1.1.1`
-- **Execution status:** `v1.1.1` released; original post-1.0 program complete, REG03 implemented locally
-- **Next task:** publish the upstream MIT/symlink fixes before the dependent AART and registry PRs
+- **Current code version:** `1.2.0`
+- **Execution status:** `v1.2.0` release contract ready after merged upstream and AART feature PRs
+- **Next task:** merge this release PR, publish `v1.2.0`, then finish the dependent registry PR
 - **Last updated:** 2026-08-11
 
 ## Post-v1.0.0 catalog-boundary follow-up
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
 - **Issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
-- **Branches:** all original executable follow-ups merged to `M1F1/agent-artifacts`; REG02 merged
-  separately to `M1F1/agent-artifacts-registry`; REG03 is isolated on new local branches.
+- **Branches:** all original executable follow-ups and AART PR #69 are merged; REG02 is merged
+  separately to `M1F1/agent-artifacts-registry`; REG03 remains isolated in registry PR #2.
 - **Status:** the original program is complete. AART `v1.1.1` supplies the missing per-artifact
   compatibility boundary, registry PR #1 publishes the rewritten skills and generated registry
-  evidence. REG03 remains a separate registry import; an independent AART convenience change adds
-  one-coordinate collection lifecycle selection without changing any registry compatibility floor.
+  evidence. Upstream Residuality PR #1 and AART PR #69 are merged. The `1.2.0` release adds
+  one-coordinate collection lifecycle selection and advisory runtime health without changing any
+  registry or artifact compatibility floor; REG03 remains a separate registry import.
 - **Last updated:** 2026-08-11
-- **Next checkpoint:** publish the upstream MIT and managed-Symlink fixes, then review the separate
-  AART collection-selector and REG03 registry PRs in dependency order.
+- **Next checkpoint:** publish AART `v1.2.0`, update registry CI to exercise advisory health with the
+  released executable, then merge registry PR #2.
 
 | ID | Task | Status | Evidence / next action |
 |---|---|---|---|
@@ -30,7 +31,7 @@
 | SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | complete | Source identity is now `(kind, location, ref)`, so two refs of one Git origin own separate mirrors, snapshots, and pointers instead of sharing one. The uniqueness invariant moved from origin to (origin, ref) in all four places that enforced it: configuration model, schema parser, addition planner, and `SourceAdditionRequest`. `<data_root>/sources/store.json` records layout v2 and is written only after every rebind succeeds. Migration planning is pure and refuses to guess: a legacy+ref-aware pair is a conflict, and one legacy directory claimable by two configured refs is an explicit ambiguity naming both aliases. Applying uses atomic renames, never renames onto an existing directory, is idempotent, and resumes from a partially applied state. Adds `aart source sync`, `health`, and `doctor [--apply]`, none of which may change source identity, configuration, or policy. Design: `docs/design/DESIGN-src02-ref-aware-sources.md`. Full `make quality` passes. |
 | CFG02 | Atomic source-management configuration writes | complete | Adds a configuration-scoped lock plus an expected-digest compare-and-swap writer (`agent_artifacts/io/config_cas.py`). `LoadedConfiguration` now carries `observed_digest`, and both reviewed source-management finalizers — CLI `source add` and the TUI source selection/addition — name that exact state; the compare runs under the lock immediately before the atomic replace, closing the window a pre-write re-read alone cannot. A losing writer gets a deterministic `config-write-conflict` retry diagnostic and never overwrites. The writer is an injected port (`ConfigurationPorts.write_checked`), so the application layer states the contract and io implements it. A crashed lock holder is reclaimed only when both old and provably gone; a live holder is never stolen from. Tests cover the isolated writer (11), the wired CLI path including a writer injected mid-sync (4), lock release on both success and refusal, and idempotent retry. Full `make quality` passes. |
 | REG02 | Registry-owned agent skills | complete | AART PR [#67](https://github.com/M1F1/agent-artifacts/pull/67) released `v1.1.1` with optional, manual per-artifact `requires_aart`; missing bounds remain unrestricted, incompatible artifacts remain visible, and installation is blocked with a reason. Registry PR [#1](https://github.com/M1F1/agent-artifacts-registry/pull/1) rewrites `agent-artifacts` and `author-aart-installer` as registry-owned `2.0.0` skills, removes their stale legacy provenance, adds the requested `>=1.1.0` artifact bounds to all three skills, regenerates lock/index, and pins CI to released AART `v1.1.1` with format/validate/lock/build/audit/minimum/latest gates. Both PR and post-merge CI passed. No executable version was raised for this documentation update. |
-| REG03 | Residuality framework collection in the main registry | in progress | Fourteen MIT-licensed artifacts are imported at an intentional `1.0.0` from immutable upstream commit `576c6b953f45f9561f12ba6b76b7b6a5da74a96b`, with exact provenance, generated lock/index, `collections/residuality.json`, and Copy/Symlink installed-layout tests. No artifact gains an incidental `requires_aart`. A separate AART branch expands collection selectors into their pinned members for CLI/JSON and TUI installation; the registry itself remains usable by `v1.1.1`, whose users can install the visible members individually. Publication must proceed upstream first so the provenance commit exists remotely, then AART and registry review; any executable release version is decided by its own SemVer contract and does not raise artifact bounds. |
+| REG03 | Residuality framework collection in the main registry | in progress | Upstream PR [M1F1/residues-architecture-framework#1](https://github.com/M1F1/residues-architecture-framework/pull/1) is merged with exact commit `576c6b953f45f9561f12ba6b76b7b6a5da74a96b` retained in public `main`. AART PR [#69](https://github.com/M1F1/agent-artifacts/pull/69) is merged with collection selectors and advisory `marketplace health`; release `1.2.0` is the next publication step. Registry PR [M1F1/agent-artifacts-registry#2](https://github.com/M1F1/agent-artifacts-registry/pull/2) contains fourteen MIT `1.0.0` artifacts, exact provenance, generated lock/index, the collection, Python `>=3.11.0` advisory metadata on thirteen skills, and green Copy/Symlink tests. No Residuality artifact gains incidental `requires_aart`, so the registry remains installable by `v1.1.1`; those users can install visible members individually. |
 | REL02 | Next executable release contract | complete | Version `1.1.0`, not the originally guessed `1.0.1`: LIFE02 and SRC02 add eleven public CLI commands, which is a SemVer MINOR change. Adds a versioned release contract (`RELEASE_CONTRACT_VERSION = 2`) with `schema-freeze-v2.json`, `release-checklist-v2.md`, `compatibility-v2.md`, and `github-release-v1.1.0.md`. REL01's `1.0.0` evidence is untouched and never regenerated; the v2 freeze differs from v1 in exactly one input, `agent_artifacts/configuration/schema.py`, from SRC02's relaxed origin-and-ref rule. `compatibility-v2.md` records the one-directional configuration compatibility: every `1.0.0` config still loads, but a `1.1.0` multi-ref config is rejected by `1.0.0`, which is why REG02 must raise `requires_aart` to `>=1.1.0`. |
 
 ### 2026-08-11 — CB01 work log

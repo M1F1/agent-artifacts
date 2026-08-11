@@ -3,6 +3,36 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 1.2.0 — 2026-08-11
+
+Minor release adding collection selection to the canonical marketplace lifecycle and advisory
+runtime health over repository-supplied environment inventories.
+
+### Added
+
+- Canonical marketplace lifecycle commands accept `<source>/collection/<name>` and expand it to
+  the exact versioned member coordinates compiled by the selected source before Review.
+- The human TUI exposes compatible collections as bundle rows and explains why an incompatible
+  collection cannot be selected.
+- Artifacts may publish optional `com.m1f1.runtime-requirements` namespaced metadata with generic
+  capability IDs and SemVer bounds.
+- `aart marketplace health [COORDINATE ...] --environment PATH --json` compares those declarations
+  with one explicit runtime inventory owned by the consuming repository.
+
+### Compatibility
+
+- The native Source/Registry Protocol remains v1. Runtime requirements use its existing opaque,
+  namespaced artifact-extension boundary rather than a new compiled-index field.
+- AART does not probe or install runtimes. Health is advisory, a valid report exits zero regardless
+  of requirement status, and the JSON contract states `installation_blocking: false`.
+- Missing environment evidence reports `unknown`; an out-of-range observed version reports
+  `unsatisfied`. Neither result affects Install, Update, or Setup.
+- Existing AART `1.1.1` clients ignore the advisory extension, keep artifacts visible/installable,
+  and can install collection members individually.
+- Registry and per-artifact `requires_aart` floors do not rise merely because this executable adds
+  the shortcut and health command. A publisher changes a bound only if its payload actually invokes
+  a new AART capability.
+
 ## 1.1.1 — 2026-08-11
 
 Patch release implementing the per-artifact AART compatibility boundary documented for `1.1.0`.
