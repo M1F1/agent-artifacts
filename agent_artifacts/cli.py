@@ -1236,7 +1236,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ):
         print(
             "warning: --source/--repo use the legacy 0.1 compatibility path; "
-            "prefer the configured marketplace in the TUI before this compatibility window ends",
+            "prefer `aart marketplace` for agents or the TUI for people "
+            "before this compatibility window ends",
             file=sys.stderr,
         )
     return DISPATCH[args.command](request)
