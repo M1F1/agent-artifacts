@@ -44,6 +44,16 @@ def _absolute(path: str, label: str) -> str:
     return path
 
 
+def config_lock_directory(paths: ConfigPaths) -> str:
+    """The lock guarding compare-and-swap writes of the user configuration (CFG02).
+
+    It sits beside the configuration file so the lock and the file it protects always share a
+    directory, and therefore a filesystem.
+    """
+
+    return paths.user_config_file + ".lock"
+
+
 def resolve_config_paths(
     platform: Platform,
     *,

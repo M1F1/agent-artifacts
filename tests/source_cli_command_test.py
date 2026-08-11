@@ -62,9 +62,16 @@ def _runtime(
     def recover(_plan):
         raise AssertionError("recovery is not part of source onboarding")
 
+    def write_checked(document):
+        # CFG02: the reviewed source-management write goes through the compare-and-swap port.
+        # This fake records the same marker and asserts the expected state was actually named.
+        if writes is not None:
+            writes.append("save")
+        return Ok(ConfigWriteReceipt(document.path, sha256_bytes(document.content)))
+
     return ConfiguredRuntime(
         paths,
-        ConfigurationPorts(read, write, recover),
+        ConfigurationPorts(read, write, recover, write_checked),
         LoadedConfiguration(user, effective.value, None, recovery, ()),
     )
 

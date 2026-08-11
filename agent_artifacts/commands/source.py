@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import time
 
-from agent_artifacts.application.configuration import save_user_configuration_for_source_management
+from agent_artifacts.application.configuration import save_user_configuration_checked
 from agent_artifacts.application.source_management import finalize_source_addition
 from agent_artifacts.application.sources import SourceStatusRequest, source_status
 from agent_artifacts.configuration.model import (
@@ -235,11 +235,15 @@ def _add(request: Request) -> int:
         return _emit_error(request, _SOURCE_OPERATION, unchanged)
     finalized = finalize_source_addition(
         planned.value,
-        lambda desired, policy: save_user_configuration_for_source_management(
+        # CFG02: the pre-write revalidation above catches ordinary drift, but a writer landing
+        # between it and the replace would still win. The write names the exact state it observed
+        # and is re-checked under a lock immediately before committing.
+        lambda desired, policy: save_user_configuration_checked(
             desired,
             policy,
             current.value.paths,
             current.value.ports,
+            expected_digest=current.value.loaded.observed_digest,
         ),
     )
     if isinstance(finalized, Err):
