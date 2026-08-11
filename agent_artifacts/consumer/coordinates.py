@@ -1,6 +1,6 @@
-"""Pure parsing of agent-supplied artifact selectors for the canonical lifecycle.
+"""Pure parsing of agent-supplied artifact and collection selectors.
 
-An agent addresses artifacts by text.  This module converts that text into an explicit selector
+An agent addresses marketplace entries by text. This module converts that text into an explicit selector
 without contacting a source, reading configuration, or guessing a missing source alias.  A selector
 that omits its source stays unbound here; :func:`agent_artifacts.marketplace.catalog.resolve_artifact`
 is the single place allowed to bind it, so ambiguity is reported against the real catalog rather
@@ -18,8 +18,7 @@ from agent_artifacts.domain.result import Err, Ok, Result
 
 CONSUMER_INVALID = DiagnosticCode("consumer-invalid")
 
-# ``collection`` is addressable in the graph but is not an installable lifecycle target.
-_SELECTABLE_KINDS: frozenset[str] = frozenset(get_args(ArtifactKind)) - {"collection"}
+_SELECTABLE_KINDS: frozenset[str] = frozenset(get_args(ArtifactKind))
 _GRAMMAR = "<source>/<kind>/<name>[@<version>]"
 
 
@@ -87,6 +86,8 @@ def parse_artifact_selector(raw: str) -> Result[ArtifactSelector]:
             f"unknown artifact kind {kind!r}",
             "use one of: " + ", ".join(sorted(_SELECTABLE_KINDS)),
         )
+    if kind == "collection" and version is not None:
+        return _invalid(raw, "collections are not versioned; remove the '@<version>' suffix")
     return Ok(
         ArtifactSelector(
             ArtifactIdentity(kind, name),  # type: ignore[arg-type]

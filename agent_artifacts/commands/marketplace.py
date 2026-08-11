@@ -18,6 +18,8 @@ Two properties are load-bearing for automation safety and are asserted by the te
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 from agent_artifacts.consumer.application import ConsumerApplicationService
 from agent_artifacts.consumer.coordinates import CONSUMER_INVALID, parse_artifact_selectors
@@ -33,17 +35,32 @@ from agent_artifacts.consumer.model import (
 )
 from agent_artifacts.consumer.resolution import resolve_selectors
 from agent_artifacts.consumer.runtime import load_local_consumer_service, load_read_only_marketplace
+from agent_artifacts.consumer.runtime_requirements import (
+    RUNTIME_ENVIRONMENT_INVALID,
+    RuntimeEnvironment,
+    RuntimeRequirementStatus,
+    evaluate_runtime_requirements,
+    parse_runtime_environment,
+    parse_runtime_requirements,
+    runtime_capability_to_data,
+    runtime_check_to_data,
+)
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_to_data
-from agent_artifacts.domain.result import Err, Result
+from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
 from agent_artifacts.model import Request
 from agent_artifacts.protocol.json import canonical_json_bytes
+from agent_artifacts.protocol.native_schema import parse_artifact_manifest
+from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
+from agent_artifacts.store.model import ObjectReadRequest
 
 from . import _common
 from ._configured_runtime import load_runtime_configuration
 
 _LIST_OPERATION = "marketplace.list"
+_HEALTH_OPERATION = "marketplace.health"
+_MAX_ENVIRONMENT_BYTES = 1024 * 1024
 
 # ``setup`` is not a domain action: it reaches a terminal payload state through ``install`` and then
 # runs only the setup work that state left pending.
@@ -111,6 +128,175 @@ def _invalid(message: str, *remediation: str) -> Err:
     return Err((Diagnostic(CONSUMER_INVALID, Severity.ERROR, message, remediation=remediation),))
 
 
+def _runtime_environment_error(message: str) -> Err:
+    return Err((Diagnostic(RUNTIME_ENVIRONMENT_INVALID, Severity.ERROR, message),))
+
+
+def _load_runtime_environment(request: Request) -> Result[RuntimeEnvironment]:
+    raw_path = request.runtime_environment
+    if raw_path is None:
+        return _runtime_environment_error(
+            "marketplace health requires a repository runtime environment description"
+        )
+    path = os.path.abspath(raw_path)
+    try:
+        if os.path.getsize(path) > _MAX_ENVIRONMENT_BYTES:
+            return _runtime_environment_error(
+                f"runtime environment description exceeds {_MAX_ENVIRONMENT_BYTES} bytes"
+            )
+        data = Path(path).read_bytes()
+    except (OSError, ValueError) as error:
+        return _runtime_environment_error(
+            f"cannot read runtime environment description {path}: {error}"
+        )
+    if len(data) > _MAX_ENVIRONMENT_BYTES:
+        return _runtime_environment_error(
+            f"runtime environment description exceeds {_MAX_ENVIRONMENT_BYTES} bytes"
+        )
+    return parse_runtime_environment(data, path=path)
+
+
+def _health_coordinates(request: Request, service: ConsumerApplicationService) -> Result[tuple]:
+    if not request.names:
+        return Ok(tuple(item.coordinate for item in service.context.catalog.items))
+    parsed = parse_artifact_selectors(tuple(request.names))
+    if isinstance(parsed, Err):
+        return parsed
+    return resolve_selectors(service.context.catalog, parsed.value)
+
+
+def _health_item(service: ConsumerApplicationService, coordinate, environment) -> dict:
+    item = next(
+        candidate
+        for candidate in service.context.catalog.items
+        if candidate.coordinate == coordinate
+    )
+    loaded = service.ports.read_object(
+        ObjectReadRequest(service.context.store_paths, item.artifact.artifact.object_digest)
+    )
+    if isinstance(loaded, Err):
+        return {
+            "coordinate": str(coordinate),
+            "status": "unavailable",
+            "requirements": [],
+            "diagnostics": [diagnostic_to_data(value) for value in loaded.diagnostics],
+        }
+    if loaded.value is None:
+        return {
+            "coordinate": str(coordinate),
+            "status": "unavailable",
+            "requirements": [],
+            "detail": (
+                "verified artifact content is not available locally; synchronize or install it "
+                "before inspecting advisory requirements"
+            ),
+        }
+    manifest_entry = next(
+        (
+            entry
+            for entry in loaded.value.candidate.entries
+            if str(entry.path) == "artifact.json" and entry.kind is SnapshotEntryKind.FILE
+        ),
+        None,
+    )
+    if manifest_entry is None:
+        return {
+            "coordinate": str(coordinate),
+            "status": "invalid",
+            "requirements": [],
+            "detail": "verified artifact content has no artifact.json file",
+        }
+    parsed_manifest = parse_artifact_manifest(manifest_entry.content, path="artifact.json")
+    if isinstance(parsed_manifest, Err):
+        return {
+            "coordinate": str(coordinate),
+            "status": "invalid",
+            "requirements": [],
+            "diagnostics": [diagnostic_to_data(value) for value in parsed_manifest.diagnostics],
+        }
+    parsed_requirements = parse_runtime_requirements(parsed_manifest.value)
+    if isinstance(parsed_requirements, Err):
+        return {
+            "coordinate": str(coordinate),
+            "status": "invalid",
+            "requirements": [],
+            "diagnostics": [diagnostic_to_data(value) for value in parsed_requirements.diagnostics],
+        }
+    if not parsed_requirements.value:
+        return {
+            "coordinate": str(coordinate),
+            "status": "not-declared",
+            "requirements": [],
+        }
+    checks = evaluate_runtime_requirements(parsed_requirements.value, environment)
+    statuses = {check.status for check in checks}
+    status = (
+        RuntimeRequirementStatus.UNSATISFIED.value
+        if RuntimeRequirementStatus.UNSATISFIED in statuses
+        else (
+            RuntimeRequirementStatus.UNKNOWN.value
+            if RuntimeRequirementStatus.UNKNOWN in statuses
+            else RuntimeRequirementStatus.SATISFIED.value
+        )
+    )
+    return {
+        "coordinate": str(coordinate),
+        "status": status,
+        "requirements": [runtime_check_to_data(check) for check in checks],
+    }
+
+
+def _health(request: Request) -> int:
+    environment = _load_runtime_environment(request)
+    if isinstance(environment, Err):
+        return _emit_error(request, environment, _HEALTH_OPERATION)
+    service = load_local_consumer_service(
+        project=request.project,
+        user_home=request.user_home,
+    )
+    if isinstance(service, Err):
+        return _emit_error(request, service, _HEALTH_OPERATION)
+    coordinates = _health_coordinates(request, service.value)
+    if isinstance(coordinates, Err):
+        return _emit_error(request, coordinates, _HEALTH_OPERATION)
+    items = [
+        _health_item(service.value, coordinate, environment.value)
+        for coordinate in coordinates.value
+    ]
+    statuses = (
+        "satisfied",
+        "unsatisfied",
+        "unknown",
+        "not-declared",
+        "unavailable",
+        "invalid",
+    )
+    summary = {status: sum(item["status"] == status for item in items) for status in statuses}
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "operation": _HEALTH_OPERATION,
+        "advisory": True,
+        "installation_blocking": False,
+        "environment": {
+            "path": os.path.abspath(request.runtime_environment or ""),
+            "name": environment.value.name,
+            "capabilities": [
+                runtime_capability_to_data(item) for item in environment.value.capabilities
+            ],
+        },
+        "summary": summary,
+        "items": items,
+    }
+    lines = (
+        f"Runtime requirement health: {len(items)} artifact(s)",
+        *tuple(f"{item['coordinate']}: {item['status']}" for item in items),
+        "Advisory only: these results never block artifact installation.",
+    )
+    _emit(request, _HEALTH_OPERATION, payload, lines)
+    return _common.OK
+
+
 def _selection(request: Request, action: str) -> Result[tuple]:
     """Parse and validate the requested selection without touching any source."""
 
@@ -121,8 +307,8 @@ def _selection(request: Request, action: str) -> Result[tuple]:
         )
     if action in _REQUIRES_COORDINATES and not request.names:
         return _invalid(
-            f"marketplace {action} requires at least one artifact coordinate",
-            "pass <source>/<kind>/<name>[@<version>]",
+            f"marketplace {action} requires at least one artifact or collection coordinate",
+            "pass <source>/<kind>/<name>[@<version>] or <source>/collection/<name>",
             "run `aart marketplace list --json` to see available coordinates",
         )
     return parse_artifact_selectors(tuple(request.names))
@@ -311,6 +497,8 @@ def run(request: Request) -> int:
 
     if request.marketplace_action == "list":
         return _list(request)
+    if request.marketplace_action == "health":
+        return _health(request)
     if request.marketplace_action in _LIFECYCLE_ACTIONS:
         return _lifecycle(request, request.marketplace_action)
     if request.json:

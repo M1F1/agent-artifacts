@@ -64,6 +64,7 @@ from .domain.result import Err as DomainErr
 from .domain.result import Ok as DomainOk
 from .domain.result import Result as DomainResult
 from .install_modes import supports_symlink
+from .marketplace.model import MarketplaceCatalog
 from .model import (
     Artifact,
     ArtifactType,
@@ -1992,6 +1993,48 @@ def _canonical_choice(row: MarketplaceArtifactRow) -> _Choice:
     )
 
 
+def _canonical_collection_choices(
+    catalog: MarketplaceCatalog,
+    rows: Tuple[MarketplaceArtifactRow, ...],
+    *,
+    sources: Tuple[SourceAlias, ...] = (),
+) -> Tuple[_Choice, ...]:
+    by_coordinate = {row.coordinate: row for row in rows}
+    selected_sources = frozenset(sources)
+    choices = []
+    for collection in catalog.collections:
+        if selected_sources and collection.coordinate.source not in selected_sources:
+            continue
+        member_rows = tuple(by_coordinate.get(member) for member in collection.members)
+        missing = sum(row is None for row in member_rows)
+        available = tuple(row for row in member_rows if row is not None)
+        reasons = tuple(sorted({reason.message for row in available for reason in row.reasons}))
+        enabled = missing == 0 and all(row.compatible for row in available)
+        reason_parts = []
+        if missing:
+            reason_parts.append(f"{missing} member(s) unavailable")
+        reason_parts.extend(reasons)
+        reason = "; ".join(reason_parts)
+        status = "" if enabled else f" — unavailable: {reason}"
+        members = ", ".join(str(member) for member in collection.members)
+        choices.append(
+            _Choice(
+                "bundle",
+                collection.coordinate.name,
+                None,
+                f"[collection] {collection.coordinate} — {collection.summary} "
+                f"({len(collection.members)} members){status}",
+                description=f"{collection.summary} Members: {members}.",
+                enabled=enabled,
+                reason=reason,
+                linked_count=sum("symlink" in row.actual_modes for row in available),
+                copied_count=sum("copy" in row.actual_modes for row in available),
+                qualified_key=str(collection.coordinate),
+            )
+        )
+    return tuple(choices)
+
+
 def _user_review_lines(
     session: WizardSession,
     read_model: Optional[_UserWizardReadModel],
@@ -2195,10 +2238,17 @@ def _load_user_wizard_read_model(
         rows = projected.value
         if session.action in ("update", "uninstall"):
             rows = tuple(row for row in rows if row.installed)
+        choices = tuple(_canonical_choice(row) for row in rows)
+        if session.action == "install":
+            choices += _canonical_collection_choices(
+                consumer_service.context.catalog,
+                rows,
+                sources=selected_sources,
+            )
         return _UserWizardReadModel(
             Catalog(artifacts={}, bundles={}),
             None,
-            tuple(_canonical_choice(row) for row in rows),
+            choices,
             profiles_map,
             "federated configured marketplace",
             consumer_service.context.store_paths.root,
@@ -2488,11 +2538,15 @@ def _run_user_text_wizard(
                 coordinates: tuple = ()
                 if read_model is not None:
                     selected_keys = {item.key for item in session.basket}
-                    coordinates = tuple(
+                    selected_coordinates = {
                         row.coordinate
                         for row in read_model.marketplace_rows
                         if row.key in selected_keys
-                    )
+                    }
+                    for collection in consumer_service.context.catalog.collections:
+                        if str(collection.coordinate) in selected_keys:
+                            selected_coordinates.update(collection.members)
+                    coordinates = tuple(sorted(selected_coordinates, key=str))
                 prepared = consumer_service.prepare(
                     ConsumerActionRequest(
                         session.action or "status",  # type: ignore[arg-type]
@@ -4631,15 +4685,19 @@ def _run_user_curses_wizard(
             canonical_review: Optional[ConsumerReview] = None
             if consumer_service is not None:
                 selected_keys = {item.key for item in session.basket}
-                coordinates = (
-                    ()
+                selected_coordinates = (
+                    set()
                     if read_model is None
-                    else tuple(
+                    else {
                         row.coordinate
                         for row in read_model.marketplace_rows
                         if row.key in selected_keys
-                    )
+                    }
                 )
+                for collection in consumer_service.context.catalog.collections:
+                    if str(collection.coordinate) in selected_keys:
+                        selected_coordinates.update(collection.members)
+                coordinates = tuple(sorted(selected_coordinates, key=str))
                 prepared = consumer_service.prepare(
                     ConsumerActionRequest(
                         session.action or "status",  # type: ignore[arg-type]

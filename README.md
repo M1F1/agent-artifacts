@@ -197,14 +197,28 @@ same configured sources:
 ```sh
 aart marketplace install reference/skill/code-review --profile claude --json
 aart marketplace install reference/skill/code-review --profile claude --json --yes
+aart marketplace install reference/collection/residuality --profile claude --json --yes
 aart marketplace status --profile claude --json
+aart marketplace health reference/collection/residuality \
+  --environment .agent-artifacts/runtime-environment.json --json
 aart marketplace update reference/skill/code-review --profile claude --json --yes
 aart marketplace uninstall reference/skill/code-review --profile claude --json --yes
 ```
 
-Artifacts are addressed as `<source>/<kind>/<name>[@<version>]`. A shorter `<kind>/<name>` is
+Artifacts are addressed as `<source>/<kind>/<name>[@<version>]`. Collections use
+`<source>/collection/<name>` and expand to the exact versioned member coordinates compiled into the
+marketplace; collections themselves have no `@<version>` suffix. A shorter `<kind>/<name>` is
 accepted only when exactly one configured source provides it; otherwise the command fails and names
-every valid coordinate rather than picking one.
+every valid coordinate rather than picking one. The TUI exposes the same compatible collections as
+guided bundle rows.
+
+Artifacts may also publish advisory runtime requirements such as Python versions in the optional
+`com.m1f1.runtime-requirements` manifest extension. The consuming repository describes one concrete
+runtime in JSON and asks `marketplace health` to compare it. AART does not probe or install runtimes,
+and `satisfied`, `unsatisfied`, or `unknown` results never affect whether an artifact can be
+installed. See
+[`runtime-requirements-v1.md`](docs/marketplace/runtime-requirements-v1.md) for the schemas and
+responsibility boundary.
 
 **Without `--yes` every lifecycle command stops after Review** and prints the exact plan it would
 apply, changing nothing. This is the non-interactive equivalent of the TUI's Finalize prompt, and
@@ -722,6 +736,7 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 | `aart source health` | no | Per-source pointer, revision, and snapshot age; exits non-zero if an enabled source is unhealthy |
 | `aart source doctor` | no | Report the source-store layout and any legacy directories; migrates only with `--apply` |
 | `aart marketplace list` | no | List the configured canonical marketplace (`--json` is agent-safe) |
+| `aart marketplace health --environment PATH` | no | Compare advisory requirements with a repository-supplied runtime inventory; never blocks installation |
 | `aart marketplace install/update/uninstall/status/setup` | no (local snapshots) | Canonical JSON lifecycle over configured sources; reviews only unless `--yes` is passed |
 | `aart list/install/update/setup --source DIR` or `--repo OWNER/NAME` | source-dependent | Explicit 0.1 compatibility catalog commands; not canonical marketplace lifecycle commands |
 | `aart status` / `aart check` | local / source-dependent | Legacy installed-state compatibility inspection |

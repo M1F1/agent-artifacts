@@ -7,17 +7,21 @@ pin the deterministic ambiguity diagnostic and the exact resolved coordinates.
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
+from agent_artifacts.compiler import CollectionCoordinate, MarketplaceCollection
 from agent_artifacts.configuration.model import SourceKind
 from agent_artifacts.consumer.coordinates import parse_artifact_selectors
 from agent_artifacts.consumer.resolution import resolve_selectors
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.marketplace.catalog import build_marketplace
+from agent_artifacts.protocol.native_models import ArtifactSelector, CollectionManifest
 from tests.marketplace_fixtures import (
     artifact,
     configured_source,
     effective_configuration,
     graph,
+    graph_with_collections,
     source_state,
 )
 
@@ -50,6 +54,32 @@ def _resolve(catalog, *raw: str):
     parsed = parse_artifact_selectors(raw)
     assert isinstance(parsed, Ok), parsed
     return resolve_selectors(catalog, parsed.value)
+
+
+def _collection_catalog():
+    company = configured_source("company", SourceKind.REGISTRY_GIT)
+    review = artifact("company-source", "code-review")
+    release = artifact("company-source", "release")
+    compiled = graph_with_collections(
+        company,
+        "company-source",
+        (review, release),
+        (
+            CollectionManifest(
+                1,
+                "starter",
+                "Install the reviewed starter set.",
+                (ArtifactSelector(review.identity), ArtifactSelector(release.identity)),
+            ),
+        ),
+    )
+    built = build_marketplace(
+        compiled,
+        effective_configuration((company,), default_registry="company"),
+        (source_state(company, "company-source", display_order=0),),
+    )
+    assert isinstance(built, Ok), built
+    return built.value
 
 
 class SelectorResolutionTests(unittest.TestCase):
@@ -121,6 +151,75 @@ class SelectorResolutionTests(unittest.TestCase):
         self.assertIsInstance(resolved, Ok)
         assert isinstance(resolved, Ok)
         self.assertEqual(resolved.value, ())
+
+    def test_a_collection_selector_expands_to_its_pinned_artifact_coordinates(self) -> None:
+        resolved = _resolve(_collection_catalog(), "company/collection/starter")
+
+        self.assertIsInstance(resolved, Ok)
+        assert isinstance(resolved, Ok)
+        self.assertEqual(
+            tuple(str(coordinate) for coordinate in resolved.value),
+            (
+                "company/skill/code-review@1.0.0",
+                "company/skill/release@1.0.0",
+            ),
+        )
+
+    def test_collection_members_are_deduplicated_against_explicit_artifacts(self) -> None:
+        resolved = _resolve(
+            _collection_catalog(),
+            "company/collection/starter",
+            "company/skill/code-review@1.0.0",
+        )
+
+        self.assertIsInstance(resolved, Ok)
+        assert isinstance(resolved, Ok)
+        self.assertEqual(
+            tuple(str(coordinate) for coordinate in resolved.value),
+            (
+                "company/skill/code-review@1.0.0",
+                "company/skill/release@1.0.0",
+            ),
+        )
+
+    def test_an_unknown_collection_reports_a_specific_not_found_diagnostic(self) -> None:
+        resolved = _resolve(_collection_catalog(), "company/collection/absent")
+
+        self.assertIsInstance(resolved, Err)
+        assert isinstance(resolved, Err)
+        self.assertEqual(resolved.diagnostics[0].code.value, "collection-not-found")
+
+    def test_an_unqualified_collection_never_guesses_between_sources(self) -> None:
+        catalog = _catalog()
+        team_member = next(
+            item.coordinate for item in catalog.items if str(item.source.alias) == "team"
+        )
+        company_member = next(
+            item.coordinate for item in catalog.items if str(item.source.alias) == "company"
+        )
+        catalog = replace(
+            catalog,
+            collections=(
+                MarketplaceCollection(
+                    CollectionCoordinate(team_member.source, "starter"),
+                    "Team starter.",
+                    (team_member,),
+                ),
+                MarketplaceCollection(
+                    CollectionCoordinate(company_member.source, "starter"),
+                    "Company starter.",
+                    (company_member,),
+                ),
+            ),
+        )
+
+        resolved = _resolve(catalog, "collection/starter")
+
+        self.assertIsInstance(resolved, Err)
+        assert isinstance(resolved, Err)
+        self.assertEqual(resolved.diagnostics[0].code.value, "collection-ambiguous")
+        self.assertIn("company/collection/starter", resolved.diagnostics[0].message)
+        self.assertIn("team/collection/starter", resolved.diagnostics[0].message)
 
 
 if __name__ == "__main__":  # pragma: no cover - unittest entry point

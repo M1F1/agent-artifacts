@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_artifacts import tui
+from agent_artifacts.compiler import CollectionCoordinate, MarketplaceCollection
 from agent_artifacts.configuration.model import ReportingMode
 from agent_artifacts.consumer import (
     ConsumerActionRequest,
@@ -38,6 +39,51 @@ def _scripted(answers):
 
 
 class TuiConsumerTextTest(unittest.TestCase):
+    def test_federated_collection_row_expands_to_members_before_review(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = _fixture(Path(raw), "skill")
+            project, _checkout, paths, location, _request, catalog, effective = fixture
+            member = catalog.items[0].coordinate
+            catalog = replace(
+                catalog,
+                collections=(
+                    MarketplaceCollection(
+                        CollectionCoordinate(member.source, "starter"),
+                        "Install the reviewed starter set.",
+                        (member,),
+                    ),
+                ),
+            )
+            service = ConsumerApplicationService(
+                ConsumerContext(catalog, effective, builtin(), location, paths),
+                LocalConsumerAdapter(),
+            )
+            configured = effective.configuration.sources[0]
+            state = source_state(configured, "direct-source", display_order=0)
+            stage = build_source_stage(
+                effective.configuration,
+                effective.policy,
+                {configured.alias: state.health},
+                first_run=False,
+            )
+            assert isinstance(stage, Ok), stage
+            writes = []
+
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_text(
+                    _scripted(["", "1", "1", "1", "install", "1", "", "2", "y"]),
+                    writes.append,
+                    project=str(project),
+                    source_stage_view=stage.value,
+                    consumer_service=service,
+                )
+
+            self.assertEqual(code, 0)
+            rendered = "\n".join(writes)
+            self.assertIn("direct/collection/starter", rendered)
+            self.assertIn("Install outcome: succeeded", rendered)
+            self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
+
     def test_canonical_setup_queue_has_separate_authorize_review_apply_feedback(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             fixture = SetupFixture(Path(raw))

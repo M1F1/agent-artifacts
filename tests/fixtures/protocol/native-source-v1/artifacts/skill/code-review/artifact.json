@@ -19,5 +19,15 @@
   },
   "authors": ["AART maintainers"],
   "license": "MIT",
-  "homepage": "https://github.com/M1F1/agent-artifacts"
+  "homepage": "https://github.com/M1F1/agent-artifacts",
+  "com.m1f1.runtime-requirements": {
+    "schema_version": 1,
+    "requirements": [
+      {
+        "id": "python",
+        "version": {"min_inclusive": "3.11.0"},
+        "reason": "The fixture models an artifact that uses Python 3.11 stdlib features."
+      }
+    ]
+  }
 }

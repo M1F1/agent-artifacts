@@ -34,11 +34,12 @@ from agent_artifacts.domain.identifiers import (
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.protocol.hashing import sha256_bytes
+from agent_artifacts.protocol.native_models import ArtifactSelector, CollectionManifest
 from tests.marketplace_fixtures import (
     artifact,
     configured_source,
     effective_configuration,
-    graph,
+    graph_with_collections,
     source_state,
 )
 
@@ -53,7 +54,20 @@ def _catalog():
     """A real compiled catalog: selector resolution must run against real data, not a stub."""
 
     team = configured_source("team", SourceKind.SOURCE_GIT)
-    compiled = graph((team, "team-source", (artifact("team-source", "code-review"),)))
+    indexed = artifact("team-source", "code-review")
+    compiled = graph_with_collections(
+        team,
+        "team-source",
+        (indexed,),
+        (
+            CollectionManifest(
+                1,
+                "starter",
+                "Install the reviewed starter set.",
+                (ArtifactSelector(indexed.identity),),
+            ),
+        ),
+    )
     built = build_marketplace(
         compiled,
         effective_configuration((team,)),
@@ -208,6 +222,25 @@ class LifecycleParserTests(unittest.TestCase):
         self.assertTrue(request.json)
         self.assertTrue(request.yes)
 
+    def test_health_maps_optional_selection_and_required_environment(self) -> None:
+        request = cli._to_request(
+            cli.build_parser().parse_args(
+                [
+                    "marketplace",
+                    "health",
+                    "team/collection/starter",
+                    "--environment",
+                    "runtime-environment.json",
+                    "--json",
+                ]
+            )
+        )
+
+        self.assertEqual(request.marketplace_action, "health")
+        self.assertEqual(request.names, ("team/collection/starter",))
+        self.assertEqual(request.runtime_environment, "runtime-environment.json")
+        self.assertEqual(request.profiles, ())
+
     def test_lifecycle_actions_do_not_accept_the_legacy_source_or_repo_flags(self) -> None:
         for action in ("install", "update", "uninstall", "status", "setup"):
             with self.subTest(action=action):
@@ -256,6 +289,24 @@ class LifecycleParserTests(unittest.TestCase):
 
 
 class ReviewFinalizeBoundaryTests(unittest.TestCase):
+    def test_collection_install_expands_before_the_application_service_review(self) -> None:
+        service = _StubService(review=_review(), outcome=_outcome())
+
+        code, output = _run(
+            [
+                "marketplace",
+                "install",
+                "team/collection/starter",
+                "--profile",
+                "claude",
+                "--json",
+            ],
+            service,
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(service.prepared_requests[0].coordinates, (COORDINATE,))
+
     def test_install_without_yes_stops_after_review_and_mutates_nothing(self) -> None:
         service = _StubService(review=_review(), outcome=_outcome())
 

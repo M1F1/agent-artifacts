@@ -135,6 +135,56 @@ checks.
 5. Do not advertise commands in a registry skill before the corresponding executable version
    actually exposes them in `aart --help`.
 
+### REG03 — Residuality framework bundle in the main registry
+
+**Status:** implemented locally as a new registry import after REG02. The content import does not by
+itself require an AART executable bump or a higher registry/artifact compatibility floor. A separate
+AART change adds collection selectors as a lifecycle convenience and must follow its own SemVer
+release decision.
+
+1. Use
+   [`M1F1/residues-architecture-framework`](https://github.com/M1F1/residues-architecture-framework)
+   and its `agent-artifacts.import.json` as the reviewed inventory, but resolve and record one
+   immutable upstream commit rather than publishing content from a moving `main` branch. The
+   declared set is fourteen artifacts: the `residuality-theory` guideline, `using-residues`, nine
+   `residual-01-*` through `residual-09-*` stage skills, and the three `residual-run-*` drivers.
+2. Publish the reviewed upstream MIT license and managed-Symlink path fixes before the dependent
+   registry change, then import from that immutable commit. Record the intentional initial artifact
+   version `1.0.0`, supported platforms and profiles, advisory Python 3.11 runtime metadata, install
+   modes/scopes, and the review decision for executable Python/shell payloads instead of inferring
+   them from file names. Runtime metadata must never participate in installation compatibility;
+   the consuming repository owns environment provisioning and execution policy.
+3. Vendor the reviewed payloads as canonical registry-owned packages in
+   `M1F1/agent-artifacts-registry`. Preserve per-artifact provenance with the upstream URL, exact
+   path, resolved commit, and input digest. Import only the fourteen declared artifacts: examples,
+   repository wrappers, conversion utilities, ignored book/PDF material, and unrelated files are
+   outside the package boundary.
+4. Publish `collections/residuality.json` as the canonical registry representation of the
+   upstream `residuality` bundle. It must contain all fourteen artifacts and install
+   `using-residues` beside the stage/driver skills so their documented
+   `../using-residues/kernel` fallback works from an installed profile layout.
+5. Do not add per-artifact `requires_aart` merely because AART imported or distributes the
+   package. Add a bound only where the installed payload itself invokes or depends on a specific
+   AART executable contract; otherwise compatibility with the registry is governed by the
+   registry's own `requires_aart` range.
+   The optional collection-selector convenience does not alter this rule: AART `1.1.1` users can
+   still discover the collection and install its member artifacts individually.
+6. Regenerate—not hand-edit—`aart.lock.json` and `aart.index.json`. Run the registry's pinned AART
+   quality gates: format, strict/frozen validate, lock, build, audit, and minimum/latest
+   compatibility. CI must exercise the same commands as local review.
+7. Acceptance tests must prove that the `residuality` collection and every member stay visible in
+   the human marketplace and CLI/JSON discovery, and that collection installation works in
+   project/user scope with Copy/Symlink for every declared compatible profile. From the installed
+   layout, run the upstream kernel/stage test entry points and at least one pipeline smoke test;
+   record unavailable combinations with an explicit reason rather than silently dropping them.
+8. Keep the publication chain explicit: first make the exact upstream provenance commit reachable,
+   then publish/release the independently reviewable AART collection-selector change if desired,
+   and finally publish the registry import. Do not point provenance at an unpublished local commit,
+   and do not increase `requires_aart` merely to require the one-coordinate shortcut.
+9. Expose advisory runtime observations through `aart marketplace health --environment PATH --json`.
+   The environment inventory is supplied by the consuming repository; AART neither probes nor
+   provisions it, and a valid health report remains successful regardless of requirement status.
+
 ### REL02 — next release contract
 
 **Status:** planned; expected target is at least `1.0.1` because the public CLI/TUI behavior and
@@ -180,5 +230,5 @@ If the current session stops before CB01 is published:
 3. Re-run the complete matrix above after the last edit; do not rely on earlier partial green runs.
 4. Commit only the catalog-boundary/onboarding scope, push the branch, create/link a post-1.0 issue,
    and open a reviewable PR.
-5. Leave LIFE02, SRC02, CFG02, REG02, and REL02 as distinct tasks/PRs; do not bundle them merely because
-   they are related.
+5. Leave LIFE02, SRC02, CFG02, REG02, REG03, and REL02 as distinct tasks/PRs; do not bundle them
+   merely because they are related.
