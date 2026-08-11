@@ -3,6 +3,27 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 1.3.1 — 2026-08-11
+
+Patch release fixing the read-only JSON Review for declarative marketplace setup.
+
+### Fixed
+
+- `aart marketplace setup ... --json` without `--yes` now projects setup-capable reviewed items as
+  pending and prepares their exact canonical setup plans from already-installed immutable records.
+- Review remains non-mutating and never grants source, custom-code, or effect authorization. Missing
+  installation evidence remains a planning failure rather than an inferred or executable plan.
+- Artifacts without a setup recipe remain `not-required`, and the existing Finalize path is
+  unchanged.
+
+### Compatibility
+
+- No protocol, schema, configuration, installation-state, registry, reporting, or setup-recipe
+  version changes.
+- Registry and per-artifact `requires_aart` floors do not rise. Existing artifacts remain visible
+  and installable; `1.3.1` is needed only by agents that require a complete non-mutating setup
+  Review before deciding whether to finalize it.
+
 ## 1.3.0 — 2026-08-11
 
 Minor release making consent-based usage reporting the default for new configurations and routing

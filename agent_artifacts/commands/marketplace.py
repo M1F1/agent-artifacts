@@ -29,6 +29,7 @@ from agent_artifacts.consumer.model import (
     ConsumerOutcome,
     ConsumerReview,
     ConsumerSetupQueue,
+    ConsumerTerminalItem,
     consumer_review_value,
     render_consumer_outcome,
     render_consumer_review,
@@ -394,6 +395,30 @@ def _run_setup_queue(
     )
 
 
+def _setup_review_outcome(review: ConsumerReview) -> ConsumerOutcome:
+    """Project setup-eligible Review items without finalizing their payload plans.
+
+    ``prepare_consumer_setup_queue`` intentionally accepts only terminal payload outcomes.  The
+    setup command's read-only branch has no real outcome because Review must not mutate, but an
+    already-installed artifact still needs its canonical setup plan rendered.  This projection
+    supplies only the bounded identity and pending/not-required status needed for that second
+    Review; ``prepare_setup`` remains responsible for proving the installed record exists and
+    matches the immutable marketplace object.
+    """
+
+    return ConsumerOutcome(
+        _LIFECYCLE_ACTIONS["setup"],
+        tuple(
+            ConsumerTerminalItem(
+                item.key,
+                "current",
+                setup_status="pending" if item.setup is not None else "not-required",
+            )
+            for item in review.items
+        ),
+    )
+
+
 def _emit(
     request: Request,
     operation: str,
@@ -440,7 +465,7 @@ def _lifecycle(request: Request, action: str) -> int:
             payload["setup"] = _setup_payload(
                 service.value.setup_queue(
                     review,
-                    ConsumerOutcome(_LIFECYCLE_ACTIONS[action], ()),
+                    _setup_review_outcome(review),
                     authorize_untrusted_source=request.authorize_untrusted_source,
                     authorize_custom_entrypoint=request.authorize_custom_entrypoint,
                 )

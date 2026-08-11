@@ -21,6 +21,7 @@ from agent_artifacts.consumer.model import (
     ConsumerOutcome,
     ConsumerReview,
     ConsumerReviewItem,
+    ConsumerSetupDeclaration,
     ConsumerSetupQueue,
     ConsumerTerminalItem,
 )
@@ -84,7 +85,9 @@ class _StubPlan:
     review_digest: ObjectDigest = ObjectDigest("sha256", "d" * 64)
 
 
-def _review_item(action: str = "install") -> ConsumerReviewItem:
+def _review_item(
+    action: str = "install", *, setup: ConsumerSetupDeclaration | None = None
+) -> ConsumerReviewItem:
     return ConsumerReviewItem(
         f"{COORDINATE}#claude/project",
         COORDINATE,
@@ -99,7 +102,7 @@ def _review_item(action: str = "install") -> ConsumerReviewItem:
         "assessed",
         "low",
         (),
-        None,
+        setup,
         ObjectDigest("sha256", "d" * 64),
         _StubPlan(),  # type: ignore[arg-type]
     )
@@ -122,6 +125,7 @@ class _StubService:
     calls: list[str] = field(default_factory=list)
     finalize_digests: list[object] = field(default_factory=list)
     setup_authorizations: list[tuple[bool, bool]] = field(default_factory=list)
+    setup_outcomes: list[ConsumerOutcome] = field(default_factory=list)
     prepared_requests: list[ConsumerActionRequest] = field(default_factory=list)
     queue: ConsumerSetupQueue | None = None
 
@@ -149,6 +153,7 @@ class _StubService:
     ):
         self.calls.append("setup_queue")
         self.setup_authorizations.append((authorize_untrusted_source, authorize_custom_entrypoint))
+        self.setup_outcomes.append(outcome)
         return self.queue if self.queue is not None else ConsumerSetupQueue((), ())
 
     def finalize_setup_queue(self, queue, *, consent, stop_on_failure=False, runtime=None):
@@ -557,7 +562,20 @@ class SetupAuthorizationTests(unittest.TestCase):
         self.assertEqual(service.setup_authorizations, [(True, False)])
 
     def test_setup_without_yes_reviews_the_queue_without_executing_it(self) -> None:
-        service = _StubService(review=_review(), outcome=_outcome())
+        service = _StubService(
+            review=_review(
+                items=(
+                    _review_item(
+                        setup=ConsumerSetupDeclaration(
+                            "setup/installer.json",
+                            ("darwin",),
+                            ("keychain",),
+                        )
+                    ),
+                )
+            ),
+            outcome=_outcome(),
+        )
 
         code, output = _run(
             ["marketplace", "setup", "team/skill/code-review", "--profile", "claude", "--json"],
@@ -567,6 +585,19 @@ class SetupAuthorizationTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("finalize_setup_queue", service.calls)
         self.assertFalse(_payload(output)["finalized"])
+        self.assertEqual(len(service.setup_outcomes), 1)
+        self.assertEqual(service.setup_outcomes[0].items[0].setup_status, "pending")
+
+    def test_setup_review_marks_artifacts_without_a_recipe_not_required(self) -> None:
+        service = _StubService(review=_review(), outcome=_outcome())
+
+        code, _output = _run(
+            ["marketplace", "setup", "team/skill/code-review", "--profile", "claude", "--json"],
+            service,
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(service.setup_outcomes[0].items[0].setup_status, "not-required")
 
 
 class ConfigurationGateTests(unittest.TestCase):
