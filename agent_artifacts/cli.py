@@ -579,6 +579,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(p_marketplace_list)
 
+    p_marketplace_health = marketplace_sub.add_parser(
+        "health",
+        formatter_class=_HELP_FORMATTER,
+        help="compare advisory artifact requirements with a repository runtime inventory",
+        description=(
+            "Read advisory per-artifact runtime requirements and compare them with an explicit "
+            "JSON environment description supplied by the consuming repository. AART does not "
+            "probe or install runtimes, and health results never block artifact installation."
+        ),
+    )
+    p_marketplace_health.add_argument(
+        "names",
+        nargs="*",
+        metavar="COORDINATE",
+        help=(
+            "artifact or collection coordinate(s) to inspect; omit to inspect every marketplace "
+            "artifact"
+        ),
+    )
+    p_marketplace_health.add_argument(
+        "--environment",
+        dest="runtime_environment",
+        required=True,
+        metavar="PATH",
+        help="repository-owned runtime environment description in JSON format",
+    )
+    _add_project(p_marketplace_health)
+    _add_json(p_marketplace_health)
+
     def _add_lifecycle(
         action: str,
         help_text: str,
@@ -1234,6 +1263,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_location=getattr(args, "source_location", None),
         source_make_default=getattr(args, "source_make_default", None),
         marketplace_action=getattr(args, "marketplace_action", None),
+        runtime_environment=getattr(args, "runtime_environment", None),
         offline=bool(getattr(args, "offline", False)),
         authorize_untrusted_source=bool(getattr(args, "authorize_untrusted_source", False)),
         authorize_custom_entrypoint=bool(getattr(args, "authorize_custom_entrypoint", False)),

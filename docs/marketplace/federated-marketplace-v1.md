@@ -77,3 +77,8 @@ redacted defensively from untrusted output text.
 MKT01 does not enforce installation scope, setup capabilities, or minimum-installation-trust
 policy. Those decisions belong to the installation and setup application services, which consume
 this marketplace evidence without re-deriving source trust.
+
+Artifact runtime requirements are a later advisory projection documented in
+[`runtime-requirements-v1.md`](runtime-requirements-v1.md). They remain in namespaced artifact
+manifest metadata rather than the compiled marketplace index, so they do not change protocol-v1
+reader compatibility or participate in artifact resolution and installation compatibility.

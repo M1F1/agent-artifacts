@@ -222,6 +222,25 @@ class LifecycleParserTests(unittest.TestCase):
         self.assertTrue(request.json)
         self.assertTrue(request.yes)
 
+    def test_health_maps_optional_selection_and_required_environment(self) -> None:
+        request = cli._to_request(
+            cli.build_parser().parse_args(
+                [
+                    "marketplace",
+                    "health",
+                    "team/collection/starter",
+                    "--environment",
+                    "runtime-environment.json",
+                    "--json",
+                ]
+            )
+        )
+
+        self.assertEqual(request.marketplace_action, "health")
+        self.assertEqual(request.names, ("team/collection/starter",))
+        self.assertEqual(request.runtime_environment, "runtime-environment.json")
+        self.assertEqual(request.profiles, ())
+
     def test_lifecycle_actions_do_not_accept_the_legacy_source_or_repo_flags(self) -> None:
         for action in ("install", "update", "uninstall", "status", "setup"):
             with self.subTest(action=action):

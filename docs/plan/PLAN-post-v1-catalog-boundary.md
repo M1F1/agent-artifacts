@@ -150,9 +150,10 @@ release decision.
    `residual-01-*` through `residual-09-*` stage skills, and the three `residual-run-*` drivers.
 2. Publish the reviewed upstream MIT license and managed-Symlink path fixes before the dependent
    registry change, then import from that immutable commit. Record the intentional initial artifact
-   version `1.0.0`, supported platforms and profiles, Python 3.11 requirement, install modes/scopes,
-   and the review decision for executable Python/shell payloads instead of inferring them from file
-   names.
+   version `1.0.0`, supported platforms and profiles, advisory Python 3.11 runtime metadata, install
+   modes/scopes, and the review decision for executable Python/shell payloads instead of inferring
+   them from file names. Runtime metadata must never participate in installation compatibility;
+   the consuming repository owns environment provisioning and execution policy.
 3. Vendor the reviewed payloads as canonical registry-owned packages in
    `M1F1/agent-artifacts-registry`. Preserve per-artifact provenance with the upstream URL, exact
    path, resolved commit, and input digest. Import only the fourteen declared artifacts: examples,
@@ -180,6 +181,9 @@ release decision.
    then publish/release the independently reviewable AART collection-selector change if desired,
    and finally publish the registry import. Do not point provenance at an unpublished local commit,
    and do not increase `requires_aart` merely to require the one-coordinate shortcut.
+9. Expose advisory runtime observations through `aart marketplace health --environment PATH --json`.
+   The environment inventory is supplied by the consuming repository; AART neither probes nor
+   provisions it, and a valid health report remains successful regardless of requirement status.
 
 ### REL02 — next release contract
 
