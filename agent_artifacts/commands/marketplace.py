@@ -121,8 +121,8 @@ def _selection(request: Request, action: str) -> Result[tuple]:
         )
     if action in _REQUIRES_COORDINATES and not request.names:
         return _invalid(
-            f"marketplace {action} requires at least one artifact coordinate",
-            "pass <source>/<kind>/<name>[@<version>]",
+            f"marketplace {action} requires at least one artifact or collection coordinate",
+            "pass <source>/<kind>/<name>[@<version>] or <source>/collection/<name>",
             "run `aart marketplace list --json` to see available coordinates",
         )
     return parse_artifact_selectors(tuple(request.names))

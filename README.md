@@ -197,14 +197,18 @@ same configured sources:
 ```sh
 aart marketplace install reference/skill/code-review --profile claude --json
 aart marketplace install reference/skill/code-review --profile claude --json --yes
+aart marketplace install reference/collection/residuality --profile claude --json --yes
 aart marketplace status --profile claude --json
 aart marketplace update reference/skill/code-review --profile claude --json --yes
 aart marketplace uninstall reference/skill/code-review --profile claude --json --yes
 ```
 
-Artifacts are addressed as `<source>/<kind>/<name>[@<version>]`. A shorter `<kind>/<name>` is
+Artifacts are addressed as `<source>/<kind>/<name>[@<version>]`. Collections use
+`<source>/collection/<name>` and expand to the exact versioned member coordinates compiled into the
+marketplace; collections themselves have no `@<version>` suffix. A shorter `<kind>/<name>` is
 accepted only when exactly one configured source provides it; otherwise the command fails and names
-every valid coordinate rather than picking one.
+every valid coordinate rather than picking one. The TUI exposes the same compatible collections as
+guided bundle rows.
 
 **Without `--yes` every lifecycle command stops after Review** and prints the exact plan it would
 apply, changing nothing. This is the non-interactive equivalent of the TUI's Finalize prompt, and

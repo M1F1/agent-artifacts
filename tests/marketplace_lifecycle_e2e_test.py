@@ -44,6 +44,7 @@ from agent_artifacts.sources.validation import validate_source_candidate
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "protocol" / "native-source-v1"
 _COORDINATE = "reference/skill/code-review"
+_COLLECTION = "reference/collection/essentials"
 
 
 def _unwrap(result):
@@ -146,6 +147,17 @@ def _environment():
 
 
 class LifecycleCopyE2ETest(unittest.TestCase):
+    def test_collection_install_materializes_every_expanded_member(self) -> None:
+        with _environment() as env:
+            code, payload = env.run(
+                "marketplace", "install", _COLLECTION, "--profile", "claude", "--yes"
+            )
+
+            self.assertEqual(code, 0, payload)
+            self.assertTrue(payload["finalized"])
+            installed = env.project / ".claude" / "skills" / "code-review" / "SKILL.md"
+            self.assertTrue(installed.is_file(), sorted(map(str, env.project.rglob("*"))))
+
     def test_review_only_install_writes_nothing_to_the_project(self) -> None:
         with _environment() as env:
             code, payload = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")

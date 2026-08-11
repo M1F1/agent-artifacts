@@ -600,9 +600,10 @@ def build_parser() -> argparse.ArgumentParser:
             help=help_text,
             description=(
                 f"{help_text.capitalize()}. Artifacts are addressed as "
-                "<source>/<kind>/<name>[@<version>]; an unqualified <kind>/<name> is accepted "
-                "only when exactly one configured source provides it. Without --yes the command "
-                "prints the reviewed plan and exits without changing anything."
+                "<source>/<kind>/<name>[@<version>] and collections as "
+                "<source>/collection/<name>; an unqualified <kind>/<name> is accepted only when "
+                "exactly one configured source provides it. Without --yes the command prints the "
+                "reviewed plan and exits without changing anything."
             ),
         )
         lifecycle.add_argument(
@@ -649,30 +650,30 @@ def build_parser() -> argparse.ArgumentParser:
     _add_lifecycle(
         "install",
         "install configured-source artifacts for the selected harness profiles",
-        coordinates="artifact coordinate(s) to install",
+        coordinates="artifact or collection coordinate(s) to install",
     )
     _add_lifecycle(
         "update",
         "update installed artifacts against their configured sources",
-        coordinates="artifact coordinate(s) to update; omit to consider every installed artifact",
+        coordinates="artifact or collection coordinate(s) to update; omit for all installed",
         prune=True,
     )
     _add_lifecycle(
         "uninstall",
         "remove installed artifacts recorded for the selected profiles",
-        coordinates="artifact coordinate(s) to remove",
+        coordinates="artifact or collection coordinate(s) to remove",
         placement=False,
     )
     _add_lifecycle(
         "status",
         "report installed artifact state against the configured sources",
-        coordinates="artifact coordinate(s) to inspect; omit to report every installed artifact",
+        coordinates="artifact or collection coordinate(s) to inspect; omit for all installed",
         placement=False,
     )
     p_marketplace_setup = _add_lifecycle(
         "setup",
         "run declared post-install setup for installed artifacts",
-        coordinates="artifact coordinate(s) whose setup should run",
+        coordinates="artifact or collection coordinate(s) whose setup should run",
         placement=False,
     )
     p_marketplace_setup.add_argument(
