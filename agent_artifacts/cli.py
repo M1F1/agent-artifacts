@@ -533,6 +533,118 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(p_marketplace_list)
 
+    def _add_lifecycle(
+        action: str,
+        help_text: str,
+        *,
+        coordinates: str,
+        prune: bool = False,
+        placement: bool = True,
+    ) -> argparse.ArgumentParser:
+        """Declare one canonical lifecycle action over configured sources.
+
+        Every mutating flag is opt-in: without ``--yes`` the command stops at Review, and no
+        legacy ``--source``/``--repo`` flag is accepted here, so a caller cannot mix the
+        compatibility catalog path into a canonical configured-source operation.
+        """
+
+        lifecycle = marketplace_sub.add_parser(
+            action,
+            formatter_class=_HELP_FORMATTER,
+            help=help_text,
+            description=(
+                f"{help_text.capitalize()}. Artifacts are addressed as "
+                "<source>/<kind>/<name>[@<version>]; an unqualified <kind>/<name> is accepted "
+                "only when exactly one configured source provides it. Without --yes the command "
+                "prints the reviewed plan and exits without changing anything."
+            ),
+        )
+        lifecycle.add_argument(
+            "names",
+            nargs="*",
+            metavar="COORDINATE",
+            help=coordinates,
+        )
+        _add_profile(lifecycle)
+        _add_project(lifecycle)
+        _add_scope(lifecycle)
+        if placement:
+            lifecycle.add_argument(
+                "--mode",
+                dest="install_mode",
+                choices=("copy", "symlink"),
+                default=None,
+                help="install placement mode (default: copy)",
+            )
+        lifecycle.add_argument(
+            "--offline",
+            action="store_true",
+            help="use last-known-good snapshots and cached objects only",
+        )
+        lifecycle.add_argument(
+            "--force",
+            action="store_true",
+            help="authorize overwrites and merge-entry collisions",
+        )
+        if prune:
+            lifecycle.add_argument(
+                "--prune",
+                action="store_true",
+                help="remove installed entries no longer in the selection",
+            )
+        lifecycle.add_argument(
+            "--yes",
+            action="store_true",
+            help="finalize the reviewed plan (without this the command only reviews)",
+        )
+        _add_json(lifecycle)
+        return lifecycle
+
+    _add_lifecycle(
+        "install",
+        "install configured-source artifacts for the selected harness profiles",
+        coordinates="artifact coordinate(s) to install",
+    )
+    _add_lifecycle(
+        "update",
+        "update installed artifacts against their configured sources",
+        coordinates="artifact coordinate(s) to update; omit to consider every installed artifact",
+        prune=True,
+    )
+    _add_lifecycle(
+        "uninstall",
+        "remove installed artifacts recorded for the selected profiles",
+        coordinates="artifact coordinate(s) to remove",
+        placement=False,
+    )
+    _add_lifecycle(
+        "status",
+        "report installed artifact state against the configured sources",
+        coordinates="artifact coordinate(s) to inspect; omit to report every installed artifact",
+        placement=False,
+    )
+    p_marketplace_setup = _add_lifecycle(
+        "setup",
+        "run declared post-install setup for installed artifacts",
+        coordinates="artifact coordinate(s) whose setup should run",
+        placement=False,
+    )
+    p_marketplace_setup.add_argument(
+        "--authorize-untrusted-source",
+        action="store_true",
+        help="authorize setup declared by a source that is not company-reviewed",
+    )
+    p_marketplace_setup.add_argument(
+        "--authorize-custom-entrypoint",
+        action="store_true",
+        help="authorize a setup recipe that declares a non-standard entrypoint",
+    )
+    p_marketplace_setup.add_argument(
+        "--approve-setup-effects",
+        action="store_true",
+        help="approve every reviewed setup effect; without it each effect is declined",
+    )
+
     # upstream ---------------------------------------------------------------- #
     p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
     up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
@@ -1005,7 +1117,11 @@ def _to_request(args: argparse.Namespace) -> Request:
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
-        install_mode="symlink" if bool(getattr(args, "link", False)) else "copy",
+        # The canonical lifecycle names the mode explicitly; legacy commands keep boolean --link.
+        install_mode=(
+            getattr(args, "install_mode", None)
+            or ("symlink" if bool(getattr(args, "link", False)) else "copy")
+        ),
         memory_mode=getattr(args, "memory_mode", None),
         upstream_action=getattr(args, "upstream_action", None),
         url=getattr(args, "url", None),
@@ -1071,6 +1187,10 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_location=getattr(args, "source_location", None),
         source_make_default=getattr(args, "source_make_default", None),
         marketplace_action=getattr(args, "marketplace_action", None),
+        offline=bool(getattr(args, "offline", False)),
+        authorize_untrusted_source=bool(getattr(args, "authorize_untrusted_source", False)),
+        authorize_custom_entrypoint=bool(getattr(args, "authorize_custom_entrypoint", False)),
+        approve_setup_effects=bool(getattr(args, "approve_setup_effects", False)),
         rollback=bool(getattr(args, "rollback", False)),
         upgrade_wheel=getattr(args, "upgrade_wheel", None),
         upgrade_source_checkout=getattr(args, "upgrade_source_checkout", None),
