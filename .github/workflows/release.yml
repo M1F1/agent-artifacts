@@ -1,13 +1,16 @@
 name: release
 
 # Repeats quality/release gates, builds the offline zero-dependency wheel, and ships it.
-# Triggers for the fixed 1.0.0 contract:
-#   * v1.0.0 tag push                   -> build + upload as a workflow artifact
-#   * a published v1.0.0 GitHub release -> additionally attach the wheel to the release
+# Triggers:
+#   * a stable vX.Y.Z tag push          -> build + upload as a workflow artifact
+#   * a published GitHub release        -> additionally attach the wheel to the release
+# `scripts/version.py check-tag` is the real gate: it rejects any tag that does not match the
+# source version the release contract governs, so the pattern below stays deliberately broad
+# rather than pinning one release and silently building nothing for the next.
 on:
   push:
     tags:
-      - "v1.0.0"
+      - "v[0-9]+.[0-9]+.[0-9]+"
   release:
     types: [published]
 
@@ -39,7 +42,6 @@ jobs:
         run: make quality
 
   release:
-    if: github.event_name == 'push' || github.event.release.tag_name == 'v1.0.0'
     needs: quality
     runs-on: ubuntu-latest
     steps:
@@ -73,7 +75,9 @@ jobs:
         run: python scripts/version.py check-tag "$TAG"
 
       - name: Verify reviewed release notes
-        run: test -s docs/release/github-release-v1.0.0.md
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: test -s "docs/release/github-release-${TAG}.md"
 
       - name: Inject commit
         run: python scripts/inject_commit.py
