@@ -42,11 +42,20 @@ SCHEMA_INPUTS = (
     "docs/protocol/native-source-v1.md",
     "docs/protocol/registry-v1.md",
 )
+# Documents that must exist *and* name this exact release.
 REQUIRED_RELEASE_DOCS = (
     "CHANGELOG.md",
     f"docs/release/compatibility-v{RELEASE_CONTRACT_VERSION}.md",
     f"docs/release/release-checklist-v{RELEASE_CONTRACT_VERSION}.md",
     f"docs/release/github-release-v{EXPECTED_VERSION}.md",
+)
+# Documents that stay shipped and referenced across release series.  They are still gated — a
+# release must not silently drop the 0.1.x migration guide or the onboarding tutorials — but they
+# describe an earlier boundary and are not expected to name the current version.
+REQUIRED_PERSISTENT_DOCS = (
+    "docs/release/migration-v1.md",
+    "docs/tutorials/direct-source-v1.md",
+    "docs/tutorials/company-registry-v1.md",
 )
 RELEASE_CHECKS = (
     "repository",
@@ -224,6 +233,19 @@ def _repository_diagnostics(
                     "release-doc-missing",
                     f"required {EXPECTED_VERSION} release document is missing "
                     f"or incomplete: {relative}",
+                )
+            )
+    for relative in REQUIRED_PERSISTENT_DOCS:
+        try:
+            carried = (root / relative).read_text(encoding="utf-8").strip()
+        except OSError:
+            carried = ""
+        if not carried:
+            diagnostics.append(
+                _diagnostic(
+                    "repository",
+                    "release-doc-missing",
+                    f"carried-forward release document is missing or empty: {relative}",
                 )
             )
     if require_clean:

@@ -49,6 +49,10 @@ def _fixture_root(raw: str, release, *, complete: bool = True) -> Path:
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"# AART {version}\n\nRelease evidence.\n", encoding="utf-8")
+    for relative in release.REQUIRED_PERSISTENT_DOCS:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# Carried forward\n\nEarlier-boundary evidence.\n", encoding="utf-8")
     freeze = root / release.SCHEMA_FREEZE_PATH
     freeze.parent.mkdir(parents=True, exist_ok=True)
     freeze.write_bytes(release.schema_freeze_bytes(root))
@@ -130,6 +134,45 @@ class ReleaseChecklistTest(unittest.TestCase):
         self.assertIn("version-invalid", codes)
         self.assertIn("schema-freeze-stale", codes)
         self.assertIn("release-doc-missing", codes)
+
+    def test_a_dropped_carried_forward_document_still_blocks_the_release(self) -> None:
+        """Migration and tutorial guides survive a release-series bump.
+
+        They describe an earlier boundary and so cannot be required to name the current version,
+        but a release must not silently ship without the 0.1.x migration guide or the onboarding
+        tutorials either.
+        """
+
+        release = _load_script("release")
+        for relative in release.REQUIRED_PERSISTENT_DOCS:
+            with self.subTest(document=relative), tempfile.TemporaryDirectory() as raw:
+                root = _fixture_root(raw, release)
+                registry = root / "reference-registry"
+                registry.mkdir()
+                (root / relative).unlink()
+
+                receipt = release.check_release(root, registry, process_runner=_successful_runner)
+
+                self.assertEqual(receipt["status"], "failed")
+                self.assertIn(
+                    "release-doc-missing",
+                    tuple(item["code"] for item in receipt["diagnostics"]),
+                )
+
+    def test_a_carried_forward_document_need_not_name_the_current_version(self) -> None:
+        release = _load_script("release")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, release)
+            registry = root / "reference-registry"
+            registry.mkdir()
+            # Mentions only the earlier boundary, exactly like the real migration guide.
+            (root / release.REQUIRED_PERSISTENT_DOCS[0]).write_text(
+                "# Migrating from AART 0.1.x to 1.0.0\n", encoding="utf-8"
+            )
+
+            receipt = release.check_release(root, registry, process_runner=_successful_runner)
+
+        self.assertEqual(receipt["status"], "passed")
 
     def test_incompatible_registry_and_stale_index_have_distinct_redacted_codes(self) -> None:
         release = _load_script("release")
