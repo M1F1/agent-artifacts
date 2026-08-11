@@ -348,7 +348,9 @@ def _sync(request: Request) -> int:
     if isinstance(selected, Err):
         return _emit_error(request, _SYNC_OPERATION, selected)
 
-    results = []
+    results: list[dict] = []
+    # Human rendering reads these typed locals rather than the heterogeneous JSON payload.
+    lines: list[str] = []
     failed = False
     for source in selected.value:
         # Synchronizing never writes user configuration and never changes source identity: it
@@ -363,16 +365,25 @@ def _sync(request: Request) -> int:
                     "diagnostics": [diagnostic_to_data(item) for item in synchronized.diagnostics],
                 }
             )
+            lines.append(f"{source.alias.value}: failed")
+            lines.extend(
+                f"  {item.severity.value}: {item.message}" for item in synchronized.diagnostics
+            )
             continue
+        current = synchronized.value.current
         results.append(
             {
                 "alias": source.alias.value,
                 "ok": True,
                 "disposition": synchronized.value.disposition.value,
-                "source_id": synchronized.value.current.declared_source_id.value,
-                "resolved_revision": synchronized.value.current.candidate.resolved_revision,
-                "snapshot_digest": str(synchronized.value.current.candidate.snapshot_digest),
+                "source_id": current.declared_source_id.value,
+                "resolved_revision": current.candidate.resolved_revision,
+                "snapshot_digest": str(current.candidate.snapshot_digest),
             }
+        )
+        lines.append(
+            f"{source.alias.value}: {synchronized.value.disposition.value} "
+            f"({current.candidate.resolved_revision})"
         )
     payload = {
         "schema_version": 1,
@@ -385,14 +396,25 @@ def _sync(request: Request) -> int:
     elif not results:
         print("No enabled sources to synchronize.")
     else:
-        for item in results:
-            if item["ok"]:
-                print(f"{item['alias']}: {item['disposition']} ({item['resolved_revision']})")
-            else:
-                print(f"{item['alias']}: failed")
-                for diagnostic in item["diagnostics"]:
-                    print(f"  {diagnostic['severity']}: {diagnostic['message']}")
+        for line in lines:
+            print(line)
     return _common.ERROR if failed else _common.OK
+
+
+def _pending_store_migration(runtime: ConfiguredRuntime) -> bool:
+    """Whether a legacy source directory is still waiting to be rebound.
+
+    Reported, never acted on: migrating moves user data and stays an explicit `doctor --apply`.
+    """
+
+    data_root = runtime.paths.data_root
+    planned = plan_source_store_migration(
+        runtime.loaded.user_configuration,
+        existing=existing_source_directories(data_root),
+        stored_schema_version=stored_schema_version(data_root),
+    )
+    # A conflicting or ambiguous store is also unmigrated; `doctor` explains which.
+    return True if isinstance(planned, Err) else bool(planned.value.rebinds)
 
 
 def _health(request: Request) -> int:
@@ -431,11 +453,16 @@ def _health(request: Request) -> int:
                 ),
             }
         )
+    # After upgrading to ref-aware storage a source resolves to a directory that does not exist
+    # yet, so it reads as "missing" for no visible reason.  Say so here, where someone diagnosing
+    # exactly that will look, instead of leaving them with an unexplained empty marketplace.
+    pending_migration = _pending_store_migration(runtime.value)
     payload = {
         "schema_version": 1,
         "ok": not degraded,
         "operation": _HEALTH_OPERATION,
         "max_age_seconds": runtime.value.loaded.effective.configuration.sync.max_age_seconds,
+        "pending_store_migration": pending_migration,
         "sources": items,
     }
     if request.json:
@@ -447,6 +474,11 @@ def _health(request: Request) -> int:
             age = "never synchronized" if item["age_seconds"] is None else f"{item['age_seconds']}s"
             print(
                 f"{item['alias']} [{item['kind']}@{item['ref'] or 'local'}] {item['health']}; {age}"
+            )
+        if pending_migration:
+            print(
+                "note: this store still uses the pre-ref-aware layout; "
+                "run `aart source doctor` to review the migration."
             )
     return _common.ERROR if degraded else _common.OK
 

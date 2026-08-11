@@ -95,7 +95,21 @@ carries addition semantics. SRC02 adds three explicit commands:
 
 None of the three may create, rename, or delete a configured source, or alter policy.
 
-## 6. Out of scope
+## 6. What an existing user sees on upgrade
+
+Because the directory name changes, the first run after upgrading resolves a configured source to a
+directory that does not exist yet: the source reads `missing` and the marketplace is empty. That is
+correct — no stale pointer is silently reused — but on its own it is an unexplained disappearance.
+
+Migration is therefore *reported* everywhere it is detected and *applied* only on request:
+`aart source health` sets `pending_store_migration` and prints a line naming `aart source doctor`,
+and `doctor` prints the exact rebinds before `--apply` performs them. Auto-migrating on load was
+rejected: it would move user data as a side effect of an unrelated read.
+
+`aart source sync` is also a complete remedy — it simply republishes into the new directory — at the
+cost of a fetch and of leaving the legacy directory behind for `doctor` to report.
+
+## 7. Out of scope
 
 - Concurrent-writer isolation for configuration writes — that is `CFG02`.
 - Any change to the object store or installed state.

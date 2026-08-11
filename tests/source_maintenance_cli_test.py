@@ -149,6 +149,37 @@ class SourceHealthCommandTest(unittest.TestCase):
                 source_instance_id(env.source).value,
             )
 
+    def test_health_names_a_pending_store_migration_rather_than_reporting_a_bare_missing(
+        self,
+    ) -> None:
+        # The upgrade case: a real legacy directory exists, but the ref-aware identity resolves
+        # elsewhere, so the source would otherwise read "missing" with no explanation.
+        with _environment() as env:
+            git = ConfiguredSource(
+                SourceAlias("team"),
+                SourceKind.SOURCE_GIT,
+                "https://git.example/team/artifacts.git",
+                "main",
+                True,
+            )
+            env.write(git)
+            legacy = Path(env.paths.data_root) / "sources" / legacy_source_instance_id(git).value
+            legacy.mkdir(parents=True)
+
+            code, payload = env.run("source", "health")
+
+            self.assertEqual(code, 1, payload)
+            self.assertEqual(payload["sources"][0]["health"], "missing")
+            self.assertTrue(payload["pending_store_migration"])
+
+    def test_health_reports_no_pending_migration_once_the_store_is_current(self) -> None:
+        with _environment() as env:
+            env.run("source", "sync")
+
+            _, payload = env.run("source", "health")
+
+            self.assertFalse(payload["pending_store_migration"])
+
     def test_health_never_writes_configuration_or_snapshots(self) -> None:
         with _environment() as env:
             env.run("source", "sync")

@@ -100,9 +100,7 @@ _INSTANCE_PREFIX = {
 }
 
 
-def _instance_id(
-    source: ConfiguredSource, fields: tuple[tuple[str, object], ...]
-) -> SourceInstanceId:
+def _instance_id(source: ConfiguredSource, fields: tuple[tuple[str, str], ...]) -> SourceInstanceId:
     digest = json_digest(JsonObject(fields))
     return SourceInstanceId(f"{_INSTANCE_PREFIX[source.kind]}-{digest.value[:32]}")
 
