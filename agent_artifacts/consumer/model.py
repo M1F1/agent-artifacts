@@ -314,6 +314,16 @@ class ConsumerSetupQueue:
             raise ValueError("consumer setup queue identities must be unique")
 
 
+def consumer_review_value(review: ConsumerReview) -> JsonObject:
+    """The exact canonical value the Review digest is computed over.
+
+    Agents need to see what they are about to authorize, and it must be the same bytes the digest
+    binds — not a parallel rendering that could drift from it.
+    """
+
+    return _review_value(review)
+
+
 def render_consumer_review(review: ConsumerReview) -> tuple[str, ...]:
     request = review.request
     lines: tuple[str, ...] = (
@@ -372,6 +382,7 @@ __all__ = [
     "ConsumerSetupFailure",
     "ConsumerSetupQueue",
     "ConsumerTerminalItem",
+    "consumer_review_value",
     "render_consumer_outcome",
     "render_consumer_review",
 ]

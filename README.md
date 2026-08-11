@@ -191,9 +191,28 @@ aart source list --json
 aart marketplace list --json
 ```
 
-`marketplace list` is deliberately read-only. Canonical non-interactive install/update/uninstall
-commands are tracked as `LIFE02`; until then, use the TUI for canonical lifecycle actions. Bare
-`aart list` and `aart install` are legacy compatibility commands, not configured-marketplace
+`marketplace list` is deliberately read-only. The canonical non-interactive lifecycle runs over the
+same configured sources:
+
+```sh
+aart marketplace install reference/skill/code-review --profile claude --json
+aart marketplace install reference/skill/code-review --profile claude --json --yes
+aart marketplace status --profile claude --json
+aart marketplace update reference/skill/code-review --profile claude --json --yes
+aart marketplace uninstall reference/skill/code-review --profile claude --json --yes
+```
+
+Artifacts are addressed as `<source>/<kind>/<name>[@<version>]`. A shorter `<kind>/<name>` is
+accepted only when exactly one configured source provides it; otherwise the command fails and names
+every valid coordinate rather than picking one.
+
+**Without `--yes` every lifecycle command stops after Review** and prints the exact plan it would
+apply, changing nothing. This is the non-interactive equivalent of the TUI's Finalize prompt, and
+`--yes` finalizes precisely the plan that was just reviewed. Setup authorizations are never implied:
+`--authorize-untrusted-source`, `--authorize-custom-entrypoint`, and `--approve-setup-effects` each
+have to be passed explicitly, and omitting one denies rather than prompts.
+
+Bare `aart list` and `aart install` remain legacy compatibility commands, not configured-marketplace
 onboarding.
 
 ---
@@ -225,9 +244,10 @@ uses explicit destinations verified for each harness and stores separate state i
 `<project>/.agent-artifacts/manifest.json`; status, update, and uninstall read only the selected
 scope and never cross between them.
 
-The TUI is the canonical way to choose project/user scope, Copy/Symlink, and an install/update
-review. The remaining flag-mode lifecycle commands are retained only for an explicit external
-legacy catalog until `LIFE02` exposes their canonical JSON equivalents:
+The TUI is the guided human way to choose project/user scope, Copy/Symlink, and an install/update
+review; `aart marketplace install/update/uninstall/status/setup` is the equivalent agent surface
+over the same configured sources. The remaining flag-mode lifecycle commands below are retained
+only for an explicit external legacy catalog:
 
 ```sh
 aart install code-review --profile claude --scope user --source /path/to/legacy-catalog
@@ -275,8 +295,8 @@ rolls back that item's completed reversible steps, preserves earlier successful 
 continues unless Stop was explicitly selected.
 
 Flag-mode artifact installation never auto-runs setup. The following setup runner is legacy
-installed-state compatibility, not the future configured-marketplace CLI lifecycle; use the TUI
-for canonical setup review until `LIFE02`:
+installed-state compatibility; the canonical equivalents are the TUI's setup review and
+`aart marketplace setup`:
 
 ```sh
 aart setup run mcp/atlassian --profile tabnine --scope user
@@ -390,9 +410,9 @@ editing or pulling the original source does not silently change an installed art
 Every install is recorded in `.agent-artifacts/manifest.json` with files, hashes, source
 commit, install mode, and link targets. Freshness checks are opt-in, never ambient.
 
-Until `LIFE02`, the following are installed-state/legacy lifecycle commands. They do not turn a
-configured marketplace into an implicit source; use the TUI for canonical marketplace lifecycle
-work and provide `--source` for any legacy catalog lookup:
+The following are installed-state/legacy lifecycle commands. They do not turn a configured
+marketplace into an implicit source; use `aart marketplace status/update/uninstall` or the TUI for
+canonical marketplace lifecycle work, and provide `--source` for any legacy catalog lookup:
 
 ```sh
 aart status
@@ -699,9 +719,10 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 | `aart source add` | source-dependent | Validate/snapshot one canonical registry/direct/local source, then persist it |
 | `aart source list` | no | Show configured origins and managed snapshot health |
 | `aart marketplace list` | no | List the configured canonical marketplace (`--json` is agent-safe) |
+| `aart marketplace install/update/uninstall/status/setup` | no (local snapshots) | Canonical JSON lifecycle over configured sources; reviews only unless `--yes` is passed |
 | `aart list/install/update/setup --source DIR` or `--repo OWNER/NAME` | source-dependent | Explicit 0.1 compatibility catalog commands; not canonical marketplace lifecycle commands |
-| `aart status` / `aart check` | local / source-dependent | Legacy installed-state compatibility inspection; canonical lifecycle remains TUI-first |
-| `aart update` / `aart uninstall` / `aart setup` | varies | Legacy installed-state compatibility commands; canonical JSON lifecycle is deferred to `LIFE02` |
+| `aart status` / `aart check` | local / source-dependent | Legacy installed-state compatibility inspection |
+| `aart update` / `aart uninstall` / `aart setup` | varies | Legacy installed-state compatibility commands; prefer the `aart marketplace` equivalents |
 | `aart migrate state` | no | Dry-run/apply/rollback explicit 0.1 installation state |
 | `aart upgrade --wheel FILE` | no | Reinstall the CLI from one exact local wheel, index-free |
 | `aart upgrade --source-checkout DIR` | no | Reinstall editable from one exact local checkout, index-free |

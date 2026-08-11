@@ -82,7 +82,9 @@ class MigrateCliTest(unittest.TestCase):
             self.assertEqual(cli.main(["list", "--source", "/tmp/catalog"]), 0)
 
         self.assertIn("legacy 0.1 compatibility path", stderr.getvalue())
-        self.assertIn("configured marketplace", stderr.getvalue())
+        # The warning must name the canonical replacement for both audiences, not just the TUI.
+        self.assertIn("aart marketplace", stderr.getvalue())
+        self.assertIn("TUI", stderr.getvalue())
 
     def test_command_dry_run_apply_and_later_process_rollback_are_end_to_end(self) -> None:
         from agent_artifacts.commands import migrate

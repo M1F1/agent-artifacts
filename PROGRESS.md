@@ -13,17 +13,18 @@
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
 - **Issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
-- **Branch:** `codex/remove-legacy-root-catalog`
-- **Status:** `CB01` locally complete and pushed; this addendum does not modify frozen `v1.0.0`
-  release evidence.
+- **Branches:** `codex/remove-legacy-root-catalog` (CB01), `codex/aart-life02-marketplace-lifecycle`
+  (LIFE02, stacked on CB01 because it extends the `marketplace` command surface CB01 introduces)
+- **Status:** `CB01` in review as PR #62 with green CI; `LIFE02` locally complete. This addendum
+  does not modify frozen `v1.0.0` release evidence.
 - **Last updated:** 2026-08-11
-- **Next checkpoint:** CB01 review PR against `main`, linked to #61. Merge, tag, and release remain
-  separately authorized actions and are not part of this checkpoint.
+- **Next checkpoint:** LIFE02 review PR stacked on CB01, linked to #61. Merge, tag, and release
+  remain separately authorized actions and are not part of this checkpoint.
 
 | ID | Task | Status | Evidence / next action |
 |---|---|---|---|
-| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | complete | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes. Locally committed/pushed as `9bdb24d`; tracked by issue #61 and under review before merge. |
-| LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | pending | Keep separate from CB01; legacy lifecycle commands remain explicit compatibility adapters until this task passes its own E2E matrix. |
+| CB01 | Remove embedded catalog, implicit checkout fallback, and finish source onboarding/read-only browse | complete | CB01.A removes production payload roots/exporter and rejects legacy/canonical embedded catalog paths, including dangling root symlinks. CB01.B adds strict source parsing/sync plus first-run TUI and agent `source add/list`; configuration now rejects a same-origin/different-ref Git pair across equivalent HTTPS/SSH/SCP spellings until SRC02, resolves safe `refs/heads/*` branch inputs, and an empty required-policy curses Sources screen supports Add/Back/Quit. CB01.C adds `marketplace list --json` with digest verification and no object publication. Final `make quality` passes. Locally committed/pushed as `9bdb24d`; tracked by issue #61, in review as PR #62 with green CI on Python 3.10 and 3.14. |
+| LIFE02 | Canonical non-interactive lifecycle (`marketplace install/update/uninstall/status/setup`) | complete | JSON-first lifecycle over the existing canonical application services. Coordinates are `<source>/<kind>/<name>[@<version>]`; an unqualified `<kind>/<name>` resolves only when unique, otherwise a deterministic ambiguity diagnostic names every valid coordinate. Without `--yes` every action stops after Review and changes nothing; `--yes` finalizes the digest of the review computed in the same process. Setup authorizations are never implied (`--authorize-untrusted-source`, `--authorize-custom-entrypoint`, `--approve-setup-effects`). Legacy `--source`/`--repo` are rejected on these subcommands. Real temporary-home/project E2E covers Copy, managed Symlink into the object store, user scope, update no-op, status, uninstall, offline, and JSON diagnostics. Full `make quality` passes. Setup *execution* E2E is deliberately not added — see the residual note below. |
 | SRC02 | Ref-aware source-store migration plus sync/health/doctor commands | pending | The current store remains origin-keyed for compatibility; CB01 rejects a second ref for the same Git origin rather than sharing a pointer. Add a versioned migration/rebind before enabling multi-ref sources. |
 | CFG02 | Atomic source-management configuration writes | pending | Add a configuration lock plus expected-digest CAS. The current post-sync re-read detects ordinary drift but cannot prevent a writer that races between that read and atomic replacement. |
 | REG02 | Registry-owned agent skills | pending | Separate `M1F1/agent-artifacts-registry` PR after an executable version exposes/guarantees the documented commands; rewrite the two existing skills to `2.0.0` and regenerate lock/index. |
@@ -68,8 +69,35 @@
 - Re-ran the complete quality matrix on the final branch state rather than trusting the earlier
   green run: `format-check, lint, typecheck, unit, integration, e2e, validate, coverage,
   packaging-check, docs-check` all pass, total branch coverage 85.12%, `version check OK: 1.0.0`.
-- Opened the CB01 review PR against `main`. Merge, tag, and release remain unauthorized and
-  deliberately not performed.
+- Opened the CB01 review PR against `main` as #62; all four CI jobs (Python 3.10 and 3.14, push and
+  pull_request) passed and the PR reports `mergeStateStatus=CLEAN`. Merge, tag, and release remain
+  unauthorized and deliberately not performed.
+
+### 2026-08-11 — LIFE02 work log
+
+- Branched `codex/aart-life02-marketplace-lifecycle` from the CB01 branch rather than `main`: the
+  task extends the `marketplace` command surface CB01 introduces, so it is a stacked review PR.
+- TDD, red first. `parse_artifact_selectors` was written against failing tests; one of them caught a
+  real ordering defect before it could ship — a selector dataclass with `order=True` raised
+  `TypeError` when a qualified and an unqualified selector shared an identity, because `None` is not
+  comparable to a `SourceAlias`. Ordering now uses the rendered selector, which is total.
+- Resolution reuses the catalog's existing `resolve_artifact`, so the ambiguity contract is the one
+  the marketplace already enforces rather than a second, drifting implementation. Resolved
+  coordinates are version-pinned by the catalog; the tests assert the pinned form.
+- The Review/Finalize boundary is the load-bearing safety property: without `--yes` a command
+  prepares the plan, prints it, and returns without calling `finalize`. With `--yes` it finalizes
+  the digest of the review computed in the same process, so a plan cannot drift between the two.
+- Setup authorizations are separate opt-in flags and each defaults to denying. Consent for setup
+  effects is a decision derived from `--approve-setup-effects`, never a prompt and never implied.
+- `--scope user` combined with `--project` is rejected by an existing CLI guard; the E2E harness
+  honours that guard instead of working around it.
+- Residual gap, stated rather than hidden: E2E covers setup *planning*, review, and the empty-queue
+  path, but not real setup *execution*. Executing a recipe through the CLI would run real
+  subprocesses, and the only way to make it hermetic would be to add a test-only runtime injection
+  seam to production code. Setup execution stays covered by the existing setup-engine tests
+  (`tests/setup_e2e_test.py`), and `--approve-setup-effects` is covered at the unit level.
+- Full local `make quality` passed: Ruff format/lint, mypy, unit, integration, E2E, validation,
+  coverage, packaging, and docs.
 
 ## Status rules
 

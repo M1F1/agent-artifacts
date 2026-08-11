@@ -522,6 +522,12 @@ class Request:
     source_location: Optional[str] = None
     source_make_default: Optional[bool] = None
     marketplace_action: Optional[str] = None
+    # Canonical lifecycle gates.  Each defaults to the denying value so that neither an agent nor a
+    # script can acquire an authorization by omitting a flag.
+    offline: bool = False
+    authorize_untrusted_source: bool = False
+    authorize_custom_entrypoint: bool = False
+    approve_setup_effects: bool = False
     rollback: bool = False
     upgrade_wheel: Optional[str] = None
     upgrade_source_checkout: Optional[str] = None
