@@ -1473,8 +1473,7 @@ def _runtime_source_stage_context(
         ConfigurationPorts,
         ConfigurationRequest,
         load_configuration,
-        save_user_configuration,
-        save_user_configuration_for_source_management,
+        save_user_configuration_checked,
     )
     from .application.source_management import (
         finalize_source_addition,
@@ -1483,6 +1482,7 @@ def _runtime_source_stage_context(
     from .application.sources import SourceStatusRequest, source_status
     from .configuration.paths import Platform, resolve_config_paths
     from .configuration.policy import RuntimeOverrides
+    from .io.config_cas import checked_config_writer
     from .io.config_store import (
         read_configuration,
         recover_configuration,
@@ -1504,6 +1504,7 @@ def _runtime_source_stage_context(
         read_configuration,
         write_configuration,
         recover_configuration,
+        checked_config_writer,
     )
     loaded = load_configuration(
         ConfigurationRequest(paths, RuntimeOverrides(), content_required=False),
@@ -1576,11 +1577,14 @@ def _runtime_source_stage_context(
             return refreshed
         return finalize_source_management(
             request,
-            lambda desired, active_policy: save_user_configuration(
+            # CFG02: name the exact state just revalidated, so a writer that lands between this
+            # check and the replace is refused instead of silently overwritten.
+            lambda desired, active_policy: save_user_configuration_checked(
                 desired,
                 active_policy,
                 paths,
                 ports,
+                expected_digest=refreshed.value.observed_digest,
             ),
         )
 
@@ -1601,11 +1605,12 @@ def _runtime_source_stage_context(
             return after_sync
         return finalize_source_addition(
             request,
-            lambda desired, active_policy: save_user_configuration_for_source_management(
+            lambda desired, active_policy: save_user_configuration_checked(
                 desired,
                 active_policy,
                 paths,
                 ports,
+                expected_digest=after_sync.value.observed_digest,
             ),
         )
 

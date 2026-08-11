@@ -20,6 +20,7 @@ from agent_artifacts.configuration.paths import ConfigPaths, Platform, resolve_c
 from agent_artifacts.configuration.policy import RuntimeOverrides, redact_text
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.result import Err, Ok, Result
+from agent_artifacts.io.config_cas import checked_config_writer
 from agent_artifacts.io.config_store import (
     read_configuration,
     recover_configuration,
@@ -69,6 +70,7 @@ def load_runtime_configuration(
         read_configuration,
         write_configuration,
         recover_configuration,
+        checked_config_writer,
     )
     loaded = load_configuration(
         ConfigurationRequest(paths, RuntimeOverrides(), content_required=content_required),

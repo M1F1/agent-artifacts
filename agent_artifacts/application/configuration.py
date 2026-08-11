@@ -11,7 +11,7 @@ from agent_artifacts.configuration.model import (
     default_organization_policy,
     default_user_configuration,
 )
-from agent_artifacts.configuration.paths import ConfigPaths
+from agent_artifacts.configuration.paths import ConfigPaths, config_lock_directory
 from agent_artifacts.configuration.policy import (
     EffectiveConfiguration,
     RuntimeOverrides,
@@ -62,9 +62,33 @@ class ConfigRecoveryReceipt:
     replacement_digest: ObjectDigest
 
 
+@dataclass(frozen=True, slots=True)
+class CheckedConfigDocument:
+    """One configuration write and the exact prior state it may replace.
+
+    ``expected_digest`` of ``None`` means the file must not exist yet.
+    """
+
+    path: str
+    content: bytes
+    expected_digest: ObjectDigest | None
+    lock_directory: str
+
+
 ReadPort = Callable[[ConfigReadRequest], Result[bytes | None]]
 WritePort = Callable[[ConfigDocument], Result[ConfigWriteReceipt]]
 RecoveryPort = Callable[[ConfigRecoveryPlan], Result[ConfigRecoveryReceipt]]
+# Injected like every other filesystem concern: the application layer states the contract, the io
+# layer implements the lock and the compare-and-swap (CFG02).
+CheckedWritePort = Callable[[CheckedConfigDocument], Result[ConfigWriteReceipt]]
+
+
+def _unavailable_checked_write(_document: CheckedConfigDocument) -> Result[ConfigWriteReceipt]:
+    return _failure(
+        "config-unavailable",
+        "this configuration port cannot perform a compare-and-swap write",
+        "construct ConfigurationPorts with a checked writer",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +96,9 @@ class ConfigurationPorts:
     read: ReadPort
     write: WritePort
     recover: RecoveryPort
+    # Defaulted so existing three-argument constructions keep working; a caller that reaches the
+    # reviewed source-management write must supply a real one.
+    write_checked: CheckedWritePort = _unavailable_checked_write
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +123,10 @@ class LoadedConfiguration:
     first_run: FirstRunOptions | None
     recovery: ConfigRecoveryPlan | None
     diagnostics: tuple[Diagnostic, ...]
+    # Digest of the exact bytes this load observed, or ``None`` when no configuration file existed.
+    # A later compare-and-swap write names this value as the state it is allowed to replace, so a
+    # writer that lands in between is refused instead of silently overwritten (CFG02).
+    observed_digest: ObjectDigest | None = None
 
 
 def _failure(code: str, message: str, *remediation: str) -> Err:
@@ -214,6 +245,7 @@ def load_configuration(
             first_run,
             recovery,
             diagnostics,
+            None if raw_user is None else sha256_bytes(raw_user),
         )
     )
 
@@ -229,6 +261,35 @@ def save_user_configuration(
         return allowed
     return ports.write(
         ConfigDocument(paths.user_config_file, user_configuration_bytes(configuration))
+    )
+
+
+def save_user_configuration_checked(
+    configuration: UserConfiguration,
+    policy: OrganizationPolicy,
+    paths: ConfigPaths,
+    ports: ConfigurationPorts,
+    *,
+    expected_digest: ObjectDigest | None,
+) -> Result[ConfigWriteReceipt]:
+    """Persist a reviewed source-management state, refusing to overwrite a concurrent change.
+
+    This is the CFG02 replacement for :func:`save_user_configuration_for_source_management` on the
+    reviewed source-management path.  The caller's earlier read is not trusted on its own: the
+    expected digest is re-checked under a configuration lock immediately before the atomic replace,
+    which closes the window a pre-write re-read alone cannot.
+    """
+
+    allowed = apply_configuration_for_source_management(configuration, policy)
+    if isinstance(allowed, Err):
+        return allowed
+    return ports.write_checked(
+        CheckedConfigDocument(
+            paths.user_config_file,
+            user_configuration_bytes(configuration),
+            expected_digest,
+            config_lock_directory(paths),
+        )
     )
 
 
