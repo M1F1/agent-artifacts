@@ -33,6 +33,7 @@ from agent_artifacts.protocol.native_models import (
     InstallSpec,
 )
 from agent_artifacts.protocol.registry_models import IndexArtifact, IndexSetup
+from agent_artifacts.protocol.semver import SemVer, version_bounds_label
 
 from .model import PhaseOutput, phase_output
 
@@ -130,6 +131,7 @@ class CompatibilityTarget:
     scope: InstallScope
     mode: InstallMode
     effects: tuple[InstallEffect, ...]
+    aart_version: SemVer
     setup_capabilities: tuple[Capability, ...] = ()
     require_setup: bool = True
 
@@ -149,6 +151,8 @@ class CompatibilityTarget:
             raise ValueError("compatibility target effects are invalid")
         if not isinstance(self.require_setup, bool):
             raise ValueError("require_setup must be a boolean")
+        if not isinstance(self.aart_version, SemVer):
+            raise ValueError("aart_version must be a SemVer")
         object.__setattr__(self, "effects", tuple(sorted(set(self.effects))))
         object.__setattr__(
             self,
@@ -337,7 +341,7 @@ def _setup_json(setup: IndexSetup | None) -> JsonValue:
 
 
 def _semantic_json(artifact: IndexArtifact) -> JsonObject:
-    return JsonObject(
+    entries: list[tuple[str, JsonValue]] = list(
         (
             (
                 "compatibility",
@@ -362,6 +366,30 @@ def _semantic_json(artifact: IndexArtifact) -> JsonObject:
             ("setup", _setup_json(artifact.setup)),
         )
     )
+    bounds = artifact.requires_aart
+    if bounds.min_inclusive is not None or bounds.max_exclusive is not None:
+        entries.append(
+            (
+                "requires_aart",
+                JsonObject(
+                    tuple(
+                        entry
+                        for entry in (
+                            (
+                                "min_inclusive",
+                                None if bounds.min_inclusive is None else str(bounds.min_inclusive),
+                            ),
+                            (
+                                "max_exclusive",
+                                None if bounds.max_exclusive is None else str(bounds.max_exclusive),
+                            ),
+                        )
+                        if entry[1] is not None
+                    )
+                ),
+            )
+        )
+    return JsonObject(tuple(entries))
 
 
 def _normalize_artifact(artifact: IndexArtifact) -> IndexArtifact:
@@ -695,6 +723,15 @@ def evaluate_compatibility(
     payload: list[CompatibilityReason] = []
     setup: list[CompatibilityReason] = []
     manifest = artifact.artifact
+    if not manifest.requires_aart.allows(target.aart_version):
+        required = version_bounds_label(manifest.requires_aart)
+        payload.append(
+            CompatibilityReason(
+                "aart-version-unsupported",
+                f"artifact requires AART {required}; running AART {target.aart_version} may not "
+                "support behavior used by this artifact, so installation is disabled",
+            )
+        )
     if artifact.lifecycle is ArtifactLifecycle.REMOVED:
         payload.append(
             CompatibilityReason("artifact-removed", "artifact was removed from its source")
@@ -865,6 +902,7 @@ def select_artifacts(
 
 def _artifact_json(item: MarketplaceArtifact) -> JsonObject:
     artifact = item.artifact
+    semantic = _semantic_json(artifact)
     setup = _setup_json(artifact.setup)
     review: JsonValue = None
     if artifact.review is not None:
@@ -880,11 +918,11 @@ def _artifact_json(item: MarketplaceArtifact) -> JsonObject:
                 ("resolved_commit", artifact.provenance.resolved_commit),
             )
         )
-    return JsonObject(
+    entries: list[tuple[str, JsonValue]] = list(
         (
-            ("compatibility", _semantic_json(artifact).get("compatibility")),
+            ("compatibility", semantic.get("compatibility")),
             ("identity", str(artifact.identity)),
-            ("install", _semantic_json(artifact).get("install")),
+            ("install", semantic.get("install")),
             ("lifecycle", item.lifecycle.value),
             ("manifest_digest", str(artifact.manifest_digest)),
             ("object_digest", str(artifact.object_digest)),
@@ -899,6 +937,10 @@ def _artifact_json(item: MarketplaceArtifact) -> JsonObject:
             ("version", str(artifact.version)),
         )
     )
+    requires_aart = semantic.get("requires_aart")
+    if requires_aart is not None:
+        entries.append(("requires_aart", requires_aart))
+    return JsonObject(tuple(entries))
 
 
 def marketplace_graph_bytes(graph: MarketplaceGraph) -> bytes:

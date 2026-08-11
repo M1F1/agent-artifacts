@@ -93,6 +93,7 @@ class ArtifactManifest:
     license: str | None = None
     homepage: str | None = None
     extensions: tuple[tuple[str, JsonValue], ...] = ()
+    requires_aart: VersionBounds = VersionBounds()
 
 
 @dataclass(frozen=True, slots=True)

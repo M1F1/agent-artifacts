@@ -66,6 +66,7 @@ def _target() -> CompatibilityTarget:
         "project",
         "copy",
         ("copy-tree",),
+        SemVer(1, 1, 1),
     )
 
 

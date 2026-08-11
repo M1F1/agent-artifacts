@@ -34,6 +34,12 @@ Compatibility evaluates these independent dimensions and retains every reason:
 - install effects supported by the selected harness projection;
 - setup platform and setup capabilities.
 
+An optional artifact `requires_aart` range is payload compatibility evaluated against the running
+executable version. It is checked per selection: an unsupported artifact is reported with
+`aart-version-unsupported` without changing unrelated artifacts' compatibility. An absent range is
+unbounded. Producers maintain the range explicitly from capabilities used by the artifact; the
+compiler never substitutes or auto-bumps the current AART version.
+
 Setup compatibility is distinct from payload compatibility. A caller may set `require_setup=False`
 to allow a compatible payload while still exposing missing setup reasons for later policy/review.
 Broad selection returns incompatible or removed records as `skipped` items with stable reasons.

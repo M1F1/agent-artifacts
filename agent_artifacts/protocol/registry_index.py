@@ -62,6 +62,7 @@ def index_artifact_from_package(
         review,
         provenance,
         tuple(sorted(set(collections))),
+        package.manifest.requires_aart,
     )
 
 

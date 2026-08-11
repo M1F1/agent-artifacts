@@ -484,7 +484,7 @@ def parse_artifact_manifest(
             "install",
         }
     )
-    optional = frozenset({"setup", "authors", "license", "homepage"})
+    optional = frozenset({"setup", "authors", "license", "homepage", "requires_aart"})
     validated = validate_object_fields(
         document.value,
         required=required,
@@ -535,6 +535,16 @@ def parse_artifact_manifest(
             f"install effects are incompatible with artifact type {artifact_type!r}",
             path=path,
         )
+    requires_aart = VersionBounds()
+    if "requires_aart" in value.keys():
+        parsed_bounds = _version_bounds(
+            _field(value, "requires_aart"),
+            ARTIFACT_INVALID,
+            path=path,
+        )
+        if isinstance(parsed_bounds, Err):
+            return parsed_bounds
+        requires_aart = parsed_bounds.value
     setup: SetupReference | None = None
     if "setup" in value.keys():
         parsed_setup = _setup(_field(value, "setup"), compatibility.value, path=path)
@@ -581,6 +591,7 @@ def parse_artifact_manifest(
             license_value,
             homepage,
             _extensions(value, required | optional),
+            requires_aart,
         )
     )
 
@@ -922,6 +933,11 @@ def artifact_manifest_to_json(manifest: ArtifactManifest) -> JsonObject:
         entries.append(("license", manifest.license))
     if manifest.homepage is not None:
         entries.append(("homepage", manifest.homepage))
+    if (
+        manifest.requires_aart.min_inclusive is not None
+        or manifest.requires_aart.max_exclusive is not None
+    ):
+        entries.append(("requires_aart", _bounds_to_json(manifest.requires_aart)))
     entries.extend(manifest.extensions)
     return _object(entries)
 

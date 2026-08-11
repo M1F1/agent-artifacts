@@ -298,6 +298,7 @@ class ArtifactManifestTest(unittest.TestCase):
         complete = _artifact_document(
             "mcp",
             "aart-mcp-v1",
+            requires_aart={"min_inclusive": "1.1.0", "max_exclusive": "2.0.0"},
             setup={"recipe": "setup/installer.json", "platforms": ["darwin"]},
             authors=["Ada", "Bob"],
             license="Apache-2.0",
@@ -305,9 +306,30 @@ class ArtifactManifestTest(unittest.TestCase):
             **{"com.acme.tier": "gold"},
         )
         manifest = _unwrap(parse_artifact_manifest(json.dumps(complete)))
+        self.assertEqual(str(manifest.requires_aart.min_inclusive), "1.1.0")
+        self.assertEqual(str(manifest.requires_aart.max_exclusive), "2.0.0")
         projected = artifact_manifest_to_json(manifest)
         self.assertEqual(
             _unwrap(parse_artifact_manifest(canonical_json_bytes(projected))), manifest
+        )
+
+    def test_artifact_requires_aart_is_optional_and_strict(self):
+        from agent_artifacts.protocol.native_schema import parse_artifact_manifest
+
+        without_bounds = _unwrap(
+            parse_artifact_manifest(json.dumps(_artifact_document("skill", "aart-skill-v1")))
+        )
+        self.assertIsNone(without_bounds.requires_aart.min_inclusive)
+        self.assertIsNone(without_bounds.requires_aart.max_exclusive)
+
+        invalid = _artifact_document(
+            "skill",
+            "aart-skill-v1",
+            requires_aart={"min_inclusive": "2.0.0", "max_exclusive": "1.1.0"},
+        )
+        self.assertEqual(
+            _codes(parse_artifact_manifest(json.dumps(invalid))),
+            ("protocol-version-bounds-invalid",),
         )
 
 

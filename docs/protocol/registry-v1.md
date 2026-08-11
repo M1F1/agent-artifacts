@@ -31,9 +31,11 @@ closed.
 ## Compiled index
 
 `aart.index.json` is a deterministic, payload-free consumer projection. Records contain qualified
-source identity, one-line summaries, version and digests, compatibility, install effects, setup
-and provenance summaries, review evidence, and derived collection membership. It never contains
-payload bytes, credentials, raw importer logs, or a locally derived trust classification.
+source identity, one-line summaries, version and digests, compatibility, optional per-artifact
+`requires_aart` bounds, install effects, setup and provenance summaries, review evidence, and
+derived collection membership. It never contains payload bytes, credentials, raw importer logs,
+or a locally derived trust classification. The compiled bound must match the canonical manifest;
+it is not a registry-wide minimum and is never inferred from the current executable version.
 
 Both generation and parsing validate the complete collection graph. Duplicate or ambiguous
 artifact identities, version exclusions, dangling artifact/collection references, cycles, and

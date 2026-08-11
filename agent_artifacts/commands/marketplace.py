@@ -38,6 +38,7 @@ from agent_artifacts.domain.result import Err, Result
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
 from agent_artifacts.model import Request
 from agent_artifacts.protocol.json import canonical_json_bytes
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 
 from . import _common
 from ._configured_runtime import load_runtime_configuration
@@ -90,12 +91,18 @@ def _list(request: Request) -> int:
     if isinstance(catalog, Err):
         return _emit_error(request, catalog)
     if request.json:
-        payload = json.loads(marketplace_catalog_bytes(catalog.value).decode("utf-8"))
+        payload = json.loads(
+            marketplace_catalog_bytes(
+                catalog.value,
+                executable_version=EXECUTABLE_VERSION,
+            ).decode("utf-8")
+        )
+        payload["aart_version"] = str(EXECUTABLE_VERSION)
         payload["ok"] = True
         payload["operation"] = _LIST_OPERATION
         print(json.dumps(payload, indent=2))
     else:
-        rendered = render_marketplace(catalog.value)
+        rendered = render_marketplace(catalog.value, executable_version=EXECUTABLE_VERSION)
         print(rendered, end="") if rendered else print("No marketplace artifacts are available.")
     return _common.OK
 
