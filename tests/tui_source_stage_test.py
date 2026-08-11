@@ -1489,19 +1489,19 @@ class RuntimeSourceContextTests(unittest.TestCase):
             self.assertIsInstance(context, Ok)
             runtime = context.value
             view, finalizer = runtime.view, runtime.source_finalizer
-            self.assertEqual(view.configuration.reporting.mode, ReportingMode.DISABLED)
+            self.assertEqual(view.configuration.reporting.mode, ReportingMode.PROMPT)
             planned = plan_source_management(
                 view,
                 (SourceAlias("local"), SourceAlias("registry")),
             )
             self.assertIsInstance(planned, Ok)
-            self.assertEqual(planned.value.request.after.reporting.mode, ReportingMode.DISABLED)
+            self.assertEqual(planned.value.request.after.reporting.mode, ReportingMode.PROMPT)
             assert finalizer is not None
             finalized = finalizer(planned.value.request)
             self.assertIsInstance(finalized, Ok)
             persisted = parse_user_configuration(config_path.read_bytes())
             self.assertIsInstance(persisted, Ok)
-            self.assertEqual(persisted.value.reporting.mode, ReportingMode.DISABLED)
+            self.assertEqual(persisted.value.reporting.mode, ReportingMode.PROMPT)
             self.assertIsNone(persisted.value.reporting.destination)
 
     def test_finalize_rejects_configuration_changed_after_review(self):

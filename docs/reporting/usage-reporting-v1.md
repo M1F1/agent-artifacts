@@ -1,9 +1,15 @@
 # Optional registry-owned usage reporting v1
 
-AART usage reporting is an optional post-outcome operation. It is disabled unless the effective
-user/organization configuration selects `prompt` or `automatic` and names one enabled registry
-alias. The default registry, selected artifact source, and artifact upstream are never implicit
-reporting destinations.
+AART usage reporting is an optional post-outcome operation. A new user configuration defaults to
+`prompt` without a central destination. In that mode AART routes each terminal artifact result only
+to the configured registry through which that artifact was selected, and only when that registry's
+already-published local snapshot advertises a valid reporting service. Direct sources and artifact
+upstreams are never implicit reporting destinations.
+
+Users or organizations may select `disabled` to suppress all reporting prompts, or name one
+explicit registry destination to centralize reports under reviewed policy. `automatic` always
+requires such an explicit destination; a registry advertisement can never enable automatic
+submission.
 
 ## Destination and submission
 
@@ -13,17 +19,24 @@ AART reads the selected registry's already-published local snapshot without fetc
 GitHub or GitHub Enterprise host of that exact configured registry.
 
 - `disabled`: no source read, prompt, preview, queue, browser, authentication check, or network;
-- `prompt`: default No consent, then an exact payload preview and a second default No confirmation
-  before opening the prefilled issue in a browser;
+- `prompt` without `destination`: group results by their registry endpoint, show all destinations,
+  then ask separately for each with default No consent, an exact payload preview, and a second
+  default No confirmation before opening the prefilled issue in a browser;
+- `prompt` with `destination`: send one explicitly centralized report through the same two-consent
+  browser flow;
 - `automatic`: exact interactive preview followed by `gh auth status --hostname HOST` and
-  `gh issue create` with the issue body on stdin.
+  `gh issue create` with the issue body on stdin; an explicit destination is mandatory.
+
+Two aliases or refs advertising the same host/repository endpoint are deduplicated into one report.
+A registry receives only results routed through its aliases and cannot see another registry's
+artifacts. Source aliases remain local routing metadata and are never serialized.
 
 Provider and projection failures produce warnings only. They never change the completed artifact
 or setup outcome and never change its exit code.
 
 ## Event privacy boundary
 
-Schema v1 is canonical, bounded JSON with one result per selected artifact/profile/scope. It
+Schema v1 is canonical, bounded JSON with one result per routed artifact/profile/scope. It
 allowlists AART version, interface, platform, action, aggregate status, artifact type/name, profile,
 scope, requested/actual mode, artifact/setup outcome, optional installer digest, and typed failure
 enums. It deliberately excludes source aliases, repository/origin data, revisions, paths,

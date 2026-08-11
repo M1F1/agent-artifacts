@@ -25,13 +25,15 @@ def _error(message: str) -> Err:
 def configured_reporting_source(
     effective: EffectiveConfiguration,
 ) -> Result[ConfiguredSource | None]:
-    """Select only the explicit effective registry alias; never infer from artifacts/defaults."""
+    """Select an explicit central destination; ``prompt`` without one routes per registry."""
 
     settings = effective.configuration.reporting
     if settings.mode is ReportingMode.DISABLED:
         return Ok(None)
     if settings.destination is None:
-        return _error("enabled reporting has no explicit destination")
+        if settings.mode is ReportingMode.PROMPT:
+            return Ok(None)
+        return _error("automatic reporting has no explicit destination")
     matches = tuple(
         source
         for source in effective.configuration.sources

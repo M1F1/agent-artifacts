@@ -30,7 +30,7 @@ class ConfigurationSchemaTest(unittest.TestCase):
         self.assertIsNone(result.value.default_registry)
         self.assertIs(result.value.sync.mode, SyncMode.AUTO)
         self.assertEqual(result.value.sync.max_age_seconds, 900)
-        self.assertIs(result.value.reporting.mode, ReportingMode.DISABLED)
+        self.assertIs(result.value.reporting.mode, ReportingMode.PROMPT)
         self.assertIsNone(result.value.reporting.destination)
         self.assertEqual(
             parse_user_configuration(user_configuration_bytes(result.value)),

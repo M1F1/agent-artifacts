@@ -1,7 +1,7 @@
 """Versioned, redacted, destination-bound optional usage reporting."""
 
 from .aggregation import DashboardFiles, UsageAggregate, aggregate_issue_export, dashboard_files
-from .application import ReportingApplicationService
+from .application import RegistryReportingRoute, ReportingApplicationService
 from .destination import configured_reporting_source, destination_from_services
 from .io import GitHubIssueProvider, browser_provider
 from .model import (
@@ -15,11 +15,22 @@ from .model import (
     reporting_issue_body,
     usage_report_bytes,
 )
-from .projection import SetupReportState, usage_report_from_consumer
-from .runtime import load_local_reporting_service, reporting_destination_from_current
+from .projection import (
+    RegistryUsageReport,
+    SetupReportState,
+    usage_report_from_consumer,
+    usage_reports_by_registry_from_consumer,
+)
+from .runtime import (
+    load_local_reporting_service,
+    reporting_destination_from_current,
+    reporting_routes_from_current,
+)
 
 __all__ = [
     "ReportingApplicationService",
+    "RegistryReportingRoute",
+    "RegistryUsageReport",
     "ReportingDestination",
     "ReportingFailure",
     "ReportingPlan",
@@ -40,5 +51,7 @@ __all__ = [
     "reporting_issue_body",
     "usage_report_bytes",
     "usage_report_from_consumer",
+    "usage_reports_by_registry_from_consumer",
     "reporting_destination_from_current",
+    "reporting_routes_from_current",
 ]

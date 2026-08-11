@@ -84,8 +84,13 @@ from .planners import install_target_paths
 from .profiles.loader import load_profiles
 from .profiles.scope import profile_for_scope
 from .reporting.application import ReportingApplicationService
-from .reporting.model import UsageReport
-from .reporting.projection import SetupReportState, usage_report_from_consumer
+from .reporting.model import ReportingPlan, UsageReport
+from .reporting.projection import (
+    RegistryUsageReport,
+    SetupReportState,
+    usage_report_from_consumer,
+    usage_reports_by_registry_from_consumer,
+)
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
@@ -1104,8 +1109,19 @@ def _offer_usage_report(
     plan = prepared.value
     if plan is None:
         return
+    _offer_prepared_usage_report(service, plan, read=read, write=write)
+
+
+def _offer_prepared_usage_report(
+    service: ReportingApplicationService,
+    plan: ReportingPlan,
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> None:
+    target = f"{plan.destination.host}/{plan.destination.repository}"
     if plan.destination.mode.value == "prompt":
-        answer = _read_line(read, "Share this redacted usage report? [y/N]: ")
+        answer = _read_line(read, f"Share this redacted usage report with {target}? [y/N]: ")
         if answer is None or answer.strip().lower() not in ("y", "yes"):
             write("Usage report was not submitted.")
             return
@@ -1127,6 +1143,28 @@ def _offer_usage_report(
     )
 
 
+def _offer_routed_usage_reports(
+    service: ReportingApplicationService | None,
+    combined: UsageReport,
+    routed: Tuple[RegistryUsageReport, ...],
+    *,
+    read: ReadFn,
+    write: WriteFn,
+) -> None:
+    if service is None:
+        return
+    prepared = service.prepare_routed(combined, routed)
+    if isinstance(prepared, DomainErr):
+        write("warning: usage reports could not be prepared; the artifact outcome is unchanged")
+        return
+    if prepared.value:
+        write("Optional redacted usage reports are available for these artifact registries:")
+        for plan in prepared.value:
+            write(f"  - {plan.destination.host}/{plan.destination.repository}")
+    for plan in prepared.value:
+        _offer_prepared_usage_report(service, plan, read=read, write=write)
+
+
 def _complete_canonical_consumer_action(
     consumer: ConsumerApplicationService,
     review: ConsumerReview,
@@ -1145,10 +1183,17 @@ def _complete_canonical_consumer_action(
             aart_version=__version__,
             interface="tui",
         )
+        routed = usage_reports_by_registry_from_consumer(
+            review,
+            outcome,
+            setup.reporting,
+            aart_version=__version__,
+            interface="tui",
+        )
     except ValueError:
         write("warning: usage report projection failed; the artifact outcome is unchanged")
         return setup.exit_code
-    _offer_usage_report(reporting, event, read=read, write=write)
+    _offer_routed_usage_reports(reporting, event, routed, read=read, write=write)
     return setup.exit_code
 
 

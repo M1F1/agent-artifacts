@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from typing import cast
 
 from agent_artifacts.consumer.model import (
@@ -15,7 +16,12 @@ from agent_artifacts.consumer.model import (
 from agent_artifacts.domain.identifiers import ArtifactCoordinate, ArtifactIdentity, SourceAlias
 from agent_artifacts.protocol.hashing import sha256_bytes
 from agent_artifacts.protocol.semver import SemVer
-from agent_artifacts.reporting.projection import SetupReportState, usage_report_from_consumer
+from agent_artifacts.reporting.model import usage_report_bytes
+from agent_artifacts.reporting.projection import (
+    SetupReportState,
+    usage_report_from_consumer,
+    usage_reports_by_registry_from_consumer,
+)
 
 
 def _coordinate() -> ArtifactCoordinate:
@@ -109,6 +115,51 @@ class ReportingProjectionTest(unittest.TestCase):
                         aart_version="1.0.0a1",
                         interface="tui",
                     )
+
+    def test_projection_partitions_results_by_registry_without_serializing_aliases(self) -> None:
+        first = _review()
+        second_coordinate = ArtifactCoordinate(
+            SourceAlias("public"),
+            ArtifactIdentity("skill", "search"),
+            SemVer(1, 0, 0),
+        )
+        second_item = replace(
+            first.items[0],
+            key=f"{second_coordinate}#tabnine/user",
+            coordinate=second_coordinate,
+        )
+        request = replace(
+            first.request,
+            coordinates=tuple(sorted((*first.request.coordinates, second_coordinate), key=str)),
+        )
+        review = ConsumerReview(
+            request,
+            (first.items[0], second_item),
+            sha256_bytes(b"unreviewed-consumer-action"),
+        )
+        outcome = ConsumerOutcome(
+            "install",
+            tuple(ConsumerTerminalItem(item.key, "changed") for item in review.items),
+        )
+
+        routed = usage_reports_by_registry_from_consumer(
+            review,
+            outcome,
+            (),
+            aart_version="1.0.0a1",
+            interface="tui",
+        )
+
+        self.assertEqual(
+            tuple(item.source_alias.value for item in routed),
+            ("company", "public"),
+        )
+        payloads = tuple(usage_report_bytes(item.report).decode("utf-8") for item in routed)
+        self.assertIn('"artifact_name":"atlassian"', payloads[0])
+        self.assertNotIn('"artifact_name":"search"', payloads[0])
+        self.assertIn('"artifact_name":"search"', payloads[1])
+        self.assertNotIn("company", payloads[0])
+        self.assertNotIn("public", payloads[1])
 
     def test_projection_uses_bounded_failure_categories_for_terminal_states(self) -> None:
         review = _review()

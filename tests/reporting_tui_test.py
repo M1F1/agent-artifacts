@@ -5,14 +5,19 @@ import unittest
 from agent_artifacts import tui
 from agent_artifacts.configuration.model import ReportingMode
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.reporting.application import ReportingApplicationService
+from agent_artifacts.reporting.application import (
+    RegistryReportingRoute,
+    ReportingApplicationService,
+)
 from agent_artifacts.reporting.model import (
     ReportingDestination,
     ReportingSubmission,
     UsageReport,
     UsageResult,
 )
+from agent_artifacts.reporting.projection import RegistryUsageReport
 
 
 def _event() -> UsageReport:
@@ -115,6 +120,36 @@ class ReportingTuiTest(unittest.TestCase):
 
         self.assertTrue(any(line.startswith("warning:") for line in writes))
         self.assertTrue(any('"report_type":"aart-usage-session"' in line for line in writes))
+
+    def test_registry_prompt_names_all_destinations_and_defaults_each_to_no(self) -> None:
+        provider_calls = []
+        destination = ReportingDestination(
+            ReportingMode.PROMPT, "github.com", "M1F1/agent-artifacts-registry"
+        )
+        service = ReportingApplicationService(
+            None,
+            lambda plan: (
+                provider_calls.append(plan.payload) or Ok(ReportingSubmission("browser-opened"))
+            ),
+            lambda _plan: self.fail("automatic provider used for registry prompt"),
+            (RegistryReportingRoute(SourceAlias("reference"), destination),),
+        )
+        event = _event()
+        routed = (RegistryUsageReport(SourceAlias("reference"), event),)
+        writes = []
+
+        tui._offer_routed_usage_reports(
+            service,
+            event,
+            routed,
+            read=lambda _prompt: "",
+            write=writes.append,
+        )
+
+        self.assertEqual(provider_calls, [])
+        rendered = "\n".join(writes)
+        self.assertIn("github.com/M1F1/agent-artifacts-registry", rendered)
+        self.assertNotIn("Exact redacted", rendered)
 
 
 if __name__ == "__main__":
