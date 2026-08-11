@@ -30,11 +30,14 @@ class ConfigurationModelTest(unittest.TestCase):
             "main",
             True,
         )
-        same_origin_different_ref = ConfiguredSource(
+        # SRC02 keys the source store by (origin, ref), so a *different* ref of one origin is now
+        # legitimate.  The same origin at the same ref still resolves to one mirror and one
+        # pointer, so it stays rejected — including across equivalent transport spellings.
+        same_origin_same_ref = ConfiguredSource(
             SourceAlias("second-git"),
             SourceKind.SOURCE_GIT,
             "git@EXAMPLE.test:team/artifacts",
-            "release/1.0",
+            "main",
             True,
         )
         invalid_constructors = (
@@ -56,7 +59,7 @@ class ConfigurationModelTest(unittest.TestCase):
             ),
             lambda: UserConfiguration(
                 1,
-                (first_git, same_origin_different_ref),
+                (first_git, same_origin_same_ref),
                 None,
                 SyncSettings(),
                 ReportingSettings(),
@@ -87,6 +90,25 @@ class ConfigurationModelTest(unittest.TestCase):
         for constructor in invalid_constructors:
             with self.subTest(constructor=constructor), self.assertRaises(ValueError):
                 constructor()
+
+        # The positive half of the same invariant: one origin at two refs is now representable.
+        accepted = UserConfiguration(
+            1,
+            (
+                first_git,
+                ConfiguredSource(
+                    SourceAlias("second-git"),
+                    SourceKind.SOURCE_GIT,
+                    "https://example.test/team/artifacts.git",
+                    "release/1.0",
+                    True,
+                ),
+            ),
+            None,
+            SyncSettings(),
+            ReportingSettings(),
+        )
+        self.assertEqual(len(accepted.sources), 2)
 
     def test_git_locations_are_normalized_and_credentials_are_rejected(self) -> None:
         accepted = {

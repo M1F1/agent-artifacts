@@ -71,7 +71,9 @@ class ConfigurationSchemaTest(unittest.TestCase):
             '{"schema_version":2}',
             '{"schema_version":1,"unknown":true}',
             '{"schema_version":1,"sources":[{"alias":"same","kind":"source-local","path":"/a","enabled":true},{"alias":"same","kind":"source-local","path":"/b","enabled":true}]}',
-            '{"schema_version":1,"sources":[{"alias":"main","kind":"source-git","url":"https://example.test/team/artifacts.git","ref":"main","enabled":true},{"alias":"release","kind":"source-git","url":"git@EXAMPLE.test:team/artifacts","ref":"release/1.0","enabled":true}]}',
+            # SRC02: two refs of one origin are legitimate; the same origin at the *same* ref,
+            # including across equivalent transport spellings, still collides on one pointer.
+            '{"schema_version":1,"sources":[{"alias":"main","kind":"source-git","url":"https://example.test/team/artifacts.git","ref":"main","enabled":true},{"alias":"duplicate","kind":"source-git","url":"git@EXAMPLE.test:team/artifacts","ref":"main","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"local","kind":"source-local","path":"relative","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"secret","kind":"source-git","url":"https://user:token@example.test/repo.git","ref":"main","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"git","kind":"source-git","url":"https://example.test/repo.git","ref":"bad ref","enabled":true}]}',
