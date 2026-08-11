@@ -107,16 +107,17 @@ class UserConfiguration:
         if len(set(aliases)) != len(aliases):
             raise ValueError("configured source aliases must be unique")
         git_origins = tuple(
-            git_origin_key(item.kind, item.location) for item in ordered if item.is_git
+            (*git_origin_key(item.kind, item.location), item.ref or "")
+            for item in ordered
+            if item.is_git
         )
         if len(set(git_origins)) != len(git_origins):
-            # Source-store identity intentionally excludes ``ref`` in v1 so one mirror/current
-            # pointer cannot safely represent two revisions of the same Git origin.  Keep the
-            # invariant here as well as in first-run addition planning: configuration may also
-            # arrive through a hand-authored file or a policy-preprovisioned installation.
-            raise ValueError(
-                "configured Git source origins must be unique until ref-aware source storage exists"
-            )
+            # Source-store identity is ref-aware (SRC02), so one origin may be tracked at several
+            # refs — but the same origin at the *same* ref would still resolve to one mirror and
+            # one pointer.  Keep the invariant here as well as in first-run addition planning:
+            # configuration may also arrive through a hand-authored file or a preprovisioned
+            # installation.
+            raise ValueError("each configured Git source origin and ref pair must be unique")
         object.__setattr__(self, "sources", ordered)
 
 

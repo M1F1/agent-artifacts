@@ -27,6 +27,7 @@ from agent_artifacts.sources.model import (
     SourceStorePaths,
     ValidatedSourceCandidate,
     assess_source_health,
+    legacy_source_instance_id,
     make_source_candidate,
     source_instance_id,
     source_store_paths,
@@ -50,7 +51,7 @@ def _snapshot(content: bytes = b"content") -> SourceSnapshot:
 
 
 class SourceModelTest(unittest.TestCase):
-    def test_instance_identity_uses_origin_not_alias_or_ref(self) -> None:
+    def test_instance_identity_uses_origin_and_ref_but_not_alias(self) -> None:
         first = ConfiguredSource(
             SourceAlias("first"),
             SourceKind.SOURCE_GIT,
@@ -73,9 +74,21 @@ class SourceModelTest(unittest.TestCase):
             True,
         )
 
-        self.assertEqual(source_instance_id(first), source_instance_id(renamed))
+        # SRC02: the alias is still not part of the identity, but the ref now is — two refs of one
+        # origin must own separate mirrors and pointers rather than retargeting each other.
+        self.assertNotEqual(source_instance_id(first), source_instance_id(renamed))
+        self.assertEqual(legacy_source_instance_id(first), legacy_source_instance_id(renamed))
         self.assertNotEqual(source_instance_id(first), source_instance_id(registry))
         self.assertRegex(source_instance_id(first).value, r"^git-[0-9a-f]{32}$")
+
+        aliased = ConfiguredSource(
+            SourceAlias("different-alias"),
+            SourceKind.SOURCE_GIT,
+            "https://example.test/team/repo.git",
+            "main",
+            True,
+        )
+        self.assertEqual(source_instance_id(first), source_instance_id(aliased))
 
     def test_store_paths_are_pure_normalized_and_scoped_by_instance(self) -> None:
         source = ConfiguredSource(

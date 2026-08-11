@@ -718,6 +718,9 @@ locally drifted. `upstream update` writes ordinary working-tree diffs and update
 |---------|:------:|------|
 | `aart source add` | source-dependent | Validate/snapshot one canonical registry/direct/local source, then persist it |
 | `aart source list` | no | Show configured origins and managed snapshot health |
+| `aart source sync` | source-dependent | Refresh managed snapshots for configured sources; never changes source identity or policy |
+| `aart source health` | no | Per-source pointer, revision, and snapshot age; exits non-zero if an enabled source is unhealthy |
+| `aart source doctor` | no | Report the source-store layout and any legacy directories; migrates only with `--apply` |
 | `aart marketplace list` | no | List the configured canonical marketplace (`--json` is agent-safe) |
 | `aart marketplace install/update/uninstall/status/setup` | no (local snapshots) | Canonical JSON lifecycle over configured sources; reviews only unless `--yes` is passed |
 | `aart list/install/update/setup --source DIR` or `--repo OWNER/NAME` | source-dependent | Explicit 0.1 compatibility catalog commands; not canonical marketplace lifecycle commands |

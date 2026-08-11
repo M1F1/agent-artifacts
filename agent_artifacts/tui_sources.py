@@ -224,10 +224,13 @@ class SourceAdditionRequest:
         ):
             raise ValueError("source addition must add its exact new source once")
         if any(
-            existing.kind is self.source.kind and existing.location == self.source.location
+            existing.kind is self.source.kind
+            and existing.location == self.source.location
+            and existing.ref == self.source.ref
             for existing in self.before.sources
         ):
-            raise ValueError("source addition may not duplicate a configured source origin")
+            # SRC02: identity is (kind, location, ref), so only an exact repeat is a duplicate.
+            raise ValueError("source addition may not duplicate a configured source origin and ref")
         if set(after_by_alias) != set(before_by_alias) | {self.source.alias}:
             raise ValueError("source addition may not remove or replace configured sources")
         if any(after_by_alias[alias] != source for alias, source in before_by_alias.items()):
@@ -493,20 +496,23 @@ def plan_source_addition(
         return _error("new source must be enabled")
     if any(existing.alias == source.alias for existing in view.configuration.sources):
         return _error(f"source alias is already configured: {source.alias}")
-    same_origin = tuple(
+    # SRC02: the store is keyed by (origin, ref), so a second ref of a configured origin is a
+    # legitimate new source.  The same origin at the same ref would still resolve to one mirror
+    # and one pointer, so it stays refused.
+    same_origin_and_ref = tuple(
         existing.alias
         for existing in view.configuration.sources
         if existing.is_git
         and source.is_git
+        and existing.ref == source.ref
         and git_origin_key(existing.kind, existing.location)
         == git_origin_key(source.kind, source.location)
     )
-    if same_origin:
+    if same_origin_and_ref:
         return _error(
-            "source origin is already configured as "
-            + ", ".join(alias.value for alias in same_origin),
-            "reuse that source alias; configuring one Git origin at multiple refs requires the "
-            "separate source-store migration feature",
+            "source origin and ref are already configured as "
+            + ", ".join(alias.value for alias in same_origin_and_ref),
+            "reuse that source alias, or add this origin at a different ref",
         )
     if source.kind is not SourceKind.REGISTRY_GIT and not view.allow_direct_sources:
         return _error("direct sources are disabled by organization policy")

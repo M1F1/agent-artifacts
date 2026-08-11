@@ -30,8 +30,14 @@ from agent_artifacts.domain.diagnostics import (
 )
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
+from agent_artifacts.io.source_migration import (
+    apply_source_store_migration,
+    existing_source_directories,
+    stored_schema_version,
+)
 from agent_artifacts.io.source_store import read_current_source
 from agent_artifacts.model import Request
+from agent_artifacts.sources.migration import plan_source_store_migration
 from agent_artifacts.sources.model import (
     CurrentSourceRequest,
     HealthStatus,
@@ -47,6 +53,9 @@ from ._configured_runtime import ConfiguredRuntime, load_runtime_configuration
 
 _SOURCE_OPERATION = "source.add"
 _LIST_OPERATION = "source.list"
+_SYNC_OPERATION = "source.sync"
+_HEALTH_OPERATION = "source.health"
+_DOCTOR_OPERATION = "source.doctor"
 
 
 def _failure(code: str, message: str, *remediation: str) -> Err:
@@ -311,6 +320,226 @@ def _list(request: Request) -> int:
     return _common.OK
 
 
+def _selected_sources(
+    runtime: ConfiguredRuntime, alias: str | None
+) -> Result[tuple[ConfiguredSource, ...]]:
+    """Resolve the requested aliases without ever creating or renaming a source."""
+
+    sources = runtime.loaded.user_configuration.sources
+    if alias is None:
+        return Ok(tuple(source for source in sources if source.enabled))
+    selected = tuple(source for source in sources if source.alias.value == alias)
+    if not selected:
+        return _failure(
+            "source-not-configured",
+            f"no configured source has alias {alias}",
+            "run `aart source list --json` to see configured aliases",
+        )
+    return Ok(selected)
+
+
+def _sync(request: Request) -> int:
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, _SYNC_OPERATION, runtime)
+    if runtime.value.loaded.recovery is not None:
+        return _emit_error(request, _SYNC_OPERATION, _recovery_error())
+    selected = _selected_sources(runtime.value, request.source_alias)
+    if isinstance(selected, Err):
+        return _emit_error(request, _SYNC_OPERATION, selected)
+
+    results: list[dict] = []
+    # Human rendering reads these typed locals rather than the heterogeneous JSON payload.
+    lines: list[str] = []
+    failed = False
+    for source in selected.value:
+        # Synchronizing never writes user configuration and never changes source identity: it
+        # refreshes the managed snapshot for an already-configured origin and ref.
+        synchronized = sync_configured_source(source, data_root=runtime.value.paths.data_root)
+        if isinstance(synchronized, Err):
+            failed = True
+            results.append(
+                {
+                    "alias": source.alias.value,
+                    "ok": False,
+                    "diagnostics": [diagnostic_to_data(item) for item in synchronized.diagnostics],
+                }
+            )
+            lines.append(f"{source.alias.value}: failed")
+            lines.extend(
+                f"  {item.severity.value}: {item.message}" for item in synchronized.diagnostics
+            )
+            continue
+        current = synchronized.value.current
+        results.append(
+            {
+                "alias": source.alias.value,
+                "ok": True,
+                "disposition": synchronized.value.disposition.value,
+                "source_id": current.declared_source_id.value,
+                "resolved_revision": current.candidate.resolved_revision,
+                "snapshot_digest": str(current.candidate.snapshot_digest),
+            }
+        )
+        lines.append(
+            f"{source.alias.value}: {synchronized.value.disposition.value} "
+            f"({current.candidate.resolved_revision})"
+        )
+    payload = {
+        "schema_version": 1,
+        "ok": not failed,
+        "operation": _SYNC_OPERATION,
+        "sources": results,
+    }
+    if request.json:
+        print(json.dumps(payload, indent=2))
+    elif not results:
+        print("No enabled sources to synchronize.")
+    else:
+        for line in lines:
+            print(line)
+    return _common.ERROR if failed else _common.OK
+
+
+def _pending_store_migration(runtime: ConfiguredRuntime) -> bool:
+    """Whether a legacy source directory is still waiting to be rebound.
+
+    Reported, never acted on: migrating moves user data and stays an explicit `doctor --apply`.
+    """
+
+    data_root = runtime.paths.data_root
+    planned = plan_source_store_migration(
+        runtime.loaded.user_configuration,
+        existing=existing_source_directories(data_root),
+        stored_schema_version=stored_schema_version(data_root),
+    )
+    # A conflicting or ambiguous store is also unmigrated; `doctor` explains which.
+    return True if isinstance(planned, Err) else bool(planned.value.rebinds)
+
+
+def _health(request: Request) -> int:
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, _HEALTH_OPERATION, runtime)
+    if runtime.value.loaded.recovery is not None:
+        return _emit_error(request, _HEALTH_OPERATION, _recovery_error())
+    selected = _selected_sources(runtime.value, request.source_alias)
+    if isinstance(selected, Err):
+        return _emit_error(request, _HEALTH_OPERATION, selected)
+    now = int(time.time())
+    items = []
+    degraded = False
+    for source in runtime.value.loaded.user_configuration.sources:
+        if source not in selected.value and request.source_alias is not None:
+            continue
+        health = _source_health(source, runtime.value, now=now)
+        current = health.current
+        if health.status is not HealthStatus.HEALTHY and source.enabled:
+            degraded = True
+        items.append(
+            {
+                "alias": source.alias.value,
+                "kind": source.kind.value,
+                "ref": source.ref,
+                "enabled": source.enabled,
+                "health": health.status.value,
+                "instance_id": source_instance_id(source).value,
+                "resolved_revision": (
+                    None if current is None else current.candidate.resolved_revision
+                ),
+                "published_at": (None if current is None else current.published_at_epoch_seconds),
+                "age_seconds": (
+                    None if current is None else max(0, now - current.published_at_epoch_seconds)
+                ),
+            }
+        )
+    # After upgrading to ref-aware storage a source resolves to a directory that does not exist
+    # yet, so it reads as "missing" for no visible reason.  Say so here, where someone diagnosing
+    # exactly that will look, instead of leaving them with an unexplained empty marketplace.
+    pending_migration = _pending_store_migration(runtime.value)
+    payload = {
+        "schema_version": 1,
+        "ok": not degraded,
+        "operation": _HEALTH_OPERATION,
+        "max_age_seconds": runtime.value.loaded.effective.configuration.sync.max_age_seconds,
+        "pending_store_migration": pending_migration,
+        "sources": items,
+    }
+    if request.json:
+        print(json.dumps(payload, indent=2))
+    elif not items:
+        print("No configured sources. Add one with `aart source add --help`.")
+    else:
+        for item in items:
+            age = "never synchronized" if item["age_seconds"] is None else f"{item['age_seconds']}s"
+            print(
+                f"{item['alias']} [{item['kind']}@{item['ref'] or 'local'}] {item['health']}; {age}"
+            )
+        if pending_migration:
+            print(
+                "note: this store still uses the pre-ref-aware layout; "
+                "run `aart source doctor` to review the migration."
+            )
+    return _common.ERROR if degraded else _common.OK
+
+
+def _doctor(request: Request) -> int:
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, _DOCTOR_OPERATION, runtime)
+    if runtime.value.loaded.recovery is not None:
+        return _emit_error(request, _DOCTOR_OPERATION, _recovery_error())
+    data_root = runtime.value.paths.data_root
+    existing = existing_source_directories(data_root)
+    version = stored_schema_version(data_root)
+    planned = plan_source_store_migration(
+        runtime.value.loaded.user_configuration,
+        existing=existing,
+        stored_schema_version=version,
+    )
+    if isinstance(planned, Err):
+        return _emit_error(request, _DOCTOR_OPERATION, planned)
+    plan = planned.value
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "operation": _DOCTOR_OPERATION,
+        "store_schema_version": version,
+        "target_schema_version": plan.schema_version,
+        "migration_required": plan.required,
+        "applied": False,
+        "rebinds": [
+            {
+                "alias": rebind.alias.value,
+                "action": rebind.action.value,
+                "from": rebind.source_directory,
+                "to": rebind.target_directory,
+            }
+            for rebind in plan.rebinds
+        ],
+    }
+    if request.apply and plan.required:
+        applied = apply_source_store_migration(plan, data_root=data_root)
+        if isinstance(applied, Err):
+            return _emit_error(request, _DOCTOR_OPERATION, applied)
+        payload["applied"] = True
+        payload["rebound"] = list(applied.value)
+    if request.json:
+        print(json.dumps(payload, indent=2))
+    elif not plan.required:
+        print("Source store layout is current; no migration is needed.")
+    elif not request.apply:
+        print(f"Source store migration required (v{version or 1} -> v{plan.schema_version}).")
+        for rebind in plan.rebinds:
+            print(
+                f"  - {rebind.alias.value}: {rebind.source_directory} -> {rebind.target_directory}"
+            )
+        print("Re-run with --apply to perform this exact migration.")
+    else:
+        print(f"Source store migrated to v{plan.schema_version}.")
+    return _common.OK
+
+
 def run(request: Request) -> int:
     """Run one non-interactive configured-source command."""
 
@@ -318,6 +547,12 @@ def run(request: Request) -> int:
         return _add(request)
     if request.source_action == "list":
         return _list(request)
+    if request.source_action == "sync":
+        return _sync(request)
+    if request.source_action == "health":
+        return _health(request)
+    if request.source_action == "doctor":
+        return _doctor(request)
     return _emit_error(
         request,
         "source",

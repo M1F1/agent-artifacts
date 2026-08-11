@@ -294,7 +294,36 @@ class SourceManagementPlanTests(unittest.TestCase):
         )
         self.assertIsInstance(plan_source_addition(local_view.value, duplicate_local), Err)
 
-    def test_source_addition_rejects_another_ref_of_an_existing_git_origin(self) -> None:
+    def test_source_addition_rejects_the_same_git_origin_at_the_same_ref(self) -> None:
+        main = _source(
+            "company-main",
+            SourceKind.REGISTRY_GIT,
+            "https://github.example.com/platform/agent-artifacts-registry.git",
+            enabled=True,
+        )
+        # Equivalent SCP spelling of the same origin, at the same ref: one mirror, one pointer.
+        duplicate = ConfiguredSource(
+            SourceAlias("company-duplicate"),
+            SourceKind.REGISTRY_GIT,
+            "git@GITHUB.example.com:platform/agent-artifacts-registry",
+            "main",
+            True,
+        )
+        view = build_source_stage(
+            _configuration(main, default="company-main"), OrganizationPolicy(1), {}
+        )
+        self.assertIsInstance(view, Ok)
+
+        duplicate_origin = plan_source_addition(view.value, duplicate, make_default=False)
+
+        self.assertIsInstance(duplicate_origin, Err)
+        assert isinstance(duplicate_origin, Err)
+        self.assertIn(
+            "origin and ref are already configured", duplicate_origin.diagnostics[0].message
+        )
+
+    def test_source_addition_accepts_another_ref_of_an_existing_git_origin(self) -> None:
+        # SRC02: ref-aware storage makes this legitimate rather than a shared-pointer hazard.
         main = _source(
             "company-main",
             SourceKind.REGISTRY_GIT,
@@ -304,7 +333,7 @@ class SourceManagementPlanTests(unittest.TestCase):
         release = ConfiguredSource(
             SourceAlias("company-release"),
             SourceKind.REGISTRY_GIT,
-            "git@GITHUB.example.com:platform/agent-artifacts-registry",
+            "https://github.example.com/platform/agent-artifacts-registry.git",
             "release",
             True,
         )
@@ -313,11 +342,9 @@ class SourceManagementPlanTests(unittest.TestCase):
         )
         self.assertIsInstance(view, Ok)
 
-        duplicate_origin = plan_source_addition(view.value, release, make_default=False)
+        second_ref = plan_source_addition(view.value, release, make_default=False)
 
-        self.assertIsInstance(duplicate_origin, Err)
-        assert isinstance(duplicate_origin, Err)
-        self.assertIn("origin is already configured", duplicate_origin.diagnostics[0].message)
+        self.assertIsInstance(second_ref, Ok)
 
     def test_registry_addition_can_preserve_an_existing_default(self) -> None:
         primary = _source(
@@ -685,11 +712,12 @@ class SourceValueInvariantTests(unittest.TestCase):
                 (),
             )
 
+        # SRC02: identity is (kind, location, ref), so only an exact origin+ref repeat duplicates.
         duplicate_origin = ConfiguredSource(
             SourceAlias("another-registry"),
             self.registry.kind,
             self.registry.location,
-            "release",
+            self.registry.ref,
             True,
         )
         with self.assertRaises(ValueError):

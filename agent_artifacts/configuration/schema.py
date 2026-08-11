@@ -303,12 +303,14 @@ def _sources(value: JsonValue) -> Result[tuple[ConfiguredSource, ...]]:
     if len(set(aliases)) != len(aliases):
         return _error(CONFIG_INVALID, "source aliases must be unique")
     git_origins = tuple(
-        git_origin_key(source.kind, source.location) for source in sources if source.is_git
+        (*git_origin_key(source.kind, source.location), source.ref or "")
+        for source in sources
+        if source.is_git
     )
     if len(set(git_origins)) != len(git_origins):
         return _error(
             CONFIG_INVALID,
-            "Git source origins must be unique until ref-aware source storage exists",
+            "each Git source origin and ref pair must be unique",
         )
     return Ok(tuple(sources))
 

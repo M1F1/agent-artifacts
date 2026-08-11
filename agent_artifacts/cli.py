@@ -515,6 +515,52 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(p_source_list)
 
+    def _add_alias(p: argparse.ArgumentParser, help_text: str) -> None:
+        p.add_argument("--alias", dest="source_alias", metavar="ALIAS", help=help_text)
+
+    p_source_sync = source_sub.add_parser(
+        "sync",
+        formatter_class=_HELP_FORMATTER,
+        help="refresh managed snapshots for configured sources",
+        description=(
+            "Re-synchronize already-configured sources. This never adds, renames, removes, or "
+            "re-identifies a source, and never changes policy defaults - use it instead of "
+            "re-adding an existing alias."
+        ),
+    )
+    _add_alias(p_source_sync, "synchronize only this alias (default: every enabled source)")
+    _add_json(p_source_sync)
+
+    p_source_health = source_sub.add_parser(
+        "health",
+        formatter_class=_HELP_FORMATTER,
+        help="report managed snapshot health for configured sources",
+        description=(
+            "Read-only per-source health: pointer presence, resolved revision, and snapshot age "
+            "against the configured freshness window. Exits non-zero if an enabled source is not "
+            "healthy."
+        ),
+    )
+    _add_alias(p_source_health, "report only this alias (default: every configured source)")
+    _add_json(p_source_health)
+
+    p_source_doctor = source_sub.add_parser(
+        "doctor",
+        formatter_class=_HELP_FORMATTER,
+        help="inspect and repair the managed source-store layout",
+        description=(
+            "Report the source-store layout version and any directories still keyed by the "
+            "pre-ref-aware identity. Read-only unless --apply is passed; applying performs only "
+            "the exact rebinds just reported and never renames onto an existing directory."
+        ),
+    )
+    p_source_doctor.add_argument(
+        "--apply",
+        action="store_true",
+        help="perform the reported migration (without this the command only reports)",
+    )
+    _add_json(p_source_doctor)
+
     # marketplace ------------------------------------------------------------- #
     p = sub.add_parser(
         "marketplace",

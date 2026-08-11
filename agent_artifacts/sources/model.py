@@ -93,21 +93,52 @@ class SnapshotLimits:
             raise ValueError("snapshot limits must be positive integers within hard safety bounds")
 
 
+_INSTANCE_PREFIX = {
+    SourceKind.REGISTRY_GIT: "registry",
+    SourceKind.SOURCE_GIT: "git",
+    SourceKind.SOURCE_LOCAL: "local",
+}
+
+
+def _instance_id(source: ConfiguredSource, fields: tuple[tuple[str, str], ...]) -> SourceInstanceId:
+    digest = json_digest(JsonObject(fields))
+    return SourceInstanceId(f"{_INSTANCE_PREFIX[source.kind]}-{digest.value[:32]}")
+
+
 def source_instance_id(source: ConfiguredSource) -> SourceInstanceId:
-    prefix = {
-        SourceKind.REGISTRY_GIT: "registry",
-        SourceKind.SOURCE_GIT: "git",
-        SourceKind.SOURCE_LOCAL: "local",
-    }[source.kind]
-    digest = json_digest(
-        JsonObject(
-            (
-                ("kind", source.kind.value),
-                ("location", source.location),
-            )
-        )
+    """Return the ref-aware store identity for one configured source.
+
+    The ref participates in the identity so that two refs of one Git origin own separate mirrors,
+    snapshots, and ``current.json`` pointers.  Without it a second ref would silently retarget the
+    first source's installed content.  Local sources have no ref and keep their v1 identity.
+    """
+
+    if source.ref is None:
+        return legacy_source_instance_id(source)
+    return _instance_id(
+        source,
+        (
+            ("kind", source.kind.value),
+            ("location", source.location),
+            ("ref", source.ref),
+        ),
     )
-    return SourceInstanceId(f"{prefix}-{digest.value[:32]}")
+
+
+def legacy_source_instance_id(source: ConfiguredSource) -> SourceInstanceId:
+    """Return the v1 identity, which ignored ``ref``.
+
+    Retained so the store migration can find directories written before ref-aware storage; it must
+    not be used to resolve a source for reading or publishing.
+    """
+
+    return _instance_id(
+        source,
+        (
+            ("kind", source.kind.value),
+            ("location", source.location),
+        ),
+    )
 
 
 def source_store_paths(data_root: str, instance_id: SourceInstanceId) -> SourceStorePaths:
