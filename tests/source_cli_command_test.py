@@ -510,7 +510,7 @@ class MarketplaceCliCommandTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["operation"], "marketplace.list")
-        self.assertEqual(payload["aart_version"], "1.2.0")
+        self.assertEqual(payload["aart_version"], "1.3.0")
         self.assertEqual(payload["artifacts"], snapshot["artifacts"])
 
     def test_list_without_a_source_returns_the_canonical_json_diagnostic(self) -> None:

@@ -3,7 +3,10 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
-## Unreleased
+## 1.3.0 — 2026-08-11
+
+Minor release making consent-based usage reporting the default for new configurations and routing
+reports to the registry that advertised each installed artifact.
 
 ### Changed
 
@@ -14,6 +17,16 @@ executable; protocol, schema, artifact, importer, profile, and registry versions
   both default-No confirmations.
 - Explicit `disabled` remains silent, while `automatic` still requires one explicit destination and
   can never be enabled by a registry advertisement.
+
+### Compatibility
+
+- Reporting protocol v1 and its serialized payload are unchanged. Registry aliases are routing-only
+  client state and are never sent to a reporting destination.
+- Existing explicit `disabled`, `prompt`, and `automatic` configurations retain their meaning. A
+  missing reporting section now resolves to `prompt` without requiring a central destination.
+- AART `1.2.0` rejects the new prompt-without-destination configuration form, so downgrading a
+  configuration written by `1.3.0` requires adding a destination or explicitly disabling reporting.
+- Registry and per-artifact `requires_aart` floors are not raised by this client-side behavior.
 
 ## 1.2.0 — 2026-08-11
 
