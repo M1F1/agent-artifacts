@@ -12,6 +12,7 @@ from agent_artifacts import tui
 from agent_artifacts.import_candidates import ImportCandidate, ImportScan
 from agent_artifacts.model import Err, Ok, Request
 from agent_artifacts.upstreams import UpstreamKey, UpstreamSource
+from agent_artifacts.wizard import WizardInput, stages_for
 
 FIXTURES = str(pathlib.Path(__file__).resolve().parent / "fixtures")
 
@@ -34,6 +35,30 @@ def _collector():
 
 
 class RoleFirstTextTests(unittest.TestCase):
+    def test_default_maintainer_reaches_actions_without_asking_for_consumer_sources(self):
+        write, _lines = _collector()
+
+        with (
+            mock.patch.object(tui.os, "getcwd", return_value="/registry"),
+            mock.patch.object(
+                tui,
+                "_prompt_source_stage_text",
+                side_effect=AssertionError("Maintainer default must skip Sources"),
+            ),
+            mock.patch.object(tui, "_run_maintainer_text", return_value=0) as maintainer,
+        ):
+            code = tui._run_text(
+                _scripted_reader(["", "2"]),
+                write,
+                source_stage_view=tui._empty_source_stage_view(),
+            )
+
+        self.assertEqual(code, 0)
+        session = maintainer.call_args.args[0]
+        self.assertEqual(session.current, "maintainer_action")
+        self.assertNotIn("source", stages_for(session))
+        self.assertEqual(maintainer.call_args.kwargs["source_dir"], "/registry")
+
     def test_onboarding_is_first_then_roles_have_one_line_explanations(self):
         write, lines = _collector()
 
@@ -78,6 +103,36 @@ class RoleFirstTextTests(unittest.TestCase):
 
 
 class RoleFirstCursesTests(unittest.TestCase):
+    def test_default_maintainer_reaches_actions_without_entering_sources(self):
+        calls = []
+        events = iter((WizardInput("confirm", (1,)), WizardInput("quit")))
+
+        def wrapper(ui):
+            ui(object())
+
+        def single(*args):
+            calls.append(args[2])
+            return next(events)
+
+        with (
+            mock.patch.object(curses, "wrapper", side_effect=wrapper),
+            mock.patch.object(curses, "curs_set", return_value=None),
+            mock.patch.object(tui, "_curses_onboarding", return_value=WizardInput("confirm")),
+            mock.patch.object(tui, "_curses_single_event", side_effect=single),
+            mock.patch.object(tui.os, "getcwd", return_value="/registry"),
+            mock.patch.object(tui, "_is_canonical_maintainer_workspace", return_value=True),
+            mock.patch.object(
+                tui,
+                "_curses_source_event",
+                side_effect=AssertionError("Maintainer default must skip Sources"),
+            ),
+        ):
+            code = tui._run_curses(source_stage_view=tui._empty_source_stage_view())
+
+        self.assertEqual(code, 0)
+        self.assertTrue(calls[0].startswith("Choose how"))
+        self.assertTrue(calls[1].startswith("Maintainer - /registry"))
+
     def test_role_is_first_curses_screen_and_quit_is_clean(self):
         calls = []
 

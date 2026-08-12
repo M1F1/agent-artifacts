@@ -1036,6 +1036,7 @@ class SourceFrontendTests(unittest.TestCase):
                 lambda _prompt="": next(answers),
                 writes.append,
                 project=str(checkout),
+                source_dir=str(checkout),
                 source_stage_view=view.value,
                 source_finalizer=finalize,
             )
@@ -1095,13 +1096,56 @@ class SourceFrontendTests(unittest.TestCase):
                 return_value=WizardInput("back"),
             ) as recovery,
         ):
-            code = tui._run_curses(source_stage_view=view.value)
+            code = tui._run_curses(source_dir="/explicit/catalog", source_stage_view=view.value)
 
         self.assertEqual(code, 0)
         failure = recovery.call_args.args[2]
         self.assertEqual(failure.stage, "source")
         self.assertEqual(failure.choices, ("back", "quit"))
         self.assertEqual(failure.diagnostics[0].code.value, "source-incompatible")
+
+    def test_err08_default_maintainer_checkout_skips_a_registry_only_sources_screen(self) -> None:
+        registry = _source(
+            "registry",
+            SourceKind.REGISTRY_GIT,
+            "https://github.example.com/platform/agent-artifacts-registry.git",
+            enabled=True,
+        )
+        view = build_source_stage(
+            _configuration(registry, default="registry"), OrganizationPolicy(1), {}
+        )
+        assert isinstance(view, Ok)
+        finalizer = mock.Mock(return_value=Ok(object()))
+
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = pathlib.Path(raw)
+            (checkout / ".git").mkdir()
+            (checkout / "aart-registry.json").write_text("{}", encoding="utf-8")
+            with (
+                mock.patch.object(tui.os, "getcwd", return_value=str(checkout)),
+                mock.patch.object(
+                    tui,
+                    "_prompt_source_stage_text",
+                    side_effect=AssertionError(
+                        "Maintainer default must not ask a consumer question"
+                    ),
+                ),
+                mock.patch.object(tui, "_run_maintainer_text", return_value=0) as maintainer,
+            ):
+                code = tui._run_text(
+                    lambda _prompt="": "" if _prompt.startswith("Press") else "2",
+                    lambda _line: None,
+                    source_stage_view=view.value,
+                    source_finalizer=finalizer,
+                )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(maintainer.call_args.kwargs["source_dir"], str(checkout))
+        self.assertIs(
+            maintainer.call_args.kwargs["consumer_configuration"],
+            view.value.configuration,
+        )
+        finalizer.assert_not_called()
 
     def test_text_first_use_can_add_sync_and_refresh_a_registry_source(self) -> None:
         empty = build_source_stage(default_user_configuration(), OrganizationPolicy(1), {})

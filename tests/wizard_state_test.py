@@ -27,6 +27,7 @@ from agent_artifacts.wizard import (
     request_quit,
     select,
     stages_for,
+    use_current_checkout,
 )
 
 
@@ -105,6 +106,29 @@ class WizardStageGraphTests(unittest.TestCase):
         self.assertIn("artifacts", stages_for(import_session))
         self.assertIn("artifacts", stages_for(check))
         self.assertIn("profiles", stages_for(user))
+
+    def test_default_maintainer_checkout_skips_sources_and_back_returns_to_role(self):
+        session = select(advance(initial_session()), "role", "maintainer")
+        checkout = use_current_checkout(session)
+
+        self.assertEqual(
+            stages_for(checkout),
+            ("onboarding", "role", "maintainer_action"),
+        )
+        at_action = advance(checkout)
+        self.assertEqual(at_action.current, "maintainer_action")
+        self.assertEqual(back(at_action).current, "role")
+        self.assertNotIn("source", stages_for(checkout))
+
+        user_workflow = select(checkout, "maintainer_action", "user")
+        self.assertNotIn("source", stages_for(user_workflow))
+        self.assertIn("profiles", stages_for(user_workflow))
+
+    def test_explicit_maintainer_source_path_still_visits_sources(self):
+        session = select(advance(initial_session()), "role", "maintainer")
+
+        self.assertIn("source", stages_for(session))
+        self.assertEqual(advance(session).current, "source")
 
 
 class WizardTransitionTests(unittest.TestCase):

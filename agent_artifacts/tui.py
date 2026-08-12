@@ -146,6 +146,7 @@ from .wizard import (
     remember_position,
     render_header,
     request_quit,
+    use_current_checkout,
 )
 from .wizard import (
     advance as wizard_advance,
@@ -2989,6 +2990,8 @@ def _run_text(
                 session = wizard_back(session)
                 continue
             session = wizard_select(session, "role", role)
+            if role == "maintainer" and source_dir is None and repo is None:
+                session = use_current_checkout(session)
             session = wizard_advance(session)
             continue
         if session.current == "source":
@@ -3119,6 +3122,30 @@ def _run_text(
                 consumer_service_factory=consumer_service_factory,
                 reporting_service_factory=reporting_service_factory,
                 consumer_configuration=selected_source.request.after,
+                curation_service_factory=curation_service_factory,
+            )
+            if isinstance(result, WizardSession):
+                session = result
+                continue
+            return result
+        if session.current == "maintainer_action":
+            result = _run_maintainer_text(
+                session,
+                read,
+                write,
+                source_factory=source_factory,
+                source_dir=os.path.abspath(os.getcwd())
+                if session.maintainer_checkout
+                else source_dir,
+                repo=None if session.maintainer_checkout else repo,
+                project=project,
+                user_home=user_home,
+                source_finalizer=source_finalizer,
+                consumer_service_factory=consumer_service_factory,
+                reporting_service_factory=reporting_service_factory,
+                consumer_configuration=(
+                    stage_view.configuration if session.maintainer_checkout else None
+                ),
                 curation_service_factory=curation_service_factory,
             )
             if isinstance(result, WizardSession):
@@ -5361,7 +5388,108 @@ def _run_curses(
                     return
                 role = ROLES[event.selected[0]].name
                 session = wizard_select(session, "role", role)
+                if role == "maintainer" and source_dir is None and repo is None:
+                    session = use_current_checkout(session)
                 session = wizard_advance(session)
+
+            if session.current == "maintainer_action" and session.maintainer_checkout:
+                catalog_root = os.path.abspath(os.getcwd())
+                canonical_curation = _is_canonical_maintainer_workspace(catalog_root)
+                context_result = None
+                maintainer_actions = CANONICAL_MAINTAINER_ACTIONS
+                if not canonical_curation:
+                    from .commands import upstream
+
+                    context_result = upstream.load_maintainer_context(
+                        Request(
+                            command="upstream",
+                            upstream_action="validate",
+                            source_dir=catalog_root,
+                        )
+                    )
+                    if isinstance(context_result, Err):
+                        selection["error"] = (context_result.reason, context_result.code)
+                        return
+                    maintainer_actions = MAINTAINER_ACTIONS
+                event = _curses_single_event(
+                    curses,
+                    stdscr,
+                    f"Maintainer - {catalog_root}",
+                    tuple(label for _action, label in maintainer_actions),
+                    session,
+                )
+                if event.kind == "back":
+                    session = wizard_back(session)
+                    continue
+                if event.kind == "quit":
+                    selection["cancelled"] = True
+                    return
+                action = maintainer_actions[event.selected[0]][0]
+                session = wizard_select(session, "maintainer_action", action)
+                session = wizard_advance(session)
+                if action == "user":
+                    maintainer_consumer_service = consumer_service
+                    maintainer_reporting_service = reporting_service
+                    maintainer_reporting_failed = False
+                    active_consumer_factory = consumer_service_factory
+                    if active_consumer_factory is None and canonical_curation:
+                        from .consumer.runtime import load_local_consumer_service
+
+                        def active_consumer_factory(
+                            configuration: UserConfiguration,
+                        ) -> DomainResult[ConsumerApplicationService]:
+                            return load_local_consumer_service(
+                                project=project,
+                                user_home=user_home,
+                                configuration=configuration,
+                            )
+
+                    if active_consumer_factory is not None:
+                        loaded_consumer = active_consumer_factory(stage_view.configuration)
+                        if isinstance(loaded_consumer, DomainErr):
+                            failure = _maintainer_action_failure(session, loaded_consumer)
+                            recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                            if recovery.kind == "back":
+                                session = wizard_back(session)
+                                continue
+                            if _curses_confirm_discard(curses, stdscr, session):
+                                selection["cancelled"] = True
+                                return
+                            continue
+                        maintainer_consumer_service = loaded_consumer.value
+                    if reporting_service_factory is not None:
+                        loaded_reporting = reporting_service_factory(stage_view.configuration)
+                        if isinstance(loaded_reporting, DomainErr):
+                            maintainer_reporting_service = None
+                            maintainer_reporting_failed = True
+                        else:
+                            maintainer_reporting_service = loaded_reporting.value
+                    session = _run_user_curses_wizard(
+                        curses,
+                        stdscr,
+                        session,
+                        selection,
+                        source_dir=catalog_root,
+                        repo=None,
+                        project=project,
+                        user_home=user_home,
+                        consumer_service=maintainer_consumer_service,
+                        failure_context=context,
+                    )
+                    if selection.get("consumer_review") is not None:
+                        selection["active_consumer_service"] = maintainer_consumer_service
+                        selection["active_reporting_service"] = maintainer_reporting_service
+                        if maintainer_reporting_failed:
+                            selection["reporting_warning"] = True
+                    return
+                selection["maintainer_action"] = action
+                if context_result is not None:
+                    assert not isinstance(context_result, Err)
+                    selection["maintainer_context"] = context_result.value
+                selection["maintainer_session"] = session
+                selection["source_arguments"] = (catalog_root, None)
+                selection["consumer_configuration"] = stage_view.configuration
+                return
 
             assert session.current == "source"
             if source_stage_view is None and (source_dir is not None or repo is not None):

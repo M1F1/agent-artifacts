@@ -94,6 +94,7 @@ class WizardSession:
     source_label: str = ""
     source_root: str = ""
     source_selection: Optional[SourceSelection] = None
+    maintainer_checkout: bool = False
     basket: Tuple[BasketItem, ...] = ()
     positions: Tuple[WizardPosition, ...] = ()
     notices: Tuple[WizardNotice, ...] = ()
@@ -159,7 +160,9 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     if session.role == "user":
         return _user_stages(session, prefix=common + ("source",))
 
-    maintainer = common + ("source", "maintainer_action")
+    maintainer = (
+        common + (() if session.maintainer_checkout else ("source",)) + ("maintainer_action",)
+    )
     action = session.maintainer_action
     if action is None:
         return maintainer
@@ -218,7 +221,7 @@ def select(session: WizardSession, stage: WizardStage, value: object) -> WizardS
     if stage == "role":
         if value not in ("user", "maintainer"):
             return session
-        changed = replace(session, role=value)
+        changed = replace(session, role=value, maintainer_checkout=False)
     elif stage == "maintainer_action":
         changed = replace(session, maintainer_action=str(value))
     elif stage == "profiles":
@@ -251,6 +254,23 @@ def select(session: WizardSession, stage: WizardStage, value: object) -> WizardS
         changed,
         current=current,
         confirmed=_unconfirm_from(changed.confirmed, stages, stage),
+        notices=(),
+        revision=changed.revision + 1,
+    )
+
+
+def use_current_checkout(session: WizardSession) -> WizardSession:
+    """Mark the default Maintainer route as a checkout workflow, not a source subscription."""
+
+    if session.role != "maintainer" or session.maintainer_checkout:
+        return session
+    changed = replace(session, maintainer_checkout=True, source_selection=None)
+    stages = stages_for(changed)
+    current = changed.current if changed.current in stages else "maintainer_action"
+    return replace(
+        changed,
+        current=current,
+        confirmed=_unconfirm_from(changed.confirmed, stages, "maintainer_action"),
         notices=(),
         revision=changed.revision + 1,
     )
