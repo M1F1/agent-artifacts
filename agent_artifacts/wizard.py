@@ -6,6 +6,13 @@ import textwrap
 from dataclasses import dataclass, replace
 from typing import Literal, Mapping, Optional, Tuple
 
+from agent_artifacts.tui_layout import (
+    STAGE_CONFIRMED,
+    STAGE_CURRENT,
+    STAGE_JOIN,
+    STAGE_PENDING,
+    STAGE_PROJECTION,
+)
 from agent_artifacts.tui_sources import SourceSelection
 
 WizardStage = Literal[
@@ -113,6 +120,36 @@ def _user_stages(
     if session.action == "status":
         return stages + ("review",)
     return stages
+
+
+def _path_is_settled(session: WizardSession) -> bool:
+    """True when no fork that could still change the remaining stages is open."""
+
+    if session.role is None:
+        return False
+    if session.role == "user":
+        return session.action is not None
+    if session.maintainer_action is None:
+        return False
+    if session.maintainer_action == "user":
+        return session.action is not None
+    return True
+
+
+def projected_stages_for(session: WizardSession) -> Tuple[Tuple[WizardStage, ...], bool]:
+    """Return the stages to display and whether the tail is still a projection.
+
+    ``stages_for`` only returns stages whose existence is already determined, because the path
+    forks on role and again on action. The stepper shows the whole journey from the first screen,
+    so before the role fork is resolved the user path stands in as the default continuation. The
+    boolean is what keeps that honest: callers mark a projected tail rather than presenting a
+    guess as a certainty.
+    """
+
+    projected = not _path_is_settled(session)
+    if session.role is None:
+        return stages_for(replace(session, role="user")), projected
+    return stages_for(session), projected
 
 
 def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
@@ -326,25 +363,25 @@ def request_quit(session: WizardSession) -> WizardDecision:
 
 
 def onboarding_lines(frontend: Literal["text", "curses"]) -> Tuple[str, ...]:
-    if frontend == "curses":
-        controls = (
-            "  Up / Down    Move between options",
-            "  Single       Enter chooses one option",
-            "  Space        Toggle an item on multi-select screens",
-            "  Enter        Confirm this stage and continue",
-            "  Backspace    Return one stage without losing choices",
-            "  q            Quit",
-        )
-    else:
-        controls = (
-            "  number/name  Choose one option",
-            "  single       Enter one number or name",
-            "  1,3          Toggle comma-separated items on multi-select screens",
-            "  Enter        Confirm this stage and continue",
-            "  b / back     Return one stage without losing choices",
-            "  q / quit     Quit",
-        )
-    return ("How aart TUI works", "") + controls + ("", "Press Enter to start.")
+    """Explain what the bar cannot: what aart does, the two roles, and where artifacts come from.
+
+    D11 removed the control list that used to live here. Keys are now permanently on screen in the
+    status bar, so repeating them on the first screen only delayed the first real choice.
+    """
+
+    del frontend  # Both frontends now say the same thing; the keys differed, the meaning did not.
+    return (
+        "How aart works",
+        "",
+        "aart installs your team's AI artifacts - skills, guidelines, MCP",
+        "configs, hooks, memory - from a source repository into the harnesses",
+        "you actually use.",
+        "",
+        "User installs artifacts into a project or a home directory.",
+        "Maintainer curates what a team is offered and where it comes from.",
+        "",
+        "Press Enter to start.",
+    )
 
 
 def _fit(text: str, width: int) -> Tuple[str, ...]:
@@ -361,16 +398,30 @@ def _fit(text: str, width: int) -> Tuple[str, ...]:
     )
 
 
+def _stage_token(session: WizardSession, stage: WizardStage) -> str:
+    if stage == session.current:
+        marker = STAGE_CURRENT
+    elif stage in session.confirmed:
+        marker = STAGE_CONFIRMED
+    else:
+        marker = STAGE_PENDING
+    return f"{marker} {_STAGE_LABELS[stage]}"
+
+
 def render_stepper(session: WizardSession, *, width: int) -> Tuple[str, ...]:
-    tokens = []
-    for stage in stages_for(session):
-        marker = "●" if stage == session.current else "x" if stage in session.confirmed else " "
-        token = f"[{marker}] {_STAGE_LABELS[stage]}"
-        tokens.append(token if len(token) <= width else token[: max(width - 1, 0)] + "…")
+    stages, projected = projected_stages_for(session)
+    tokens = [_stage_token(session, stage) for stage in stages]
+    if projected:
+        tokens.append(STAGE_PROJECTION)
+    tokens = [
+        token if len(token) <= width else token[: max(width - 1, 0)] + STAGE_PROJECTION
+        for token in tokens
+    ]
+    join = f" {STAGE_JOIN} "
     lines = []
     current = ""
     for token in tokens:
-        candidate = token if not current else f"{current} -> {token}"
+        candidate = token if not current else f"{current}{join}{token}"
         if current and len(candidate) > width:
             lines.append(current)
             current = token
@@ -388,19 +439,15 @@ def render_header(
     frontend: Literal["text", "curses"],
 ) -> Tuple[str, ...]:
     lines = render_stepper(session, width=width)
-    lines += _fit(f"Stage: {_STAGE_LABELS[session.current]}", width)
+    # D4: the stepper's ``▸`` already names the current stage, so there is no ``Stage:`` line.
+    # The one exception is a stepper too narrow to show that token intact — then, and only then,
+    # the position would otherwise be unavailable.
+    token = _stage_token(session, session.current)
+    if not any(token in line for line in lines):
+        lines += _fit(token, width)
     if session.basket:
         lines += _fit(f"Basket: {len(session.basket)} selected", width)
     for notice in session.notices:
         lines += _fit(f"Removed {notice.value}: {notice.reason}", width)
-    multi = session.current in ("source", "profiles", "artifacts")
-    if frontend == "curses":
-        action = "Space = toggle · Enter = continue" if multi else "Enter = choose"
-        navigation = "Backspace = back · q = quit"
-    else:
-        action = (
-            "comma-separated numbers = select · Enter = continue" if multi else "Enter = choose"
-        )
-        navigation = "b / back = previous · q / quit = quit"
-    lines += _fit(f"{action} · {navigation}", width)
+    # D2: key hints live in the pinned status bar, not here.
     return lines

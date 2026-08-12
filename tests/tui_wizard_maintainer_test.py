@@ -39,8 +39,8 @@ class MaintainerWizardTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0].upstream_action, "health")
-        self.assertGreaterEqual(writes.count("Stage: Review"), 2)
-        self.assertIn("Stage: Maintainer action", writes)
+        self.assertGreaterEqual(sum(1 for line in writes if "▸ Review" in line), 2)
+        self.assertTrue(any("▸ Maintainer action" in line for line in writes))
 
     def test_add_quit_after_successful_preview_never_applies(self):
         writes = []

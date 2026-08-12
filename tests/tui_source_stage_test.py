@@ -975,7 +975,7 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertEqual(events[1], ("dispatch", "status"))
         self.assertEqual(len(events), 2)
         rendered = "\n".join(writes)
-        self.assertGreaterEqual(rendered.count("Stage: Sources"), 2)
+        self.assertGreaterEqual(rendered.count("▸ Sources"), 2)
         self.assertIn("organization recommended", rendered)
         self.assertIn("Sources: applied 2 reviewed configuration change", rendered)
 

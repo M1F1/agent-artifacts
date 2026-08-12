@@ -43,7 +43,7 @@ class RoleFirstTextTests(unittest.TestCase):
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
         screen = "\n".join(lines)
-        self.assertTrue(screen.startswith("How aart TUI works"))
+        self.assertTrue(screen.startswith("How aart works"))
         self.assertIn("Choose how you want to use aart:", screen)
         self.assertIn("User", screen)
         self.assertIn("subscribed catalogs", screen)

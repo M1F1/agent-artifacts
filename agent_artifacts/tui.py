@@ -94,6 +94,7 @@ from .reporting.projection import (
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
+from .tui_layout import STAGE_CURRENT
 from .tui_marketplace import MarketplaceArtifactRow, MarketplaceTarget, render_marketplace_row
 from .tui_sources import (
     SourceAdditionRequest,
@@ -5427,12 +5428,12 @@ def _draw_list(
     height = _height(stdscr)
     header_budget = max(height - 4, 1)
     if len(header) > header_budget:
+        # Keep whatever says where the user is before anything else. These match the marker
+        # vocabulary in tui_layout, not prose, so they survive wording changes.
         priorities = (
-            lambda line: "[●]" in line,
-            lambda line: line.startswith("Stage:"),
+            lambda line: STAGE_CURRENT in line,
             lambda line: line.startswith("Basket:"),
             lambda line: line.startswith("Removed "),
-            lambda line: "back" in line.lower() and "quit" in line.lower(),
         )
         picked: List[int] = []
         for predicate in priorities:

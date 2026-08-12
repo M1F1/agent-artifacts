@@ -72,12 +72,11 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
 
         self.assertEqual(event, WizardInput("confirm"))
         rendered = "\n".join(value for _row, _column, value in screen.history)
-        self.assertIn("How aart TUI works", rendered)
-        self.assertIn("Single", rendered)
-        self.assertIn("Backspace", rendered)
-        self.assertIn("Space", rendered)
-        self.assertIn("[●] How it works", rendered)
-        self.assertIn("Stage: How it works", rendered)
+        # D11: onboarding explains the product, not the keys — those are permanently in the bar.
+        self.assertIn("How aart works", rendered)
+        self.assertIn("Maintainer", rendered)
+        self.assertNotIn("Backspace", rendered)
+        self.assertIn("▸ How it works", rendered)
 
     def test_every_backspace_code_returns_explicit_back_event(self):
         for key in (curses.KEY_BACKSPACE, 127, 8):
@@ -157,7 +156,7 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
         )
 
         rendered = "\n".join(value for _, _, value in screen.history)
-        self.assertIn("Stage: Artifacts", rendered)
+        self.assertIn("▸ Artifacts", rendered)
         self.assertIn("Basket:", rendered)
         self.assertIn("Selected: 1", rendered)
         self.assertIn("[x] one", rendered)

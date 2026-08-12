@@ -54,15 +54,16 @@ class TextWizardTests(unittest.TestCase):
                 )
         return code, captured, writes
 
-    def test_onboarding_is_first_and_every_stage_has_stepper_and_hint(self):
+    def test_onboarding_is_first_and_every_stage_has_a_stepper(self):
+        # D2 moved key hints out of the header: in text mode they live in the input prompt, which
+        # is not part of the written screen, so this asserts the stepper only.
         code, captured, writes = self.run_flow(["q"])
 
         self.assertEqual(code, 0)
         self.assertEqual(captured, [])
         rendered = "\n".join(writes)
-        self.assertTrue(rendered.startswith("How aart TUI works"))
-        self.assertIn("[●] How it works", rendered)
-        self.assertIn("b / back", rendered)
+        self.assertTrue(rendered.startswith("How aart works"))
+        self.assertIn("▸ How it works", rendered)
         self.assertIn("no changes were made", rendered.lower())
 
     def test_review_back_restores_same_basket_and_finalize_dispatches_once(self):
@@ -74,7 +75,7 @@ class TextWizardTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0].names, ("code-review",))
         rendered = "\n".join(writes)
-        self.assertGreaterEqual(rendered.count("Stage: Review"), 2)
+        self.assertGreaterEqual(rendered.count("▸ Review"), 2)
         self.assertIn("Basket: 1 selected", rendered)
         self.assertIn("Finalize", rendered)
 
@@ -98,9 +99,11 @@ class TextWizardTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(captured[0].profiles, ("claude",))
-        stages = [line for line in writes if line.startswith("Stage:")]
-        mode_index = stages.index("Stage: Mode")
-        self.assertEqual(stages[mode_index + 1 : mode_index + 3], ["Stage: Scope", "Stage: Action"])
+        stages = [
+            token[2:] for line in writes for token in line.split(" → ") if token.startswith("▸ ")
+        ]
+        mode_index = stages.index("Mode")
+        self.assertEqual(stages[mode_index + 1 : mode_index + 3], ["Scope", "Action"])
 
     def test_quit_with_basket_requires_confirmation_and_no_returns_to_review(self):
         code, captured, writes = self.run_flow(
@@ -111,7 +114,7 @@ class TextWizardTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         rendered = "\n".join(writes)
         self.assertIn("Discard 1 selected basket item", rendered)
-        self.assertGreaterEqual(rendered.count("Stage: Review"), 2)
+        self.assertGreaterEqual(rendered.count("▸ Review"), 2)
 
     def test_status_uses_short_dynamic_path_and_finalizes_from_review(self):
         code, captured, writes = self.run_flow(["", "1", "1", "status", "1", "y"])
@@ -120,9 +123,12 @@ class TextWizardTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0].command, "status")
         rendered = "\n".join(writes)
-        self.assertIn("[●] Review", rendered)
-        self.assertNotIn("Stage: Mode", rendered)
-        self.assertNotIn("Stage: Artifacts", rendered)
+        self.assertIn("▸ Review", rendered)
+        stepper_labels = {
+            token[2:] for line in writes for token in line.split(" → ") if len(token) > 2
+        }
+        self.assertNotIn("Mode", stepper_labels)
+        self.assertNotIn("Artifacts", stepper_labels)
         self.assertIn("Expected mutation: none", rendered)
 
 

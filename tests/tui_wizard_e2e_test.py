@@ -59,7 +59,7 @@ class WizardLifecycleTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertTrue(destination.is_file())
             self.assertTrue(manifest.is_file())
-            self.assertEqual(writes.count("Stage: Review"), 2)
+            self.assertEqual(sum(1 for line in writes if "▸ Review" in line), 2)
             self.assertIn("Basket: 1 selected", "\n".join(writes))
 
     def test_quit_from_review_discards_basket_without_real_mutation(self):

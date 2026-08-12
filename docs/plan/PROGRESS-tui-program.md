@@ -35,29 +35,41 @@ authorization.
 | Legibility design + plan | committed | `3ce271b` |
 | ERR05a fallback boundary | committed | `6ce2e25`, 6 new tests in `tests/tui_fallback_boundary_test.py` |
 | Legibility WP-0 layout kernel | committed | 31 new tests in `tests/tui_layout_test.py` |
-| Legibility WP-1 … WP-4 | not started | — |
+| Legibility WP-1 stepper and header | committed | 15 tests in `tests/wizard_render_test.py`; 11 rewritten across 6 files |
+| Legibility WP-2 … WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
-Baseline at the time of writing: 1777 unit + 52 integration tests, all ten gates of
+Baseline at the time of writing: 1787 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
+
+### Deviation from the plan's file ownership
+
+The plan assigns `tui.py` and the six string-asserting test files to WP-3, because ownership
+exists to stop *parallel agents* colliding. Running sequentially there is no collision, and the
+binding constraint is instead that every commit leaves the suite green. WP-1 therefore also:
+
+- rewrote 11 assertions across `tui_wizard_text_test.py`, `tui_wizard_curses_test.py`,
+  `tui_roles_test.py`, `tui_source_stage_test.py`, `tui_wizard_e2e_test.py` and
+  `tui_wizard_maintainer_test.py`, from `Stage: X` to the stepper's `▸ X`;
+- replaced the header-overflow priorities in `_draw_list` (`tui.py`), which matched `[●]` and
+  `Stage:` and so matched nothing after the re-markering. A narrow-terminal test caught this as a
+  real regression, not a hypothetical one. WP-3 step 2 is consequently already done.
 
 ## Next task
 
-**Wave A of [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — WP-1 and WP-2 are independent and
-may run in parallel. Both import `agent_artifacts/tui_layout.py` (delivered) and nothing from each
-other.
+**WP-2 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — artifact projections. Owns
+`agent_artifacts/tui_marketplace.py` and `tests/tui_marketplace_test.py`.
 
-- **WP-1 — stepper and header.** Owns `agent_artifacts/wizard.py`, `tests/wizard_render_test.py`.
-  Add `projected_stages_for`; re-marker `render_stepper` with `✓ ▸ ·` joined by `→` and a trailing
-  `…` while the tail is projected; strip the hint line and `Stage:` from `render_header`, keeping a
-  `▸ <label>` line only when a truncated stepper hides the current stage; trim `onboarding_lines`
-  to name no keys.
-- **WP-2 — artifact projections.** Owns `agent_artifacts/tui_marketplace.py`,
-  `tests/tui_marketplace_test.py`. Add `artifact_cells`, `render_artifact_pane`,
-  `render_artifact_detail`; keep `render_marketplace_row` until WP-3 removes its last caller, and
-  move its three existing assertions onto the replacements in the same commit.
+- `artifact_cells(row)` — the row's cells unpadded, identity first; the widget aligns them through
+  `tui_layout.columns` so one layout serves every row.
+- `render_artifact_pane(row, *, width)` — the pinned pane body: identity, wrapped summary, then
+  `source`, `risk`, `harness`, `status` via `field_block`.
+- `render_artifact_detail(row)` — the full record for `?`: wrapped summary, every evidence field,
+  each digest on its own line and exempt from the measure.
+- Keep `render_marketplace_row` until WP-3 removes its last caller, and move its three existing
+  assertions onto the replacements in the same commit that adds them.
 
-Then WP-3 (`tui.py` plus six test files) inline on `main`, then WP-4 (docs + gate).
+Then WP-3 (`tui.py`; step 2 already landed with WP-1), then WP-4 (docs + gate).
 
 The kernel is available as:
 
