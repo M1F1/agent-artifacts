@@ -1044,7 +1044,7 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertIn("Sources: synchronized and saved registry", rendered)
         self.assertNotIn("bundled-legacy", rendered)
 
-    def test_curses_failure_fallback_keeps_source_onboarding_runtime(self) -> None:
+    def test_curses_unavailable_fallback_keeps_source_onboarding_runtime(self) -> None:
         empty = build_source_stage(default_user_configuration(), OrganizationPolicy(1), {})
         self.assertIsInstance(empty, Ok)
 
@@ -1063,7 +1063,9 @@ class SourceFrontendTests(unittest.TestCase):
             mock.patch.object(tui, "_runtime_source_stage_context", return_value=Ok(runtime)),
             mock.patch.object(tui.sys.stdin, "isatty", return_value=True),
             mock.patch.object(tui.sys.stdout, "isatty", return_value=True),
-            mock.patch.object(tui, "_run_curses", side_effect=RuntimeError("curses unavailable")),
+            mock.patch.object(
+                tui, "_run_curses", side_effect=tui.CursesUnavailable("curses unavailable")
+            ),
             mock.patch.object(tui, "_run_text", return_value=0) as fallback,
         ):
             code = tui.run(user_home="/tmp/aart-home")
@@ -1072,7 +1074,7 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertIs(fallback.call_args.kwargs["source_addition_finalizer"], finalize_addition)
         self.assertTrue(callable(fallback.call_args.kwargs["source_stage_loader"]))
 
-    def test_curses_fallback_after_source_addition_uses_the_refreshed_sources_view(self) -> None:
+    def test_failure_after_source_addition_propagates_with_the_refreshed_view(self) -> None:
         empty = build_source_stage(default_user_configuration(), OrganizationPolicy(1), {})
         self.assertIsInstance(empty, Ok)
         assert isinstance(empty, Ok)
@@ -1126,20 +1128,23 @@ class SourceFrontendTests(unittest.TestCase):
                     (WizardInput("add"), None, None),
                     RuntimeError("terminal failed after source refresh"),
                 ),
-            ),
+            ) as source_event,
             mock.patch.object(tui, "_curses_source_addition", return_value=added.value),
             mock.patch.object(tui, "_curses_notice"),
             mock.patch.object(tui, "_run_text", return_value=0) as fallback,
         ):
-            code = tui._run_curses(
-                source_stage_view=empty.value,
-                source_finalizer=lambda _request: Ok(object()),
-                source_addition_finalizer=lambda _request: Ok(object()),
-                source_stage_loader=lambda: Ok(refreshed_runtime),
-            )
+            with self.assertRaises(RuntimeError):
+                tui._run_curses(
+                    source_stage_view=empty.value,
+                    source_finalizer=lambda _request: Ok(object()),
+                    source_addition_finalizer=lambda _request: Ok(object()),
+                    source_stage_loader=lambda: Ok(refreshed_runtime),
+                )
 
-        self.assertEqual(code, 0)
-        self.assertIs(fallback.call_args.kwargs["source_stage_view"], refreshed.value)
+        # The addition still refreshes the view the wizard keeps working with, but a failure this
+        # late is a defect: it propagates instead of silently restarting the wizard in text mode.
+        self.assertIs(source_event.call_args_list[1].args[3], refreshed.value)
+        fallback.assert_not_called()
 
     def test_curses_back_event_keeps_the_same_source_selection(self) -> None:
         view = self._view()

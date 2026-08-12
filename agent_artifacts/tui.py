@@ -4857,6 +4857,41 @@ def _run_user_curses_wizard(
     return session
 
 
+class CursesUnavailable(Exception):
+    """The terminal cannot host the curses wizard.
+
+    Raised only for import, TTY, or curses initialisation failure detected **before** the wizard
+    interacts with the user. It is the sole condition under which the text wizard may start as a
+    fallback. Any failure after interaction begins propagates instead, so a defect is never
+    mistaken for a missing terminal and never silently restarts the wizard at onboarding with the
+    user's selections discarded.
+    """
+
+
+INTERNAL_FAILURE_CODE = "tui-stage-internal"
+
+
+def internal_failure_lines(error: BaseException) -> Tuple[str, ...]:
+    """Project a defect into stable, redacted terminal lines.
+
+    Only the exception *type* is disclosed. Messages can carry filesystem paths, subprocess
+    output, or setup input, so they are withheld by default; the opt-in local debug channel that
+    reveals more is ERR05b in PLAN-typed-wizard-errors.
+    """
+
+    return (
+        f"internal error: {INTERNAL_FAILURE_CODE}",
+        f"  type: {type(error).__name__}",
+        "next: rerun the command; if it repeats, report it with the steps that reached this screen.",
+    )
+
+
+def _render_internal_failure(error: BaseException) -> int:
+    for line in internal_failure_lines(error):
+        print(line)
+    return 2
+
+
 def _run_curses(
     *,
     source_dir: Optional[str] = None,
@@ -4880,6 +4915,7 @@ def _run_curses(
         print("No profiles available.")
         return 0
     selection: dict = {}
+    interacted = False
     stage_view = source_stage_view or (
         _legacy_source_stage_view(source_dir=source_dir, repo=repo)
         if source_dir is not None or repo is not None
@@ -4888,7 +4924,11 @@ def _run_curses(
 
     def _ui(stdscr) -> None:
         nonlocal stage_view, source_stage_view, source_finalizer, source_addition_finalizer
+        nonlocal interacted
         curses.curs_set(0)
+        # Past this point curses is initialised and the screen is ours: any later failure is a
+        # defect in the wizard, not a terminal that cannot host it.
+        interacted = True
         session = initial_session()
         onboarding = _curses_onboarding(curses, stdscr)
         if onboarding.kind == "quit":
@@ -5174,22 +5214,12 @@ def _run_curses(
 
     try:
         curses.wrapper(_ui)
-    except Exception:
-        return _run_text(
-            source_dir=source_dir,
-            repo=repo,
-            project=project,
-            user_home=user_home,
-            source_stage_view=source_stage_view,
-            source_finalizer=source_finalizer,
-            source_addition_finalizer=source_addition_finalizer,
-            source_stage_loader=source_stage_loader,
-            consumer_service=consumer_service,
-            consumer_service_factory=consumer_service_factory,
-            reporting_service=reporting_service,
-            reporting_service_factory=reporting_service_factory,
-            curation_service_factory=curation_service_factory,
-        )
+    except Exception as error:
+        if interacted:
+            # The wizard was live; this is a defect. Let it reach the crash boundary in ``run``
+            # rather than discarding the session behind a second wizard.
+            raise
+        raise CursesUnavailable("the curses wizard could not start") from error
 
     if "error" in selection:
         reason, code = selection["error"]
@@ -5786,7 +5816,7 @@ def run(
             reporting_service=reporting_service,
             reporting_service_factory=reporting_service_factory,
         )
-    except Exception:  # pragma: no cover - last-resort guard around the curses path
+    except CursesUnavailable:
         return _run_text(
             source_dir=source_dir,
             repo=repo,
@@ -5801,3 +5831,7 @@ def run(
             reporting_service=reporting_service,
             reporting_service_factory=reporting_service_factory,
         )
+    except Exception as error:
+        # The outermost crash boundary. ``curses.wrapper`` has already restored the terminal.
+        # Broad catching is permitted here for rendering only, never to start a second wizard.
+        return _render_internal_failure(error)

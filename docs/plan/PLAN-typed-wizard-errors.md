@@ -19,6 +19,15 @@ independently understandable in history:
 No typed-error implementation was made while writing this plan. A new agent should verify that the
 preceding fixes are present in history, then implement ERR01 onward as a separate reviewable change.
 
+Since then, **ERR05a has landed out of order** — see that package for exactly what is delivered and
+what remains. The agreed sequence from that point is: ERR05a (done), then the TUI legibility
+program in `PLAN-tui-legibility.md`, then ERR01 onward with the `tui_layout` kernel available for
+rendering diagnostics as records rather than flattened strings.
+
+The reproducer below is **live in this working tree**: `.agent-artifacts/manifest.json` currently
+has top-level `installed` and `repo` keys, so ERR02 can be driven against it without constructing
+a fixture.
+
 The reproducer for the first expected failure is:
 
 ```text
@@ -153,7 +162,34 @@ Acceptance:
 
 ### ERR05 — constrain curses fallback and type internal failures
 
-**Status:** pending; may proceed after ERR01, should integrate after ERR04
+**Status:** split. **ERR05a delivered** ahead of ERR01–ERR04 as an independent commit, because the
+broad handlers were actively discarding live sessions and because any later TUI work would have
+had its exceptions swallowed and misreported as "curses unavailable". **ERR05b pending**, to
+integrate after ERR04.
+
+Delivered in ERR05a (items 1–3, minus typed rendering):
+
+- `CursesUnavailable` in `agent_artifacts/tui.py` marks the sole condition permitting text
+  fallback — import/TTY/curses setup failure before interaction begins.
+- `_run_curses` records that the callback reached session initialization and re-raises anything
+  that fails after it; it no longer starts a text wizard itself, so fallback has exactly one site.
+- `run` falls back only on `CursesUnavailable`. Its outermost handler renders the stable
+  `tui-stage-internal` code via `internal_failure_lines` and exits non-zero, never invoking
+  `_run_text`.
+- Redaction by default: only the exception *type* is disclosed, never the message or a traceback.
+- `tests/tui_fallback_boundary_test.py` covers both sides of the boundary. Two tests in
+  `tests/tui_source_stage_test.py` that asserted the old broad-fallback behavior were rewritten
+  against the new contract rather than deleted.
+
+Remaining in ERR05b:
+
+- `WizardStageFailure` for expected stage failures (needs ERR03/ERR04).
+- Item 4: give the crash boundary the last stage and operation without storing terminal or service
+  objects in `WizardSession`. `internal_failure_lines` takes only the exception today.
+- Item 5: the opt-in local debug traceback mechanism.
+- The probe's remaining broad `except Exception` around `import curses` / `isatty`. It is
+  pre-interaction and therefore harmless, but the design prefers a narrow initialization error
+  type.
 
 1. Replace broad fallback semantics in `_run_curses` and `run` with an explicit initialization
    boundary.
