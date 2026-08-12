@@ -336,7 +336,8 @@ class CursesInstallModeTests(unittest.TestCase):
         )
 
         self.assertEqual(selected, ())
-        self.assertIn("[-]", "\n".join(value for _, _, value in screen.history))
+        # D10: the disabled box warns rather than looking like an em dash, and keeps its column.
+        self.assertIn("[!]", "\n".join(value for _, _, value in screen.history))
 
     def test_install_dispatches_after_wrapper_with_symlink_request(self):
         inside_wrapper = {"value": False}

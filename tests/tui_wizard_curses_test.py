@@ -64,6 +64,113 @@ class Screen:
         return next(self.keys)
 
 
+class StatusBarTests(unittest.TestCase):
+    """WP-3 steps 1 and 6 of DESIGN-tui-legibility: one pinned bar, and `b` goes back."""
+
+    def bar(self, screen: Screen) -> str:
+        painted = [value for row, _column, value in screen.lines if row == screen.height - 1]
+        self.assertEqual(len(painted), 1, painted)
+        return painted[0]
+
+    def test_the_bar_holds_the_last_row_at_every_scroll_offset(self) -> None:
+        labels = tuple(f"item-{index}" for index in range(40))
+
+        for scroll, cursor in ((0, 0), (33, 39)):
+            with self.subTest(scroll=scroll):
+                screen = Screen(height=12, width=70)
+
+                tui._draw_list(
+                    curses,
+                    screen,
+                    "Artifacts",
+                    labels,
+                    cursor,
+                    [False] * len(labels),
+                    hints=(("enter", "confirm"), ("q", "quit")),
+                    scroll=scroll,
+                )
+
+                bar = self.bar(screen)
+                self.assertIn("enter=confirm", bar)
+                self.assertIn("q=quit", bar)
+                self.assertIn("of 40", bar)
+
+    def test_the_bar_advertises_exactly_the_keys_the_screen_accepts(self) -> None:
+        screen = Screen((10,), height=16, width=90)
+
+        tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            ("one", "two"),
+            details=("first", "second"),
+            wizard=True,
+            allow_add=True,
+        )
+
+        bar = self.bar(screen)
+        for hint in ("space=toggle", "enter=confirm", "b=back", "?=details", "a=add", "q=quit"):
+            self.assertIn(hint, bar)
+
+    def test_a_single_choice_bar_offers_neither_toggle_nor_add(self) -> None:
+        screen = Screen((10,), height=16, width=90)
+
+        tui._curses_singleselect(curses, screen, "Role", ("User", "Maintainer"), wizard=True)
+
+        bar = self.bar(screen)
+        self.assertIn("enter=confirm", bar)
+        self.assertIn("b=back", bar)
+        self.assertNotIn("space=toggle", bar)
+        self.assertNotIn("a=add", bar)
+        self.assertNotIn("?=details", bar)
+
+    def test_the_bar_counts_the_selection_and_sheds_counters_before_keys(self) -> None:
+        wide = Screen((10,), height=16, width=90)
+        tui._curses_multiselect(
+            curses, wide, "Artifacts", ("one", "two"), wizard=True, initial_checked=(0,)
+        )
+        self.assertIn("1 selected", self.bar(wide))
+
+        narrow = Screen((10,), height=8, width=22)
+        tui._curses_multiselect(
+            curses, narrow, "Artifacts", ("one", "two"), wizard=True, initial_checked=(0,)
+        )
+        cramped = self.bar(narrow)
+        self.assertNotIn("selected", cramped)
+        self.assertIn("enter=confirm", cramped)
+        self.assertIn("q=quit", cramped)
+        self.assertLessEqual(len(cramped), 21)
+
+    def test_b_returns_the_same_back_event_as_backspace(self) -> None:
+        for key in (ord("b"), curses.KEY_BACKSPACE):
+            with self.subTest(key=key):
+                multi = tui._curses_multiselect(
+                    curses, Screen((key,)), "Artifacts", ("one",), wizard=True
+                )
+                single = tui._curses_singleselect(
+                    curses, Screen((key,)), "Role", ("User",), wizard=True
+                )
+
+                self.assertEqual(multi.kind, "back")
+                self.assertEqual(single.kind, "back")
+
+    def test_a_disabled_row_keeps_its_box_column_and_warns(self) -> None:
+        screen = Screen((10,), height=16, width=60)
+
+        tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            ("selectable", "blocked"),
+            disabled=(False, True),
+        )
+
+        rendered = "\n".join(value for _row, _column, value in screen.history)
+        self.assertIn("[!] blocked", rendered)
+        self.assertIn("[ ] selectable", rendered)
+        self.assertNotIn("[-]", rendered)
+
+
 class CursesWizardPrimitiveTests(unittest.TestCase):
     def test_onboarding_is_first_and_enter_continues(self):
         screen = Screen((10,))
@@ -158,7 +265,10 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
         rendered = "\n".join(value for _, _, value in screen.history)
         self.assertIn("▸ Artifacts", rendered)
         self.assertIn("Basket:", rendered)
-        self.assertIn("Selected: 1", rendered)
+        # D2 moved the selection count out of its own header line and into the bar's counters,
+        # which are the first thing a narrow terminal sheds. What survives here is the exit.
+        self.assertIn("enter=confirm", rendered)
+        self.assertIn("q=quit", rendered)
         self.assertIn("[x] one", rendered)
         self.assertTrue(all(len(value) <= 21 for _, _, value in screen.history))
 

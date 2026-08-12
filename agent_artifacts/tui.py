@@ -94,7 +94,15 @@ from .reporting.projection import (
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
-from .tui_layout import STAGE_CURRENT
+from .tui_layout import (
+    BOX_CHECKED,
+    BOX_DISABLED,
+    BOX_EMPTY,
+    CHROME_ROWS,
+    HINT_ORDER,
+    STAGE_CURRENT,
+    status_bar,
+)
 from .tui_marketplace import MarketplaceArtifactRow, MarketplaceTarget, render_marketplace_row
 from .tui_sources import (
     SourceAdditionRequest,
@@ -5333,7 +5341,10 @@ def _curses_multiselect(
     for index in initial_checked:
         if 0 <= index < len(checked) and (disabled is None or not disabled[index]):
             checked[index] = True
-    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    back_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")}
+    hints = _list_hints(
+        toggle=True, back=wizard, details=details is not None, add=wizard and allow_add
+    )
     while True:
         scroll = _draw_list(
             curses,
@@ -5345,11 +5356,12 @@ def _curses_multiselect(
             disabled=disabled,
             header=header,
             scroll=scroll,
+            hints=hints,
         )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):  # q / ESC
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
-        elif wizard and ch in backspace_keys:
+        elif wizard and ch in back_keys:
             return WizardInput("back", cursor=cursor, scroll=scroll)
         elif wizard and allow_add and ch in (ord("a"), ord("A")):
             return WizardInput("add", cursor=cursor, scroll=scroll)
@@ -5385,7 +5397,8 @@ def _curses_singleselect(
     """A single-choice list, optionally returning explicit wizard navigation."""
     cursor = min(max(initial_cursor, 0), max(len(labels) - 1, 0))
     scroll = max(initial_scroll, 0)
-    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    back_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")}
+    hints = _list_hints(toggle=False, back=wizard, details=False, add=False)
     while True:
         scroll = _draw_list(
             curses,
@@ -5396,11 +5409,12 @@ def _curses_singleselect(
             None,
             header=header,
             scroll=scroll,
+            hints=hints,
         )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
-        elif wizard and ch in backspace_keys:
+        elif wizard and ch in back_keys:
             return WizardInput("back", cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
@@ -5408,6 +5422,15 @@ def _curses_singleselect(
             cursor = (cursor + 1) % len(labels)
         elif ch in (curses.KEY_ENTER, 10, 13):
             return WizardInput("confirm", (cursor,), cursor, scroll) if wizard else cursor
+
+
+def _list_hints(
+    *, toggle: bool, back: bool, details: bool, add: bool
+) -> Tuple[Tuple[str, str], ...]:
+    """The canonical hint table filtered down to the keys this screen actually accepts (D2)."""
+
+    enabled = {"space": toggle, "enter": True, "b": back, "?": details, "a": add, "q": True}
+    return tuple(hint for hint in HINT_ORDER if enabled[hint[0]])
 
 
 def _draw_list(
@@ -5421,12 +5444,19 @@ def _draw_list(
     disabled: Optional[Sequence[bool]] = None,
     header: Sequence[str] = (),
     scroll: int = 0,
+    hints: Sequence[Tuple[str, str]] = (),
 ) -> int:
-    """Render *title* + the labels, marking the cursor row and any checked rows."""
+    """Render *title* + the labels, marking the cursor row and any checked rows.
+
+    The last row belongs to the status bar and to nothing else (D2). Everything above it — header,
+    title and the list viewport — is laid out inside ``height - 1``, the same reservation
+    ``_curses_onboarding`` already makes for its footer.
+    """
     stdscr.clear()
     available = max(_width(stdscr) - 1, 0)
     height = _height(stdscr)
-    header_budget = max(height - 4, 1)
+    body_height = max(height - 1, 1)
+    header_budget = max(body_height - CHROME_ROWS, 1)
     if len(header) > header_budget:
         # Keep whatever says where the user is before anything else. These match the marker
         # vocabulary in tui_layout, not prose, so they survive wording changes.
@@ -5447,27 +5477,14 @@ def _draw_list(
         header = tuple(line for index, line in enumerate(header) if index in visible_indices)
     row = 0
     for line in header:
-        if row >= height:
+        if row >= body_height:
             break
         stdscr.addstr(row, 0, _ellipsize(line, available))
         row += 1
-    if row < height:
+    if row < body_height:
         stdscr.addstr(row, 0, _ellipsize(title, available))
     list_start = row + 2
-    if checked is not None:
-        selected_count = sum(
-            1
-            for index, value in enumerate(checked)
-            if value and (disabled is None or not disabled[index])
-        )
-        if row + 1 < height:
-            stdscr.addstr(
-                row + 1,
-                0,
-                _ellipsize(f"Selected: {selected_count}", available),
-            )
-        list_start = row + 3
-    visible_rows = max(height - list_start, 1)
+    visible_rows = max(body_height - list_start, 1)
     max_scroll = max(len(labels) - visible_rows, 0)
     scroll = min(max(scroll, 0), max_scroll)
     if cursor < scroll:
@@ -5480,15 +5497,48 @@ def _draw_list(
         box = ""
         if checked is not None:
             if disabled is not None and disabled[i]:
-                box = "[-] "
+                box = f"{BOX_DISABLED} "
             else:
-                box = "[x] " if checked[i] else "[ ] "
+                box = f"{BOX_CHECKED} " if checked[i] else f"{BOX_EMPTY} "
         line = f"{prefix}{box}{label}"
         target_row = list_start + display_row
-        if target_row < height:
+        if target_row < body_height:
             stdscr.addstr(target_row, 0, _ellipsize(line, available))
+    if height:
+        stdscr.addstr(
+            height - 1,
+            0,
+            status_bar(
+                hints,
+                counters=_list_counters(labels, checked, disabled, scroll, visible_rows),
+                width=available,
+            ),
+        )
     stdscr.refresh()
     return scroll
+
+
+def _list_counters(
+    labels,
+    checked,
+    disabled: Optional[Sequence[bool]],
+    scroll: int,
+    visible_rows: int,
+) -> Tuple[str, ...]:
+    """The bar's right-hand counters, cheapest to lose last (D2)."""
+
+    counters = []
+    if checked is not None:
+        selected = sum(
+            1
+            for index, value in enumerate(checked)
+            if value and (disabled is None or not disabled[index])
+        )
+        counters.append(f"{selected} selected")
+    if len(labels) > visible_rows:
+        last = min(len(labels), scroll + visible_rows)
+        counters.append(f"{scroll + 1}-{last} of {len(labels)}")
+    return tuple(counters)
 
 
 def _curses_onboarding(curses, stdscr) -> WizardInput:
