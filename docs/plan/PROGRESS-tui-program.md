@@ -40,7 +40,8 @@ authorization.
 | Legibility WP-3 steps 1, 2, 6 | committed | 6 tests in `tests/tui_wizard_curses_test.py::StatusBarTests` |
 | Legibility WP-3 step 3 | committed | 6 tests in `tests/tui_wizard_curses_test.py::ScreenChromeTests` |
 | Legibility WP-3 step 4 | committed | 4 tests in `tests/tui_wizard_curses_test.py::DetailPaneTests` |
-| Legibility WP-3 steps 5, 7, 8, 9, 10 | not started | — |
+| Legibility WP-3 steps 5 and 7 | committed | 5 tests in `EnterSemanticsTests`, 3 across text tests |
+| Legibility WP-3 steps 8, 9, 10 | not started | — |
 | Legibility WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
@@ -62,28 +63,23 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 5 onward** — curses and text
+**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 8 onward** — curses and text
 wiring. Runs inline on `main`, owns `agent_artifacts/tui.py` and the eight test files that assert
 on old screen strings.
 
 Done so far: **step 2** (landed with WP-1), **steps 1 and 6** (the pinned bar, `b`, `[!]`),
 **step 3** (titles are nouns, every footer is a `status_bar`, no `·` separator survives in
-`tui.py`) and **step 4** (the pane and the column grid). Steps 1 and 6 landed together on purpose
-— the bar advertises `b=back`, and shipping that sentence before the key worked would have made
-the bar lie.
+`tui.py`), **step 4** (the pane and the column grid) and **steps 5 and 7** (Enter semantics in
+both frontends). Steps 1 and 6 landed together on purpose — the bar advertises `b=back`, and
+shipping that sentence before the key worked would have made the bar lie.
 
-Remaining: **5** (Enter semantics), **7** (text parity), **8** (`_draw_detail` through
-`render_artifact_detail`), **9** (drop `render_marketplace_row`), **10** (bound the width). Two
-guard tests fail loudly if a regression reintroduces old chrome: `ScreenChromeTests` parses
-`tui.py` and rejects any string literal that names a key outside a text prompt, or uses ` · ` as a
-separator.
+Remaining: **8** (`_draw_detail` through `render_artifact_detail`), **9** (drop
+`render_marketplace_row` once `_canonical_choice` no longer calls it), **10** (bound the width and
+assert it at 40/80/120/200). Two guard tests fail loudly if a regression reintroduces old chrome:
+`ScreenChromeTests` parses `tui.py` and rejects any string literal that names a key outside a text
+prompt, or uses ` · ` as a separator.
 
-Step 5 is partly paid for already: the pane shows the cursor row's `status` field, and for an
-incompatible row that field reads `unavailable: <first reason>`. What step 5 still owes is the
-*key handling* — Enter on an empty tick set takes the cursor row, and refuses without leaving when
-that row is disabled.
-
-What steps 1, 3 and 4 established, for the steps that build on them:
+What steps 1, 3, 4, 5 and 7 established, for the steps that build on them:
 
 - `_draw_list` reserves `height - 1` for the body and paints `status_bar` on the last row every
   frame. Step 4's pane comes out of `body_height`, not out of the bar.
@@ -110,6 +106,13 @@ What steps 1, 3 and 4 established, for the steps that build on them:
 - `render_artifact_pane` abbreviates the revision to seven characters (`aaaaaaa…`). At 62 columns
   the full hash wrapped over three lines and pushed the `status` field — the one carrying the
   refusal reason — off the bottom of the pane. `render_artifact_detail` still prints it whole.
+- Enter with nothing ticked takes the cursor row; on a disabled row it refuses, paints the reason
+  on the blank separator row `_draw_list` already reserves, and stays. `empty_selection` now only
+  happens when no row in the list is selectable at all. `_curses_multiselect` takes `reasons=`
+  beside `disabled=`; both list screens that can disable a row pass it.
+- Text mode has no cursor, so parity is at the level of outcome: a blank answer with an empty
+  basket writes `_NOTHING_SELECTED` and asks again, in both `_prompt_wizard_indices` and the
+  legacy `_prompt_indices`. `q` remains the way out of both.
 
 Everything else WP-3 needs is pure and tested:
 

@@ -116,6 +116,17 @@ class TextWizardTests(unittest.TestCase):
         self.assertIn("Discard 1 selected basket item", rendered)
         self.assertGreaterEqual(rendered.count("▸ Review"), 2)
 
+    def test_confirming_an_empty_selection_re_prompts_instead_of_ending_the_session(self):
+        # D5 in text mode (design section 5): equivalence at the level of outcome, not gesture.
+        # There is no cursor to fall back on, so an empty confirm must say so and ask again.
+        code, captured, writes = self.run_flow(["", "1", "1", "install", "1", "", "", "1", "y"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(captured), 1)
+        rendered = "\n".join(writes)
+        self.assertIn("Nothing is selected yet", rendered)
+        self.assertNotIn("no changes were made", rendered.lower())
+
     def test_status_uses_short_dynamic_path_and_finalizes_from_review(self):
         code, captured, writes = self.run_flow(["", "1", "1", "status", "1", "y"])
 

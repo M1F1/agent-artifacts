@@ -2225,6 +2225,11 @@ def _write_wizard_header(session: WizardSession, write: WriteFn) -> None:
         write(line)
 
 
+_NOTHING_SELECTED = (
+    "Nothing is selected yet. Enter number(s) between 1 and {count}, or 'q' to quit."
+)
+
+
 def _prompt_wizard_indices(
     read: ReadFn,
     write: WriteFn,
@@ -2247,8 +2252,13 @@ def _prompt_wizard_indices(
             return WizardInput("back")
         if allow_add and low in ("a", "add"):
             return WizardInput("add")
-        if not answer and selected_tuple:
-            return WizardInput("confirm", selected_tuple)
+        if not answer:
+            if selected_tuple:
+                return WizardInput("confirm", selected_tuple)
+            # D5 has no cursor to fall back on here, so an empty confirm says why it did nothing
+            # rather than ending the wizard (design section 5).
+            write(_NOTHING_SELECTED.format(count=len(choices)))
+            continue
         if answer.startswith("?"):
             number = answer[1:].strip()
             if number.isdigit() and 1 <= int(number) <= len(choices):
@@ -3984,8 +3994,11 @@ def _prompt_indices(
         if line is None:
             return ()
         line = line.strip()
-        if line == "" or line.lower() == "q":
+        if line.lower() == "q":
             return ()
+        if line == "":
+            write(_NOTHING_SELECTED.format(count=len(choices)))
+            continue
         if line.startswith("?"):
             number = line[1:].strip()
             if number.isdigit() and 1 <= int(number) <= len(choices):
@@ -4158,6 +4171,7 @@ def _curses_multi_event(
     allow_add: bool = False,
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
+    reasons: Optional[Sequence[str]] = None,
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -4176,6 +4190,7 @@ def _curses_multi_event(
             header=_curses_header(stdscr, session),
             cells=cells,
             pane_for=pane_for,
+            reasons=reasons,
         )
     except TypeError as error:
         if "unexpected keyword argument" not in str(error):
@@ -4252,6 +4267,7 @@ def _curses_source_event(
         selected=selected,
         details=tuple(choice.description for choice in choices),
         disabled=tuple(not choice.enabled for choice in choices),
+        reasons=tuple(choice.reason for choice in choices),
         allow_add=True,
     )
     if event.kind != "confirm":
@@ -4763,6 +4779,7 @@ def _run_user_curses_wizard(
                 selected=selected,
                 details=tuple(choice.description for choice in read_model.choices),
                 disabled=tuple(not choice.enabled for choice in read_model.choices),
+                reasons=tuple(choice.reason for choice in read_model.choices),
                 cells=tuple(choice.cells or (choice.label,) for choice in read_model.choices),
                 pane_for=functools.partial(_choice_pane, read_model.choices),
             )
@@ -5377,8 +5394,15 @@ def _curses_multiselect(
     header: Sequence[str] = (),
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
+    reasons: Optional[Sequence[str]] = None,
 ):
-    """A checkbox list, optionally returning explicit wizard navigation and position."""
+    """A checkbox list, optionally returning explicit wizard navigation and position.
+
+    Enter confirms the ticked rows. With nothing ticked it confirms the row under the cursor,
+    because moving the cursor onto a row and pressing Enter is the most natural gesture on a list
+    and it used to end the session silently (D5). A disabled cursor row refuses and says why
+    instead of leaving; only a list with no selectable row at all still returns nothing.
+    """
     if not labels:
         return WizardInput("confirm") if wizard else ()
     cursor = min(max(initial_cursor, 0), len(labels) - 1)
@@ -5391,6 +5415,8 @@ def _curses_multiselect(
     hints = _list_hints(
         toggle=True, back=wizard, details=details is not None, add=wizard and allow_add
     )
+    selectable = disabled is None or not all(disabled)
+    notice = ""
     while True:
         scroll = _draw_list(
             curses,
@@ -5405,7 +5431,9 @@ def _curses_multiselect(
             hints=hints,
             cells=cells,
             pane_for=pane_for,
+            notice=notice,
         )
+        notice = ""
         ch = stdscr.getch()
         if ch in (ord("q"), 27):  # q / ESC
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
@@ -5424,6 +5452,11 @@ def _curses_multiselect(
             _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
             selected = tuple(i for i, on in enumerate(checked) if on)
+            if not selected and selectable:
+                if disabled is not None and disabled[cursor]:
+                    notice = _refusal(reasons, cursor)
+                    continue
+                selected = (cursor,)
             return (
                 WizardInput("confirm", selected, cursor=cursor, scroll=scroll)
                 if wizard
@@ -5516,6 +5549,13 @@ def _choice_pane(choices: Sequence[_Choice], index: int, width: int) -> Tuple[st
     )
 
 
+def _refusal(reasons: Optional[Sequence[str]], cursor: int) -> str:
+    """What to say when Enter lands on a row that cannot be chosen."""
+
+    reason = reasons[cursor] if reasons is not None and cursor < len(reasons) else ""
+    return f"cannot select this row: {reason}" if reason else "this row cannot be selected"
+
+
 def _list_hints(
     *, toggle: bool, back: bool, details: bool, add: bool
 ) -> Tuple[Tuple[str, str], ...]:
@@ -5539,6 +5579,7 @@ def _draw_list(
     hints: Sequence[Tuple[str, str]] = (),
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
+    notice: str = "",
 ) -> int:
     """Render *title* + the labels, marking the cursor row and any checked rows.
 
@@ -5582,6 +5623,9 @@ def _draw_list(
         row += 1
     if row < body_height:
         stdscr.addstr(row, 0, _ellipsize(title, available))
+    if notice and row + 1 < body_height:
+        # The separator row is already reserved and already blank, so a notice costs no geometry.
+        stdscr.addstr(row + 1, 0, _ellipsize(notice, available))
     list_start = row + 2
     pane_height = 0 if pane_for is None else pane_budget(height=height, requested=PANE_ROWS)
     visible_rows = max(body_height - list_start - pane_height, 1)

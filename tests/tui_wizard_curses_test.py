@@ -173,6 +173,70 @@ class StatusBarTests(unittest.TestCase):
         self.assertNotIn("[-]", rendered)
 
 
+class EnterSemanticsTests(unittest.TestCase):
+    """WP-3 step 5: Enter confirms, and an empty tick set means the row under the cursor (D5)."""
+
+    def test_enter_confirms_the_ticked_set_when_there_is_one(self) -> None:
+        screen = Screen((curses.KEY_DOWN, ord(" "), 10), height=16, width=70)
+
+        picked = tui._curses_multiselect(curses, screen, "Artifacts", ("one", "two", "three"))
+
+        self.assertEqual(picked, (1,))
+
+    def test_enter_on_an_empty_set_takes_the_row_under_the_cursor(self) -> None:
+        screen = Screen((curses.KEY_DOWN, curses.KEY_DOWN, 10), height=16, width=70)
+
+        picked = tui._curses_multiselect(curses, screen, "Artifacts", ("one", "two", "three"))
+
+        self.assertEqual(picked, (2,))
+
+    def test_enter_on_a_disabled_cursor_row_stays_and_says_why(self) -> None:
+        screen = Screen((10, ord("q")), height=16, width=70)
+
+        picked = tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            ("blocked", "fine"),
+            disabled=(True, False),
+            reasons=("requires AART >=2.0.0", ""),
+        )
+
+        self.assertIsNone(picked)
+        rendered = "\n".join(value for _row, _column, value in screen.history)
+        self.assertIn("requires AART >=2.0.0", rendered)
+
+    def test_a_list_with_no_selectable_row_still_reports_an_empty_selection(self) -> None:
+        screen = Screen((10,), height=16, width=70)
+
+        picked = tui._curses_multiselect(
+            curses, screen, "Artifacts", ("blocked",), disabled=(True,)
+        )
+
+        self.assertEqual(picked, ())
+
+    def test_the_notice_takes_the_blank_row_so_the_list_does_not_move(self) -> None:
+        quiet = Screen((ord("q"),), height=16, width=70)
+        refused = Screen((10, ord("q")), height=16, width=70)
+
+        tui._curses_multiselect(
+            curses, quiet, "Artifacts", ("blocked", "fine"), disabled=(True, False)
+        )
+        tui._curses_multiselect(
+            curses,
+            refused,
+            "Artifacts",
+            ("blocked", "fine"),
+            disabled=(True, False),
+            reasons=("no", ""),
+        )
+
+        def row_of(screen, needle):
+            return next(row for row, _column, value in screen.lines if needle in value)
+
+        self.assertEqual(row_of(quiet, "[!] blocked"), row_of(refused, "[!] blocked"))
+
+
 class DetailPaneTests(unittest.TestCase):
     """WP-3 step 4: the pane lives outside the list, so the list never reflows (D6)."""
 

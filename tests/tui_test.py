@@ -807,6 +807,36 @@ class InputValidationTests(unittest.TestCase):
         self.assertIn("Review changes safely.", "\n".join(lines))
 
 
+class TextSelectionParityTests(unittest.TestCase):
+    """WP-3 step 7: the silent exit on an empty confirm is gone from the text menu too."""
+
+    def choices(self):
+        return (
+            tui._Choice("artifact", "review", "skill", "[skill] review — Review a diff."),
+            tui._Choice("artifact", "style", "guideline", "[guideline] style — House style."),
+        )
+
+    def test_a_blank_answer_re_prompts_and_names_the_way_out(self):
+        write, lines = _collector()
+
+        picked = tui._prompt_indices(
+            _scripted_reader(["", "2"]), write, "Selection: ", self.choices()
+        )
+
+        self.assertEqual(picked, (1,))
+        rendered = "\n".join(lines)
+        self.assertIn("q", rendered)
+        self.assertIn("1 and 2", rendered)
+
+    def test_q_still_leaves_without_a_selection(self):
+        write, _lines = _collector()
+
+        self.assertEqual(
+            tui._prompt_indices(_scripted_reader(["q"]), write, "Selection: ", self.choices()),
+            (),
+        )
+
+
 class NarrowTerminalTests(unittest.TestCase):
     class _Screen:
         def __init__(self, keys=()):
