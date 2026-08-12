@@ -34,38 +34,49 @@ authorization.
 |---|---|---|
 | Legibility design + plan | committed | `3ce271b` |
 | ERR05a fallback boundary | committed | `6ce2e25`, 6 new tests in `tests/tui_fallback_boundary_test.py` |
-| Legibility WP-0 … WP-4 | not started | — |
+| Legibility WP-0 layout kernel | committed | 31 new tests in `tests/tui_layout_test.py` |
+| Legibility WP-1 … WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
-Baseline at the time of writing: 1746 unit + 52 integration tests, all ten gates of
+Baseline at the time of writing: 1777 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
 
 ## Next task
 
-**WP-0 from [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — the layout kernel. Owns
-`agent_artifacts/tui_layout.py` and `tests/tui_layout_test.py`, both new. Pure, stdlib only, no
-imports from `tui`, `wizard`, or `tui_marketplace`.
+**Wave A of [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — WP-1 and WP-2 are independent and
+may run in parallel. Both import `agent_artifacts/tui_layout.py` (delivered) and nothing from each
+other.
 
-Public surface to implement:
+- **WP-1 — stepper and header.** Owns `agent_artifacts/wizard.py`, `tests/wizard_render_test.py`.
+  Add `projected_stages_for`; re-marker `render_stepper` with `✓ ▸ ·` joined by `→` and a trailing
+  `…` while the tail is projected; strip the hint line and `Stage:` from `render_header`, keeping a
+  `▸ <label>` line only when a truncated stepper hides the current stage; trim `onboarding_lines`
+  to name no keys.
+- **WP-2 — artifact projections.** Owns `agent_artifacts/tui_marketplace.py`,
+  `tests/tui_marketplace_test.py`. Add `artifact_cells`, `render_artifact_pane`,
+  `render_artifact_detail`; keep `render_marketplace_row` until WP-3 removes its last caller, and
+  move its three existing assertions onto the replacements in the same commit.
+
+Then WP-3 (`tui.py` plus six test files) inline on `main`, then WP-4 (docs + gate).
+
+The kernel is available as:
 
 ```python
-READABLE_MEASURE = 80
-CONTENT_MEASURE = 100
-
-def measure(width: int, *, bound: int = READABLE_MEASURE) -> int: ...
-def wrap(text: str, *, width: int) -> tuple[str, ...]: ...
-def columns(cells: tuple[tuple[str, ...], ...], *, width: int) -> tuple[str, ...]: ...
-def field_block(fields: tuple[tuple[str, str], ...], *, indent: int, width: int) -> tuple[str, ...]: ...
-def status_bar(hints: tuple[tuple[str, str], ...], *, counters: tuple[str, ...], width: int) -> str: ...
-def pane_budget(*, height: int, requested: int) -> int: ...
+from agent_artifacts.tui_layout import (
+    BOX_CHECKED, BOX_DISABLED, BOX_EMPTY, CHROME_ROWS, CONTENT_MEASURE, HINT_ORDER,
+    MIN_LIST_ROWS, PANE_MIN_HEIGHT, PROTECTED_HINTS, READABLE_MEASURE,
+    STAGE_CONFIRMED, STAGE_CURRENT, STAGE_JOIN, STAGE_PENDING, STAGE_PROJECTION,
+    columns, field_block, measure, pane_budget, status_bar, wrap,
+)
 ```
 
-Plus the frozen vocabulary: stage markers `✓ ▸ ·`, box markers `[x] [ ] [!]`, the `→` stepper
-join, the `…` projection token, and the hint table `space=toggle, enter=confirm, b=back,
-?=details, a=add, q=quit` in that degrade order.
+### Carried forward from WP-0
 
-After WP-0: Wave A is WP-1 (`wizard.py`) and WP-2 (`tui_marketplace.py`) in parallel; then WP-3
-(`tui.py`) inline on `main`; then WP-4 (docs + gate).
+`columns` currently shrinks every non-identity column toward one character before giving up, so at
+around 40 columns a row degrades to `identity  reg…  unv…  ris…`. The kernel contract holds —
+identity is intact and nothing exceeds the width — but WP-2 and WP-3 should decide whether a
+column that can no longer carry meaning is better dropped entirely than shredded. That needs the
+real cells to judge, which is why it was not settled in the kernel.
 
 ## Working agreements
 
