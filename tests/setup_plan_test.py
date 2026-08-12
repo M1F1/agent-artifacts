@@ -62,9 +62,9 @@ class SetupPlanningTests(unittest.TestCase):
         self.assertEqual(first.effects[1].target, "/fake-home/.zshrc")
         review = "\n".join(render_setup_review(first))
         self.assertIn("pin:abc", review)
-        self.assertIn("macos-keychain.store@1", review)
-        self.assertIn("Command: /usr/bin/security add-generic-password", review)
-        self.assertIn("reversible", review)
+        self.assertIn("Store a secret in macOS Keychain", review)
+        self.assertIn("details     required tool: /usr/bin/security", review)
+        self.assertIn("removes only changes created by this run", review)
         self.assertNotIn("api_token=", review)
 
     def test_non_darwin_plan_is_unsupported_and_has_no_effects(self):

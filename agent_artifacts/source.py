@@ -78,6 +78,7 @@ class Source:
     root: str
     _label: str
     _read: Reader = fs.read_bytes
+    _manual_source_url: str = ""
 
     def read(self, rel: str) -> bytes:
         """Read ``rel`` (a path relative to :attr:`root`) and return its bytes."""
@@ -90,6 +91,11 @@ class Source:
         ``"main:<sha>"`` / ``"pin:<sha>"`` for a remote snapshot.
         """
         return self._label
+
+    def manual_source_url(self) -> str:
+        """Return the immutable web root for manual docs, when this source has one."""
+
+        return self._manual_source_url
 
     def catalog(self) -> Result:
         """Scan the standard directories, parse every entry, build a `Catalog`.
@@ -368,4 +374,11 @@ def open_source(
 
     kind: Literal["main", "pin"] = "pin" if explicit else "main"
     label = source_label(Resolved(kind=kind, sha=sha))
-    return Ok(Source(root=os.path.abspath(root), _label=label, _read=read_fn))
+    return Ok(
+        Source(
+            root=os.path.abspath(root),
+            _label=label,
+            _read=read_fn,
+            _manual_source_url=f"https://github.com/{repo}/blob/{sha}",
+        )
+    )

@@ -307,6 +307,7 @@ def _queue_from_installed(
                     entry.source,
                     source.root,
                     installer,
+                    source.manual_source_url(),
                 )
             )
     return tuple(queue)

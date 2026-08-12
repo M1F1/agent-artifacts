@@ -623,6 +623,7 @@ def build_install_confirmation(
     profiles_map: Mapping[str, Profile],
     scope: InstallScope = "project",
     user_home: Optional[str] = None,
+    source_url: str = "",
 ) -> InstallConfirmation:
     """Build the shared immutable confirmation model for an Install selection."""
 
@@ -669,6 +670,7 @@ def build_install_confirmation(
             scope=scope,
             source_label=source_label,
             source_root=os.path.abspath(source_root),
+            source_url=source_url,
         ),
     )
 
@@ -1491,6 +1493,7 @@ def _run_user_text(
             profiles_map=profiles_map,
             scope=scope,
             user_home=user_home,
+            source_url=install_source.manual_source_url(),
         )
         for line in render_install_confirmation(confirmation):
             write(line)

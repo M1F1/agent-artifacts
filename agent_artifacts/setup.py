@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Iterable, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -22,12 +23,14 @@ from .model import (
     SetupHelpUrl,
     SetupInput,
     SetupInstaller,
+    SetupManualReference,
     SetupPlan,
     SetupQueueItem,
     SetupState,
     SetupStateRecord,
     SetupStep,
 )
+from .tui_layout import CONTENT_MEASURE, field_block, wrap
 
 _TOP_FIELDS = {
     "schema_version",
@@ -89,7 +92,7 @@ _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _ARTIFACT_KEY = re.compile(r"^(skill|hook|mcp)/[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\b(token|password|passwd|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+"
+    r"(?i)\b(token|password|passwd|secret|api[_-]?key|api[_-]?token)\s*[:=]\s*[^\s,;]+"
 )
 _CANONICAL_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SETUP_STATE_REF = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
@@ -492,6 +495,7 @@ def build_queue(
     scope: InstallScope,
     source_label: str,
     source_root: str,
+    source_url: str = "",
 ) -> Tuple[SetupQueueItem, ...]:
     """Create a stable, de-duplicated queue from selected setup-capable artifacts."""
 
@@ -514,6 +518,7 @@ def build_queue(
                     source_label=source_label,
                     source_root=source_root,
                     installer=artifact.setup,
+                    source_url=source_url,
                 )
             )
     return tuple(out)
@@ -755,26 +760,201 @@ def plan_setup(
     )
 
 
-def render_setup_review(plan: SetupPlan) -> Tuple[str, ...]:
+@dataclass(frozen=True, slots=True)
+class SetupEffectReview:
+    """Allowlisted, display-safe facts for one reviewed setup effect."""
+
+    index: int
+    identity: str
+    target: str
+    capability: str
+    recovery: str
+    details: str
+
+
+@dataclass(frozen=True, slots=True)
+class SetupReview:
+    """The pure, shareable setup review consumed by every presentation adapter."""
+
+    artifact: str
+    profile: str
+    scope: str
+    purpose: str
+    source_label: str
+    recipe_path: str
+    recipe_hash: str
+    plan_hash: str
+    capabilities: Tuple[str, ...]
+    required_tools: Tuple[str, ...]
+    manual: SetupManualReference
+    effects: Tuple[SetupEffectReview, ...]
+    preflight_status: Optional[str]
+    preflight_detail: str
+
+
+_PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
+
+
+def _public_text(value: str) -> str:
+    """Redact the credential-shaped fragments that author-controlled review text may contain."""
+
+    return _SENSITIVE_ASSIGNMENT.sub("[redacted]", value.replace("\r", " ").replace("\n", " "))
+
+
+def _contained_manual_path(item: SetupQueueItem, relative_path: str) -> str:
+    root = os.path.abspath(item.source_root)
+    candidate = os.path.abspath(os.path.join(root, relative_path))
+    if os.path.commonpath((root, candidate)) != root:
+        return ""
+    return candidate
+
+
+def manual_reference(item: SetupQueueItem) -> SetupManualReference:
+    """Resolve the v2 manual route without reading filesystem, environment, or terminal state."""
+
+    relative_path = item.installer.manual_path
+    if relative_path is None:
+        return SetupManualReference(None, None, legacy=True)
+    local_path = _contained_manual_path(item, relative_path)
+    if not local_path:
+        return SetupManualReference(None, None, legacy=True)
+    source_url = item.source_url.rstrip("/")
+    if _PINNED_SOURCE_URL.fullmatch(source_url):
+        path = relative_path.replace(os.sep, "/")
+        return SetupManualReference(relative_path, f"{source_url}/{path}")
+    return SetupManualReference(relative_path, local_path)
+
+
+def _effect_identity(effect: SetupEffect) -> str:
+    return {
+        "macos-keychain.store@1": "Store a secret in macOS Keychain",
+        "shell.env-from-keychain@1": "Add a Keychain environment lookup",
+        "file.managed-block@1": "Write an owned configuration block",
+        "json.managed-merge@1": "Merge an owned JSON value",
+        "directory.create@1": "Create a directory",
+        "docker.pull@1": "Pull a digest-pinned Docker image",
+        "command.verify@1": "Run a verification command",
+        "restart.notice@1": "Show a restart notice",
+        "custom.install@1": "Run reviewed custom setup protocol",
+    }.get(effect.module, "Run a reviewed setup effect")
+
+
+def _effect_details(effect: SetupEffect) -> str:
+    if effect.module == "macos-keychain.store@1":
+        return "required tool: /usr/bin/security"
+    if effect.module == "shell.env-from-keychain@1":
+        return "Keychain lookup content is withheld from review"
+    if effect.module == "file.managed-block@1":
+        return "managed content is withheld from review"
+    if effect.module == "json.managed-merge@1":
+        return "managed JSON value is withheld from review"
+    if effect.module == "docker.pull@1":
+        return "required tool: docker"
+    if effect.module == "command.verify@1":
+        return "reviewed command arguments are withheld from review"
+    if effect.module == "custom.install@1":
+        return "custom script body is withheld from review"
+    return "no additional automated command"
+
+
+def project_setup_review(plan: SetupPlan) -> SetupReview:
+    """Project exact setup facts into records that cannot expose secret-bearing inputs or bodies."""
+
     installer = plan.item.installer
-    lines: Tuple[str, ...] = (
-        f"Setup: {installer.artifact}@{plan.item.profile} ({plan.item.scope})",
-        f"  Purpose: {installer.purpose}",
-        f"  Source: {plan.item.source_label}",
-        f"  Recipe: {installer.descriptor_path} sha256:{installer.descriptor_hash}",
-        f"  Plan: sha256:{plan.plan_hash}",
-        f"  Capabilities: {', '.join(installer.capabilities) or 'none'}",
-    )
-    lines += tuple(f"  Help: {url.label} — {url.url}" for url in installer.help_urls)
-    for index, effect in enumerate(plan.effects, start=1):
-        lines += (
-            f"  {index}. {effect.module}: {effect.summary} "
-            f"({'reversible' if effect.reversible else 'not automatically reversible'})",
+    effects = tuple(
+        SetupEffectReview(
+            index=index,
+            identity=_effect_identity(effect),
+            target=_public_text(effect.target) if effect.target else "no filesystem target",
+            capability=effect.capability or "none",
+            recovery=(
+                "removes only changes created by this run"
+                if effect.reversible
+                else "manual recovery is required"
+            ),
+            details=_effect_details(effect),
         )
-        if effect.argv:
-            lines += ("     Command: " + " ".join(shlex.quote(arg) for arg in effect.argv),)
-    if plan.preflight_status is not None:
-        lines += (f"  {plan.preflight_status}: {plan.preflight_detail}",)
+        for index, effect in enumerate(plan.effects, start=1)
+    )
+    return SetupReview(
+        artifact=f"{plan.item.artifact_type}/{plan.item.artifact_name}",
+        profile=plan.item.profile,
+        scope=plan.item.scope,
+        purpose=_public_text(installer.purpose),
+        source_label=_public_text(plan.item.source_label),
+        recipe_path=installer.descriptor_path,
+        recipe_hash=installer.descriptor_hash,
+        plan_hash=plan.plan_hash,
+        capabilities=tuple(_public_text(value) for value in installer.capabilities),
+        required_tools=tuple(_public_text(value) for value in installer.required_tools),
+        manual=manual_reference(plan.item),
+        effects=effects,
+        preflight_status=plan.preflight_status,
+        preflight_detail=_public_text(plan.preflight_detail),
+    )
+
+
+def render_setup_review(plan: SetupPlan, *, width: int = CONTENT_MEASURE) -> Tuple[str, ...]:
+    """Render the shared review as bounded records, never as horizontal effect sentences."""
+
+    review = project_setup_review(plan)
+    lines = wrap(
+        f"Setup review: {review.artifact}@{review.profile} ({review.scope})",
+        width=width,
+    )
+    lines += field_block(
+        (
+            ("purpose", review.purpose),
+            ("source", review.source_label),
+            ("recipe", review.recipe_path),
+            ("recipe hash", f"sha256:{review.recipe_hash}"),
+            ("plan hash", f"sha256:{review.plan_hash}"),
+            ("capabilities", ", ".join(review.capabilities) or "none"),
+            ("required tools", ", ".join(review.required_tools) or "none"),
+        ),
+        indent=2,
+        width=width,
+    )
+    lines += ("Manual alternative",)
+    if review.manual.legacy:
+        lines += field_block(
+            (("instructions", "legacy installer; manual documentation unavailable"),),
+            indent=2,
+            width=width,
+        )
+    else:
+        assert review.manual.relative_path is not None and review.manual.source is not None
+        lines += field_block(
+            (
+                ("instructions", _public_text(review.manual.relative_path)),
+                ("source", _public_text(review.manual.source)),
+                ("status", "No setup effect has run."),
+            ),
+            indent=2,
+            width=width,
+        )
+    lines += ("Effects",)
+    for effect in review.effects:
+        lines += wrap(f"{effect.index}. {effect.identity}", width=width)
+        lines += field_block(
+            (
+                ("target", effect.target),
+                ("capability", effect.capability),
+                ("recovery", effect.recovery),
+                ("details", effect.details),
+            ),
+            indent=3,
+            width=width,
+        )
+    if review.preflight_status is not None:
+        lines += ("Preflight",) + field_block(
+            (
+                ("status", review.preflight_status),
+                ("details", review.preflight_detail),
+            ),
+            indent=2,
+            width=width,
+        )
     return lines
 
 

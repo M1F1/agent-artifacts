@@ -1,0 +1,178 @@
+"""ERR09-B: bounded, non-secret setup-review projection."""
+
+from __future__ import annotations
+
+import unittest
+
+from agent_artifacts.model import SetupQueueItem
+from agent_artifacts.setup import (
+    manual_reference,
+    parse_installer,
+    plan_setup,
+    project_setup_review,
+    render_setup_review,
+)
+from agent_artifacts.tui_layout import CONTENT_MEASURE
+from tests.setup_catalog_test import recipe
+
+
+def installer(*, version: int = 2, **changes: object):
+    return parse_installer(
+        recipe(schema_version=version, protocol_version=version, **changes),
+        artifact_key="mcp/atlassian",
+        descriptor_path="mcp/atlassian/setup/installer.json",
+    ).value
+
+
+class SetupReviewProjectionTests(unittest.TestCase):
+    def test_v2_reference_keeps_relative_route_and_uses_only_a_commit_pinned_url(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "pin:abc",
+            "/materialized/catalog",
+            installer(),
+            "https://github.com/acme/catalog/blob/" + "a" * 40,
+        )
+
+        reference = manual_reference(item)
+
+        self.assertEqual(reference.relative_path, "mcp/atlassian/SETUP.md")
+        self.assertEqual(
+            reference.source,
+            "https://github.com/acme/catalog/blob/" + "a" * 40 + "/mcp/atlassian/SETUP.md",
+        )
+        self.assertFalse(reference.legacy)
+
+    def test_an_unpinned_or_missing_web_origin_uses_the_absolute_local_manual_path(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "main:abc",
+            "/materialized/catalog",
+            installer(),
+            "https://github.com/acme/catalog/blob/main",
+        )
+
+        reference = manual_reference(item)
+
+        self.assertEqual(reference.source, "/materialized/catalog/mcp/atlassian/SETUP.md")
+
+    def test_v1_is_explicitly_labeled_as_manual_documentation_unavailable(self):
+        item = SetupQueueItem(
+            "mcp", "atlassian", "tabnine", "project", "pin:abc", "/source", installer(version=1)
+        )
+        plan = plan_setup(item, target_root="/project", platform="darwin")
+
+        review = project_setup_review(plan)
+
+        self.assertTrue(review.manual.legacy)
+        self.assertEqual(review.manual.relative_path, None)
+        self.assertIn("manual documentation unavailable", "\n".join(render_setup_review(plan)))
+
+    def test_effects_are_safe_records_with_identity_and_recovery_at_every_width(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "pin:abc",
+            "/source",
+            installer(
+                purpose="Configure token=do-not-render through reviewed automation.",
+                required_tools=["/usr/bin/security", "api_token=do-not-render"],
+            ),
+            "https://github.com/acme/catalog/blob/" + "b" * 40,
+        )
+        plan = plan_setup(
+            item, target_root="/very/long/project/root/" + "x" * 120, platform="darwin"
+        )
+
+        review = project_setup_review(plan)
+
+        self.assertEqual([effect.index for effect in review.effects], [1, 2])
+        self.assertTrue(all(effect.identity and effect.recovery for effect in review.effects))
+        self.assertNotIn("do-not-render", repr(review))
+        for width in (40, 80, 120, 200):
+            rendered = render_setup_review(plan, width=width)
+            self.assertTrue(rendered)
+            self.assertTrue(all(len(line) <= min(width, CONTENT_MEASURE) for line in rendered))
+            text = "\n".join(rendered)
+            self.assertIn("Manual alternative", text)
+            self.assertIn("1. Store a secret in macOS Keychain", text)
+            self.assertNotIn(" -> ", text)
+            self.assertNotIn("do-not-render", text)
+            self.assertNotIn("api_token", text)
+
+    def test_empty_capabilities_and_manual_recovery_remain_visible(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "pin:abc",
+            "/source",
+            installer(
+                capabilities=[],
+                required_tools=[],
+                inputs=[],
+                steps=[
+                    {
+                        "id": "restart",
+                        "use": "restart.notice@1",
+                        "with": {"message": "Restart the harness."},
+                    }
+                ],
+            ),
+        )
+        plan = plan_setup(item, target_root="/project", platform="darwin")
+
+        review = project_setup_review(plan)
+
+        self.assertEqual(review.capabilities, ())
+        self.assertEqual(review.effects[0].capability, "none")
+        self.assertEqual(review.effects[0].recovery, "manual recovery is required")
+        self.assertIn("capabilities    none", "\n".join(render_setup_review(plan)))
+
+    def test_custom_review_withholds_script_body_and_keeps_its_recovery_record(self):
+        script = b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\n# api_token=do-not-render\n"
+        configured = parse_installer(
+            recipe(
+                schema_version=2,
+                protocol_version=2,
+                capabilities=["process", "custom-code"],
+                required_tools=[],
+                inputs=[],
+                steps=[
+                    {
+                        "id": "restart",
+                        "use": "restart.notice@1",
+                        "with": {"message": "Restart the harness."},
+                    }
+                ],
+                custom_entrypoint="install.sh",
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+            custom_bytes=script,
+        ).value
+        item = SetupQueueItem(
+            "mcp", "atlassian", "tabnine", "project", "pin:abc", "/source", configured
+        )
+        plan = plan_setup(item, target_root="/project", platform="darwin")
+
+        review = project_setup_review(plan)
+
+        custom = review.effects[-1]
+        self.assertEqual(custom.identity, "Run reviewed custom setup protocol")
+        self.assertEqual(custom.details, "custom script body is withheld from review")
+        self.assertEqual(custom.recovery, "removes only changes created by this run")
+        self.assertNotIn("do-not-render", repr(review))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -107,6 +107,15 @@ class SetupInstaller:
 
 
 @dataclass(frozen=True, slots=True)
+class SetupManualReference:
+    """One immutable manual-setup route, or the explicit legacy-unavailable marker."""
+
+    relative_path: Optional[str]
+    source: Optional[str]
+    legacy: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Compatibility:
     profiles: Tuple[str, ...]
 
@@ -148,6 +157,9 @@ class SetupQueueItem:
     source_label: str
     source_root: str
     installer: SetupInstaller
+    # Either a verified commit-pinned web root or empty. Rendering falls back to the contained
+    # absolute local path; a moving branch URL is never emitted as setup provenance.
+    source_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
