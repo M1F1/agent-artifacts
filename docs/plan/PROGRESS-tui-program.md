@@ -104,6 +104,54 @@ ERR07 deliberately left undecided:
 4. Publishing steps (tag, release, push) need explicit maintainer consent; none was given here and
    none was taken.
 
+### Deferred initiative: an agent-facing usage surface
+
+Discussed at length after ERR07, **not started, no design doc yet, not approved for
+implementation.** Recorded here so the reasoning is not lost; the conclusions are ordered from
+most to least settled.
+
+- **Shape agreed:** one command, `--agent-help`, carrying the contract, plus a ~5-line skill in
+  the registry whose only job is to say "when the user asks about team artifacts, run
+  `aart --agent-help`". The skill is a *trigger*, not documentation. That split is the cure for
+  what killed `author-aart-installer`: it died because it carried content versioned separately
+  from `cli.py`, and a five-line pointer has nothing to drift.
+- **MCP was considered and rejected**, for two reasons specific to AART rather than general
+  objections. First, it inverts the consent boundary this whole track defended: AART is built on a
+  human answering a per-effect prompt that defaults to No, and an MCP server puts the agent on the
+  answering side of those gates. Second, it adds no capability — 41 subcommands already emit
+  `--json`; it would only add a second surface to keep in step with `cli.py`, this time a running
+  process. A read-only MCP over `list`/`status`/`check` is the one defensible variant and remains
+  a separate, later question.
+- **No packaging change is needed, deliberately.** Content has two sources: the command inventory
+  is derived from `build_parser()` at call time, and the cross-cutting prose is a constant in a
+  `.py` module. Both ship under the existing "all `.py` files" rule. Deriving the inventory rather
+  than authoring it also means the inventory *cannot* drift — it is the parser, not a copy of it.
+- **A mid-discussion correction, kept because it shrank the design.** The claim that `--help`
+  cannot express consent semantics was wrong: `marketplace install --help` already states that
+  without `--yes` the command only reviews. What per-command help genuinely cannot hold is
+  anything that is a fact about the *set*: that the `{schema_version, ok, operation}` envelope
+  appears in 8 of 18 command modules and not the rest; the negative rules (never hand-edit
+  `manifest.json`, deleting state is not a fix, a manual route is not consent); and the cost of
+  discovery across 51 subparsers. So `--agent-help` is a map that points at `--help`, never a copy
+  of it, and lands around 80–120 lines rather than the 150–250 first sketched.
+- **Open question raised by the maintainer, and the most promising thread:** enrich every
+  command's own `--help` with the contract facts that belong to it, and see whether `--agent-help`
+  is still needed. Assessment: it does not remove the need, because aggregation is the point — one
+  call instead of ~30 — and the set-level facts still have no per-command home. But it makes the
+  implementation nearly free and removes duplication by construction, since `--agent-help` becomes
+  "walk every subparser, print its help, prepend the cross-cutting rules". It also benefits humans,
+  not only agents. The cost to weigh is the opposite pressure: help text that grows too long stops
+  being scannable at a terminal. Resolve this in the design doc before writing anything.
+- **`-ah` was proposed and should not be added.** The CLI currently has zero short options, so
+  there is no collision, but argparse would also resolve bare `-a` to it, squatting the natural
+  short form for the existing `--all`. The consumer of this flag is an agent, which pays the same
+  cost for the long name, so the abbreviation buys nothing.
+- **If a resource file is ever chosen over a module constant**, the packaging trap must be handled
+  in the same change: `pyproject.toml` `package-data` declares only `profiles/*.json` (matching
+  nothing today), while both build scripts allow four resource roots. `build_wheel.py` would
+  reject a new non-`.py` file loudly; a setuptools/pip build would drop it silently, and
+  `packaging-check` exercises only the former.
+
 **One follow-up remains open and is not blocking.** `REG02` must rewrite the public-registry
 `author-aart-installer` skill: it is a legacy import that still teaches the superseded recipe and
 does not mention `SETUP.md`. Until it lands, catalog authors are pointed at
