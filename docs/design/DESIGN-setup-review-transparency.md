@@ -1,7 +1,7 @@
 # Design: transparent setup review and manual fallback
 
-Status: in delivery ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75)); ERR09-A/B
-completed, ERR09-C/D pending
+Status: delivered ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75)); ERR09-A/B/C/D
+completed
 
 ## 1. Context
 
@@ -18,24 +18,31 @@ but applies equally to every directory-shaped skill, hook or MCP that declares a
 
 ## 2. Decisions
 
-### D1 — `SETUP.md` is the manual contract for new setup artifacts
+### D1 — `SETUP.md` is the manual contract for every setup artifact
 
-For a new setup protocol revision, every directory-shaped artifact that declares
-`setup/installer.json` contains a regular UTF-8 `SETUP.md` at its package root. The document
-explains prerequisites, each intended effect in human terms, how to perform or verify it manually,
-and any safe recovery step. It must not contain a secret value or require a user to copy one into
-shell history.
+Every directory-shaped artifact that declares `setup/installer.json` contains a regular UTF-8
+`SETUP.md` at its package root. The document explains prerequisites, each intended effect in human
+terms, how to perform or verify it manually, and any safe recovery step. It must not contain a
+secret value or require a user to copy one into shell history.
 
-Version-1 installers remain accepted unchanged; they cannot be made invalid after publication.
+~~Version-1 installers remain accepted unchanged; they cannot be made invalid after publication.
 The revised catalog/schema validation applies only to newly authored or explicitly upgraded setup
-descriptors. This is a protocol addition, not a silent reinterpretation of old artifacts.
+descriptors. This is a protocol addition, not a silent reinterpretation of old artifacts.~~
 
-ERR09-A implements the smallest compatible boundary as the matching descriptor pair `1/1` or
-`2/2`. A v2 installer deterministically derives its package-root `SETUP.md` path from its recipe
-path; catalog discovery requires that file to be regular, contained, non-empty UTF-8 text. A v2
-custom entrypoint must start (after an optional shebang) with
-`# AART manual setup: see ../SETUP.md`. Version-1 descriptors and custom scripts retain their
-published validation unchanged.
+**Replaced during ERR09-D.** ERR09-A shipped the compatible boundary described above as the
+matching descriptor pair `1/1` or `2/2`. The maintainer then withdrew the compatibility rule: only
+the newest revision of a protocol is maintained. The parser now accepts only `2/2` and refuses the
+superseded pair with the migration named in the error — raise both fields to `2` and add the
+package-root document. That deletion is what makes the rest of this design total: because every
+validated installer has a document, the manual route is unconditional and no record has to describe
+a missing one.
+
+An installer deterministically derives its package-root `SETUP.md` path from its recipe path;
+catalog discovery requires that file to be regular, contained, non-empty UTF-8 text. A custom
+entrypoint must start (after an optional shebang) with `# AART manual setup: see ../SETUP.md`.
+
+Nothing is validated retroactively in the other direction: setup state recorded by an earlier run
+stays readable exactly as written, and no recorded state is migrated or rewritten by this change.
 
 The conventional location is intentionally fixed:
 

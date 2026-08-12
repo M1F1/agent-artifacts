@@ -3,6 +3,53 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## Unreleased
+
+Typed wizard errors, a transparent setup review, and a manual route out of every installer. The
+release task assigns the version; this entry deliberately carries none.
+
+### Changed
+
+- Every wizard stage now reports failure through one typed diagnostic algebra instead of ad-hoc
+  strings, and three previously indistinguishable outcomes are now separate and separately
+  actionable:
+  - **Recognized AART 0.1 installation state** (`install-state-legacy`) states the exact state
+    path, the detected and required schema, and previews migration for the project and user scope
+    independently. It is a report, not an action.
+  - **Unreadable installation state** (`install-state-invalid`) keeps the parser's own precise
+    location — file, line, column — and never suggests migration, because migration cannot repair
+    a file that is not valid state.
+  - **A defect in AART** (`tui-stage-internal`) names the stage, the operation, and the exception
+    type only. No message, traceback, subprocess output, or setup input is displayed, and the
+    wizard is not restarted after one.
+- A stage-blocking failure opens the scrollable record with Retry/Back/Quit; a problem local to a
+  row of a still-usable list stays in the fixed pane below that list. The status bar advertises
+  keys and is never the only place an error appears.
+- Setup review projects each effect as a bounded record with its identity, target, capability and
+  recovery, replacing the terminal-width-dependent `module: summary -> target` line.
+- Every setup review and every incomplete setup outcome names the package's `SETUP.md` route, with
+  a commit-pinned HTTPS URL or a contained local path. Declining automation is a supported way to
+  finish; it never rolls back an installed payload, and following the manual route is never
+  recorded as consent.
+
+### Fixed
+
+- The packaging gate now proves a built wheel reproduces the checkout's typed diagnostics, rather
+  than only proving the package imports.
+
+### Compatibility
+
+- **No installation state is migrated, rewritten, or deleted automatically.** Recognized 0.1 state
+  is reported with the explicit `aart migrate state --from 0.1 … --dry-run` preview that a person
+  chooses to run; `--apply` and `--rollback` remain separate explicit steps. State written by an
+  earlier version stays readable exactly as written.
+- Setup recipes support exactly one revision: `schema_version` and `protocol_version` must both be
+  `2`, which is what makes the package-root `SETUP.md` mandatory. A recipe declaring the superseded
+  `1`/`1` pair is refused when the catalog is read, and the error names the migration — raise both
+  fields to `2` and add the document. Nothing is validated retroactively.
+- `--yes`, `--approve-setup-effects`, trust authorization, and per-effect consent are unchanged.
+- No registry compatibility or per-artifact `requires_aart` floor changes here.
+
 ## 1.3.1 — 2026-08-11
 
 Patch release fixing the read-only JSON Review for declarative marketplace setup.

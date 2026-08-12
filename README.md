@@ -489,6 +489,94 @@ Memory artifacts wrap installed content in invisible HTML-comment sentinels, so 
 uninstalls do not touch your hand-written notes in the same instruction file. Use
 `--memory-mode replace --force` only when you want a clean overwrite.
 
+### When Installation State Cannot Be Read
+
+Every stage that reads installation state can fail, and the three ways it fails are deliberately
+kept apart: recognized AART 0.1 state, unreadable state, and a defect in AART itself. None of them
+edits, migrates, or discards what is on disk, and none of them asks you to.
+
+**Recognized 0.1 state.** The state file is intact and understood — it is simply the older shape.
+The wizard stops the stage and shows the complete record rather than a one-line error:
+
+```text
+Artifacts could not be loaded
+
+  action   install
+  scope    project
+  project  /Users/you/work/project
+
+error [install-state-legacy]: AART 0.1 installation state was detected.
+  path             /Users/you/work/project/.agent-artifacts/manifest.json
+  detected schema  install-state-v0.1
+  required schema  install-state-v2
+
+Next steps:
+  Preview a project-scope migration: aart migrate state --from 0.1 --scope
+  project --dry-run
+  Preview a user-scope migration: aart migrate state --from 0.1 --scope user
+  --dry-run
+
+Recovery:
+  Retry = r
+  Back = b
+  Quit = q
+```
+
+Both previews are offered because the two scopes hold separate state and never cross: project
+state is `<project>/.agent-artifacts/manifest.json`, user state is
+`~/.agent-artifacts/manifest.json`. The record names the scope it was reading, but migrating one
+scope leaves the other exactly as it was, so each is previewed, applied, and rolled back on its
+own. Both commands above are dry runs: they write nothing, and they print the resulting status,
+the backup path the migration would create, and the review digest that a later `--apply` must
+still match.
+
+If a preview stops with `state-migration-source-missing` or `state-migration-source-ambiguous`,
+the 0.1 record does not name a source precisely enough to migrate on its own. Resolve it with the
+repeatable mapping option and preview again, rather than editing the manifest:
+
+```bash
+aart migrate state --from 0.1 --scope project --dry-run --source-map mcp/atlassian@tabnine=acme
+```
+
+Then apply the previewed plan with `--apply`, and reverse it from its backup with `--rollback`.
+`aart` never performs any of these three steps on your behalf: a stage that finds 0.1 state
+reports it and stops.
+
+**Unreadable state.** The same record shape reports a file that is not valid v2 state at all,
+under a different code, with the precise location instead of a migration:
+
+```text
+error [install-state-invalid]: invalid JSON: Expecting value
+  path      /Users/you/work/project/.agent-artifacts/manifest.json
+  position  line 1, column 40
+```
+
+This is not a migration case and `aart migrate state` will not repair it. It usually means the
+file was truncated by an interrupted write or edited by hand. Restore it from version control or
+from a backup written beside it. Deleting the manifest is not a fix — it discards the record of
+what was installed, which is what `update`, `check`, and `uninstall` rely on to touch only files
+AART owns.
+
+**A defect in AART.** If AART itself raises unexpectedly, the failure is reported as a defect
+rather than dressed up as your problem, and nothing about your environment is printed:
+
+```text
+internal error: tui-stage-internal
+  stage: artifacts
+  operation: load
+  type: ValueError
+next: rerun the command; if it repeats, report it with the steps that reached this screen.
+```
+
+Only the exception type is disclosed. Messages and tracebacks are withheld because they can carry
+paths, subprocess output, and values typed during setup. The wizard does not restart itself after
+one of these.
+
+`Retry`, `Back`, and `Quit` are offered whenever the stage can still be re-entered — `Retry`
+re-reads the state after you have fixed it elsewhere. A problem local to one row of a list that
+still works is not a stage failure: it appears in the fixed pane below the list, replacing the
+cursor detail without moving the list or the status bar.
+
 ---
 
 ## Maintainer Mode: Curate The Catalog

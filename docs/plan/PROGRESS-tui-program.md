@@ -63,7 +63,7 @@ ERR04/ERR06 dependencies.
 | Pre-existing typecheck repair | committed | `c92cf52`; **not a regression of this track** — the legacy-importer bundle-kind tuple failed `mypy` unchanged on the prior HEAD. Typed module constant plus one bundle-membership regression test; all 10 quality gates green (1889 tests, 85.25% branch coverage) |
 | Typed errors ERR09-C | completed | `74c22e9`; both adapters render one bounded setup outcome with the `SETUP.md` route, a denied plan keeps its verified route through `CanonicalSetupAttempt`, and a blocking retained run crosses one named bridge into `WizardStageFailure`; all 10 quality gates green (1892 tests, 85.27% branch coverage) |
 | Typed errors ERR09-D | completed | `e7b9853`; authoring material, README manual-route section, representative static/custom/local-source fixtures, and the single-revision setup contract (see below); all 10 quality gates green (1898 tests, 85.28% branch coverage) |
-| Typed errors ERR07 | pending | — |
+| Typed errors ERR07 | completed | `89e5aa8` + `0b90486`; the packaging gate now proves the wheel reproduces the checkout's typed diagnostics, README documents the three state-failure classes with their real rendered output, the wizard design defers presentation to the error contract, and the `Unreleased` note carries no version (see below); all 10 quality gates green (1902 unit + 52 integration tests, 85.28% branch coverage) |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -87,16 +87,30 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR07 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — track documentation and
-handoff. It closes the typed-error track: no code contract is left open by ERR09.
+**The typed-error track is complete.** ERR01–ERR09 have landed and
+[PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md) has no open package.
 
-ERR09-A/B/C/D provide the manual-document boundary, the pure bounded review, the wired outcomes in
-both adapters, and the authoring material. Payload and setup outcomes must remain distinct in
-anything ERR07 writes.
+The next task is the **release**, and it is not this track's to perform. It owns exactly what
+ERR07 deliberately left undecided:
 
-Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
-stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
-local debug traceback, and a narrowed terminal-capability probe.
+1. Choose the executable version and replace the `Unreleased` heading in `CHANGELOG.md` with it
+   and a date. ERR07 wrote that entry without a number on purpose — see PLAN item 4.
+2. Add the matching `docs/release/` compatibility, checklist and GitHub-release documents, following
+   the shape of the existing `*-v6` / `v1.3.1` set.
+3. Do not raise registry compatibility or any per-artifact `requires_aart` floor. Nothing in this
+   track requires it: no protocol, schema, installation-state, configuration or registry version
+   changed. The setup recipe revision is the one exception, and it is a *rejection* of the
+   superseded pair rather than a new floor for existing artifacts.
+4. Publishing steps (tag, release, push) need explicit maintainer consent; none was given here and
+   none was taken.
+
+**One follow-up remains open and is not blocking.** `REG02` must rewrite the public-registry
+`author-aart-installer` skill: it is a legacy import that still teaches the superseded recipe and
+does not mention `SETUP.md`. Until it lands, catalog authors are pointed at
+[`DESIGN-setup-installers.md`](../design/DESIGN-setup-installers.md) from the README. A separate,
+unapproved initiative — an AART-usage skill shipped from this repo so agents learn the `--json`
+command surface from a source that changes with `cli.py` — was discussed but deliberately not
+started: it needs a design doc and maintainer approval first.
 
 ### ERR04 delivery notes
 
@@ -250,6 +264,49 @@ Useful facts carried over from the legibility work:
   not the same as rewriting existing *state*, and nothing is migrated in place.
 - Independent review found no critical issue. All ten `python scripts/quality.py` gates pass
   (1898 unit + 52 integration tests, 85.28% branch coverage).
+
+### ERR07 delivery notes
+
+- **Item 5 was the only code work, and it was a real gap.** `packaging-check` built a wheel,
+  validated its RECORD/METADATA, extracted it, and then asserted only that
+  `agent_artifacts.cli.main` imports and is callable. A packaging change that dropped a renderer,
+  a diagnostic code, or a whole module would have passed. The gate now renders the track's three
+  failure classes — `install-state-legacy`, `install-state-invalid`, `tui-stage-internal` — from
+  the checkout and again from the extracted wheel with `PYTHONPATH` pointed at it and a cwd that
+  contains no checkout, and requires the two outputs to be byte-identical (`89e5aa8`).
+- The probe uses only synthetic paths such as `/probe/project/...`, so its output carries nothing
+  from the local machine. That is what makes the equality meaningful rather than incidental, and
+  `packaging_test` pins it: the rendered text must contain neither the repository root nor the
+  interpreter prefix nor the word `Traceback`.
+- **The three failure classes are now documented as three different things.** README's *When
+  Installation State Cannot Be Read* prints each record as the code actually renders it, not as an
+  illustration. Recognized 0.1 state is a report with a migration preview; unreadable state keeps
+  the parser's own line/column and explicitly is *not* a migration case; an internal defect
+  discloses the exception type only. The section states that deleting the manifest is not a fix,
+  because the manifest is what makes `update`/`check`/`uninstall` touch only AART-owned files.
+- Scope is documented as a non-crossing pair rather than a flag: both dry-run previews are shown
+  because project and user state are separate files and migrating one leaves the other untouched.
+  The repeatable `--source-map TYPE/NAME@PROFILE=ALIAS` follow-up is documented against the two
+  real diagnostics that require it, `state-migration-source-missing` and `-ambiguous`.
+- Every command, option and diagnostic code quoted in that section was verified against
+  `aart migrate state --help` and the source before being written down. One draft sentence claiming
+  the dry run prints "exact paths and digests" was corrected to what `migrate.py` actually prints:
+  status, backup path and review digest.
+- **Item 2 was a boundary fix, not a link.** `DESIGN-persistent-tui-wizard.md` §11 was stating its
+  own presentation rules ("errors remain visible with their established exit codes", "curses errors
+  fall back safely"). It now names `DESIGN-typed-wizard-errors.md` as the owner of the algebra, the
+  stage record, the list-local/stage-blocking placement rule and the fallback boundary, and keeps
+  only the guarantees this wizard itself makes.
+- **Item 4 was honored by omission.** The CHANGELOG entry is headed `Unreleased` and carries no
+  version anywhere; no registry compatibility or per-artifact floor was touched. Its Compatibility
+  block states plainly that no state is migrated, rewritten or deleted automatically, and that
+  `--yes`, `--approve-setup-effects`, trust authorization and per-effect consent are unchanged.
+- Two statements superseded by the maintainer's single-revision decision were corrected rather than
+  left standing: ERR09's `v1 artifacts remain compatible` acceptance bullet in the plan, and D1 of
+  `DESIGN-setup-review-transparency.md`. Both keep the withdrawn text struck through with the
+  reason, so the history of the decision stays readable.
+- All ten `python scripts/quality.py` gates pass (1902 unit + 52 integration tests, 85.28% branch
+  coverage).
 
 ## Working agreements
 

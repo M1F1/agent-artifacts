@@ -315,15 +315,28 @@ values, not exceptions. Stage order, basket order, notices, and request selectio
 
 ## 11. Failure and safety behavior
 
+How a failure is *presented* is not decided here. This design owns the stage graph and its safety
+properties; [`DESIGN-typed-wizard-errors.md`](DESIGN-typed-wizard-errors.md) owns the typed error
+contract that every stage in this graph reports through — the diagnostic algebra, the
+`WizardStageFailure` record, the placement rule that separates a list-local `Feedback` record from
+a stage-blocking record, and the curses fallback boundary. The bullets below state only what this
+wizard guarantees; where they touch presentation they defer to that document.
+
 - Back, forward navigation, cursor movement, detail viewing, and basket editing are non-mutating.
-- Source/catalog/manifest query errors remain visible with their established exit codes.
+- Source/catalog/manifest query errors remain visible and keep their established exit codes. They
+  are carried as typed diagnostics, not flattened into a string, and reach the user as the record
+  defined by the error contract rather than as a loose line.
 - A source or scope edit reconciles choices before Review; stale keys cannot reach a request.
 - Empty required selections cannot advance.
 - Quit with a basket requires affirmative abandonment; EOF defaults to no mutation.
-- Curses errors fall back safely only before dispatch.
+- Curses errors fall back safely only before dispatch. After dispatch, an unexpected exception is
+  reported as an internal defect and the wizard is not restarted.
 - Finalize decisions are single-use: a revision identifier prevents a stale Review result from
   dispatching after state changes.
-- No secret is stored in wizard state or rendered in Review.
+- No secret is stored in wizard state or rendered in Review. A failure discloses no traceback, no
+  raw subprocess output, and no value typed during setup.
+- A stage that cannot read installation state reports it and stops. The wizard never migrates,
+  rewrites, or discards state to make a stage advance.
 
 ## 12. Verification and acceptance mapping
 

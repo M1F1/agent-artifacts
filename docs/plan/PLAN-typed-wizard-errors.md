@@ -1,7 +1,6 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** in delivery; ERR01–ERR06 and ERR08 completed, ERR09-A/B completed, ERR09-C/D and
-  ERR07 pending
+- **Status:** delivered; ERR01–ERR09 completed
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -397,8 +396,10 @@ Acceptance:
 - a user can decline every setup effect and still receives a concrete manual path or immutable
   repository link;
 - every effect is comprehensible as a bounded record at widths 40, 80, 120 and 200;
-- v1 artifacts remain compatible, while a newly authored setup artifact without `SETUP.md` is
-  rejected before installation;
+- ~~v1 artifacts remain compatible, while a newly authored setup artifact without `SETUP.md` is
+  rejected before installation;~~ **withdrawn by the maintainer during ERR09-D**: exactly one
+  recipe revision is supported, so a setup artifact without `SETUP.md`, or declaring the
+  superseded `1`/`1` pair, is rejected before installation with its migration named;
 - list-local setup validation feedback uses the fixed lower pane, whereas a blocking setup review
   or execution failure uses the record presentation defined in the design;
 - no manual route, effect rendering, or failure output exposes a secret, setup input, raw process
@@ -406,7 +407,7 @@ Acceptance:
 
 ### ERR07 — documentation, quality, and release handoff
 
-**Status:** pending; depends on ERR01–ERR06, ERR08 and ERR09
+**Status:** completed.
 
 1. Update user documentation with the rendered legacy-state example, migration preview, source-map
    follow-up, and distinction between project and user scope.
@@ -421,6 +422,26 @@ Acceptance:
 - docs never instruct users to delete or hand-edit installation state;
 - release notes distinguish legacy state, invalid state, and internal failure;
 - wheel and checkout pass the same end-to-end scenarios.
+
+Delivered:
+
+- README gained *When Installation State Cannot Be Read*, which prints the three records as the
+  code actually renders them, previews migration for the project and user scope separately because
+  the two never cross, and shows the repeatable `--source-map` follow-up for an unresolved legacy
+  identity. It says plainly that deleting the manifest is not a fix, and that `aart` performs no
+  migration step on the user's behalf.
+- `DESIGN-persistent-tui-wizard.md` §11 no longer implies its own presentation rules. It names
+  [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md) as the owner of the
+  diagnostic algebra, the stage record, the list-local/stage-blocking placement rule and the curses
+  fallback boundary, and keeps only the guarantees this wizard makes.
+- The `Unreleased` CHANGELOG entry separates the three failure classes, states that no state is
+  migrated or rewritten, and carries no version number — item 4 leaves that to the release task.
+- Item 5 was a real gap, not a formality: `packaging-check` imported `agent_artifacts.cli.main`
+  from the extracted wheel and proved nothing about behavior. It now renders all three records
+  through the checkout and through the wheel and requires byte equality. The probe uses only
+  synthetic paths, so the comparison is not an accident of the local environment.
+- Two superseded statements were corrected rather than left standing: ERR09's `v1 artifacts remain
+  compatible` acceptance bullet, and `DESIGN-setup-review-transparency.md` D1.
 
 ## Test matrix
 
