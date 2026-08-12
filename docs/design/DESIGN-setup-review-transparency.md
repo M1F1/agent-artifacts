@@ -1,7 +1,7 @@
 # Design: transparent setup review and manual fallback
 
-Status: proposed Track-3 follow-up ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75));
-implementation has not started
+Status: in delivery ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75)); ERR09-A
+completed, ERR09-B–D pending
 
 ## 1. Context
 
@@ -29,6 +29,13 @@ shell history.
 Version-1 installers remain accepted unchanged; they cannot be made invalid after publication.
 The revised catalog/schema validation applies only to newly authored or explicitly upgraded setup
 descriptors. This is a protocol addition, not a silent reinterpretation of old artifacts.
+
+ERR09-A implements the smallest compatible boundary as the matching descriptor pair `1/1` or
+`2/2`. A v2 installer deterministically derives its package-root `SETUP.md` path from its recipe
+path; catalog discovery requires that file to be regular, contained, non-empty UTF-8 text. A v2
+custom entrypoint must start (after an optional shebang) with
+`# AART manual setup: see ../SETUP.md`. Version-1 descriptors and custom scripts retain their
+published validation unchanged.
 
 The conventional location is intentionally fixed:
 

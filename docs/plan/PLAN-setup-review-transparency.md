@@ -1,7 +1,7 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
-Status: proposed; tracked by [issue #75](https://github.com/M1F1/agent-artifacts/issues/75);
-execute as ERR09 of
+Status: in delivery; ERR09-A completed in `819b885`, ERR09-B–D pending; tracked by
+[issue #75](https://github.com/M1F1/agent-artifacts/issues/75); execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
 
 Design: [`DESIGN-setup-review-transparency.md`](../design/DESIGN-setup-review-transparency.md)
@@ -31,6 +31,8 @@ lacks `SETUP.md`; a new protocol/schema revision is the compatibility boundary.
 
 ## ERR09-A — setup contract and manual reference
 
+**Status:** completed in `819b885`.
+
 **Owns:** setup descriptor/schema/parser/catalog validation and their focused tests.
 
 1. Freeze the smallest additive descriptor/protocol revision that can require a package-root,
@@ -47,6 +49,18 @@ lacks `SETUP.md`; a new protocol/schema revision is the compatibility boundary.
 Acceptance: v1 fixtures remain green; v2 fixtures reject an absent or unsafe `SETUP.md`; a parsed
 new installer carries a deterministic manual reference without reading environment or terminal
 state.
+
+Delivered:
+
+- The parser accepts only matching `schema_version`/`protocol_version` pairs `1/1` and `2/2`.
+  Version 1 still has no required manual document; version 2 derives the single package-root
+  relative route rather than accepting author-controlled duplicate metadata.
+- Catalog discovery checks v2 `SETUP.md` before setup planning: it must be a contained regular
+  file, non-empty safe UTF-8 text, and cannot be a symlink. A v2 custom entrypoint must have the
+  standard comment header after an optional shebang; v1 custom scripts remain compatible.
+- Parser/catalog compatibility, missing/non-UTF-8 documents, custom-header and noncanonical-path
+  tests pass. Independent review closed the descriptor-normalization gap. The complete quality
+  matrix passed with 1870 tests.
 
 ## ERR09-B — pure bounded review and effect projections
 

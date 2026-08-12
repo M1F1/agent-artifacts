@@ -58,7 +58,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR05b | completed | `13b3b99`; `InternalFailureContext` tracks safe stage/operation outside `WizardSession`; `AART_DEBUG=1` writes traceback only to local stderr; capability probe falls back only for import/TTY failures; all 10 quality gates green (1851 tests) |
 | Typed errors ERR06 | completed | `181d555`; Sources local feedback + blocking records, Review/Finalize records across consumer and curation paths, terminal records after curses teardown; all 10 quality gates green (1861 tests) |
 | Typed errors ERR08 | completed | `b331060`; default Maintainer curates `cwd`, skips consumer Sources in text/curses, preserves explicit legacy route and pure Back/stepper behavior; all 10 quality gates green (1866 tests) |
-| Typed errors ERR07, ERR09 | pending | — |
+| Typed errors ERR09-A | completed | `819b885`; versioned `1/1` → `2/2` setup contract derives package-root `SETUP.md`, validates safe v2 documents/custom headers and retains v1 behavior; all 10 quality gates green (1870 tests) |
+| Typed errors ERR07, ERR09-B–D | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -82,14 +83,13 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR09 of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — establish a
-bounded setup-effect review and a standard `SETUP.md` manual route for setup-capable artifacts.
-Preserve v1 readers and keep payload outcomes distinct from setup outcomes.
+**ERR09-B of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — create the
+shared bounded setup-effect projection and its immutable manual-reference value. It must feed
+text, curses and canonical setup review without exposing secrets or reintroducing flat long lines.
 
-**ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
-failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
-the current v1 protocol while making `SETUP.md`, bounded effect records and a manual route the
-standard for new setup-capable artifacts.
+ERR09-A now provides the versioned manual-document boundary. ERR09-B–D reuse ERR04's record
+renderer and ERR06's setup-boundary classification; payload and setup outcomes must remain
+distinct throughout the remaining work.
 
 Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
 stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
