@@ -60,6 +60,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR08 | completed | `b331060`; default Maintainer curates `cwd`, skips consumer Sources in text/curses, preserves explicit legacy route and pure Back/stepper behavior; all 10 quality gates green (1866 tests) |
 | Typed errors ERR09-A | completed | `819b885`; versioned `1/1` → `2/2` setup contract derives package-root `SETUP.md`, validates safe v2 documents/custom headers and retains v1 behavior; all 10 quality gates green (1870 tests) |
 | Typed errors ERR09-B | completed | `0cfee2a`; one typed, width-bounded setup review has safe effect records and only local/commit-pinned manual routes; v1 remains explicitly unavailable; all 10 quality gates green (1876 tests) |
+| Typed errors ERR09-C.1 | in working tree | manual route survives a denied setup plan; `CanonicalSetupAttempt` splits object validation from trust/policy binding; 4 new tests across `tests/canonical_setup_application_test.py` and `tests/setup_review_test.py` |
+| Pre-existing typecheck repair | committed | `c92cf52`; **not a regression of this track** — the legacy-importer bundle-kind tuple failed `mypy` unchanged on the prior HEAD. Typed module constant plus one bundle-membership regression test; all 10 quality gates green (1889 tests, 85.25% branch coverage) |
 | Typed errors ERR07, ERR09-C/D | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
@@ -189,7 +191,9 @@ Useful facts carried over from the legibility work:
 - TDD. Write the failing assertions for the new contract first.
 - DDD with a functional core and imperative shell; pure rendering, effects at the edge.
 - Zero non-stdlib dependencies, `unittest` not pytest. Flag any new dependency as a decision.
-- Run `python scripts/quality.py` — all ten gates — before calling a package done.
+- Run `python scripts/quality.py` — all ten gates — before calling a package done. The `coverage`
+  gate needs the dev extras in the active venv (`pip install -e ".[dev]"`); a missing `coverage`
+  module fails the gate without any code being wrong. The runtime stays zero-dependency.
 - Rewrite superseded assertions against the new contract. Never delete one without a replacement.
 - Preserve unrelated changes. The untracked `.agent-artifacts/`, `.tabnine/` and `TABNINE.md` in
   the working tree are not ours to touch.
