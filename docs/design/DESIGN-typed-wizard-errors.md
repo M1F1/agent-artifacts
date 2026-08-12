@@ -1,6 +1,6 @@
 # Design: typed stage failures and actionable TUI diagnostics
 
-Status: in delivery; ERR01–ERR06 completed, ERR07–ERR09 pending
+Status: in delivery; ERR01–ERR06 and ERR08 completed, ERR07 and ERR09 pending
 
 ## 1. Context
 
@@ -417,3 +417,11 @@ same safe, typed terminal record and exits rather than restarting the wizard or 
 diagnostic line. Source-add/sync/refresh failures remain local to source setup, and
 setup/reporting remain post-outcome warning paths until ERR09 introduces their dedicated bounded
 effect record and manual `SETUP.md` route. No error context is copied into reporting or analytics.
+
+ERR08 is implemented. The default Maintainer route carries the pure
+`WizardSession.maintainer_checkout` fact, set only when no `--source` or `--repo` was supplied.
+Its stage graph omits Sources, uses the absolute current working directory as the curation root,
+and therefore makes Back from Maintainer action return directly to Role. User still asks the
+subscription question. An explicit source/repo continues through Sources and its typed ERR06
+compatibility bridge. This changes only navigation and read-only context selection; it does not
+select, synchronize or write a source, and it does not change registry protocols or analytics.

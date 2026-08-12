@@ -1,6 +1,6 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** in delivery; ERR01–ERR06 completed, ERR07–ERR09 pending
+- **Status:** in delivery; ERR01–ERR06 and ERR08 completed, ERR07 and ERR09 pending
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -315,8 +315,8 @@ Delivered:
 
 ### ERR08 — Maintainer curates a checkout, not a subscription
 
-**Status:** pending; depends on ERR01 for its characterization test. Independent of ERR02–ERR04,
-so it may land before or after them.
+**Status:** completed in `b331060`; depends on ERR01 for its characterization test. Independent of
+ERR02–ERR04, so it may land before or after them.
 
 Implements design §4 "Role-scoped stage inputs". This removes the dead end itself; ERR06 removes
 the failure class around it. Both are wanted: the second reproducer must stop being reachable
@@ -343,6 +343,21 @@ Acceptance:
   federated marketplace view;
 - the stepper never lists a stage the session cannot reach;
 - no writes occur anywhere on this path.
+
+Delivered:
+
+- `WizardSession.maintainer_checkout` is a pure route fact set only after the user selects
+  Maintainer with no explicit `--source` or `--repo`. The Maintainer stage graph omits Sources;
+  changing role clears the fact and Back from Maintainer action returns to Role.
+- Both frontend gates resolve the curation root to absolute `cwd`, show the Maintainer action list
+  without asking a consumer Sources question, and keep User's source-selection route unchanged.
+  Maintainer's User-workflows entry reuses the existing configuration rather than inventing a
+  source selection.
+- An explicit source/repo still takes the old Sources route, including the ERR06 typed,
+  recoverable registry rejection. No configuration, source, artifact, setup or reporting write is
+  performed merely by choosing the default route.
+- Registry-only checkout, text/curses action-list, stepper/Back and explicit-route tests passed;
+  independent review found no critical issue. All ten quality gates passed with 1866 tests.
 
 ### ERR09 — bounded setup review and manual `SETUP.md` fallback
 
@@ -453,6 +468,7 @@ claiming the complete gate passes.
 - [x] ERR04 renders and recovers equivalently in text and curses.
 - [x] ERR05 prevents post-start fallback/restart and types internal failures.
 - [x] ERR06 audits all stage boundaries without exception laundering.
+- [x] ERR08 makes the default Maintainer route a checkout workflow.
 - [ ] ERR09 gives every new setup installer a `SETUP.md` fallback and a bounded effect review.
 - [ ] ERR07 documents, packages, and hands off release decisions.
 - [ ] No automatic migration or state overwrite was introduced.

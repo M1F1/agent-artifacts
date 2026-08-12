@@ -57,7 +57,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR04 | completed | `c87935e`; one pure, width-bounded record renderer for text and curses; in-place Retry/Back/Quit preserves session and basket; all 10 quality gates green (1845 tests) |
 | Typed errors ERR05b | completed | `13b3b99`; `InternalFailureContext` tracks safe stage/operation outside `WizardSession`; `AART_DEBUG=1` writes traceback only to local stderr; capability probe falls back only for import/TTY failures; all 10 quality gates green (1851 tests) |
 | Typed errors ERR06 | completed | `181d555`; Sources local feedback + blocking records, Review/Finalize records across consumer and curation paths, terminal records after curses teardown; all 10 quality gates green (1861 tests) |
-| Typed errors ERR07, ERR08, ERR09 | pending | — |
+| Typed errors ERR08 | completed | `b331060`; default Maintainer curates `cwd`, skips consumer Sources in text/curses, preserves explicit legacy route and pure Back/stepper behavior; all 10 quality gates green (1866 tests) |
+| Typed errors ERR07, ERR09 | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -81,10 +82,9 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR08 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — make Maintainer default
-to the checkout it curates and skip the consumer-only Sources stage unless an explicit legacy
-source/repo flag requires that compatibility path. Preserve User Sources behavior and stepper/Back
-semantics in both frontends.
+**ERR09 of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — establish a
+bounded setup-effect review and a standard `SETUP.md` manual route for setup-capable artifacts.
+Preserve v1 readers and keep payload outcomes distinct from setup outcomes.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
@@ -162,13 +162,26 @@ Useful facts carried over from the legibility work:
 - Two guard tests in `ScreenChromeTests` parse `tui.py` and fail if any string literal names a key
   outside a text prompt or uses ` · ` as a separator. New diagnostics must satisfy both.
 - **The live reproducer for ERR02 is still in the working tree** — see the section at the end.
-- **ERR01 characterized the second reproducer too.** From a canonical registry checkout, role
-  Maintainer plus an enabled registry source prints one flattened line in text mode, returns to
-  Sources, and permits a clean quit without writes. The curses adapter records the same flattened
-  error as a terminal selection failure and exits 2. Neither frontend names a stage or offers the
-  role the right input. **ERR08** makes Maintainer default to curating the current directory and
-  skip Sources; a dedicated checkout-picker screen was considered and deliberately left out of
-  scope.
+- **ERR01 characterized the second reproducer too.** Before ERR08, a canonical registry checkout
+  routed Maintainer through the consumer-only Sources question and dead-ended on its registry.
+  ERR06 made the retained explicit legacy bridge a recoverable typed record; **ERR08** now makes
+  the default Maintainer route curate the current directory without visiting Sources. A dedicated
+  checkout-picker screen was considered and deliberately left out of scope.
+
+### ERR08 delivery notes
+
+- `WizardSession.maintainer_checkout` is a pure route fact. `use_current_checkout` drops Sources
+  from the Maintainer stage graph, so the stepper never lists an unreachable stage and Back from
+  Maintainer action returns directly to Role. Changing role clears the fact.
+- Text and curses set that fact only for Maintainer with neither `--source` nor `--repo`; they use
+  the absolute current working directory as the curation root. User continues to visit Sources,
+  while any explicit legacy source/repo route keeps Sources and its ERR06 recoverable bridge.
+- The default Maintainer User-workflows entry reuses the configured source policy without adding a
+  consumer Sources prompt. No source selection, source finalizer, configuration write or catalog
+  mutation occurs while reaching the Maintainer action list.
+- The registry-only reproducer, both frontend gates, stage/Back invariants and explicit-path
+  regression coverage pass. Independent review found no critical issue; all ten quality gates
+  passed with 1866 tests.
 
 ## Working agreements
 
