@@ -27,9 +27,11 @@ Two concrete incidents define the initial acceptance boundary.
 3. A user standing in a canonical registry checkout chose Maintainer, reached Sources, and found
    that the only enabled source — a registry — cannot be used by that role. The wizard printed
    `registry <alias> is ready for source management, but artifact browsing requires the federated
-   marketplace view` and exited with status 2. One line, no stage named, no recovery, session
-   gone. This is the same failure class as incident 1 reaching a different boundary, and it is
-   reproducible from an ordinary configuration with no fixture at all.
+   marketplace view`. Text mode then returned to Sources and allowed a clean quit; curses stored
+   the flattened message as a terminal selection failure and exited with status 2. Neither
+   frontend named the stage or presented role-appropriate recovery. This is the same failure class
+   as incident 1 reaching a different boundary, and it is reproducible from an ordinary
+   configuration with no fixture at all.
 
 Incident 3 also exposes a scope error that no amount of better rendering would fix, addressed in
 §4 below: the Sources stage asks a User question, and the wizard makes Maintainer answer it.

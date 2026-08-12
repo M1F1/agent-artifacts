@@ -26,6 +26,8 @@ from tests.canonical_setup_application_test import Fixture as SetupFixture
 from tests.canonical_symlink_test import _fixture
 from tests.marketplace_fixtures import source_state
 
+_INSTALL_STATE_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "install-state"
+
 
 def _scripted(answers):
     values = iter(answers)
@@ -39,7 +41,68 @@ def _scripted(answers):
     return read
 
 
+def _tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
+    """Read-only test evidence that a failure path did not mutate an owned tree."""
+
+    if not root.exists():
+        return ()
+    return tuple(
+        (path.relative_to(root).as_posix(), path.read_bytes())
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    )
+
+
 class TuiConsumerTextTest(unittest.TestCase):
+    def test_err01_legacy_project_state_reaches_artifacts_as_one_flattened_error_without_writes(
+        self,
+    ) -> None:
+        """Characterize the current Artifacts failure before ERR02–ERR04 replace it."""
+
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = _fixture(Path(raw), "skill")
+            project, _checkout, paths, location, _request, catalog, effective = fixture
+            state_path = project / ".agent-artifacts" / "manifest.json"
+            state_path.parent.mkdir()
+            state_path.write_bytes(
+                (_INSTALL_STATE_FIXTURES / "legacy-v01-manifest.json").read_bytes()
+            )
+            service = ConsumerApplicationService(
+                ConsumerContext(catalog, effective, builtin(), location, paths),
+                LocalConsumerAdapter(),
+            )
+            configured = effective.configuration.sources[0]
+            stage = build_source_stage(
+                effective.configuration,
+                effective.policy,
+                {
+                    configured.alias: source_state(
+                        configured, "direct-source", display_order=0
+                    ).health
+                },
+                first_run=False,
+            )
+            assert isinstance(stage, Ok), stage
+            before = (_tree_snapshot(project), _tree_snapshot(Path(paths.root)))
+            writes: list[str] = []
+
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_text(
+                    _scripted(["", "1", "1", "1", "install", "1", ""]),
+                    writes.append,
+                    project=str(project),
+                    source_stage_view=stage.value,
+                    consumer_service=service,
+                )
+
+            self.assertEqual(code, 2)
+            self.assertIn(
+                "error: missing required field 'installations'; missing required field "
+                "'schema_version'; unknown field 'installed'; unknown field 'repo'",
+                "\n".join(writes),
+            )
+            self.assertEqual((_tree_snapshot(project), _tree_snapshot(Path(paths.root))), before)
+
     def test_federated_collection_row_expands_to_members_before_review(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             fixture = _fixture(Path(raw), "skill")

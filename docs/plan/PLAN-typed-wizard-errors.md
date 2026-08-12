@@ -61,10 +61,13 @@ error: registry registry is ready for source management, but artifact browsing r
 federated marketplace view
 ```
 
-Exit status 2, session discarded, no stage named and no way back. Design §4 "Role-scoped stage
-inputs" holds the decision this drives: Maintainer curates a checkout and skips Sources. Note the
-same checkout reaches the Maintainer action list immediately via `aart --source .`, so the working
-path already exists — what is missing is making it the default for the role.
+The frontends currently diverge after this same flattened diagnostic: text returns to Sources, so
+the user may cleanly quit with status 0; curses stores it as a terminal selection error and exits
+2. Neither output names a stage or gives Maintainer a valid role-specific input. Design §4
+"Role-scoped stage inputs" holds the decision this drives: Maintainer curates a checkout and skips
+Sources. Note the same checkout reaches the Maintainer action list immediately via
+`aart --source .`, so the working path already exists — what is missing is making it the default
+for the role.
 
 The supported explicit migration preview currently continues with a separate, legitimate source
 resolution error for `memory/superpowers@tabnine`. Do not hide or bypass that error:
@@ -94,7 +97,7 @@ aart migrate state --from 0.1 --scope project --dry-run
 
 ### ERR01 — characterize the two failure classes
 
-**Status:** pending
+**Status:** completed
 
 1. Add a parser/application fixture for recognized 0.1 state (`repo` plus `installed`) and a
    separate malformed-v2 fixture.
@@ -105,7 +108,9 @@ aart migrate state --from 0.1 --scope project --dry-run
    test for the old behaviour; verify those tests still assert it and move on.
 3b. Add a text-wizard characterization test for the Maintainer dead end: a canonical registry
    checkout, a configuration whose only enabled source is `registry-git`, role Maintainer. Capture
-   that the current behaviour prints one flattened line and returns 2 with the session discarded.
+   that the current behaviour prints one flattened line, returns to Sources, and permits a clean
+   quit without a mutation. Record separately that the curses adapter turns the same error into
+   its terminal exit-2 selection failure.
 4. Keep the already-added lifecycle duplicate test as regression coverage for the concrete bug,
    but do not treat deduplication as sufficient error handling.
 5. Record mutation snapshots around each failing flow so later fixes prove that diagnostics are
@@ -404,7 +409,7 @@ claiming the complete gate passes.
 
 ## Completion checklist
 
-- [ ] ERR01 characterization tests exist and fail before implementation.
+- [x] ERR01 characterization tests exist and failed before implementation.
 - [ ] ERR02 distinguishes legacy and invalid installation state.
 - [ ] ERR03 preserves typed diagnostics through stage loading.
 - [ ] ERR04 renders and recovers equivalently in text and curses.

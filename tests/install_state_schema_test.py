@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
+from pathlib import Path
 
 from agent_artifacts.configuration.model import SourceKind
 from agent_artifacts.domain.identifiers import (
@@ -73,6 +74,63 @@ def _record() -> InstallationRecord:
 
 
 class InstallStateSchemaTests(unittest.TestCase):
+    fixtures = Path(__file__).resolve().parent / "fixtures" / "install-state"
+
+    def test_err01_recognized_v01_state_currently_reports_v2_field_errors(self) -> None:
+        """Characterize ERR01 before ERR02 gives the recognized legacy shape its own code."""
+
+        result = parse_install_state(
+            (self.fixtures / "legacy-v01-manifest.json").read_bytes(),
+            path="/fixture/project/.agent-artifacts/manifest.json",
+        )
+
+        self.assertIsInstance(result, Err)
+        assert isinstance(result, Err)
+        self.assertEqual(
+            tuple(diagnostic.code.value for diagnostic in result.diagnostics),
+            (
+                "protocol-schema-missing-field",
+                "protocol-schema-missing-field",
+                "protocol-schema-unknown-field",
+                "protocol-schema-unknown-field",
+            ),
+        )
+        self.assertEqual(
+            tuple(diagnostic.message for diagnostic in result.diagnostics),
+            (
+                "missing required field 'installations'",
+                "missing required field 'schema_version'",
+                "unknown field 'installed'",
+                "unknown field 'repo'",
+            ),
+        )
+        self.assertTrue(
+            all(
+                diagnostic.location is not None
+                and diagnostic.location.path == "/fixture/project/.agent-artifacts/manifest.json"
+                for diagnostic in result.diagnostics
+            )
+        )
+
+    def test_err01_malformed_v2_fixture_is_a_distinct_current_parser_case(self) -> None:
+        """ERR02 must not mistake a malformed v2 shape for the bounded legacy signature."""
+
+        result = parse_install_state(
+            (self.fixtures / "malformed-v2-manifest.json").read_bytes(),
+            path="/fixture/project/.agent-artifacts/manifest.json",
+        )
+
+        self.assertIsInstance(result, Err)
+        assert isinstance(result, Err)
+        self.assertEqual(
+            tuple(diagnostic.code.value for diagnostic in result.diagnostics),
+            ("install-state-invalid",),
+        )
+        self.assertEqual(
+            tuple(diagnostic.message for diagnostic in result.diagnostics),
+            ("installations must be an array",),
+        )
+
     def test_v2_round_trip_is_canonical_and_deterministic(self) -> None:
         state = InstallState(schema_version=2, installations=(_record(),))
 

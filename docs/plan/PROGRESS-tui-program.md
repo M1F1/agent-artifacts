@@ -51,10 +51,12 @@ ERR04/ERR06 dependencies.
 | Legibility WP-3 steps 5 and 7 | committed | 5 tests in `EnterSemanticsTests`, 3 across text tests |
 | Legibility WP-3 steps 8, 9, 10 | committed | 4 tests in `DetailRecordAndWidthTests`, 2 more across text tests |
 | Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
-| Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR01 | completed | parser fixtures and 4 characterization tests across `tests/install_state_schema_test.py`, `tests/tui_consumer_text_test.py`, and `tests/tui_source_stage_test.py`; all 10 quality gates green (1832 unit tests) |
+| Typed errors ERR02 … ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
 
-Baseline at the time of writing: 1828 unit + 52 integration tests, all ten gates of
-`python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
+Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
+`python scripts/quality.py` green. The current branch was pushed through `4653775` before this
+package began.
 
 **The legibility track is complete.** Every package of
 [PLAN-tui-legibility.md](PLAN-tui-legibility.md) has landed.
@@ -74,9 +76,10 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR01 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — track 3 begins. The
-legibility kernel it was sequenced behind now exists, so a diagnostic can be rendered as a record
-through `tui_layout.field_block` rather than flattened into a sentence.
+**ERR02 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — recognize only the
+bounded 0.1 installation-state signature and return one `install-state-legacy` diagnostic without
+writing or inferring source mappings. ERR01 established that the parser currently reports four
+raw `protocol-schema-*` diagnostics and the legacy text path flattens them later.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
@@ -98,13 +101,13 @@ Useful facts carried over from the legibility work:
 - Two guard tests in `ScreenChromeTests` parse `tui.py` and fail if any string literal names a key
   outside a text prompt or uses ` · ` as a separator. New diagnostics must satisfy both.
 - **The live reproducer for ERR02 is still in the working tree** — see the section at the end.
-- **A second live reproducer was found while reviewing the legibility work** and is recorded in
-  both track-3 documents. From a canonical registry checkout, role Maintainer plus an enabled
-  registry source dead-ends with one flattened line and exit 2. It needs no fixture at all.
-  It added one package, **ERR08**, which makes Maintainer default to curating the current
-  directory and skip Sources — the role was being asked a User question it cannot answer. The
-  decision is design §4 "Role-scoped stage inputs"; a dedicated checkout-picker screen was
-  considered and deliberately left out of scope.
+- **ERR01 characterized the second reproducer too.** From a canonical registry checkout, role
+  Maintainer plus an enabled registry source prints one flattened line in text mode, returns to
+  Sources, and permits a clean quit without writes. The curses adapter records the same flattened
+  error as a terminal selection failure and exits 2. Neither frontend names a stage or offers the
+  role the right input. **ERR08** makes Maintainer default to curating the current directory and
+  skip Sources; a dedicated checkout-picker screen was considered and deliberately left out of
+  scope.
 
 ## Working agreements
 

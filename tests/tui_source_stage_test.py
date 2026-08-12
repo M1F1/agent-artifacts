@@ -997,6 +997,61 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertIn("Enter 'a' to add a registry or compatible source", rendered)
         self.assertIn("no registry was forced", rendered)
 
+    def test_err01_maintainer_registry_source_returns_to_sources_without_writes(self) -> None:
+        """Characterize the dead end that ERR08 will remove.
+
+        Maintainer currently receives the consumer-only Sources question.  A selected registry
+        cannot cross the legacy command bridge, so text mode prints one flattened diagnostic and
+        returns to Sources; quitting is clean and does not apply a source mutation.
+        """
+
+        registry = _source(
+            "registry",
+            SourceKind.REGISTRY_GIT,
+            "https://github.example.com/platform/agent-artifacts-registry.git",
+            enabled=True,
+        )
+        view = build_source_stage(
+            _configuration(registry, default="registry"), OrganizationPolicy(1), {}
+        )
+        self.assertIsInstance(view, Ok)
+        assert isinstance(view, Ok)
+
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = pathlib.Path(raw) / "registry-checkout"
+            checkout.mkdir()
+            (checkout / "aart-registry.json").write_text("{}\n", encoding="utf-8")
+
+            def snapshot() -> tuple[tuple[str, bytes], ...]:
+                return tuple(
+                    (path.relative_to(checkout).as_posix(), path.read_bytes())
+                    for path in sorted(checkout.rglob("*"))
+                    if path.is_file()
+                )
+
+            before = snapshot()
+            writes: list[str] = []
+            finalize = mock.Mock(return_value=Ok(object()))
+            answers = iter(("", "2", "1", "q"))
+
+            code = tui._run_text(
+                lambda _prompt="": next(answers),
+                writes.append,
+                project=str(checkout),
+                source_stage_view=view.value,
+                source_finalizer=finalize,
+            )
+
+            self.assertEqual(code, 0)
+            self.assertIn(
+                "error: registry registry is ready for source management, but artifact browsing "
+                "requires the federated marketplace view",
+                "\n".join(writes),
+            )
+            self.assertGreaterEqual("\n".join(writes).count("▸ Sources"), 2)
+            finalize.assert_not_called()
+            self.assertEqual(snapshot(), before)
+
     def test_text_first_use_can_add_sync_and_refresh_a_registry_source(self) -> None:
         empty = build_source_stage(default_user_configuration(), OrganizationPolicy(1), {})
         self.assertIsInstance(empty, Ok)
