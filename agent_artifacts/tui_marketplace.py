@@ -8,6 +8,7 @@ security domains into rows that both text and curses can render.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Tuple
 
 from agent_artifacts.compiler.graph import (
     CompatibilityDecision,
@@ -24,6 +25,7 @@ from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_models import InstallEffect
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
+from agent_artifacts.tui_layout import CONTENT_MEASURE, columns, field_block, measure, wrap
 
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _TRUSTS = frozenset(
@@ -379,6 +381,170 @@ def reconcile_marketplace_basket(
     return BasketReconciliation(retained, invalidated)
 
 
+_PANE_INDENT = 2
+_FIELD_INDENT = 4
+
+
+def _risk_text(security: MarketplaceSecurity) -> str:
+    return (
+        f"{security.installation_risk}, max severity {security.max_finding_severity}, "
+        f"{security.assessment_status} coverage "
+        f"{security.coverage_completed}/{security.coverage_expected}"
+    )
+
+
+def _harness_text(row: MarketplaceArtifactRow) -> str:
+    return ", ".join(row.installed_statuses) if row.installed_statuses else "not installed"
+
+
+def _status_text(row: MarketplaceArtifactRow) -> str:
+    """The verdict, and — when it is a refusal — the first reason for it.
+
+    D5 asks a disabled row to say why it is disabled wherever it is shown, so the reason travels
+    with the verdict rather than living only in the detail record.
+    """
+
+    if row.compatible:
+        return "compatible"
+    reasons = row.reasons
+    return f"unavailable: {reasons[0].message}" if reasons else "unavailable"
+
+
+def _one_line(text: str, *, indent: int, width: int) -> str:
+    """One line bounded to the content measure, indented and truncated by the layout kernel."""
+
+    return columns((((" " * indent) + text,),), width=width)[0]
+
+
+def artifact_cells(row: MarketplaceArtifactRow) -> Tuple[str, ...]:
+    """The unpadded cells of one list row, identity first (D6).
+
+    The caller passes every row's cells through :func:`tui_layout.columns` at once, so one column
+    layout serves the whole list and positions never drift between rows. Identity is the qualified
+    key: it is the only cell that identifies the artifact, so it is the only one that must survive
+    a narrow terminal intact.
+
+    Cells are ordered by decreasing importance to a choice, so a narrow caller may pass a prefix
+    of them. That is deliberate: below roughly fifty columns the kernel shrinks trailing cells to
+    ``risk…``, which costs the same space as the whole word and conveys nothing, so a caller is
+    better off dropping a column than showing its stump.
+    """
+
+    if not row.compatible:
+        state = "unavailable"
+    elif row.installed_statuses:
+        state = ", ".join(row.installed_statuses)
+    else:
+        state = "available"
+    return (row.key, state, f"risk {row.security.installation_risk}", row.trust)
+
+
+def render_artifact_pane(row: MarketplaceArtifactRow, *, width: int) -> Tuple[str, ...]:
+    """The pinned pane describing the cursor row: identity, summary, then the deciding evidence."""
+
+    budget = measure(width, bound=CONTENT_MEASURE)
+    lines = [_one_line(row.key, indent=_PANE_INDENT, width=budget)]
+    for line in wrap(row.summary, width=budget - _PANE_INDENT):
+        lines.append(_one_line(line, indent=_PANE_INDENT, width=budget))
+    lines.extend(
+        field_block(
+            (
+                (
+                    "source",
+                    f"{row.source_alias} ({row.trust}) at {row.source_revision}, "
+                    f"{row.source_health}",
+                ),
+                ("risk", _risk_text(row.security)),
+                ("harness", _harness_text(row)),
+                ("status", _status_text(row)),
+            ),
+            indent=_FIELD_INDENT,
+            width=budget,
+        )
+    )
+    return tuple(lines)
+
+
+def _detail_section(heading: str, fields: Tuple[Tuple[str, str], ...]) -> Tuple[str, ...]:
+    return ("", heading, *field_block(fields, indent=_PANE_INDENT, width=CONTENT_MEASURE))
+
+
+def render_artifact_detail(row: MarketplaceArtifactRow) -> Tuple[str, ...]:
+    """The full record behind ``?``: every stored evidence field as ``label   value`` (D8).
+
+    Digests are emitted outside the field block and outside the measure. A wrapped hash cannot be
+    read or copied, so it keeps its own line however narrow the terminal is.
+    """
+
+    security = row.security
+    age = (
+        "not recorded"
+        if security.evidence_age_seconds is None
+        else f"{security.evidence_age_seconds}s old"
+    )
+    harness = tuple(
+        (item.profile, "compatible" if item.compatible else _harness_reason(item))
+        for item in row.compatibility
+    )
+    remediation = security.remediation or ("none recorded",)
+    lines = [row.key, *wrap(row.summary, width=CONTENT_MEASURE)]
+    lines.extend(
+        _detail_section(
+            "source",
+            (
+                ("alias", str(row.source_alias)),
+                ("origin", row.source_origin),
+                ("revision", row.source_revision),
+                ("health", row.source_health),
+                ("trust", row.trust),
+            ),
+        )
+    )
+    lines.extend(
+        _detail_section(
+            "security",
+            (
+                ("risk", security.installation_risk),
+                ("severity", security.max_finding_severity),
+                ("assessment", security.assessment_status),
+                ("coverage", f"{security.coverage_completed}/{security.coverage_expected}"),
+                ("providers", ", ".join(security.provider_versions) or "none"),
+                ("evidence", age),
+                *(
+                    (("remediation" if index == 0 else ""), text)
+                    for index, text in enumerate(remediation)
+                ),
+            ),
+        )
+    )
+    lines.extend(_detail_section("harness", harness))
+    lines.extend(
+        _detail_section(
+            "install",
+            (
+                ("modes", ", ".join(row.actual_modes) or "none"),
+                ("installed", _harness_text(row)),
+                ("status", _status_text(row)),
+            ),
+        )
+    )
+    lines.extend(("", "digests"))
+    digests = (
+        ("manifest", row.manifest_digest),
+        ("payload", row.payload_digest),
+        ("object", row.object_digest),
+        ("trust", row.trust_evidence_digest),
+    )
+    lines.extend(f"  {label.ljust(8)}  {value}" for label, value in digests if value)
+    return tuple(lines)
+
+
+def _harness_reason(item: HarnessCompatibility) -> str:
+    if not item.reasons:
+        return "unavailable"
+    return "unavailable: " + "; ".join(reason.message for reason in item.reasons)
+
+
 def render_marketplace_row(row: MarketplaceArtifactRow) -> str:
     """Render one concise row; detail views can expose every stored evidence field."""
 
@@ -400,8 +566,11 @@ __all__ = [
     "MarketplaceFilters",
     "MarketplaceSecurity",
     "MarketplaceTarget",
+    "artifact_cells",
     "filter_marketplace_rows",
     "project_marketplace_rows",
     "reconcile_marketplace_basket",
+    "render_artifact_detail",
+    "render_artifact_pane",
     "render_marketplace_row",
 ]

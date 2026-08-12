@@ -36,10 +36,11 @@ authorization.
 | ERR05a fallback boundary | committed | `6ce2e25`, 6 new tests in `tests/tui_fallback_boundary_test.py` |
 | Legibility WP-0 layout kernel | committed | 31 new tests in `tests/tui_layout_test.py` |
 | Legibility WP-1 stepper and header | committed | 15 tests in `tests/wizard_render_test.py`; 11 rewritten across 6 files |
-| Legibility WP-2 … WP-4 | not started | — |
+| Legibility WP-2 artifact projections | committed | 10 tests in `tests/tui_marketplace_test.py`; 4 moved off `render_marketplace_row` |
+| Legibility WP-3, WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
-Baseline at the time of writing: 1787 unit + 52 integration tests, all ten gates of
+Baseline at the time of writing: 1797 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
 
 ### Deviation from the plan's file ownership
@@ -57,21 +58,12 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**WP-2 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — artifact projections. Owns
-`agent_artifacts/tui_marketplace.py` and `tests/tui_marketplace_test.py`.
+**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md)** — curses and text wiring. Runs inline
+on `main`, owns `agent_artifacts/tui.py` and the eight test files that assert on old screen
+strings. Ten ordered steps are listed in the plan; **step 2 already landed with WP-1**, so start
+at step 1 and skip it.
 
-- `artifact_cells(row)` — the row's cells unpadded, identity first; the widget aligns them through
-  `tui_layout.columns` so one layout serves every row.
-- `render_artifact_pane(row, *, width)` — the pinned pane body: identity, wrapped summary, then
-  `source`, `risk`, `harness`, `status` via `field_block`.
-- `render_artifact_detail(row)` — the full record for `?`: wrapped summary, every evidence field,
-  each digest on its own line and exempt from the measure.
-- Keep `render_marketplace_row` until WP-3 removes its last caller, and move its three existing
-  assertions onto the replacements in the same commit that adds them.
-
-Then WP-3 (`tui.py`; step 2 already landed with WP-1), then WP-4 (docs + gate).
-
-The kernel is available as:
+Everything WP-3 needs is now pure and tested:
 
 ```python
 from agent_artifacts.tui_layout import (
@@ -80,15 +72,35 @@ from agent_artifacts.tui_layout import (
     STAGE_CONFIRMED, STAGE_CURRENT, STAGE_JOIN, STAGE_PENDING, STAGE_PROJECTION,
     columns, field_block, measure, pane_budget, status_bar, wrap,
 )
+from agent_artifacts.tui_marketplace import (
+    artifact_cells, render_artifact_detail, render_artifact_pane,
+)
 ```
 
-### Carried forward from WP-0
+`_canonical_choice` ([tui.py:2064](../../agent_artifacts/tui.py)) is the last caller of
+`render_marketplace_row`; migrating it is step 9 and the function is deleted from `__all__` in the
+same commit.
 
-`columns` currently shrinks every non-identity column toward one character before giving up, so at
-around 40 columns a row degrades to `identity  reg…  unv…  ris…`. The kernel contract holds —
-identity is intact and nothing exceeds the width — but WP-2 and WP-3 should decide whether a
-column that can no longer carry meaning is better dropped entirely than shredded. That needs the
-real cells to judge, which is why it was not settled in the kernel.
+Then WP-4 (flip both document statuses, final gate).
+
+### Settled in WP-2: the narrow-column question WP-0 carried forward
+
+`columns` shrinks every non-identity column toward one character rather than dropping it, so a
+four-cell row at width 44 degraded to `identity  ava…  ris…  reg…`. A stump costs the same space
+as the word and carries nothing, so **the caller drops whole columns instead**, and the kernel is
+left alone.
+
+`artifact_cells` therefore returns its cells in decreasing importance — key, state, risk, trust —
+and WP-3 passes a prefix of them chosen by width. Verified degradation:
+
+```
+width 100:  company/skill/review@1.0.0  available  risk low      registry-reviewed
+width  60:  company/skill/review@1.0.0  available  risk low
+width  44:  company/skill/review@1.0.0  available
+```
+
+This is the only WP-2 decision not already written in the design; it needs no revision there
+because D6 fixes the row's content, not its arity.
 
 ## Working agreements
 

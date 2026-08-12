@@ -25,13 +25,16 @@ from agent_artifacts.security.model import (
     SecurityAssessment,
     risk_from_evidence,
 )
+from agent_artifacts.tui_layout import CONTENT_MEASURE, READABLE_MEASURE, columns
 from agent_artifacts.tui_marketplace import (
     MarketplaceFilters,
     MarketplaceTarget,
+    artifact_cells,
     filter_marketplace_rows,
     project_marketplace_rows,
     reconcile_marketplace_basket,
-    render_marketplace_row,
+    render_artifact_detail,
+    render_artifact_pane,
 )
 from tests.marketplace_fixtures import (
     artifact,
@@ -95,6 +98,12 @@ def _security(item) -> ArtifactSecurityEvidence:
     )
 
 
+def _flat(lines: tuple[str, ...]) -> str:
+    """Undo wrapping so an assertion can name a phrase without knowing where it broke."""
+
+    return " ".join(" ".join(lines).split())
+
+
 class TuiMarketplaceTest(unittest.TestCase):
     def test_newer_aart_requirement_stays_visible_but_cannot_enter_the_basket(self) -> None:
         source = configured_source("team", SourceKind.SOURCE_GIT)
@@ -117,7 +126,12 @@ class TuiMarketplaceTest(unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertFalse(rows[0].compatible)
-        self.assertIn("unavailable", render_marketplace_row(rows[0]))
+        # Replaces the assertion that render_marketplace_row said "unavailable": the row now
+        # carries that verdict in its last cell, and the pane says why.
+        self.assertEqual(artifact_cells(rows[0])[1], "unavailable")
+        pane = _flat(render_artifact_pane(rows[0], width=100))
+        self.assertIn("unavailable", pane)
+        self.assertIn("requires AART >=2.0.0", pane)
         self.assertEqual(rows[0].reasons[0].code, "aart-version-unsupported")
         self.assertIn("requires AART >=2.0.0", rows[0].reasons[0].message)
         self.assertEqual(reconcile_marketplace_basket((rows[0].key,), rows).retained, ())
@@ -144,9 +158,13 @@ class TuiMarketplaceTest(unittest.TestCase):
         self.assertEqual(review_rows[0].source_health, "healthy")
         self.assertEqual(review_rows[0].security.installation_risk, "low")
         self.assertEqual(review_rows[1].security.installation_risk, "unknown")
-        self.assertIn("company/skill/review@1.0.0", render_marketplace_row(review_rows[0]))
-        self.assertIn("risk low", render_marketplace_row(review_rows[0]))
-        self.assertIn("max unknown", render_marketplace_row(review_rows[0]))
+        # Replaces the three assertions that render_marketplace_row carried the key, the risk and
+        # the maximum severity: the key and risk are now cells, the severity is pane evidence.
+        cells = artifact_cells(review_rows[0])
+        self.assertEqual(cells[0], "company/skill/review@1.0.0")
+        self.assertIn("risk low", cells)
+        pane = _flat(render_artifact_pane(review_rows[0], width=100))
+        self.assertIn("max severity unknown", pane)
 
     def test_compatibility_is_evaluated_for_every_harness_scope_and_mode(self) -> None:
         catalog = _catalog()
@@ -299,6 +317,148 @@ class TuiMarketplaceTest(unittest.TestCase):
     def test_target_rejects_an_empty_harness_selection(self) -> None:
         with self.assertRaises(ValueError):
             MarketplaceTarget((), "darwin", "project", "copy")
+
+
+class ArtifactProjectionTest(unittest.TestCase):
+    """WP-2 of DESIGN-tui-legibility: one line per row, evidence in the pane and the record."""
+
+    def rows(self) -> tuple:
+        catalog = _catalog()
+        installed = LifecycleItem(
+            LifecycleKey(
+                ArtifactCoordinate(
+                    catalog.items[0].coordinate.source,
+                    catalog.items[0].coordinate.artifact,
+                ),
+                "claude",
+                "project",
+            ),
+            LifecycleStatus.CURRENT,
+        )
+        return project_marketplace_rows(
+            catalog,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+            security=(_security(catalog.items[0]),),
+            lifecycle=(installed,),
+        )
+
+    def test_cells_lead_with_the_key_and_carry_only_the_deciding_fields(self) -> None:
+        rows = self.rows()
+        reviewed = next(row for row in rows if row.key.startswith("company/"))
+        other = next(row for row in rows if row.identity.kind == "mcp")
+
+        self.assertEqual(
+            artifact_cells(reviewed),
+            ("company/skill/review@1.0.0", "claude:current", "risk low", "registry-reviewed"),
+        )
+        self.assertEqual(artifact_cells(other)[1], "available")
+        self.assertTrue(all(len(cells) == 4 for cells in map(artifact_cells, rows)))
+
+    def test_cells_are_ordered_so_a_narrow_caller_can_drop_a_suffix(self) -> None:
+        # Resolves the question WP-0 carried forward: below roughly fifty columns the kernel
+        # shrinks a trailing cell to a meaningless stump, so the caller drops whole columns
+        # instead. That only works if the cells are ordered by importance.
+        rows = self.rows()
+        full = [artifact_cells(row) for row in rows]
+
+        narrow = columns([cells[:2] for cells in full], width=44)
+
+        self.assertTrue(
+            all(line.startswith(row.key) for line, row in zip(narrow, rows, strict=True))
+        )
+        self.assertTrue(all("…" not in line for line in narrow))
+        self.assertTrue(all(len(line) <= 44 for line in narrow))
+
+    def test_a_four_hundred_character_summary_never_costs_the_key_at_width_forty(self) -> None:
+        rows = self.rows()
+        bloated = replace(rows[0], summary="s" * 400)
+
+        laid_out = columns([artifact_cells(row) for row in (bloated, *rows[1:])], width=40)
+
+        self.assertTrue(laid_out[0].startswith(bloated.key))
+        self.assertTrue(all(len(line) <= 40 for line in laid_out))
+        self.assertEqual(len(laid_out), len(rows))
+
+    def test_the_pane_leads_with_identity_then_wraps_the_summary_over_a_field_block(self) -> None:
+        row = next(item for item in self.rows() if item.key.startswith("company/"))
+
+        pane = render_artifact_pane(row, width=200)
+
+        self.assertEqual(pane[0].strip(), row.key)
+        self.assertIn(row.summary, _flat(pane))
+        labels = [line.split()[0] for line in pane if line.startswith("    ")]
+        self.assertEqual(labels[:4], ["source", "risk", "harness", "status"])
+        self.assertIn("healthy", _flat(pane))
+        self.assertIn("compatible", _flat(pane))
+
+    def test_a_long_summary_is_wrapped_in_the_pane_rather_than_displacing_the_key(self) -> None:
+        row = replace(self.rows()[0], summary="word " * 200)
+
+        pane = render_artifact_pane(row, width=40)
+
+        self.assertEqual(pane[0].strip(), row.key)
+        self.assertTrue(all(len(line) <= 40 for line in pane))
+        self.assertGreater(len(pane), 5)
+
+    def test_no_structured_pane_line_outgrows_the_content_measure(self) -> None:
+        rows = self.rows()
+        for width in (40, 80, 120, 200):
+            for row in rows:
+                for line in render_artifact_pane(row, width=width):
+                    self.assertLessEqual(len(line), min(width, CONTENT_MEASURE))
+
+    def test_the_detail_record_carries_every_evidence_field(self) -> None:
+        row = next(item for item in self.rows() if item.key.startswith("company/"))
+
+        detail = _flat(render_artifact_detail(row))
+
+        for expected in (
+            row.key,
+            row.summary,
+            row.source_origin,
+            row.source_revision,
+            "healthy",
+            "registry-reviewed",
+            "low",
+            "severity unknown",
+            "complete",
+            "1/1",
+            "aart-baseline@1",
+            "claude:current",
+            "copy",
+        ):
+            self.assertIn(expected, detail)
+
+    def test_every_digest_keeps_its_own_unwrapped_line(self) -> None:
+        row = next(item for item in self.rows() if item.key.startswith("company/"))
+
+        detail = render_artifact_detail(row)
+
+        for digest in (row.manifest_digest, row.payload_digest, row.object_digest):
+            carriers = [line for line in detail if digest in line]
+            self.assertEqual(len(carriers), 1, digest)
+            self.assertLessEqual(len(carriers[0]), len(digest) + 16)
+
+    def test_prose_in_the_detail_record_stays_within_the_readable_measure(self) -> None:
+        row = replace(self.rows()[0], summary="word " * 200)
+
+        detail = render_artifact_detail(row)
+        prose = [line for line in detail if line.startswith("word")]
+
+        self.assertTrue(prose)
+        self.assertTrue(all(len(line) <= READABLE_MEASURE for line in prose))
+
+    def test_no_projection_uses_the_dot_as_a_separator(self) -> None:
+        rows = self.rows()
+        emitted = [
+            *(cell for row in rows for cell in artifact_cells(row)),
+            *(line for row in rows for line in render_artifact_pane(row, width=100)),
+            *(line for row in rows for line in render_artifact_detail(row)),
+        ]
+
+        self.assertTrue(emitted)
+        for line in emitted:
+            self.assertNotIn("·", line)
 
 
 if __name__ == "__main__":
