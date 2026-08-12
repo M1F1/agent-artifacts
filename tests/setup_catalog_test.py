@@ -94,6 +94,28 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertIsInstance(mismatch, Err)
         self.assertIn("does not match", mismatch.reason)
 
+    def test_v2_recipe_derives_its_package_root_manual_reference(self):
+        result = parse_installer(
+            recipe(schema_version=2, protocol_version=2),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(result.value.schema_version, 2)
+        self.assertEqual(result.value.protocol_version, 2)
+        self.assertEqual(result.value.manual_path, "mcp/atlassian/SETUP.md")
+
+    def test_v2_recipe_rejects_a_noncanonical_descriptor_path(self):
+        result = parse_installer(
+            recipe(schema_version=2, protocol_version=2),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/other/../atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(result, Err)
+        self.assertIn("version-2 installer path", result.reason)
+
     def test_unpinned_docker_and_secret_interpolation_are_rejected(self):
         docker = parse_installer(
             recipe(
@@ -200,6 +222,87 @@ class SetupSourceTests(unittest.TestCase):
 
             self.assertIsInstance(result, Err)
             self.assertIn("schema_version", result.reason)
+
+    def test_v2_installer_requires_a_regular_utf8_package_root_setup_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = pathlib.Path(tmp) / "mcp" / "atlassian"
+            (package / "setup").mkdir(parents=True)
+            (package / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "atlassian",
+                        "description": "Use Atlassian.",
+                        "server": {"url": "https://example.test"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "setup" / "installer.json").write_bytes(
+                recipe(schema_version=2, protocol_version=2)
+            )
+
+            missing = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+            self.assertIsInstance(missing, Err)
+            self.assertIn("SETUP.md", missing.reason)
+
+            (package / "SETUP.md").write_bytes(b"\xff")
+            unreadable = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+            self.assertIsInstance(unreadable, Err)
+            self.assertIn("UTF-8", unreadable.reason)
+
+            (package / "SETUP.md").write_text("Configure this manually.", encoding="utf-8")
+            valid = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+            self.assertIsInstance(valid, Ok, getattr(valid, "reason", ""))
+            installer = valid.value.artifacts[("mcp", "atlassian")].setup
+            assert installer is not None
+            self.assertEqual(installer.manual_path, "mcp/atlassian/SETUP.md")
+
+    def test_v2_custom_entrypoint_requires_the_manual_setup_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = pathlib.Path(tmp) / "mcp" / "atlassian"
+            setup = package / "setup"
+            setup.mkdir(parents=True)
+            (package / "mcp.json").write_text(
+                json.dumps(
+                    {
+                        "name": "atlassian",
+                        "description": "Use Atlassian.",
+                        "server": {"url": "https://example.test"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "SETUP.md").write_text("Configure this manually.", encoding="utf-8")
+            (setup / "installer.json").write_bytes(
+                recipe(
+                    schema_version=2,
+                    protocol_version=2,
+                    capabilities=["process", "custom-code"],
+                    required_tools=[],
+                    inputs=[],
+                    steps=[
+                        {
+                            "id": "restart",
+                            "use": "restart.notice@1",
+                            "with": {"message": "Restart the harness."},
+                        }
+                    ],
+                    custom_entrypoint="install.sh",
+                )
+            )
+            script = setup / "install.sh"
+            script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+            missing_header = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+            self.assertIsInstance(missing_header, Err)
+            self.assertIn("SETUP.md header", missing_header.reason)
+
+            script.write_text(
+                "#!/bin/sh\n# AART manual setup: see ../SETUP.md\nexit 0\n",
+                encoding="utf-8",
+            )
+            valid = open_source(Request(command="list", source_dir=tmp)).value.catalog()
+            self.assertIsInstance(valid, Ok, getattr(valid, "reason", ""))
 
     def test_setup_package_symlink_cannot_escape_the_reviewed_source(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:

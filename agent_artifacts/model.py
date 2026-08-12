@@ -101,6 +101,9 @@ class SetupInstaller:
     descriptor_hash: str
     custom_entrypoint: Optional[str] = None
     custom_hash: Optional[str] = None
+    # Version-2 installers derive this fixed package-relative manual route; version-1 preserves
+    # its published behaviour and therefore has no required manual document.
+    manual_path: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -42,7 +42,7 @@ from . import fp
 from .fp import Err, Ok
 from .io import cache, fs, net
 from .model import Catalog, Request, Resolved, Result, source_label
-from .setup import custom_entrypoint_name, parse_installer
+from .setup import custom_entrypoint_name, has_manual_setup_header, parse_installer
 
 # Reader signature: given an absolute path, return its bytes. Injectable for testing,
 # defaults to the real filesystem performer.
@@ -271,6 +271,26 @@ class Source:
         )
         if isinstance(installer, Err):
             return installer
+        if installer.value.manual_path is not None:
+            manual_rel = installer.value.manual_path
+            manual_abs = os.path.join(self.root, manual_rel)
+            manual_real = os.path.realpath(manual_abs)
+            if (
+                os.path.islink(manual_abs)
+                or not os.path.isfile(manual_abs)
+                or os.path.commonpath((root_real, manual_real)) != root_real
+            ):
+                return Err(f"{artifact_key}: SETUP.md must be a regular file at package root")
+            try:
+                manual_text = self.read(manual_rel).decode("utf-8")
+            except UnicodeDecodeError:
+                return Err(f"{artifact_key}: SETUP.md must be valid UTF-8")
+            except OSError as exc:
+                return Err(f"{artifact_key}: cannot read SETUP.md ({exc})")
+            if not manual_text.strip() or "\x00" in manual_text:
+                return Err(f"{artifact_key}: SETUP.md must be non-empty safe UTF-8 text")
+            if custom_bytes is not None and not has_manual_setup_header(custom_bytes):
+                return Err(f"{artifact_key}: custom entrypoint must begin with the SETUP.md header")
         return Ok(replace(artifact_result.value, setup=installer.value))
 
     def _scan_bundles(self) -> List[Result]:

@@ -110,6 +110,7 @@ _CANONICAL_EVIDENCE_FIELDS = (
     "canonical_review_digest",
     "setup_state_ref",
 )
+_MANUAL_SETUP_HEADER = b"# AART manual setup: see ../SETUP.md"
 
 
 class _Invalid(ValueError):
@@ -164,6 +165,38 @@ def custom_entrypoint_name(raw: bytes) -> Result:
         return Ok(_relative_setup_entrypoint(data["custom_entrypoint"]))
     except (UnicodeDecodeError, json.JSONDecodeError, _Invalid) as exc:
         return Err(f"invalid setup installer: {exc}", code=2)
+
+
+def has_manual_setup_header(raw: bytes) -> bool:
+    """Return whether a custom script begins with the standard manual-route comment.
+
+    A POSIX shebang may precede the comment so direct execution remains possible.  The source
+    loader calls this only for version-2 descriptors; retained version-1 custom scripts remain
+    valid exactly as published.
+    """
+
+    lines = raw.splitlines()
+    if lines and lines[0].startswith(b"#!"):
+        lines = lines[1:]
+    return bool(lines) and lines[0].strip() == _MANUAL_SETUP_HEADER
+
+
+def _manual_path(descriptor_path: str) -> str:
+    """Derive the one conventional package-root manual route from a recipe path."""
+
+    normalized = os.path.normpath(descriptor_path)
+    package = os.path.dirname(os.path.dirname(normalized))
+    if (
+        not package
+        or normalized != descriptor_path
+        or os.path.isabs(normalized)
+        or os.path.basename(os.path.dirname(normalized)) != "setup"
+        or os.path.basename(normalized) != "installer.json"
+        or package == ".."
+        or package.startswith(".." + os.sep)
+    ):
+        raise _Invalid("version-2 installer path must be below a package setup/ directory")
+    return os.path.join(package, "SETUP.md")
 
 
 def _freeze(value: object) -> object:
@@ -315,7 +348,7 @@ def parse_installer(
     descriptor_path: str,
     custom_bytes: Optional[bytes] = None,
 ) -> Result:
-    """Strictly parse and hash one version-1 declarative installer."""
+    """Strictly parse and hash a versioned declarative installer."""
 
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -328,10 +361,16 @@ def parse_installer(
         missing = required - set(data)
         if missing:
             raise _Invalid(f"missing field(s): {', '.join(sorted(missing))}")
-        if data["schema_version"] != 1:
-            raise _Invalid("schema_version must be 1")
-        if data["protocol_version"] != 1:
-            raise _Invalid("protocol_version must be 1")
+        schema_version = data["schema_version"]
+        protocol_version = data["protocol_version"]
+        if (
+            type(schema_version) is not int
+            or type(protocol_version) is not int
+            or (schema_version, protocol_version) not in {(1, 1), (2, 2)}
+        ):
+            raise _Invalid(
+                "schema_version and protocol_version must be the matching pair 1/1 or 2/2"
+            )
         artifact = _single_line(data["artifact"], "artifact")
         if not _ARTIFACT_KEY.fullmatch(artifact):
             raise _Invalid("artifact must be a directory-shaped skill, hook, or mcp TYPE/NAME")
@@ -425,8 +464,8 @@ def parse_installer(
         typed_capabilities = tuple(capabilities)
         return Ok(
             SetupInstaller(
-                schema_version=1,
-                protocol_version=1,
+                schema_version=schema_version,
+                protocol_version=protocol_version,
                 artifact=artifact,
                 purpose=purpose,
                 platforms=platforms,
@@ -439,6 +478,7 @@ def parse_installer(
                 descriptor_hash=_sha256(raw),
                 custom_entrypoint=custom_entrypoint,
                 custom_hash=custom_hash,
+                manual_path=_manual_path(descriptor_path) if schema_version == 2 else None,
             )
         )
     except (UnicodeDecodeError, json.JSONDecodeError, _Invalid) as exc:
