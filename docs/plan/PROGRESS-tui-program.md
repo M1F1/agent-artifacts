@@ -55,7 +55,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR02 | completed | `install-state-legacy` recognizes only the exact `repo`/`installed` v0.1 envelope; every other parser failure is `install-state-invalid` with its original safe location/message; all 10 quality gates green (1833 unit tests) |
 | Typed errors ERR03 | completed | canonical Artifacts loader returns `DomainResult`; immutable `WizardStageFailure` preserves diagnostics and read-only recovery context; legacy command errors cross one named adapter |
 | Typed errors ERR04 | completed | `c87935e`; one pure, width-bounded record renderer for text and curses; in-place Retry/Back/Quit preserves session and basket; all 10 quality gates green (1845 tests) |
-| Typed errors ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR05b | completed | `13b3b99`; `InternalFailureContext` tracks safe stage/operation outside `WizardSession`; `AART_DEBUG=1` writes traceback only to local stderr; capability probe falls back only for import/TTY failures; all 10 quality gates green (1851 tests) |
+| Typed errors ERR06, ERR07, ERR08, ERR09 | not started | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -79,20 +80,19 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR05b of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — attach last safe stage
-and operation to the outer internal-failure boundary, decide and implement the opt-in local-only
-debug traceback mechanism, then narrow the pre-interaction curses probe. Expected errors already
-use ERR04's `WizardStageFailure`; an unexpected exception must remain redacted, exit nonzero and
-never restart the wizard.
+**ERR06 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — audit each remaining
+stage and operation boundary; preserve canonical `DomainErr` or explicitly name a narrow legacy
+adapter. Classify rather than blanket-wrap exceptions, then add targeted regression tests for each
+boundary and its mutation/secret-safety contract.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
 the current v1 protocol while making `SETUP.md`, bounded effect records and a manual route the
 standard for new setup-capable artifacts.
 
-Read that plan for the package order. ERR05a is already delivered (`6ce2e25`); ERR05b — last
-stage/operation on the crash boundary, an opt-in debug traceback, and narrowing the probe's broad
-`except` — is still open and is recorded there as split out.
+Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
+stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
+local debug traceback, and a narrowed terminal-capability probe.
 
 ### ERR04 delivery notes
 
@@ -110,6 +110,23 @@ stage/operation on the crash boundary, an opt-in debug traceback, and narrowing 
 - Independent review found and fixed the initial curses quit/basket asymmetry. Focused TUI tests,
   `git diff --check`, and all ten `python scripts/quality.py` gates pass. No manifest,
   configuration, source store, project tree, setup state or analytics write is on this path.
+
+### ERR05b delivery notes
+
+- `InternalFailureContext` is an imperative-shell value containing only stage and operation. It
+  never enters `WizardSession`, reporting or analytics. It marks Artifacts load, Review, Finalize,
+  Setup and Reporting boundaries before their effects, so redacted internal records name the last
+  safe context.
+- The default record has the stable code, context and exception type only. `AART_DEBUG=1` is the
+  deliberate developer opt-in and writes a traceback to local stderr; it never changes normal
+  stdout, reports or outcomes.
+- The capability probe returns text fallback only for missing `curses` or TTY `OSError`; an
+  unexpected probe exception produces the same redacted nonzero internal record. Focused tests
+  cover both kinds of failure, debug isolation, stage updates and no second wizard.
+- Independent review found no critical issue. `git diff --check` and all ten
+  `python scripts/quality.py` gates pass (1851 tests). The remaining risk is intentional: debug
+  stderr is for a local developer and may contain exception data, which is why it is opt-in and
+  never forwarded.
 
 Useful facts carried over from the legibility work:
 

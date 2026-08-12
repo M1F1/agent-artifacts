@@ -1,6 +1,6 @@
 # Design: typed stage failures and actionable TUI diagnostics
 
-Status: in delivery; ERR01–ERR04 completed, ERR05b–ERR09 pending
+Status: in delivery; ERR01–ERR05 completed, ERR06–ERR09 pending
 
 ## 1. Context
 
@@ -381,10 +381,8 @@ This is an executable UX and error-contract correction:
 
 ## 11. Open implementation decisions
 
-The implementer must resolve these narrowly and record the choice in the plan/task notes:
+The implementer must resolve this narrowly and record the choice in the plan/task notes:
 
-- whether local debug tracebacks use an `AART_DEBUG=1` environment flag or an existing/new global
-  CLI flag; do not expose them by default;
 - whether startup shows a non-blocking legacy-state notice before Role or relies exclusively on the
   first affected stage. The stage diagnostic is mandatory either way.
 
@@ -401,3 +399,10 @@ The retained 0.1 command bridge carries an adapter-only nonzero exit status for 
 command surface. It is not rendered and never removes canonical recovery choices. This preserves
 the narrow compatibility boundary without extending the legacy protocol or changing v1 artifact
 validity.
+
+ERR05 is also implemented. `InternalFailureContext` is a mutable imperative-shell value containing
+only the last safe stage and operation; it never enters the persistent session, reporting, or
+analytics. Default internal records are redacted and nonzero. `AART_DEBUG=1` is the explicit
+local-developer mechanism for a traceback on stderr; it never changes normal terminal stdout or a
+reporting payload. The capability probe falls back to text only for a missing curses import or a
+TTY `OSError`; all other errors use the redacted internal record.

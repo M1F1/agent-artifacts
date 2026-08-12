@@ -1,6 +1,6 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** in delivery; ERR01–ERR04 completed, ERR05b–ERR09 pending
+- **Status:** in delivery; ERR01–ERR05 completed, ERR06–ERR09 pending
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -210,10 +210,10 @@ Delivered in `c87935e`:
 
 ### ERR05 — constrain curses fallback and type internal failures
 
-**Status:** split. **ERR05a delivered** ahead of ERR01–ERR04 as an independent commit, because the
+**Status:** completed. **ERR05a delivered** ahead of ERR01–ERR04 as an independent commit, because the
 broad handlers were actively discarding live sessions and because any later TUI work would have
-had its exceptions swallowed and misreported as "curses unavailable". **ERR05b pending**, to
-integrate after ERR04.
+had its exceptions swallowed and misreported as "curses unavailable". **ERR05b** subsequently
+completed after ERR04.
 
 Delivered in ERR05a (items 1–3, minus typed rendering):
 
@@ -229,15 +229,16 @@ Delivered in ERR05a (items 1–3, minus typed rendering):
   `tests/tui_source_stage_test.py` that asserted the old broad-fallback behavior were rewritten
   against the new contract rather than deleted.
 
-Remaining in ERR05b:
+Delivered in ERR05b:
 
-- `WizardStageFailure` for expected stage failures (needs ERR03/ERR04).
-- Item 4: give the crash boundary the last stage and operation without storing terminal or service
-  objects in `WizardSession`. `internal_failure_lines` takes only the exception today.
-- Item 5: the opt-in local debug traceback mechanism.
-- The probe's remaining broad `except Exception` around `import curses` / `isatty`. It is
-  pre-interaction and therefore harmless, but the design prefers a narrow initialization error
-  type.
+- `InternalFailureContext` holds only the last safe stage and operation outside `WizardSession`.
+  The shell marks Artifacts load, Review, Finalize, Setup and Reporting before those operations;
+  default internal records show that safe context with the stable code and exception type only.
+- `AART_DEBUG=1` is the chosen explicit local developer mechanism. It writes a traceback to local
+  stderr only; normal stdout and all reporting paths remain redacted.
+- `_curses_supported` falls back only for an unavailable `curses` import or TTY `OSError`.
+  Unexpected probe failures become `tui-stage-internal`, not a silent text restart.
+- Focused fallback/context/debug tests and all ten quality gates pass (1851 tests).
 
 1. Replace broad fallback semantics in `_run_curses` and `run` with an explicit initialization
    boundary.
@@ -428,7 +429,7 @@ claiming the complete gate passes.
 - [x] ERR02 distinguishes legacy and invalid installation state.
 - [x] ERR03 preserves typed diagnostics through stage loading.
 - [x] ERR04 renders and recovers equivalently in text and curses.
-- [ ] ERR05 prevents post-start fallback/restart and types internal failures.
+- [x] ERR05 prevents post-start fallback/restart and types internal failures.
 - [ ] ERR06 audits all stage boundaries without exception laundering.
 - [ ] ERR09 gives every new setup installer a `SETUP.md` fallback and a bounded effect review.
 - [ ] ERR07 documents, packages, and hands off release decisions.
