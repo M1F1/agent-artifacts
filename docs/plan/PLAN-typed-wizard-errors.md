@@ -46,6 +46,25 @@ error: missing required field 'installations'; missing required field 'schema_ve
 unknown field 'installed'; unknown field 'repo'
 ```
 
+A **second live reproducer** needs no fixture either, only an ordinary configuration whose
+enabled source is a registry:
+
+```text
+cd <any canonical registry checkout>      # one containing aart-registry.json
+aart
+  Maintainer -> select the enabled registry source
+```
+
+```text
+error: registry registry is ready for source management, but artifact browsing requires the
+federated marketplace view
+```
+
+Exit status 2, session discarded, no stage named and no way back. Design §4 "Role-scoped stage
+inputs" holds the decision this drives: Maintainer curates a checkout and skips Sources. Note the
+same checkout reaches the Maintainer action list immediately via `aart --source .`, so the working
+path already exists — what is missing is making it the default for the role.
+
 The supported explicit migration preview currently continues with a separate, legitimate source
 resolution error for `memory/superpowers@tabnine`. Do not hide or bypass that error:
 
@@ -80,8 +99,12 @@ aart migrate state --from 0.1 --scope project --dry-run
    separate malformed-v2 fixture.
 2. Add a text-wizard test that reaches Artifacts with legacy project state and captures the current
    flattened diagnostic.
-3. Add a curses flow test where an exception occurs after the session starts and prove the current
-   behavior invokes text fallback/onboarding again.
+3. **Already satisfied by ERR05a.** The curses crash boundary no longer restarts the wizard, and
+   `tests/tui_fallback_boundary_test.py` holds six tests for the fixed contract. Do not write a
+   test for the old behaviour; verify those tests still assert it and move on.
+3b. Add a text-wizard characterization test for the Maintainer dead end: a canonical registry
+   checkout, a configuration whose only enabled source is `registry-git`, role Maintainer. Capture
+   that the current behaviour prints one flattened line and returns 2 with the session discarded.
 4. Keep the already-added lifecycle duplicate test as regression coverage for the concrete bug,
    but do not treat deduplication as sufficient error handling.
 5. Record mutation snapshots around each failing flow so later fixes prove that diagnostics are
@@ -223,7 +246,10 @@ exceptions:
 3. Artifacts marketplace and lifecycle joins.
 4. Review preparation for consumer and maintainer paths.
 5. Finalize, setup queue, and reporting.
-6. Legacy compatibility paths still using `agent_artifacts.model.Err`.
+6. Legacy compatibility paths still using `agent_artifacts.model.Err`, explicitly including
+   `_selected_legacy_source_arguments` ([tui.py:1949](../../agent_artifacts/tui.py)), whose
+   `source-incompatible` and `source-selection-invalid` diagnostics are flattened by both
+   frontends into `selection["error"]` and end the session.
 
 For each boundary:
 
@@ -239,9 +265,40 @@ Acceptance:
 - no broad exception handler triggers a frontend restart;
 - every caught exception has a documented narrow reason or is the outer crash boundary.
 
+### ERR08 — Maintainer curates a checkout, not a subscription
+
+**Status:** pending; depends on ERR01 for its characterization test. Independent of ERR02–ERR04,
+so it may land before or after them.
+
+Implements design §4 "Role-scoped stage inputs". This removes the dead end itself; ERR06 removes
+the failure class around it. Both are wanted: the second reproducer must stop being reachable
+*and* stop being fatal when a related boundary fails.
+
+1. When the role is Maintainer and no explicit `--source`/`--repo` was given, resolve the catalog
+   root to the current working directory and skip the Sources stage. An explicit flag still wins.
+2. Apply it in **both** frontends. The two call sites are the curses gate at
+   [tui.py:5132](../../agent_artifacts/tui.py) and the text gate at
+   [tui.py:2864](../../agent_artifacts/tui.py); a change in one only is incomplete.
+3. Keep `_selected_legacy_source_arguments` for the paths that still need it — a Maintainer who
+   *does* pass a source, and every non-Maintainer legacy caller. Do not delete the registry
+   rejection; it stays correct for those, and ERR06 makes it recoverable.
+4. The stepper must not show a stage the role never visits, so `stages_for` drops `source` for the
+   Maintainer default path. Check `projected_stages_for` still marks the tail honestly.
+5. Preserve Back: from Maintainer action, Back returns to Role, not to a skipped Sources.
+
+Acceptance:
+
+- from a canonical registry checkout with only a registry source enabled, `aart` → Maintainer
+  reaches the Maintainer action list without touching Sources;
+- `aart --source <dir>` is unchanged, including its registry rejection;
+- User is untouched: Sources still runs, and a registry subscription still browses through the
+  federated marketplace view;
+- the stepper never lists a stage the session cannot reach;
+- no writes occur anywhere on this path.
+
 ### ERR07 — documentation, quality, and release handoff
 
-**Status:** pending; depends on ERR01–ERR06
+**Status:** pending; depends on ERR01–ERR06 and ERR08
 
 1. Update user documentation with the rendered legacy-state example, migration preview, source-map
    follow-up, and distinction between project and user scope.

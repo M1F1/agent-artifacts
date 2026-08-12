@@ -43,7 +43,7 @@ authorization.
 | Legibility WP-3 steps 5 and 7 | committed | 5 tests in `EnterSemanticsTests`, 3 across text tests |
 | Legibility WP-3 steps 8, 9, 10 | committed | 4 tests in `DetailRecordAndWidthTests`, 2 more across text tests |
 | Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
-| Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
+| Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07, ERR08 | not started | — |
 
 Baseline at the time of writing: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
@@ -85,6 +85,13 @@ Useful facts carried over from the legibility work:
 - Two guard tests in `ScreenChromeTests` parse `tui.py` and fail if any string literal names a key
   outside a text prompt or uses ` · ` as a separator. New diagnostics must satisfy both.
 - **The live reproducer for ERR02 is still in the working tree** — see the section at the end.
+- **A second live reproducer was found while reviewing the legibility work** and is recorded in
+  both track-3 documents. From a canonical registry checkout, role Maintainer plus an enabled
+  registry source dead-ends with one flattened line and exit 2. It needs no fixture at all.
+  It added one package, **ERR08**, which makes Maintainer default to curating the current
+  directory and skip Sources — the role was being asked a User question it cannot answer. The
+  decision is design §4 "Role-scoped stage inputs"; a dedicated checkout-picker screen was
+  considered and deliberately left out of scope.
 
 ## Working agreements
 

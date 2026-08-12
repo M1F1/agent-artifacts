@@ -24,6 +24,15 @@ Two concrete incidents define the initial acceptance boundary.
    `claude:current` facts violated a marketplace-row invariant and raised `ValueError`. A broad
    `except Exception` treated that application bug as a curses failure and restarted the wizard in
    text mode.
+3. A user standing in a canonical registry checkout chose Maintainer, reached Sources, and found
+   that the only enabled source — a registry — cannot be used by that role. The wizard printed
+   `registry <alias> is ready for source management, but artifact browsing requires the federated
+   marketplace view` and exited with status 2. One line, no stage named, no recovery, session
+   gone. This is the same failure class as incident 1 reaching a different boundary, and it is
+   reproducible from an ordinary configuration with no fixture at all.
+
+Incident 3 also exposes a scope error that no amount of better rendering would fix, addressed in
+§4 below: the Sources stage asks a User question, and the wizard makes Maintainer answer it.
 
 Validation cannot all happen at startup. Profile, scope, action, source selection, installation
 mode, and artifact selection determine which state and compatibility checks are relevant. The
@@ -172,6 +181,34 @@ Stage loaders validate inputs that become relevant after choices are known:
 
 The Artifacts loader is the initial implementation target because it currently flattens
 `DomainErr` into the legacy `Err(reason, code)` value.
+
+### Role-scoped stage inputs
+
+A stage must ask the question its role actually has. Sources asks "which catalogs do I consume
+from" — a User question about subscriptions. Maintainer's question is different in kind: "which
+local checkout am I curating". The wizard currently routes both through one stage and translates
+the answer for Maintainer through the 0.1 compatibility bridge
+([tui.py:1949](../../agent_artifacts/tui.py)), which accepts only a local directory or a
+`github.com/…@main` reference. A registry subscription — the normal thing for a consumer to have
+enabled — has no valid translation, so the role dead-ends on its own configuration.
+
+**Decision.** Maintainer curates a checkout and does not consume a subscription. The role
+therefore defaults to the current working directory and skips Sources entirely, exactly as it
+already behaves when `--source` is passed explicitly; an explicit `--source` continues to win.
+The evidence that this is right is that the working path already exists and is strictly shorter:
+
+```text
+aart --source .            role -> Maintainer -> Maintainer action   (works today)
+aart                       role -> Maintainer -> Sources -> dead end (works today, wrongly)
+```
+
+Sources remains untouched for User, which genuinely subscribes. What Maintainer loses is a
+question it was never able to answer.
+
+This is deliberately the smaller of two options. Giving Maintainer its own checkout-selection
+screen — a picker over known checkouts, recent roots, or a typed path — is a real design with its
+own state and validation, and it is **out of scope here**; the default-plus-flag covers the actual
+workflow, which is running the tool inside the checkout being curated.
 
 ## 5. Functional core and adapter contract
 
