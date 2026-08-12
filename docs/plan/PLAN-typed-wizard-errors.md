@@ -1,6 +1,6 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** in delivery; ERR01–ERR05 completed, ERR06–ERR09 pending
+- **Status:** in delivery; ERR01–ERR06 completed, ERR07–ERR09 pending
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -262,7 +262,7 @@ Acceptance:
 
 ### ERR06 — audit remaining stage boundaries
 
-**Status:** pending; depends on ERR03–ERR05
+**Status:** completed in `181d555`; depends on ERR03–ERR05
 
 Audit every stage/operation boundary and classify failures rather than mechanically wrapping all
 exceptions:
@@ -290,6 +290,28 @@ Acceptance:
 - no new canonical TUI code flattens diagnostics;
 - no broad exception handler triggers a frontend restart;
 - every caught exception has a documented narrow reason or is the outer crash boundary.
+
+Delivered:
+
+- Sources choice validation is compact, code-bearing list-local feedback. In curses it occupies
+  the fixed lower list slot and is bounded to `CONTENT_MEASURE`; source add/sync/refresh failures
+  remain local to their form/notice flow and use the same code-bearing bounded text.
+- The consumer-loader and named `_selected_legacy_source_arguments` bridge preserve their
+  `DomainErr` as conservative `Sources` records in both frontends. Compatibility exit status is
+  never rendered and does not reduce Back/Quit recovery.
+- Canonical consumer and curation review/finalize paths preserve their errors into `Review`
+  records. The live curses frontend recovers in place; dispatch after required curses teardown
+  renders a terminal record instead of flattening an expected finalization failure.
+- Source finalization returns its `DomainErr` to the frontend rather than printing and returning an
+  integer. Setup/reporting retain their explicit post-outcome warning-only classification; ERR09
+  owns their effect-review/manual-route contract.
+- Profile, scope and mode currently have pure input/compatibility projections rather than an
+  adapter that can emit `DomainErr`; Artifacts keeps the ERR04 typed load boundary. Legacy command
+  mutation results remain in the pre-1.0 command surface and are not reclassified as canonical TUI
+  domain failures.
+- Regression coverage includes source feedback placement/width, legacy bridge recovery in both
+  frontends, consumer Review prepare/finalize recovery, startup source records and post-teardown
+  terminal finalization records. All ten quality gates passed with 1861 tests.
 
 ### ERR08 — Maintainer curates a checkout, not a subscription
 
@@ -430,7 +452,7 @@ claiming the complete gate passes.
 - [x] ERR03 preserves typed diagnostics through stage loading.
 - [x] ERR04 renders and recovers equivalently in text and curses.
 - [x] ERR05 prevents post-start fallback/restart and types internal failures.
-- [ ] ERR06 audits all stage boundaries without exception laundering.
+- [x] ERR06 audits all stage boundaries without exception laundering.
 - [ ] ERR09 gives every new setup installer a `SETUP.md` fallback and a bounded effect review.
 - [ ] ERR07 documents, packages, and hands off release decisions.
 - [ ] No automatic migration or state overwrite was introduced.

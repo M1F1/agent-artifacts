@@ -56,7 +56,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR03 | completed | canonical Artifacts loader returns `DomainResult`; immutable `WizardStageFailure` preserves diagnostics and read-only recovery context; legacy command errors cross one named adapter |
 | Typed errors ERR04 | completed | `c87935e`; one pure, width-bounded record renderer for text and curses; in-place Retry/Back/Quit preserves session and basket; all 10 quality gates green (1845 tests) |
 | Typed errors ERR05b | completed | `13b3b99`; `InternalFailureContext` tracks safe stage/operation outside `WizardSession`; `AART_DEBUG=1` writes traceback only to local stderr; capability probe falls back only for import/TTY failures; all 10 quality gates green (1851 tests) |
-| Typed errors ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR06 | completed | `181d555`; Sources local feedback + blocking records, Review/Finalize records across consumer and curation paths, terminal records after curses teardown; all 10 quality gates green (1861 tests) |
+| Typed errors ERR07, ERR08, ERR09 | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -80,10 +81,10 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR06 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — audit each remaining
-stage and operation boundary; preserve canonical `DomainErr` or explicitly name a narrow legacy
-adapter. Classify rather than blanket-wrap exceptions, then add targeted regression tests for each
-boundary and its mutation/secret-safety contract.
+**ERR08 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — make Maintainer default
+to the checkout it curates and skip the consumer-only Sources stage unless an explicit legacy
+source/repo flag requires that compatibility path. Preserve User Sources behavior and stepper/Back
+semantics in both frontends.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
@@ -127,6 +128,28 @@ local debug traceback, and a narrowed terminal-capability probe.
   `python scripts/quality.py` gates pass (1851 tests). The remaining risk is intentional: debug
   stderr is for a local developer and may contain exception data, which is why it is opt-in and
   never forwarded.
+
+### ERR06 delivery notes
+
+- The audit classifies Sources choice validation as list-local feedback: curses reuses the fixed
+  lower list slot, preserves its geometry and displays the typed code plus a bounded explanation;
+  text gives the same compact code-bearing feedback before the next source prompt. Source-add,
+  sync and refresh failures remain local to the setup flow; their code-bearing notices are bounded
+  to `CONTENT_MEASURE` in curses.
+- Boundaries crossed after the Sources selection (consumer loading and the narrow legacy source
+  argument adapter) are blocking `Sources` records with conservative Back/Quit recovery. The old
+  adapter exit code is not rendered and cannot reduce that recovery contract.
+- Consumer and curation review preparation, source finalization and canonical consumer/curation
+  finalization preserve `DomainErr` into a `Review` record in text. Curses uses the same record
+  while the session is live; after its required teardown, an expected finalization error is a
+  terminal record with the known nonzero outcome instead of a raw flattened line or a second
+  wizard.
+- Profile/scope/mode compatibility has no separate `DomainErr` adapter: its pure projections keep
+  the user on their current input screen, while Artifacts retains ERR04's typed loader path.
+  Setup and reporting stay post-outcome warning-only; ERR09 owns their dedicated bounded effect
+  record and `SETUP.md` route. No diagnostic enters reporting or analytics.
+- Independent review found no critical issue. Targeted placement/recovery/no-write tests, a
+  startup-record regression and all ten `python scripts/quality.py` gates pass (1861 tests).
 
 Useful facts carried over from the legibility work:
 
