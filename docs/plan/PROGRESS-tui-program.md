@@ -62,7 +62,7 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR09-B | completed | `0cfee2a`; one typed, width-bounded setup review has safe effect records and only local/commit-pinned manual routes; v1 remains explicitly unavailable; all 10 quality gates green (1876 tests) |
 | Pre-existing typecheck repair | committed | `c92cf52`; **not a regression of this track** — the legacy-importer bundle-kind tuple failed `mypy` unchanged on the prior HEAD. Typed module constant plus one bundle-membership regression test; all 10 quality gates green (1889 tests, 85.25% branch coverage) |
 | Typed errors ERR09-C | completed | `74c22e9`; both adapters render one bounded setup outcome with the `SETUP.md` route, a denied plan keeps its verified route through `CanonicalSetupAttempt`, and a blocking retained run crosses one named bridge into `WizardStageFailure`; all 10 quality gates green (1892 tests, 85.27% branch coverage) |
-| Typed errors ERR09-D | completed | authoring material, README manual-route section, representative static/custom/local-source fixtures, and the single-revision setup contract (see below); all 10 quality gates green (1898 tests, 85.28% branch coverage) |
+| Typed errors ERR09-D | completed | `e7b9853`; authoring material, README manual-route section, representative static/custom/local-source fixtures, and the single-revision setup contract (see below); all 10 quality gates green (1898 tests, 85.28% branch coverage) |
 | Typed errors ERR07 | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of

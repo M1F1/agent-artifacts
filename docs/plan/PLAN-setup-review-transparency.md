@@ -1,7 +1,7 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
 Status: delivered; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C
-completed in `74c22e9`, ERR09-D completed with a maintainer-decided scope change (see below);
+completed in `74c22e9`, ERR09-D completed in `e7b9853` with a maintainer-decided scope change;
 tracked by
 [issue #75](https://github.com/M1F1/agent-artifacts/issues/75); execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
