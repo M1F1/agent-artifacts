@@ -25,6 +25,9 @@ from agent_artifacts.model import Manifest, ManifestEntry, Ok, Request
 from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
 from agent_artifacts.profiles.loader import load_profiles
 from agent_artifacts.source import open_source
+from agent_artifacts.tui_marketplace import MarketplaceTarget, project_marketplace_rows
+from tests.tui_marketplace_test import _catalog as _marketplace_catalog
+from tests.tui_marketplace_test import _security as _marketplace_security
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURES = str(REPO_ROOT / "tests" / "fixtures")
@@ -827,6 +830,24 @@ class TextSelectionParityTests(unittest.TestCase):
         rendered = "\n".join(lines)
         self.assertIn("q", rendered)
         self.assertIn("1 and 2", rendered)
+
+    def test_details_show_the_whole_record_in_text_mode_too(self):
+        catalog = _marketplace_catalog()
+        rows = project_marketplace_rows(
+            catalog,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+            security=(_marketplace_security(catalog.items[0]),),
+        )
+        choices = tuple(tui._canonical_choice(row) for row in rows)
+        write, lines = _collector()
+
+        picked = tui._prompt_indices(_scripted_reader(["?1", "1"]), write, "Selection: ", choices)
+
+        self.assertEqual(picked, (0,))
+        rendered = "\n".join(lines)
+        self.assertIn("digests", rendered)
+        self.assertIn(rows[0].manifest_digest, rendered)
+        self.assertIn("severity", rendered)
 
     def test_q_still_leaves_without_a_selection(self):
         write, _lines = _collector()

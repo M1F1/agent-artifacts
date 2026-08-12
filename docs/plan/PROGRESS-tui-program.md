@@ -41,12 +41,15 @@ authorization.
 | Legibility WP-3 step 3 | committed | 6 tests in `tests/tui_wizard_curses_test.py::ScreenChromeTests` |
 | Legibility WP-3 step 4 | committed | 4 tests in `tests/tui_wizard_curses_test.py::DetailPaneTests` |
 | Legibility WP-3 steps 5 and 7 | committed | 5 tests in `EnterSemanticsTests`, 3 across text tests |
-| Legibility WP-3 steps 8, 9, 10 | not started | — |
-| Legibility WP-4 | not started | — |
+| Legibility WP-3 steps 8, 9, 10 | committed | 4 tests in `DetailRecordAndWidthTests`, 2 more across text tests |
+| Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
-Baseline at the time of writing: 1797 unit + 52 integration tests, all ten gates of
+Baseline at the time of writing: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
+
+**The legibility track is complete.** Every package of
+[PLAN-tui-legibility.md](PLAN-tui-legibility.md) has landed.
 
 ### Deviation from the plan's file ownership
 
@@ -63,95 +66,25 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 8 onward** — curses and text
-wiring. Runs inline on `main`, owns `agent_artifacts/tui.py` and the eight test files that assert
-on old screen strings.
+**ERR01 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — track 3 begins. The
+legibility kernel it was sequenced behind now exists, so a diagnostic can be rendered as a record
+through `tui_layout.field_block` rather than flattened into a sentence.
 
-Done so far: **step 2** (landed with WP-1), **steps 1 and 6** (the pinned bar, `b`, `[!]`),
-**step 3** (titles are nouns, every footer is a `status_bar`, no `·` separator survives in
-`tui.py`), **step 4** (the pane and the column grid) and **steps 5 and 7** (Enter semantics in
-both frontends). Steps 1 and 6 landed together on purpose — the bar advertises `b=back`, and
-shipping that sentence before the key worked would have made the bar lie.
+Read that plan for the package order. ERR05a is already delivered (`6ce2e25`); ERR05b — the
+`WizardStageFailure` type, stage and operation on the crash boundary, an opt-in debug traceback,
+and narrowing the probe's broad `except` — is still open and is recorded there as split out.
 
-Remaining: **8** (`_draw_detail` through `render_artifact_detail`), **9** (drop
-`render_marketplace_row` once `_canonical_choice` no longer calls it), **10** (bound the width and
-assert it at 40/80/120/200). Two guard tests fail loudly if a regression reintroduces old chrome:
-`ScreenChromeTests` parses `tui.py` and rejects any string literal that names a key outside a text
-prompt, or uses ` · ` as a separator.
+Useful facts carried over from the legibility work:
 
-What steps 1, 3, 4, 5 and 7 established, for the steps that build on them:
-
-- `_draw_list` reserves `height - 1` for the body and paints `status_bar` on the last row every
-  frame. Step 4's pane comes out of `body_height`, not out of the bar.
-- `_list_hints(toggle=, back=, details=, add=)` filters `HINT_ORDER` to the keys a screen accepts;
-  `_list_counters(...)` returns `("N selected", "first-last of total")` in shed order.
-- The `Selected: N` header line is gone — it is the bar's counter now — so `list_start` is
-  `row + 2` on every list, checkbox or not.
-- Every screen with a pinned last row now paints `status_bar`: onboarding (`enter=start`), review
-  and confirm (`enter=finalize`), the discard prompt (`y=discard, n=return`), the curses text
-  input (`backspace=back when empty`), and `_draw_detail` (`q=return`). Step 8 may restate the
-  detail bar but does not have to invent one.
-- `b` also goes back from review, confirmation, the source-addition review and the mode screen.
-- `onboarding_lines` lost "Press Enter to start." (D11): the bar says it in curses and the prompt
-  says it in text. That edit is in `wizard.py`, WP-1's file — same sequential-ownership deviation
-  as before, recorded above.
-- `_draw_list` takes `cells=` (a shared column grid, laid out across every row at once) and
-  `pane_for=(index, width) -> lines`. Both are optional; only the artifacts screen passes them,
-  because that is the screen observation 7 was about. `_Choice` carries `cells` and `row` so the
-  screen can hand them over, and `_choice_pane` covers collections, which have no security record.
-- `_fitting_cells` drops whole trailing columns when they no longer fit, rather than letting
-  `columns` shrink them to `regist…`. This is the caller-side half of the WP-2 decision below.
-- The pane sits directly under the last list row, or just above the bar when the list is long.
-  Both positions depend only on frame constants, so nothing moves while the cursor does.
-- `render_artifact_pane` abbreviates the revision to seven characters (`aaaaaaa…`). At 62 columns
-  the full hash wrapped over three lines and pushed the `status` field — the one carrying the
-  refusal reason — off the bottom of the pane. `render_artifact_detail` still prints it whole.
-- Enter with nothing ticked takes the cursor row; on a disabled row it refuses, paints the reason
-  on the blank separator row `_draw_list` already reserves, and stays. `empty_selection` now only
-  happens when no row in the list is selectable at all. `_curses_multiselect` takes `reasons=`
-  beside `disabled=`; both list screens that can disable a row pass it.
-- Text mode has no cursor, so parity is at the level of outcome: a blank answer with an empty
-  basket writes `_NOTHING_SELECTED` and asks again, in both `_prompt_wizard_indices` and the
-  legacy `_prompt_indices`. `q` remains the way out of both.
-
-Everything else WP-3 needs is pure and tested:
-
-```python
-from agent_artifacts.tui_layout import (
-    BOX_CHECKED, BOX_DISABLED, BOX_EMPTY, CHROME_ROWS, CONTENT_MEASURE, HINT_ORDER,
-    MIN_LIST_ROWS, PANE_MIN_HEIGHT, PROTECTED_HINTS, READABLE_MEASURE,
-    STAGE_CONFIRMED, STAGE_CURRENT, STAGE_JOIN, STAGE_PENDING, STAGE_PROJECTION,
-    columns, field_block, measure, pane_budget, status_bar, wrap,
-)
-from agent_artifacts.tui_marketplace import (
-    artifact_cells, render_artifact_detail, render_artifact_pane,
-)
-```
-
-`_canonical_choice` ([tui.py:2064](../../agent_artifacts/tui.py)) is the last caller of
-`render_marketplace_row`; migrating it is step 9 and the function is deleted from `__all__` in the
-same commit.
-
-Then WP-4 (flip both document statuses, final gate).
-
-### Settled in WP-2: the narrow-column question WP-0 carried forward
-
-`columns` shrinks every non-identity column toward one character rather than dropping it, so a
-four-cell row at width 44 degraded to `identity  ava…  ris…  reg…`. A stump costs the same space
-as the word and carries nothing, so **the caller drops whole columns instead**, and the kernel is
-left alone.
-
-`artifact_cells` therefore returns its cells in decreasing importance — key, state, risk, trust —
-and WP-3 passes a prefix of them chosen by width. Verified degradation:
-
-```
-width 100:  company/skill/review@1.0.0  available  risk low      registry-reviewed
-width  60:  company/skill/review@1.0.0  available  risk low
-width  44:  company/skill/review@1.0.0  available
-```
-
-This is the only WP-2 decision not already written in the design; it needs no revision there
-because D6 fixes the row's content, not its arity.
+- `tui_layout` gives you `wrap`, `field_block`, `columns`, `status_bar`, `measure`,
+  `READABLE_MEASURE` (80, prose) and `CONTENT_MEASURE` (100, structured).
+- `tui_marketplace.render_artifact_detail` is the worked example of a record: sectioned headings,
+  aligned `label   value` blocks, and digest lines deliberately exempt from the measure.
+- `_draw_detail(curses, stdscr, label, record=…)` renders any such record scrollably, and
+  `_choice_detail` is the projector both frontends share — text mode writes the same lines.
+- Two guard tests in `ScreenChromeTests` parse `tui.py` and fail if any string literal names a key
+  outside a text prompt or uses ` · ` as a separator. New diagnostics must satisfy both.
+- **The live reproducer for ERR02 is still in the working tree** — see the section at the end.
 
 ## Working agreements
 

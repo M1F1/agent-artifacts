@@ -104,19 +104,24 @@ The bare `aart` command first asks which path you need:
   third-party upstreams through guided, preview-first operations.
 
 Both paths are available in the full-screen TUI and its plain-text fallback.
-The first screen explains the controls. Every later screen starts with a text marker stepper, so
-progress is still clear without color and in narrow terminals:
+The first screen explains what aart does. Every later screen starts with a text marker stepper and
+ends with one pinned status bar, so progress and controls are clear without color and in narrow
+terminals. A trailing `…` marks a path that is still a projection, because the remaining stages
+depend on choices not yet made:
 
 ```text
-[x] How it works -> [x] Role -> [x] Sources -> [x] Harness -> [●] Action
-[ ] Scope -> [ ] Mode -> [ ] Artifacts -> [ ] Review
-Stage: Action
-Enter = choose · b / back = previous · q / quit = quit
+✓ How it works → ✓ Role → ✓ Sources → ✓ Harness → ▸ Action → …
+...
+space=toggle, enter=confirm, b=back, ?=details, a=add, q=quit    2 selected   5-12 of 48
 ```
 
-Use Backspace in the full-screen TUI or `b`/`back` in the fallback to move back exactly one
-applicable stage. Confirmed choices, the artifact/bundle basket, and the curses cursor/scroll
-position are retained. If an earlier edit makes only some basket rows invalid, the wizard removes
+The bar is the only place keys are documented. When the terminal is too narrow for all of it, it
+drops the row range first, then the selection count, then hints from the right — never `enter` or
+`q`, so a screen always states its way forward and its way out.
+
+Use `b` (Backspace also works) in the full-screen TUI or `b`/`back` in the fallback to move back
+exactly one applicable stage. Confirmed choices, the artifact/bundle basket, and the curses
+cursor/scroll position are retained. If an earlier edit makes only some basket rows invalid, the wizard removes
 only those rows and prints the reason. Quitting with a non-empty basket asks before discarding it.
 
 The ordinary **Sources** screen reads the user configuration and managed source pointers without

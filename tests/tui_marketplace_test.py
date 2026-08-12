@@ -459,6 +459,14 @@ class ArtifactProjectionTest(unittest.TestCase):
         self.assertTrue(prose)
         self.assertTrue(all(len(line) <= READABLE_MEASURE for line in prose))
 
+    def test_the_flattened_row_renderer_is_gone(self) -> None:
+        # WP-3 step 9: the last caller (_canonical_choice) moved to these projections, so the
+        # one-line dump that started observation 7 no longer exists to be reached for.
+        import agent_artifacts.tui_marketplace as module
+
+        self.assertFalse(hasattr(module, "render_marketplace_row"))
+        self.assertNotIn("render_marketplace_row", module.__all__)
+
     def test_no_projection_uses_the_dot_as_a_separator(self) -> None:
         rows = self.rows()
         emitted = [

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import curses
+import functools
 import io
 import pathlib
 import re
@@ -22,6 +23,8 @@ from agent_artifacts.consumer import (
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
 from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.tui_layout import CONTENT_MEASURE, READABLE_MEASURE
+from agent_artifacts.tui_marketplace import MarketplaceTarget, project_marketplace_rows
 from agent_artifacts.tui_sources import build_source_stage
 from agent_artifacts.wizard import (
     BasketItem,
@@ -36,6 +39,8 @@ from agent_artifacts.wizard import (
 )
 from tests.canonical_symlink_test import _fixture
 from tests.marketplace_fixtures import source_state
+from tests.tui_marketplace_test import _catalog as _marketplace_catalog
+from tests.tui_marketplace_test import _security as _marketplace_security
 from tests.wizard_state_test import source_selection
 
 FIXTURES = str(pathlib.Path(__file__).resolve().parent / "fixtures")
@@ -321,6 +326,101 @@ class DetailPaneTests(unittest.TestCase):
         offsets = {row.index("available") for row in rows}
         self.assertEqual(len(offsets), 1)
         self.assertTrue(all(len(row) <= 99 for row in rows))
+
+
+class DetailRecordAndWidthTests(unittest.TestCase):
+    """WP-3 steps 8 and 10: `?` shows a record, and nothing outgrows its measure."""
+
+    def choices(self):
+        catalog = _marketplace_catalog()
+        rows = project_marketplace_rows(
+            catalog,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+            security=(_marketplace_security(catalog.items[0]),),
+        )
+        return tuple(tui._canonical_choice(row) for row in rows)
+
+    def painted(self, screen: Screen) -> tuple:
+        return tuple(value for _row, _column, value in screen.history)
+
+    def bounded(self, screen: Screen) -> tuple:
+        """Everything the measure applies to: the bar and the stepper are exempt (D7)."""
+
+        return tuple(
+            value
+            for row, _column, value in screen.history
+            if row != screen.height - 1 and "→" not in value
+        )
+
+    def test_the_detail_view_renders_a_record_rather_than_a_paragraph(self) -> None:
+        choices = self.choices()
+        screen = Screen((ord("?"), ord("x"), 10), height=44, width=120)
+
+        tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            tuple(choice.label for choice in choices),
+            details=tuple(choice.description for choice in choices),
+            detail_for=functools.partial(tui._choice_detail, choices),
+        )
+
+        rendered = self.painted(screen)
+        self.assertIn("source", rendered)
+        self.assertIn("security", rendered)
+        self.assertIn("digests", rendered)
+        self.assertTrue(any(line.strip().startswith("manifest") for line in rendered))
+
+    def test_a_digest_keeps_its_own_line_in_the_detail_view(self) -> None:
+        choices = self.choices()
+        digest = choices[0].row.manifest_digest
+        screen = Screen((ord("?"), ord("x"), 10), height=40, width=120)
+
+        tui._curses_multiselect(
+            curses,
+            screen,
+            "Artifacts",
+            tuple(choice.label for choice in choices),
+            detail_for=functools.partial(tui._choice_detail, choices),
+        )
+
+        carriers = [line for line in self.painted(screen) if digest in line]
+        self.assertEqual(len(carriers), 1)
+
+    def test_no_line_outgrows_its_measure_at_any_terminal_width(self) -> None:
+        choices = self.choices()
+
+        for width in (40, 80, 120, 200):
+            with self.subTest(width=width):
+                screen = Screen((ord("?"), ord("x"), 10), height=44, width=width)
+
+                tui._curses_multiselect(
+                    curses,
+                    screen,
+                    "Artifacts",
+                    tuple(choice.label for choice in choices),
+                    cells=tuple(choice.cells for choice in choices),
+                    pane_for=functools.partial(tui._choice_pane, choices),
+                    detail_for=functools.partial(tui._choice_detail, choices),
+                )
+
+                for line in self.bounded(screen):
+                    if "sha256:" in line:
+                        continue  # D8: a wrapped hash cannot be read or copied.
+                    self.assertLessEqual(len(line), min(width - 1, CONTENT_MEASURE), line)
+
+    def test_prose_stays_within_the_readable_measure_on_a_wide_terminal(self) -> None:
+        screen = Screen((ord("x"),), height=24, width=200)
+
+        tui._draw_detail(curses, screen, "skill/review", "word " * 200)
+
+        body = [
+            value
+            for _row, _column, value in screen.history
+            if value.startswith("word") and value.strip()
+        ]
+        self.assertTrue(body)
+        self.assertTrue(all(len(line) <= READABLE_MEASURE for line in body))
 
 
 _KEY_HINT = re.compile(

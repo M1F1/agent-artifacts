@@ -1,6 +1,6 @@
 # Design: TUI legibility and selection ergonomics
 
-Status: proposed; implementation has not started
+Status: implemented on `main` (WP-0 … WP-4); see PLAN-tui-legibility.md for the packages
 
 ## 1. Context
 

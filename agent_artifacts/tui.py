@@ -28,7 +28,6 @@ import functools
 import os
 import shutil
 import sys
-import textwrap
 from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
@@ -102,6 +101,7 @@ from .tui_layout import (
     CHROME_ROWS,
     CONTENT_MEASURE,
     HINT_ORDER,
+    READABLE_MEASURE,
     STAGE_CURRENT,
     columns,
     field_block,
@@ -113,8 +113,8 @@ from .tui_marketplace import (
     MarketplaceArtifactRow,
     MarketplaceTarget,
     artifact_cells,
+    render_artifact_detail,
     render_artifact_pane,
-    render_marketplace_row,
 )
 from .tui_sources import (
     SourceAdditionRequest,
@@ -2062,29 +2062,14 @@ def _basket_item(choice: _Choice) -> BasketItem:
 
 
 def _canonical_choice(row: MarketplaceArtifactRow) -> _Choice:
-    providers = ", ".join(row.security.provider_versions) or "none"
-    evidence_age = (
-        "unknown"
-        if row.security.evidence_age_seconds is None
-        else f"{row.security.evidence_age_seconds}s"
-    )
-    remediation = "; ".join(row.security.remediation) or "none"
-    details = (
-        f"{row.summary} Source {row.source_alias} at {row.source_revision}; trust {row.trust}; "
-        f"security {row.security.installation_risk} ({row.security.assessment_status}), max severity "
-        f"{row.security.max_finding_severity}, coverage "
-        f"{row.security.coverage_completed}/{row.security.coverage_expected}, providers {providers}, "
-        f"evidence age {evidence_age}, remediation {remediation}; manifest {row.manifest_digest}; "
-        f"payload {row.payload_digest}; object {row.object_digest}."
-    )
-    if row.reasons:
-        details += " Compatibility: " + "; ".join(reason.message for reason in row.reasons)
+    """One list row. Identity and summary here; every evidence field lives in the record (D6)."""
+
     return _Choice(
         "artifact",
         row.identity.name,
         row.identity.kind,  # type: ignore[arg-type]
-        render_marketplace_row(row),
-        description=details,
+        f"{row.key} — {row.summary}",
+        description=row.summary,
         enabled=row.compatible,
         reason="; ".join(reason.message for reason in row.reasons),
         linked_count=sum(mode == "symlink" for mode in row.actual_modes),
@@ -2262,9 +2247,8 @@ def _prompt_wizard_indices(
         if answer.startswith("?"):
             number = answer[1:].strip()
             if number.isdigit() and 1 <= int(number) <= len(choices):
-                choice = choices[int(number) - 1]
-                identity = _choice_label(choice.kind, choice.name, choice.type, "")
-                write(f"{identity}: {choice.description or 'No catalog description is available.'}")
+                for line in _choice_detail(choices, int(number) - 1):
+                    write(line)
                 continue
             write(f"Enter ?N with a number between 1 and {len(choices)}.")
             continue
@@ -4002,10 +3986,8 @@ def _prompt_indices(
         if line.startswith("?"):
             number = line[1:].strip()
             if number.isdigit() and 1 <= int(number) <= len(choices):
-                choice = choices[int(number) - 1]
-                identity = _choice_label(choice.kind, choice.name, choice.type, "")
-                detail = choice.description or "No catalog description is available."
-                write(f"{identity}: {detail}")
+                for record_line in _choice_detail(choices, int(number) - 1):
+                    write(record_line)
                 continue
             write(f"Enter ?N with a number between 1 and {len(choices)}.")
             continue
@@ -4172,6 +4154,7 @@ def _curses_multi_event(
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
     reasons: Optional[Sequence[str]] = None,
+    detail_for: Optional[Callable[[int], Sequence[str]]] = None,
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -4191,6 +4174,7 @@ def _curses_multi_event(
             cells=cells,
             pane_for=pane_for,
             reasons=reasons,
+            detail_for=detail_for,
         )
     except TypeError as error:
         if "unexpected keyword argument" not in str(error):
@@ -4782,6 +4766,7 @@ def _run_user_curses_wizard(
                 reasons=tuple(choice.reason for choice in read_model.choices),
                 cells=tuple(choice.cells or (choice.label,) for choice in read_model.choices),
                 pane_for=functools.partial(_choice_pane, read_model.choices),
+                detail_for=functools.partial(_choice_detail, read_model.choices),
             )
             session = remember_position(
                 session, "artifacts", cursor=event.cursor, scroll=event.scroll
@@ -5395,6 +5380,7 @@ def _curses_multiselect(
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
     reasons: Optional[Sequence[str]] = None,
+    detail_for: Optional[Callable[[int], Sequence[str]]] = None,
 ):
     """A checkbox list, optionally returning explicit wizard navigation and position.
 
@@ -5448,6 +5434,8 @@ def _curses_multiselect(
         elif ch == ord(" "):
             if disabled is None or not disabled[cursor]:
                 checked[cursor] = not checked[cursor]
+        elif ch == ord("?") and detail_for is not None:
+            _draw_detail(curses, stdscr, labels[cursor], record=tuple(detail_for(cursor)))
         elif ch == ord("?") and details is not None and cursor < len(details):
             _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
@@ -5528,6 +5516,17 @@ def _fitting_cells(cells: Sequence[Sequence[str]], width: int) -> Tuple[Tuple[st
     while keep < count and sum(widths[: keep + 1]) + 2 * keep <= width:
         keep += 1
     return tuple(tuple(row[:keep]) for row in cells)
+
+
+def _choice_detail(choices: Sequence[_Choice], index: int) -> Tuple[str, ...]:
+    """The complete record behind ``?``, in whichever frontend asked for it (D8)."""
+
+    choice = choices[index]
+    if choice.row is not None:
+        return render_artifact_detail(choice.row)
+    identity = _choice_label(choice.kind, choice.name, choice.type, "")
+    description = choice.description or "No catalog description is available."
+    return (identity, *wrap(description, width=READABLE_MEASURE))
 
 
 def _choice_pane(choices: Sequence[_Choice], index: int, width: int) -> Tuple[str, ...]:
@@ -5872,24 +5871,38 @@ def _ellipsize(text: str, width: int) -> str:
     return one_line[: width - 1] + "…"
 
 
-def _draw_detail(curses, stdscr, label: str, description: str) -> None:
-    """Show the complete description in a wrapped, scrollable curses detail view."""
+def _draw_detail(
+    curses,
+    stdscr,
+    label: str,
+    description: str = "",
+    *,
+    record: Sequence[str] = (),
+) -> None:
+    """Show the complete evidence in a scrollable curses detail view.
+
+    A record is rendered as it comes: it is already bounded and its digest lines are deliberately
+    exempt from the measure, because a wrapped hash can be neither read nor copied (D8). Plain
+    prose is wrapped at the readable measure rather than at the terminal width (D7).
+    """
     available = max(_width(stdscr) - 1, 1)
     height = _height(stdscr)
-    content_top = 3
+    # A record leads with its own identity line, so repeating the label above it would state the
+    # same fact twice on adjacent rows.
+    titles = ("Artifact details",) if record else ("Artifact details", label)
+    content_top = len(titles) + 1
     content_height = max(height - content_top - 1, 1)
-    wrapped = textwrap.wrap(description or "No catalog description is available.", available) or [
-        ""
-    ]
+    wrapped = list(record) or list(
+        wrap(description or "No catalog description is available.", width=available)
+    )
     max_offset = max(len(wrapped) - content_height, 0)
     offset = 0
 
     while True:
         stdscr.clear()
-        if height > 0:
-            stdscr.addstr(0, 0, _ellipsize("Artifact details", available))
-        if height > 1:
-            stdscr.addstr(1, 0, _ellipsize(label, available))
+        for index, title in enumerate(titles):
+            if index < height:
+                stdscr.addstr(index, 0, _ellipsize(title, available))
         for relative_row, line in enumerate(wrapped[offset : offset + content_height]):
             row = content_top + relative_row
             if row >= max(height - 1, 0):

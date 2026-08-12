@@ -568,20 +568,6 @@ def _harness_reason(item: HarnessCompatibility) -> str:
     return "unavailable: " + "; ".join(reason.message for reason in item.reasons)
 
 
-def render_marketplace_row(row: MarketplaceArtifactRow) -> str:
-    """Render one concise row; detail views can expose every stored evidence field."""
-
-    compatibility = "compatible" if row.compatible else "unavailable"
-    installed = "" if not row.installed_statuses else " · " + ", ".join(row.installed_statuses)
-    return (
-        f"{row.key} — {row.summary} · source {row.source_alias} · {row.trust} · "
-        f"risk {row.security.installation_risk}, max {row.security.max_finding_severity} "
-        f"({row.security.assessment_status}, "
-        f"coverage {row.security.coverage_completed}/{row.security.coverage_expected}) · "
-        f"{compatibility}{installed}"
-    )
-
-
 __all__ = [
     "BasketReconciliation",
     "HarnessCompatibility",
@@ -595,5 +581,4 @@ __all__ = [
     "reconcile_marketplace_basket",
     "render_artifact_detail",
     "render_artifact_pane",
-    "render_marketplace_row",
 ]

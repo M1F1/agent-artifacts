@@ -3,8 +3,12 @@
 Implements [DESIGN-tui-legibility.md](../design/DESIGN-tui-legibility.md). Decision references
 below (D1–D8) point at that document's §3.
 
+Status: implemented. Every package below has landed on `main`; the running record of which
+commit carried which step is [PROGRESS-tui-program.md](PROGRESS-tui-program.md).
+
 Baseline before starting: `main`, 1740 unit tests + 52 integration green via
-`python scripts/quality.py`.
+`python scripts/quality.py`. Baseline after WP-4: 1828 unit + 52 integration, all ten gates
+green.
 
 ## Shape of the work
 
