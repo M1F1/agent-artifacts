@@ -181,6 +181,7 @@ class SetupQueueCommandTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
+                (package / "SETUP.md").write_text(f"Configure {name} manually.", encoding="utf-8")
                 installer = json.loads(recipe(required_tools=[]))
                 installer["artifact"] = f"mcp/{name}"
                 (package / "setup" / "installer.json").write_text(

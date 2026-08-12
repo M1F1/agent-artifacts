@@ -15,8 +15,8 @@ from agent_artifacts.source import open_source
 
 def recipe(**changes: object) -> bytes:
     value: dict[str, object] = {
-        "schema_version": 1,
-        "protocol_version": 1,
+        "schema_version": 2,
+        "protocol_version": 2,
         "artifact": "mcp/atlassian",
         "purpose": "Configure optional Atlassian token access.",
         "platforms": ["darwin"],
@@ -94,9 +94,21 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertIsInstance(mismatch, Err)
         self.assertIn("does not match", mismatch.reason)
 
-    def test_v2_recipe_derives_its_package_root_manual_reference(self):
+    def test_the_superseded_version_1_pair_is_rejected_with_a_migration_message(self):
+        superseded = parse_installer(
+            recipe(schema_version=1, protocol_version=1),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(superseded, Err)
+        # The author has to learn the exact new pair and the document it now requires.
+        self.assertIn("schema_version and protocol_version must both be 2", superseded.reason)
+        self.assertIn("SETUP.md", superseded.reason)
+
+    def test_recipe_derives_its_package_root_manual_reference(self):
         result = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="mcp/atlassian/setup/installer.json",
         )
@@ -106,9 +118,9 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertEqual(result.value.protocol_version, 2)
         self.assertEqual(result.value.manual_path, "mcp/atlassian/SETUP.md")
 
-    def test_v2_recipe_at_a_canonical_object_root_derives_root_setup_document(self):
+    def test_recipe_at_a_canonical_object_root_derives_root_setup_document(self):
         result = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="setup/installer.json",
         )
@@ -116,9 +128,9 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
         self.assertEqual(result.value.manual_path, "SETUP.md")
 
-    def test_v2_recipe_at_object_root_rejects_a_noncanonical_descriptor_path(self):
+    def test_recipe_at_object_root_rejects_a_noncanonical_descriptor_path(self):
         result = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="./setup/installer.json",
         )
@@ -126,15 +138,15 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertIsInstance(result, Err)
         self.assertIn("path", result.reason)
 
-    def test_v2_recipe_rejects_a_noncanonical_descriptor_path(self):
+    def test_recipe_rejects_a_noncanonical_descriptor_path(self):
         result = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="mcp/other/../atlassian/setup/installer.json",
         )
 
         self.assertIsInstance(result, Err)
-        self.assertIn("version-2 installer path", result.reason)
+        self.assertIn("installer path", result.reason)
 
     def test_unpinned_docker_and_secret_interpolation_are_rejected(self):
         docker = parse_installer(
@@ -212,6 +224,7 @@ class SetupSourceTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (package / "SETUP.md").write_text("Configure this manually.", encoding="utf-8")
             (package / "setup" / "installer.json").write_bytes(recipe())
 
             result = open_source(Request(command="list", source_dir=tmp)).value.catalog()
@@ -236,14 +249,14 @@ class SetupSourceTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (package / "setup" / "installer.json").write_bytes(recipe(schema_version=2))
+            (package / "setup" / "installer.json").write_bytes(recipe(protocol_version=1))
 
             result = open_source(Request(command="list", source_dir=tmp)).value.catalog()
 
             self.assertIsInstance(result, Err)
             self.assertIn("schema_version", result.reason)
 
-    def test_v2_installer_requires_a_regular_utf8_package_root_setup_document(self):
+    def test_installer_requires_a_regular_utf8_package_root_setup_document(self):
         with tempfile.TemporaryDirectory() as tmp:
             package = pathlib.Path(tmp) / "mcp" / "atlassian"
             (package / "setup").mkdir(parents=True)
@@ -257,9 +270,7 @@ class SetupSourceTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (package / "setup" / "installer.json").write_bytes(
-                recipe(schema_version=2, protocol_version=2)
-            )
+            (package / "setup" / "installer.json").write_bytes(recipe())
 
             missing = open_source(Request(command="list", source_dir=tmp)).value.catalog()
             self.assertIsInstance(missing, Err)
@@ -277,7 +288,7 @@ class SetupSourceTests(unittest.TestCase):
             assert installer is not None
             self.assertEqual(installer.manual_path, "mcp/atlassian/SETUP.md")
 
-    def test_v2_custom_entrypoint_requires_the_manual_setup_header(self):
+    def test_custom_entrypoint_requires_the_manual_setup_header(self):
         with tempfile.TemporaryDirectory() as tmp:
             package = pathlib.Path(tmp) / "mcp" / "atlassian"
             setup = package / "setup"
@@ -295,8 +306,6 @@ class SetupSourceTests(unittest.TestCase):
             (package / "SETUP.md").write_text("Configure this manually.", encoding="utf-8")
             (setup / "installer.json").write_bytes(
                 recipe(
-                    schema_version=2,
-                    protocol_version=2,
                     capabilities=["process", "custom-code"],
                     required_tools=[],
                     inputs=[],

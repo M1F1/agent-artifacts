@@ -99,20 +99,19 @@ class SetupInstaller:
     steps: Tuple[SetupStep, ...]
     descriptor_path: str
     descriptor_hash: str
+    # The fixed package-relative manual route, derived from the recipe path rather than declared
+    # by the author, so every validated installer carries exactly one.
+    manual_path: str
     custom_entrypoint: Optional[str] = None
     custom_hash: Optional[str] = None
-    # Version-2 installers derive this fixed package-relative manual route; version-1 preserves
-    # its published behaviour and therefore has no required manual document.
-    manual_path: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
 class SetupManualReference:
-    """One immutable manual-setup route, or the explicit legacy-unavailable marker."""
+    """One immutable manual-setup route: every validated recipe carries exactly one."""
 
-    relative_path: Optional[str]
-    source: Optional[str]
-    legacy: bool = False
+    relative_path: str
+    source: str
 
 
 @dataclass(frozen=True, slots=True)

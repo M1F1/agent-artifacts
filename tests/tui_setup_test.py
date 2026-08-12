@@ -48,11 +48,11 @@ class TuiSetupReviewTests(unittest.TestCase):
         self.assertIn("mcp/atlassian@tabnine", rendered)
         self.assertIn("Configure optional Atlassian token access", rendered)
         self.assertIn("Manual alternative", rendered)
-        self.assertIn("manual documentation unavailable", rendered)
+        self.assertIn("mcp/atlassian/SETUP.md", rendered)
 
-    def test_confirmation_and_incomplete_post_install_outcome_repeat_v2_manual_route(self):
+    def test_confirmation_and_incomplete_post_install_outcome_repeat_the_manual_route(self):
         setup = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="mcp/atlassian/setup/installer.json",
         ).value
@@ -82,9 +82,9 @@ class TuiSetupReviewTests(unittest.TestCase):
         self.assertIn("mcp/atlassian/SETUP.md", rendered)
         self.assertIn("Automated setup is incomplete", rendered)
 
-    def _v2_queue(self):
+    def _queue(self):
         setup = parse_installer(
-            recipe(schema_version=2, protocol_version=2),
+            recipe(),
             artifact_key="mcp/atlassian",
             descriptor_path="mcp/atlassian/setup/installer.json",
         ).value
@@ -107,7 +107,7 @@ class TuiSetupReviewTests(unittest.TestCase):
         output: list[str] = []
         with mock.patch("agent_artifacts.commands.setup.run_queue", return_value=blocked):
             code = tui._run_post_install_setup(
-                self._v2_queue(),
+                self._queue(),
                 Request(command="install", user_home="/fake-home"),
                 scope_root="/project",
                 read=lambda _prompt: "n",
@@ -136,7 +136,7 @@ class TuiSetupReviewTests(unittest.TestCase):
             side_effect=((cancelled,), blocked),
         ) as runner:
             code = tui._run_post_install_setup(
-                self._v2_queue(),
+                self._queue(),
                 Request(command="install", user_home="/fake-home"),
                 scope_root="/project",
                 read=lambda _prompt: "y",

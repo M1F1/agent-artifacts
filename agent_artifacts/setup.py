@@ -371,10 +371,11 @@ def parse_installer(
         if (
             type(schema_version) is not int
             or type(protocol_version) is not int
-            or (schema_version, protocol_version) not in {(1, 1), (2, 2)}
+            or (schema_version, protocol_version) != (2, 2)
         ):
             raise _Invalid(
-                "schema_version and protocol_version must be the matching pair 1/1 or 2/2"
+                "schema_version and protocol_version must both be 2; a superseded recipe is "
+                "migrated by raising both to 2 and adding the package-root SETUP.md route"
             )
         artifact = _single_line(data["artifact"], "artifact")
         if not _ARTIFACT_KEY.fullmatch(artifact):
@@ -388,7 +389,7 @@ def parse_installer(
             or len(set(platforms)) != len(platforms)
             or any(platform != "darwin" for platform in platforms)
         ):
-            raise _Invalid("platforms must be the non-empty list ['darwin'] in protocol v1")
+            raise _Invalid("platforms must be the non-empty list ['darwin']")
         help_raw = data["help_urls"]
         if not isinstance(help_raw, list):
             raise _Invalid("help_urls must be a list")
@@ -483,7 +484,7 @@ def parse_installer(
                 descriptor_hash=_sha256(raw),
                 custom_entrypoint=custom_entrypoint,
                 custom_hash=custom_hash,
-                manual_path=_manual_path(descriptor_path) if schema_version == 2 else None,
+                manual_path=_manual_path(descriptor_path),
             )
         )
     except (UnicodeDecodeError, json.JSONDecodeError, _Invalid) as exc:
@@ -812,14 +813,14 @@ def _contained_manual_path(item: SetupQueueItem, relative_path: str) -> str:
 
 
 def manual_reference(item: SetupQueueItem) -> SetupManualReference:
-    """Resolve the v2 manual route without reading filesystem, environment, or terminal state."""
+    """Resolve the manual route without reading filesystem, environment, or terminal state."""
 
     relative_path = item.installer.manual_path
-    if relative_path is None:
-        return SetupManualReference(None, None, legacy=True)
     local_path = _contained_manual_path(item, relative_path)
     if not local_path:
-        return SetupManualReference(None, None, legacy=True)
+        # A derived route cannot escape the package, so this only guards a future producer:
+        # name the route inside the package rather than publish a path outside the source root.
+        return SetupManualReference(relative_path, relative_path)
     source_url = item.source_url.rstrip("/")
     if _PINNED_SOURCE_URL.fullmatch(source_url):
         path = relative_path.replace(os.sep, "/")
@@ -911,13 +912,6 @@ def render_manual_alternative(
     """Render the non-executing manual route before consent or after an incomplete outcome."""
 
     lines: Tuple[str, ...] = ("Manual alternative",)
-    if reference.legacy:
-        return lines + field_block(
-            (("instructions", "legacy installer; manual documentation unavailable"),),
-            indent=2,
-            width=width,
-        )
-    assert reference.relative_path is not None and reference.source is not None
     return lines + field_block(
         (
             ("instructions", _public_text(reference.relative_path)),

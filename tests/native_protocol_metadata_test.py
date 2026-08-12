@@ -293,8 +293,8 @@ class LegacyArtifactAdapterTest(unittest.TestCase):
 
         version = _unwrap(parse_semver("1.0.0"))
         setup = SetupInstaller(
-            1,
-            1,
+            2,
+            2,
             "mcp/atlassian",
             "Configure Atlassian.",
             ("darwin",),
@@ -305,6 +305,7 @@ class LegacyArtifactAdapterTest(unittest.TestCase):
             (),
             "mcp/atlassian/setup/installer.json",
             "sha256:fixture",
+            "mcp/atlassian/SETUP.md",
         )
         artifact = Artifact(
             "mcp",
@@ -327,8 +328,8 @@ class LegacyArtifactAdapterTest(unittest.TestCase):
             "mcp/atlassian",
             description="Connect to Atlassian.",
             setup=SetupInstaller(
-                1,
-                1,
+                2,
+                2,
                 "mcp/atlassian",
                 "Configure.",
                 ("darwin",),
@@ -339,6 +340,7 @@ class LegacyArtifactAdapterTest(unittest.TestCase):
                 (),
                 "outside.json",
                 "sha256:fixture",
+                "SETUP.md",
             ),
         )
         self.assertEqual(

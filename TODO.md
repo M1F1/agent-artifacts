@@ -20,7 +20,11 @@ Execution order, acceptance criteria, and handoff steps live in
 - [ ] Update the registry-owned `agent-artifacts` and `author-aart-installer` skills in a separate
       `M1F1/agent-artifacts-registry` PR: rewrite the stale embedded-catalog instructions, bump
       both artifact versions to `2.0.0`, remove invalid legacy provenance, and regenerate lock and
-      index through registry gates.
+      index through registry gates. The same PR must teach `author-aart-installer` the only
+      supported recipe revision — `schema_version`/`protocol_version` both `2`, the required
+      package-root `SETUP.md` written before the recipe, and the
+      `# AART manual setup: see ../SETUP.md` header on any custom entrypoint. Worked packages to
+      copy from: `tests/fixtures/setup-routes/`.
 - [ ] Define a new versioned release contract before the next AART release. Preserve the immutable
       `v1.0.0` schema-freeze/release evidence rather than rewriting it for post-release changes.
 

@@ -62,7 +62,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR09-B | completed | `0cfee2a`; one typed, width-bounded setup review has safe effect records and only local/commit-pinned manual routes; v1 remains explicitly unavailable; all 10 quality gates green (1876 tests) |
 | Pre-existing typecheck repair | committed | `c92cf52`; **not a regression of this track** — the legacy-importer bundle-kind tuple failed `mypy` unchanged on the prior HEAD. Typed module constant plus one bundle-membership regression test; all 10 quality gates green (1889 tests, 85.25% branch coverage) |
 | Typed errors ERR09-C | completed | `74c22e9`; both adapters render one bounded setup outcome with the `SETUP.md` route, a denied plan keeps its verified route through `CanonicalSetupAttempt`, and a blocking retained run crosses one named bridge into `WizardStageFailure`; all 10 quality gates green (1892 tests, 85.27% branch coverage) |
-| Typed errors ERR07, ERR09-D | pending | — |
+| Typed errors ERR09-D | completed | authoring material, README manual-route section, representative static/custom/local-source fixtures, and the single-revision setup contract (see below); all 10 quality gates green (1898 tests, 85.28% branch coverage) |
+| Typed errors ERR07 | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -86,15 +87,12 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR09-D of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — authoring
-guidance and documentation: start new setup artifacts from `SETUP.md`, add the custom-script
-header template, state v1 compatibility precisely in the README without promising retroactive
-validation, and add representative MCP and non-MCP fixtures for the static, custom and
-local-source routes. ERR07 then closes the track with its documentation and handoff.
+**ERR07 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — track documentation and
+handoff. It closes the typed-error track: no code contract is left open by ERR09.
 
-ERR09-A/B/C now provide the manual-document boundary, the pure bounded review and the wired
-outcomes in both adapters. The remaining work reuses ERR04's record renderer and ERR06's
-setup-boundary classification; payload and setup outcomes must remain distinct throughout.
+ERR09-A/B/C/D provide the manual-document boundary, the pure bounded review, the wired outcomes in
+both adapters, and the authoring material. Payload and setup outcomes must remain distinct in
+anything ERR07 writes.
 
 Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
 stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
@@ -218,6 +216,40 @@ Useful facts carried over from the legibility work:
   completed records alongside the failure is worth doing when the retained path is next touched.
 - Independent review found no critical issue. All ten `python scripts/quality.py` gates pass
   (1892 unit + 52 integration tests, 85.27% branch coverage).
+
+### ERR09-D delivery notes
+
+- **Scope change, decided by the maintainer mid-package.** The plan's "state v1 compatibility
+  precisely" item is void: AART now supports exactly one setup-recipe revision. Both version
+  fields must be `2`, and the superseded `1`/`1` pair is rejected at parse time with the migration
+  named in the error. The prompt invariant "keep v1 compatibility" was explicitly overridden — the
+  general rule for this repository is that only the newest revision of a protocol or standard is
+  maintained.
+- **What that removed, rather than added.** `manual_path` is no longer optional, so every
+  validated installer carries exactly one route; `SetupManualReference` lost its `legacy` flag and
+  the "manual documentation unavailable" render branch, and both JSON payloads lost the `legacy`
+  key; `source.py` and the setup engine validate `SETUP.md` unconditionally instead of behind a
+  version test. There is no compatibility branch left in validation, review, or the runtime.
+- The one genuinely defensive case that the `legacy` flag was overloading — a route escaping the
+  source root — is now its own total behavior: the route is named package-relative, never as a
+  path outside the root. `setup_review_test` pins it with a hand-crafted `manual_path`, because a
+  derived route cannot reach that state today and the guard exists for future producers.
+- Authoring material is `docs/design/DESIGN-setup-installers.md` §3.1 (document first, then the
+  recipe, then a script only for what no module expresses, with the header template) and
+  §17.1 of the SPEC for the normative rules. The README gained a "Declining Automation" section:
+  a worked `Manual alternative` block, the distinction between "No setup effect has run." and
+  "Automated setup is incomplete", and the explicit statements that declining never rolls back the
+  payload and that following the route is never consent.
+- Representative packages live in `tests/fixtures/setup-routes/`: `mcp/atlassian` (static recipe,
+  Keychain + shell) and `skills/onboarding` (non-MCP, custom entrypoint with a complementary
+  `restart.notice@1` module step). `tests/setup_manual_routes_test.py` proves they load as valid
+  sources without executing anything, that the pinned and unpinned routes resolve as specified,
+  and that neither document carries a credential shape.
+- **Not migrated, deliberately.** Setup state recorded by an earlier run stays readable exactly as
+  written; the receipt reader still accepts its stored version fields. Rejecting old *inputs* is
+  not the same as rewriting existing *state*, and nothing is migrated in place.
+- Independent review found no critical issue. All ten `python scripts/quality.py` gates pass
+  (1898 unit + 52 integration tests, 85.28% branch coverage).
 
 ## Working agreements
 

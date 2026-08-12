@@ -37,6 +37,9 @@ class SetupEndToEndTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (package / "SETUP.md").write_text(
+                "Store the token in Keychain yourself.", encoding="utf-8"
+            )
             (package / "setup" / "installer.json").write_bytes(recipe())
             install_request = Request(
                 command="install",

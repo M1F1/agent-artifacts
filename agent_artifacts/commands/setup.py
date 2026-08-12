@@ -132,7 +132,6 @@ def _plan_payload(plan) -> dict:
         "manual": {
             "relative_path": review.manual.relative_path,
             "source": review.manual.source,
-            "legacy": review.manual.legacy,
         },
         "effects": [
             {

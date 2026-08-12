@@ -295,12 +295,12 @@ User-global destinations include Claude's `~/.claude/` files and `~/.claude.json
 An external legacy 0.1 source can describe an MCP as a single `mcp/<name>.json` file or a
 directory such as `mcp/<name>/mcp.json` with supporting docs. A canonical registry instead owns
 `artifacts/mcp/<name>/`, with a manifest and `payload/` directory. Harness installs merge only the
-JSON server definition. `SETUP.md` stays optional human reference; guided setup is declared by a
-strict `setup/installer.json` contract.
+JSON server definition. Guided setup is declared by a strict `setup/installer.json` contract, and
+every package that declares one also ships a validated package-root `SETUP.md`.
 
 ### Reviewed Setup Installers On macOS
 
-A directory-shaped artifact may include `setup/installer.json`. The static version-1 recipe
+A directory-shaped artifact may include `setup/installer.json`. The static recipe
 declares its purpose, HTTPS help links, required tools, capabilities, secret prompts, and exact
 module steps. Catalog discovery validates and hashes it but never executes it. The TUI shows the
 ordered queue before final installation, finishes the ordinary artifact install, leaves curses,
@@ -312,6 +312,34 @@ shows the reviewed source identity, recipe and plan hashes, targets/argv, capabi
 rollback limits. Consent is per effect and defaults to No. One item is one transaction: failure
 rolls back that item's completed reversible steps, preserves earlier successful items, and
 continues unless Stop was explicitly selected.
+
+#### Declining Automation
+
+Every setup review ends with a `Manual alternative` block, and answering No to a consent prompt is
+a supported way to finish — not an error path. The block names the package's `SETUP.md` and where
+to read it: a commit-pinned HTTPS blob URL when the reviewed source has one, otherwise the local
+path inside the materialized source. The document is prose written for a person; AART never parses
+it, and a custom entrypoint must open with `# AART manual setup: see ../SETUP.md` so the route is
+visible when reading the script instead.
+
+```text
+Manual alternative
+  instructions  mcp/atlassian/SETUP.md
+  source        https://github.com/acme/catalog/blob/<commit>/mcp/atlassian/SETUP.md
+  status        No setup effect has run.
+```
+
+The `status` line is a claim about effects, not about your intent. `No setup effect has run.`
+appears only when nothing was attempted; after a cancelled, failed, or partially rolled-back run
+it reads `Automated setup is incomplete; manual action may be needed.` instead. Declining setup
+never rolls back the artifact payload that was already installed, and following the manual route
+is never recorded as consent to the automation.
+
+Setup recipes support exactly one revision: `schema_version` and `protocol_version` must both be
+`2`, which is also what makes `SETUP.md` mandatory. A recipe declaring the superseded `1`/`1` pair
+is refused when the catalog is read, with the migration named in the error — raise both fields to
+`2` and add the package-root document. Nothing is validated retroactively and nothing is rewritten
+in place: setup state recorded by an earlier run stays readable exactly as written.
 
 Flag-mode artifact installation never auto-runs setup. The following setup runner is legacy
 installed-state compatibility; the canonical equivalents are the TUI's setup review and
@@ -340,8 +368,9 @@ can inherit; close/reopen the shell and restart the harness as instructed. GUI a
 Non-macOS hosts record `unsupported` before invoking effect adapters. An optional hash-bound
 custom entrypoint may implement the reviewed `plan/apply/verify/rollback` protocol in a private
 `0700` run directory with a minimal environment and `shell=False`; it remains trusted reviewed
-code, not a sandbox. The current public-registry `author-aart-installer` skill is a legacy import;
-`REG02` will rewrite it as a registry-owned v2 skill before it is advertised for the new workflow.
+code, not a sandbox. The current public-registry `author-aart-installer` skill is a legacy import
+and does not yet teach the required `SETUP.md`; `REG02` will rewrite it as a registry-owned skill
+before it is advertised for the new workflow.
 Until then, catalog authors should follow the full trust model in
 [`docs/design/DESIGN-setup-installers.md`](docs/design/DESIGN-setup-installers.md).
 

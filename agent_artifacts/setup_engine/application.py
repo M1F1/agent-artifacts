@@ -248,18 +248,17 @@ def _setup_recipe(
     if isinstance(parsed_installer, LegacyErr):
         return _error(SETUP_INVALID, parsed_installer.reason)
     assert isinstance(parsed_installer, LegacyOk)
-    if parsed_installer.value.manual_path is not None:
-        manual_entry = by_path.get(parsed_installer.value.manual_path)
-        if manual_entry is None or manual_entry.kind is not SnapshotEntryKind.FILE:
-            return _error(SETUP_INVALID, "version-2 setup requires a regular SETUP.md object file")
-        try:
-            manual_text = manual_entry.content.decode("utf-8")
-        except UnicodeDecodeError:
-            return _error(SETUP_INVALID, "version-2 SETUP.md must be valid UTF-8")
-        if not manual_text.strip() or "\x00" in manual_text:
-            return _error(SETUP_INVALID, "version-2 SETUP.md must be non-empty safe UTF-8 text")
-        if custom_entry is not None and not has_manual_setup_header(custom_entry.content):
-            return _error(SETUP_INVALID, "version-2 custom entrypoint lacks the SETUP.md header")
+    manual_entry = by_path.get(parsed_installer.value.manual_path)
+    if manual_entry is None or manual_entry.kind is not SnapshotEntryKind.FILE:
+        return _error(SETUP_INVALID, "setup requires a regular SETUP.md object file")
+    try:
+        manual_text = manual_entry.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return _error(SETUP_INVALID, "SETUP.md must be valid UTF-8")
+    if not manual_text.strip() or "\x00" in manual_text:
+        return _error(SETUP_INVALID, "SETUP.md must be non-empty safe UTF-8 text")
+    if custom_entry is not None and not has_manual_setup_header(custom_entry.content):
+        return _error(SETUP_INVALID, "custom entrypoint lacks the SETUP.md header")
     if parsed_installer.value.platforms != manifest.setup.platforms:
         return _error(
             SETUP_INVALID,

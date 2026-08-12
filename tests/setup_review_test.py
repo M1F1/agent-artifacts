@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import unittest
+from dataclasses import replace
 
 from agent_artifacts.model import SetupQueueItem
 from agent_artifacts.setup import (
@@ -17,16 +19,16 @@ from agent_artifacts.tui_layout import CONTENT_MEASURE
 from tests.setup_catalog_test import recipe
 
 
-def installer(*, version: int = 2, **changes: object):
+def installer(**changes: object):
     return parse_installer(
-        recipe(schema_version=version, protocol_version=version, **changes),
+        recipe(**changes),
         artifact_key="mcp/atlassian",
         descriptor_path="mcp/atlassian/setup/installer.json",
     ).value
 
 
 class SetupReviewProjectionTests(unittest.TestCase):
-    def test_v2_reference_keeps_relative_route_and_uses_only_a_commit_pinned_url(self):
+    def test_reference_keeps_relative_route_and_uses_only_a_commit_pinned_url(self):
         item = SetupQueueItem(
             "mcp",
             "atlassian",
@@ -45,7 +47,6 @@ class SetupReviewProjectionTests(unittest.TestCase):
             reference.source,
             "https://github.com/acme/catalog/blob/" + "a" * 40 + "/mcp/atlassian/SETUP.md",
         )
-        self.assertFalse(reference.legacy)
 
     def test_an_unpinned_or_missing_web_origin_uses_the_absolute_local_manual_path(self):
         item = SetupQueueItem(
@@ -63,17 +64,20 @@ class SetupReviewProjectionTests(unittest.TestCase):
 
         self.assertEqual(reference.source, "/materialized/catalog/mcp/atlassian/SETUP.md")
 
-    def test_v1_is_explicitly_labeled_as_manual_documentation_unavailable(self):
+    def test_a_route_escaping_the_source_root_never_reaches_the_rendered_review(self):
+        # The derived route cannot escape today; the guard is what keeps that true for any
+        # future producer, so it is pinned here rather than trusted.
+        escaping = replace(installer(), manual_path=os.path.join("..", "outside", "SETUP.md"))
         item = SetupQueueItem(
-            "mcp", "atlassian", "tabnine", "project", "pin:abc", "/source", installer(version=1)
+            "mcp", "atlassian", "tabnine", "project", "pin:abc", "/source/catalog", escaping
         )
         plan = plan_setup(item, target_root="/project", platform="darwin")
 
         review = project_setup_review(plan)
 
-        self.assertTrue(review.manual.legacy)
-        self.assertEqual(review.manual.relative_path, None)
-        self.assertIn("manual documentation unavailable", "\n".join(render_setup_review(plan)))
+        self.assertEqual(review.manual.relative_path, os.path.join("..", "outside", "SETUP.md"))
+        self.assertEqual(review.manual.source, review.manual.relative_path)
+        self.assertNotIn("/source/outside", "\n".join(render_setup_review(plan)))
 
     def test_effects_are_safe_records_with_identity_and_recovery_at_every_width(self):
         item = SetupQueueItem(
@@ -209,8 +213,6 @@ class SetupReviewProjectionTests(unittest.TestCase):
         script = b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\n# api_token=do-not-render\n"
         configured = parse_installer(
             recipe(
-                schema_version=2,
-                protocol_version=2,
                 capabilities=["process", "custom-code"],
                 required_tools=[],
                 inputs=[],

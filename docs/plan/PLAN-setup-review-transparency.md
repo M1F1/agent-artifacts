@@ -1,7 +1,8 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
-Status: in delivery; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C
-completed in `74c22e9`, ERR09-D pending; tracked by
+Status: delivered; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C
+completed in `74c22e9`, ERR09-D completed with a maintainer-decided scope change (see below);
+tracked by
 [issue #75](https://github.com/M1F1/agent-artifacts/issues/75); execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
 
@@ -27,8 +28,13 @@ ERR09-C review/runtime wiring and outcomes
 ERR09-D docs, compatibility and full gate
 ```
 
-Every package is tests first. No code may make an existing v1 artifact invalid merely because it
-lacks `SETUP.md`; a new protocol/schema revision is the compatibility boundary.
+Every package is tests first.
+
+**Superseded during ERR09-D.** Packages A–C were built behind a versioned compatibility boundary,
+on the rule that no change may invalidate an existing v1 artifact for lacking `SETUP.md`. The
+maintainer replaced that rule mid-delivery: only the newest revision of a protocol is maintained,
+so the boundary was collapsed and revision 1 is now rejected outright. The record below is kept as
+written; ERR09-D states what it removed.
 
 ## ERR09-A — setup contract and manual reference
 
@@ -145,21 +151,35 @@ Delivered:
 
 ## ERR09-D — authoring guidance, documentation and final gate
 
+**Status:** completed.
+
 **Owns:** authoring templates/skills, README/design references, fixtures and release handoff notes.
 
 1. Update the installer-authoring material so new setup artifacts start with `SETUP.md`, explain
-   the required manual content and add the custom-script header template.
+   the required manual content and add the custom-script header template. — `DESIGN-setup-installers.md`
+   §3.1 and SPEC §17.1.
 2. Update README trust/review guidance with a concise example of declining automation and following
-   the manual route. State v1 compatibility precisely; do not promise retroactive validation.
+   the manual route. ~~State v1 compatibility precisely; do not promise retroactive validation.~~
+   **Replaced:** state that exactly one revision is supported and that a superseded recipe is
+   rejected with its migration named. Recorded setup state is still never migrated or rewritten.
 3. Add representative MCP and non-MCP fixtures covering static, custom and local-source fallback
-   routes.
+   routes. — `tests/fixtures/setup-routes/` with `tests/setup_manual_routes_test.py`.
 4. Run the focused setup/TUI/typed-error suites, then every command in Track 3's full quality gate.
-   Keep untracked workspace artifacts out of the change set.
+   Keep untracked workspace artifacts out of the change set. — all ten gates green, 1898 unit + 52
+   integration tests, 85.28% branch coverage.
+
+**Delivered beyond the written plan:** collapsing the two supported revisions into one. That
+deleted `manual_path`'s optionality, the `legacy` marker on `SetupManualReference`, its render
+branch, the `legacy` key in both JSON payloads, and the version-conditional `SETUP.md` validation
+in `source.py` and the setup engine. `ERR09-D` delivery notes in
+[PROGRESS-tui-program.md](PROGRESS-tui-program.md) carry the detail.
 
 ## Stop conditions
 
-- Do not change an existing v1 artifact's validity or add a schema requirement without a versioned
-  boundary.
+- ~~Do not change an existing v1 artifact's validity or add a schema requirement without a
+  versioned boundary.~~ **Withdrawn by the maintainer during ERR09-D**: only the newest revision
+  is maintained, and revision 1 is rejected at parse time. Recorded setup state is still never
+  migrated or overwritten automatically.
 - Do not show secrets, values typed for setup, raw script content, raw subprocess output or an
   unpinned repository link.
 - Do not use a terminal-width-dependent free-form effect line.

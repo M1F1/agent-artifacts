@@ -339,7 +339,6 @@ def _manual_payload(reference: SetupManualReference | None) -> dict | None:
     return {
         "relative_path": reference.relative_path,
         "source": reference.source,
-        "legacy": reference.legacy,
     }
 
 

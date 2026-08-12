@@ -355,10 +355,12 @@ Example directory:
 artifacts/mcp/atlassian/
   artifact.json
   README.md                   # optional extended documentation
+  SETUP.md                    # required whenever setup/ declares a recipe
   payload/
     mcp.json
   setup/
     installer.json            # optional reviewed setup recipe
+    install.sh                # optional custom entrypoint; starts with the manual-route header
   provenance.json             # required for imported/curated foreign content
 ```
 
@@ -902,6 +904,33 @@ run directory with minimal environment and `shell=False`; they are trusted code,
 
 Direct/local/unverified sources do not automatically inherit permission to run setup. Policy and
 interactive review can deny unsupported capabilities while still allowing payload installation.
+
+### 17.1 Manual route
+
+Setup recipes carry a matching `schema_version`/`protocol_version` pair, and exactly one revision
+is supported: both fields MUST be `2`. Any other pair, including the superseded `1`/`1`, MUST be
+rejected at parse time with an error naming the required pair and the document it implies. No
+compatibility path for a superseded revision exists in validation, review, or the runtime.
+
+Every valid recipe therefore requires a package-root `SETUP.md`: a contained regular file,
+non-empty safe UTF-8, never a symlink. Catalog discovery validates it before setup planning and
+never parses its prose as commands. The route is derived from the recipe path, not declared by the
+author, so a package cannot advertise a document it does not own — and every validated installer
+resolves to exactly one route, so there is no "documentation unavailable" state to render.
+
+A custom entrypoint MUST begin, after an optional shebang, with the exact line:
+
+```sh
+# AART manual setup: see ../SETUP.md
+```
+
+so that reading the script directly also reveals the manual route. The runtime preamble stays
+authoritative regardless of what a script contains.
+
+Presentation resolves the route to a commit-pinned HTTPS blob URL when the reviewed source has
+one, and otherwise to the contained absolute local path. It is shown before setup consent and
+again after any outcome that is not complete. Following it is never treated as consent, and it
+grants no capability that automated setup would not have needed.
 
 ## 18. Security assessment subsystem
 

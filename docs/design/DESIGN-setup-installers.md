@@ -17,10 +17,14 @@ the contract.
 
 The initial delivery makes these decisions:
 
-- In the implemented version-1 protocol, `setup/installer.json` is canonical and `SETUP.md` is an
-  optional reference only. The planned Track-3 follow-up
-  [`DESIGN-setup-review-transparency.md`](DESIGN-setup-review-transparency.md) introduces the
-  mandatory manual fallback for newly authored setup-capable artifacts without invalidating v1.
+- **One setup protocol is supported at a time, and it is revision 2.** `setup/installer.json`
+  declares the automation, the package-root `SETUP.md` is required and validated, and a custom
+  entrypoint must carry the manual-route header. The superseded revision 1 is not accepted: a
+  recipe declaring it is rejected at parse time with the migration named in the error, so no
+  compatibility branch survives in validation, review, or the runtime. The contract, the routes it
+  resolves to and the authoring order are in
+  [`DESIGN-setup-review-transparency.md`](DESIGN-setup-review-transparency.md); the normative
+  rules are §17.1 of [`SPEC-aart-1.0.md`](SPEC-aart-1.0.md).
 - Setup belongs to a directory-shaped artifact package. Flat guideline/memory/MCP files cannot
   declare executable setup.
 - Core artifact installation finishes before setup starts. Setup failure never rolls back an
@@ -69,18 +73,51 @@ Directory package:
 ```text
 mcp/atlassian/
 ├── mcp.json
-├── SETUP.md                    # optional human reference
+├── SETUP.md                    # required manual route, validated with the recipe
 └── setup/
     ├── installer.json          # required static recipe
     └── install.sh              # optional custom-code escape hatch
 ```
 
-`installer.json` schema version 1:
+### 3.1 Authoring order
+
+Write the document first. It is the only part a user can act on when they decline automation,
+when policy denies a capability, or when an effect fails, and drafting it first keeps the recipe
+honest about what it is really doing.
+
+1. **`SETUP.md`** at the package root. Say what the automation would change, then give the
+   equivalent steps by hand, then how to undo them. Name the exact targets — file, Keychain
+   service and account, directory — because the review shows the same targets and a user compares
+   the two. Never put a credential, token or captured command output in it; it is checked into a
+   catalog and rendered in a terminal. It is prose for a human, never parsed as commands.
+2. **`installer.json`** with `schema_version` and `protocol_version` both `2`. Prefer a reviewed
+   module for every step that has one; the module catalog is §5.
+3. **`install.sh`** only for what no module can express. An entrypoint must begin, after an
+   optional shebang, with exactly:
+
+   ```sh
+   #!/bin/sh
+   # AART manual setup: see ../SETUP.md
+   ```
+
+   Catalog validation rejects the package without that line. It exists so that a reader of the
+   script alone still finds the manual route. The runtime preamble applies regardless of what the
+   script contains, and the script stays trusted reviewed code rather than a sandbox.
+
+A package written against the superseded revision does not load. Migrating one is mechanical:
+raise both version fields to `2` and add the package-root `SETUP.md` (plus the header line if the
+package has a custom entrypoint). The parser states exactly that in its rejection, so the failure
+is self-explaining rather than a lookup in this document.
+
+Worked examples live in `tests/fixtures/setup-routes/`: `mcp/atlassian` is a static recipe,
+`skills/onboarding` is a non-MCP package with a custom entrypoint.
+
+`installer.json`:
 
 ```json
 {
-  "schema_version": 1,
-  "protocol_version": 1,
+  "schema_version": 2,
+  "protocol_version": 2,
   "artifact": "mcp/atlassian",
   "purpose": "Configure optional Atlassian API-token access for the selected harness.",
   "platforms": ["darwin"],

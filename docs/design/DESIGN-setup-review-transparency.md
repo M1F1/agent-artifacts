@@ -127,8 +127,11 @@ list merely to place an error at the bottom.
   parsed commands.
 - The manual route does not grant additional capabilities or bypass policy, source trust, hash
   checks, or explicit consent for automated effects.
-- A v1 artifact without `SETUP.md` remains viewable and installable under its existing semantics;
-  it is labeled as legacy/manual documentation unavailable rather than fabricated from a URL.
+- Exactly one recipe revision is supported. A package declaring the superseded revision, with or
+  without `SETUP.md`, is refused when the catalog is read; the error names the migration. Because
+  every validated installer therefore has a route, no record ever reports a route as unavailable
+  and none is fabricated from a URL. (This replaces the original v1-compatibility boundary,
+  withdrawn by the maintainer during ERR09-D.)
 - This follow-up does not promise an in-curses setup runner. The existing post-curses transaction
   boundary remains intact.
 - It does not auto-execute a manual command, write a README, or collect a user's reason for
@@ -136,8 +139,8 @@ list merely to place an error at the bottom.
 
 ## 4. Acceptance criteria
 
-1. A new setup-capable artifact is rejected at catalog validation when its package-root `SETUP.md`
-   is missing, unsafe or unreadable; a v1 artifact is unaffected.
+1. A setup-capable artifact is rejected at catalog validation when its package-root `SETUP.md` is
+   missing, unsafe or unreadable, and when its version pair is not the single supported revision.
 2. Before every setup consent, and after every incomplete setup outcome, a user sees a concrete
    relative route plus a commit-pinned URL or local absolute path.
 3. At widths 40, 80, 120 and 200 no normal review/effect/error line exceeds the shared measure;
