@@ -1,6 +1,7 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
-Status: in delivery; ERR09-A completed in `819b885`, ERR09-B–D pending; tracked by
+Status: in delivery; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C/D
+pending; tracked by
 [issue #75](https://github.com/M1F1/agent-artifacts/issues/75); execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
 
@@ -64,6 +65,8 @@ Delivered:
 
 ## ERR09-B — pure bounded review and effect projections
 
+**Status:** completed in `0cfee2a`.
+
 **Owns:** setup review projection, `tui_layout`-using helpers and focused renderer tests.
 
 1. Replace flat effect lines with a typed review projection that carries queue identity, manual
@@ -79,6 +82,21 @@ Delivered:
 
 Acceptance: text and curses consume the same projection; no output contains the old flattened
 arrow shape; normal lines remain within their measure and no secret-shaped fixture value appears.
+
+Delivered:
+
+- `SetupReview` and `SetupEffectReview` are immutable pure values shared by the retained setup
+  command today and reserved for the TUI/canonical adapters in ERR09-C. They carry the manual
+  reference, recipe/plan hashes, required tools, ordered allowlisted effect facts and preflight.
+- The renderer uses only `wrap` and `field_block`; at widths 40, 80, 120 and 200 its normal lines
+  stay within the shared measure. Effect records replace the former flattened arrow form and keep
+  identity, target, capability, recovery and safe details visible.
+- Provenance accepts only an HTTPS commit-pinned blob root, with a contained absolute local route
+  as the fallback. Credential-shaped author text is redacted; arbitrary argv, custom body,
+  managed content, environment lookup and JSON values are withheld. v1 is explicitly labeled
+  manual documentation unavailable.
+- Static, custom, empty-capability, long-target, recovery, source and legacy setup tests passed.
+  Independent review found no critical issue; the complete quality matrix passed with 1876 tests.
 
 ## ERR09-C — review, consent and typed outcomes
 

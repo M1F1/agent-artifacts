@@ -1,7 +1,7 @@
 # Design: transparent setup review and manual fallback
 
-Status: in delivery ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75)); ERR09-A
-completed, ERR09-B–D pending
+Status: in delivery ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75)); ERR09-A/B
+completed, ERR09-C/D pending
 
 ## 1. Context
 
@@ -93,6 +93,13 @@ The record has a numbered identity, purpose, target, required capability/prerequ
 reversibility or manual recovery, and safe command detail where a command is reviewable. An
 opaque script body, input value, environment value, raw subprocess output, and full secret-bearing
 argv are never rendered.
+
+ERR09-B implements `SetupReview` and `SetupEffectReview` as the shared pure projection. The
+projection keeps recipe and plan hashes, relative/local-or-pinned manual references, ordered
+effect identity, target, capability, recovery and an allowlisted detail. It redacts
+credential-shaped author text and withholds script bodies, managed values, Keychain lookup content
+and arbitrary command arguments by construction. A URL is used only when it is an HTTPS
+commit-pinned `/blob/<sha>` root; otherwise the projection uses the contained absolute local path.
 
 `tui_layout.field_block`, `wrap`, `CONTENT_MEASURE` (100) and `READABLE_MEASURE` (80) own the
 layout. The renderer is shared by text, curses and canonical setup execution; no caller builds a

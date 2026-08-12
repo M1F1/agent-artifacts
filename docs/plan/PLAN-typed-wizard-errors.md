@@ -1,6 +1,7 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** in delivery; ERR01–ERR06 and ERR08 completed, ERR07 and ERR09 pending
+- **Status:** in delivery; ERR01–ERR06 and ERR08 completed, ERR09-A/B completed, ERR09-C/D and
+  ERR07 pending
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -361,7 +362,8 @@ Delivered:
 
 ### ERR09 — bounded setup review and manual `SETUP.md` fallback
 
-**Status:** pending; follows ERR04's shared record renderer and ERR06's setup-boundary audit.
+**Status:** in delivery; ERR09-A/B completed in `819b885` and `0cfee2a`; follows ERR04's shared
+record renderer and ERR06's setup-boundary audit.
 The detailed contract and file map are in
 [`PLAN-setup-review-transparency.md`](PLAN-setup-review-transparency.md); its design is
 [`DESIGN-setup-review-transparency.md`](../design/DESIGN-setup-review-transparency.md).

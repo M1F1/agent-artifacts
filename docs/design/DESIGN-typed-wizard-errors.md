@@ -1,6 +1,7 @@
 # Design: typed stage failures and actionable TUI diagnostics
 
-Status: in delivery; ERR01–ERR06 and ERR08 completed, ERR07 and ERR09 pending
+Status: in delivery; ERR01–ERR06 and ERR08 completed, ERR09-A/B completed, ERR09-C/D and ERR07
+pending
 
 ## 1. Context
 

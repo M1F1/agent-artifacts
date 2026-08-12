@@ -59,7 +59,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR06 | completed | `181d555`; Sources local feedback + blocking records, Review/Finalize records across consumer and curation paths, terminal records after curses teardown; all 10 quality gates green (1861 tests) |
 | Typed errors ERR08 | completed | `b331060`; default Maintainer curates `cwd`, skips consumer Sources in text/curses, preserves explicit legacy route and pure Back/stepper behavior; all 10 quality gates green (1866 tests) |
 | Typed errors ERR09-A | completed | `819b885`; versioned `1/1` → `2/2` setup contract derives package-root `SETUP.md`, validates safe v2 documents/custom headers and retains v1 behavior; all 10 quality gates green (1870 tests) |
-| Typed errors ERR07, ERR09-B–D | pending | — |
+| Typed errors ERR09-B | completed | `0cfee2a`; one typed, width-bounded setup review has safe effect records and only local/commit-pinned manual routes; v1 remains explicitly unavailable; all 10 quality gates green (1876 tests) |
+| Typed errors ERR07, ERR09-C/D | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -83,13 +84,13 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR09-B of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — create the
-shared bounded setup-effect projection and its immutable manual-reference value. It must feed
-text, curses and canonical setup review without exposing secrets or reintroducing flat long lines.
+**ERR09-C of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — wire the
+shared setup review and manual preamble into text, curses and canonical setup consent/outcomes.
+Keep payload outcome first, repeat the route after incomplete setup, and retain consent semantics.
 
-ERR09-A now provides the versioned manual-document boundary. ERR09-B–D reuse ERR04's record
-renderer and ERR06's setup-boundary classification; payload and setup outcomes must remain
-distinct throughout the remaining work.
+ERR09-A/B now provide the manual-document boundary and pure bounded review. ERR09-C/D reuse
+ERR04's record renderer and ERR06's setup-boundary classification; payload and setup outcomes
+must remain distinct throughout the remaining work.
 
 Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
 stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
