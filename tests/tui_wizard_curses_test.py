@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import curses
 import io
 import pathlib
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -169,6 +171,88 @@ class StatusBarTests(unittest.TestCase):
         self.assertIn("[!] blocked", rendered)
         self.assertIn("[ ] selectable", rendered)
         self.assertNotIn("[-]", rendered)
+
+
+_KEY_HINT = re.compile(
+    r"(?:^|[\s(])[\w?↑↓/]+\s*=\s*"
+    r"(?:toggle|confirm|back|quit|details|add|start|scroll|finalize|cancel|choose|continue)",
+    re.IGNORECASE,
+)
+
+
+class ScreenChromeTests(unittest.TestCase):
+    """WP-3 step 3: titles are nouns, and every pinned footer speaks the bar's vocabulary."""
+
+    def footer(self, screen: Screen) -> str:
+        painted = [value for row, _column, value in screen.lines if row == screen.height - 1]
+        self.assertEqual(len(painted), 1, painted)
+        return painted[0]
+
+    def test_no_screen_string_advertises_a_key_outside_the_bar(self) -> None:
+        # Text-mode prompts keep their hints (design section 5): they are the last thing printed
+        # before input, which is text mode's pinned bar. Everything else defers to status_bar.
+        module = ast.parse(pathlib.Path(tui.__file__).read_text(encoding="utf-8"))
+        literals = [
+            node.value
+            for node in ast.walk(module)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+
+        offenders = [
+            text for text in literals if _KEY_HINT.search(text) and not text.endswith(": ")
+        ]
+
+        self.assertEqual(offenders, [])
+
+    def test_no_screen_string_uses_the_dot_as_a_separator(self) -> None:
+        module = ast.parse(pathlib.Path(tui.__file__).read_text(encoding="utf-8"))
+        offenders = [
+            node.value
+            for node in ast.walk(module)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and " · " in node.value
+        ]
+
+        self.assertEqual(offenders, [])
+
+    def test_the_onboarding_footer_is_a_status_bar(self) -> None:
+        screen = Screen((10,), height=14, width=70)
+
+        tui._curses_onboarding(curses, screen)
+
+        footer = self.footer(screen)
+        self.assertIn("enter=start", footer)
+        self.assertIn("q=quit", footer)
+
+    def test_the_review_footer_names_finalize_back_and_quit(self) -> None:
+        session = wizard_advance(initial_session())
+        screen = Screen((ord("n"),), height=14, width=70)
+
+        tui._curses_review(curses, screen, session, ("Review", "line"))
+
+        footer = self.footer(screen)
+        self.assertIn("enter=finalize", footer)
+        self.assertIn("b=back", footer)
+        self.assertIn("q=quit", footer)
+
+    def test_the_mode_screen_paints_the_same_bar_as_any_other_list(self) -> None:
+        screen = Screen((10,), height=14, width=70)
+
+        tui._curses_install_mode(curses, screen)
+
+        footer = self.footer(screen)
+        self.assertIn("enter=confirm", footer)
+        self.assertIn("b=back", footer)
+        self.assertIn("q=quit", footer)
+
+    def test_b_goes_back_from_the_review_and_mode_screens(self) -> None:
+        session = wizard_advance(initial_session())
+
+        self.assertEqual(
+            tui._curses_review(curses, Screen((ord("b"),)), session, ("Review",)), "back"
+        )
+        self.assertEqual(tui._curses_install_mode(curses, Screen((ord("b"),))), "back")
 
 
 class CursesWizardPrimitiveTests(unittest.TestCase):

@@ -350,7 +350,7 @@ def _choice_label(
     if description:
         label += f" — {description}"
     if status:
-        label += f" · {status}"
+        label += f" ({status})"
     return label
 
 
@@ -1024,8 +1024,8 @@ def _canonical_setup_run(
     write("Review setup queue (runs sequentially after installed payloads):")
     for plan in queue.plans:
         write(
-            f"  - {plan.request.coordinate}#{plan.request.profile}/{plan.request.scope} · "
-            f"trust {plan.trust} · recipe {plan.recipe_path} · Review {plan.review_digest}"
+            f"  - {plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}, "
+            f"trust {plan.trust}, recipe {plan.recipe_path}, review {plan.review_digest}"
         )
         for effect in plan.legacy_plan.effects:
             write(
@@ -4217,11 +4217,11 @@ def _curses_source_event(
     elif session.source_selection is None:
         selected = tuple(index for index, row in enumerate(view.rows) if row.source.enabled)
     missing = view.unconfigured_required or view.unconfigured_recommended
-    suffix = "" if not missing else " · configure: " + ",".join(item.value for item in missing)
+    suffix = "" if not missing else " — configure: " + ", ".join(item.value for item in missing)
     event = _curses_multi_event(
         curses,
         stdscr,
-        f"Sources (space=toggle, enter=confirm, a=add, q=quit){suffix}",
+        f"Sources{suffix}",
         tuple(choice.label for choice in choices),
         session,
         selected=selected,
@@ -4265,9 +4265,19 @@ def _curses_text_input(
         input_row = min(len(lines) + 1, max(_height(stdscr) - 2, 0))
         shown = buffer or ("" if default is None else f"[{default}]")
         stdscr.addstr(input_row, 0, _ellipsize(f"> {shown}", available))
-        footer = "Enter = continue · Backspace on empty = back · q on empty = quit"
         if _height(stdscr) > 0:
-            stdscr.addstr(_height(stdscr) - 1, 0, _ellipsize(footer, available))
+            stdscr.addstr(
+                _height(stdscr) - 1,
+                0,
+                status_bar(
+                    (
+                        ("enter", "continue"),
+                        ("backspace", "back when empty"),
+                        ("q", "quit when empty"),
+                    ),
+                    width=available,
+                ),
+            )
         stdscr.refresh()
         key = stdscr.getch()
         if key in enter:
@@ -4340,15 +4350,16 @@ def _curses_source_addition_review(
             stdscr.addstr(
                 _height(stdscr) - 1,
                 0,
-                _ellipsize(
-                    "Enter/y = synchronize and save · Backspace/n = back · q = quit", available
+                status_bar(
+                    (("enter", "save"), ("b", "back"), ("q", "quit")),
+                    width=available,
                 ),
             )
         stdscr.refresh()
         key = stdscr.getch()
         if key in enter or key in (ord("y"), ord("Y")):
             return True
-        if key in backspace or key in (ord("n"), ord("N")):
+        if key in backspace or key in (ord("n"), ord("N"), ord("b")):
             return WizardInput("back")
         if key in (ord("q"), 27):
             return WizardInput("quit")
@@ -4366,7 +4377,7 @@ def _curses_source_addition(
     kind_event = _curses_single_event(
         curses,
         stdscr,
-        "Add source (enter=choose, Backspace=back, q=quit)",
+        "Add source",
         tuple(label for _kind, label in choices),
         session,
     )
@@ -4452,13 +4463,19 @@ def _curses_confirm_discard(curses, stdscr, session: WizardSession) -> bool:
         return True
     lines = _curses_header(stdscr, session) + (
         f"Discard {len(session.basket)} selected basket item(s)?",
-        "y = discard · n/Backspace = return",
     )
     while True:
         stdscr.clear()
         available = max(_width(stdscr) - 1, 0)
-        for row, line in enumerate(lines[: _height(stdscr)]):
+        height = _height(stdscr)
+        for row, line in enumerate(lines[: max(height - 1, 1)]):
             stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height:
+            stdscr.addstr(
+                height - 1,
+                0,
+                status_bar((("y", "discard"), ("n", "return")), width=available),
+            )
         stdscr.refresh()
         key = stdscr.getch()
         if key in (ord("y"), ord("Y")):
@@ -4491,16 +4508,16 @@ def _curses_review(curses, stdscr, session: WizardSession, lines: Sequence[str])
             stdscr.addstr(
                 height - 1,
                 0,
-                _ellipsize(
-                    "↑/↓ = scroll · Enter/y = Finalize · Backspace = back · q = quit",
-                    available,
+                status_bar(
+                    (("enter", "finalize"), ("b", "back"), ("q", "quit")),
+                    width=available,
                 ),
             )
         stdscr.refresh()
         key = stdscr.getch()
         if key in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
             return True
-        if key in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8):
+        if key in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")):
             return "back"
         if key in (ord("q"), 27):
             return "quit"
@@ -4539,7 +4556,7 @@ def _run_user_curses_wizard(
             event = _curses_multi_event(
                 curses,
                 stdscr,
-                "Select profile(s)  (space=toggle, enter=confirm, q=quit)",
+                "Select profiles",
                 profile_names,
                 session,
                 selected=selected,
@@ -4570,7 +4587,7 @@ def _run_user_curses_wizard(
             event = _curses_single_event(
                 curses,
                 stdscr,
-                "Action  (enter=confirm, q=quit)",
+                "Action",
                 ACTIONS,
                 session,
             )
@@ -4715,7 +4732,7 @@ def _run_user_curses_wizard(
             event = _curses_multi_event(
                 curses,
                 stdscr,
-                "Select artifact(s)/bundle(s)  (space=toggle, ?=details, enter=confirm, q=quit)",
+                "Select artifacts and bundles",
                 tuple(choice.label for choice in read_model.choices),
                 session,
                 selected=selected,
@@ -4949,7 +4966,7 @@ def _run_curses(
                 event = _curses_single_event(
                     curses,
                     stdscr,
-                    "Choose how you want to use aart  (enter=confirm, q=quit)",
+                    "Choose how you want to use aart",
                     tuple(f"{role.label} - {role.description}" for role in ROLES),
                     session,
                 )
@@ -5143,7 +5160,7 @@ def _run_curses(
                 event = _curses_single_event(
                     curses,
                     stdscr,
-                    f"Maintainer - {catalog_root}  (enter=confirm, q=quit)",
+                    f"Maintainer - {catalog_root}",
                     tuple(label for _action, label in maintainer_actions),
                     session,
                 )
@@ -5564,7 +5581,7 @@ def _curses_onboarding(curses, stdscr) -> WizardInput:
             stdscr.addstr(
                 height - 1,
                 0,
-                _ellipsize("Enter = start · ↑/↓ = scroll · q = quit", available),
+                status_bar((("enter", "start"), ("q", "quit")), width=available),
             )
         stdscr.refresh()
         ch = stdscr.getch()
@@ -5597,7 +5614,7 @@ def _curses_install_scope(
     selected = _curses_singleselect(
         curses,
         stdscr,
-        "Installation scope  (enter=confirm, q=quit)",
+        "Installation scope",
         labels,
         wizard=wizard,
         initial_cursor=initial_cursor,
@@ -5625,22 +5642,24 @@ def _curses_install_mode(
     labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_MODE_CHOICES]
     cursor = min(max(initial_cursor, 0), len(labels) - 1)
     scroll = max(initial_scroll, 0)
-    backspace_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
+    back_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")}
+    hints = _list_hints(toggle=False, back=True, details=False, add=False)
     while True:
         scroll = _draw_list(
             curses,
             stdscr,
-            "Installation mode  (enter=confirm, backspace=back, q=quit)",
+            "Installation mode",
             labels,
             cursor,
             None,
             header=header,
             scroll=scroll,
+            hints=hints,
         )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
-        if ch in backspace_keys:
+        if ch in back_keys:
             return WizardInput("back", cursor=cursor, scroll=scroll) if wizard else "back"
         if ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
@@ -5677,16 +5696,16 @@ def _curses_confirm_install(
             stdscr.addstr(
                 height - 1,
                 0,
-                _ellipsize(
-                    "↑/↓ = scroll · Enter/y = Finalize · Backspace = back · n/q = cancel",
-                    available,
+                status_bar(
+                    (("enter", "finalize"), ("b", "back"), ("q", "cancel")),
+                    width=available,
                 ),
             )
         stdscr.refresh()
         ch = stdscr.getch()
         if ch in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
             return True
-        if ch in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8):
+        if ch in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")):
             return "back"
         if ch in (ord("q"), 27):
             return "quit"
@@ -5738,10 +5757,8 @@ def _draw_detail(curses, stdscr, label: str, description: str) -> None:
                 break
             stdscr.addstr(row, 0, _ellipsize(line, available))
         if height > 0:
-            footer = (
-                "↑/↓/Pg scroll · other key returns" if max_offset else "Press any key to return."
-            )
-            stdscr.addstr(height - 1, 0, _ellipsize(footer, available))
+            hints = (("↑/↓", "scroll"), ("q", "return")) if max_offset else (("q", "return"),)
+            stdscr.addstr(height - 1, 0, status_bar(hints, width=available))
         stdscr.refresh()
 
         ch = stdscr.getch()

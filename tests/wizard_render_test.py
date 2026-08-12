@@ -46,7 +46,7 @@ class WizardOnboardingTests(unittest.TestCase):
     def test_onboarding_names_no_keys(self):
         for frontend in ("curses", "text"):
             rendered = "\n".join(onboarding_lines(frontend))  # type: ignore[arg-type]
-            for key in ("Up / Down", "Backspace", "b / back", "Space", "comma-separated"):
+            for key in ("Up / Down", "Backspace", "b / back", "Space", "comma-separated", "Enter"):
                 self.assertNotIn(key, rendered, frontend)
 
     def test_onboarding_keeps_what_the_bar_cannot_say(self):
@@ -55,7 +55,9 @@ class WizardOnboardingTests(unittest.TestCase):
         self.assertIn("aart", rendered)
         self.assertIn("User", rendered)
         self.assertIn("Maintainer", rendered)
-        self.assertIn("Press Enter to start", rendered)
+        # WP-3 step 3 gave onboarding a status bar saying enter=start, so the sentence that used
+        # to carry that key would now be its second copy.
+        self.assertNotIn("Press Enter", rendered)
 
 
 class ProjectedStagesTests(unittest.TestCase):

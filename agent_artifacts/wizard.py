@@ -379,8 +379,6 @@ def onboarding_lines(frontend: Literal["text", "curses"]) -> Tuple[str, ...]:
         "",
         "User installs artifacts into a project or a home directory.",
         "Maintainer curates what a team is offered and where it comes from.",
-        "",
-        "Press Enter to start.",
     )
 
 

@@ -38,7 +38,8 @@ authorization.
 | Legibility WP-1 stepper and header | committed | 15 tests in `tests/wizard_render_test.py`; 11 rewritten across 6 files |
 | Legibility WP-2 artifact projections | committed | 10 tests in `tests/tui_marketplace_test.py`; 4 moved off `render_marketplace_row` |
 | Legibility WP-3 steps 1, 2, 6 | committed | 6 tests in `tests/tui_wizard_curses_test.py::StatusBarTests` |
-| Legibility WP-3 steps 3, 4, 5, 7, 8, 9, 10 | not started | — |
+| Legibility WP-3 step 3 | committed | 6 tests in `tests/tui_wizard_curses_test.py::ScreenChromeTests` |
+| Legibility WP-3 steps 4, 5, 7, 8, 9, 10 | not started | — |
 | Legibility WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
@@ -60,15 +61,22 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 3 onward** — curses and text
+**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 4 onward** — curses and text
 wiring. Runs inline on `main`, owns `agent_artifacts/tui.py` and the eight test files that assert
 on old screen strings.
 
-Done so far: **step 2** (landed with WP-1), **step 1** (the pinned bar) and **step 6** (`b` and
-`[!]`). Steps 1 and 6 landed together on purpose — the bar advertises `b=back`, and shipping that
-sentence before the key worked would have made the bar lie.
+Done so far: **step 2** (landed with WP-1), **steps 1 and 6** (the pinned bar, `b`, `[!]`) and
+**step 3** (titles are nouns, every footer is a `status_bar`, no `·` separator survives in
+`tui.py`). Steps 1 and 6 landed together on purpose — the bar advertises `b=back`, and shipping
+that sentence before the key worked would have made the bar lie.
 
-What step 1 established, for the steps that build on it:
+Remaining: **4** (detail pane + `columns` rows), **5** (Enter semantics), **7** (text parity),
+**8** (`_draw_detail` through `render_artifact_detail`), **9** (drop `render_marketplace_row`),
+**10** (bound the width). Two guard tests now fail loudly if a regression reintroduces old chrome:
+`ScreenChromeTests` parses `tui.py` and rejects any string literal that names a key outside a text
+prompt, or uses ` · ` as a separator.
+
+What steps 1 and 3 established, for the steps that build on them:
 
 - `_draw_list` reserves `height - 1` for the body and paints `status_bar` on the last row every
   frame. Step 4's pane comes out of `body_height`, not out of the bar.
@@ -76,6 +84,14 @@ What step 1 established, for the steps that build on it:
   `_list_counters(...)` returns `("N selected", "first-last of total")` in shed order.
 - The `Selected: N` header line is gone — it is the bar's counter now — so `list_start` is
   `row + 2` on every list, checkbox or not.
+- Every screen with a pinned last row now paints `status_bar`: onboarding (`enter=start`), review
+  and confirm (`enter=finalize`), the discard prompt (`y=discard, n=return`), the curses text
+  input (`backspace=back when empty`), and `_draw_detail` (`q=return`). Step 8 may restate the
+  detail bar but does not have to invent one.
+- `b` also goes back from review, confirmation, the source-addition review and the mode screen.
+- `onboarding_lines` lost "Press Enter to start." (D11): the bar says it in curses and the prompt
+  says it in text. That edit is in `wizard.py`, WP-1's file — same sequential-ownership deviation
+  as before, recorded above.
 
 Everything else WP-3 needs is pure and tested:
 
