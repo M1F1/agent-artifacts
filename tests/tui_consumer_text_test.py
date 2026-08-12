@@ -152,13 +152,14 @@ class TuiConsumerTextTest(unittest.TestCase):
             payload = service.finalize(reviewed.value, reviewed.value.review_digest)
             assert isinstance(payload, Ok), payload
 
-            setup = tui._canonical_setup_run(
-                service,
-                reviewed.value,
-                payload.value,
-                read=_scripted(["y", "y", "y"]),
-                write=lambda _line: None,
-            )
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                setup = tui._canonical_setup_run(
+                    service,
+                    reviewed.value,
+                    payload.value,
+                    read=_scripted(["y", "y", "y"]),
+                    write=lambda _line: None,
+                )
 
             self.assertEqual(setup.reporting[0].key, reviewed.value.items[0].key)
             report = usage_report_from_consumer(
