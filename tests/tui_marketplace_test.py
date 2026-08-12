@@ -227,6 +227,35 @@ class TuiMarketplaceTest(unittest.TestCase):
             1,
         )
 
+    def test_duplicate_lifecycle_observations_collapse_without_losing_distinct_statuses(
+        self,
+    ) -> None:
+        catalog = _catalog()
+        item = next(
+            candidate
+            for candidate in catalog.items
+            if candidate.coordinate.artifact == ArtifactIdentity("mcp", "database")
+        )
+        key = LifecycleKey(
+            ArtifactCoordinate(item.coordinate.source, item.coordinate.artifact),
+            "claude",
+            "project",
+        )
+        current = LifecycleItem(key, LifecycleStatus.CURRENT)
+        update_available = LifecycleItem(key, LifecycleStatus.UPDATE_AVAILABLE)
+
+        rows = project_marketplace_rows(
+            catalog,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+            lifecycle=(current, current, update_available),
+        )
+
+        database = next(row for row in rows if row.identity == ArtifactIdentity("mcp", "database"))
+        self.assertEqual(
+            database.installed_statuses,
+            ("claude:current", "claude:update-available"),
+        )
+
     def test_symlink_projection_reports_mixed_actual_modes(self) -> None:
         source = configured_source("team", SourceKind.SOURCE_GIT)
         mixed = replace(

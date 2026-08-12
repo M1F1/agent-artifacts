@@ -282,12 +282,14 @@ def _installed_statuses(
 ) -> tuple[str, ...]:
     return tuple(
         sorted(
-            f"{outcome.key.profile}:{outcome.status.value}"
-            for outcome in lifecycle
-            if outcome.key.coordinate.source == item.coordinate.source
-            and outcome.key.coordinate.artifact == item.coordinate.artifact
-            and outcome.key.scope == target.scope
-            and outcome.key.profile in target.profiles
+            {
+                f"{outcome.key.profile}:{outcome.status.value}"
+                for outcome in lifecycle
+                if outcome.key.coordinate.source == item.coordinate.source
+                and outcome.key.coordinate.artifact == item.coordinate.artifact
+                and outcome.key.scope == target.scope
+                and outcome.key.profile in target.profiles
+            }
         )
     )
 

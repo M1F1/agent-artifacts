@@ -59,7 +59,7 @@ from .curation.model import (
 )
 from .curation.runtime import CurationService, PreparedCuration
 from .domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from .domain.identifiers import SourceAlias
+from .domain.identifiers import ArtifactCoordinate, SourceAlias
 from .domain.result import Err as DomainErr
 from .domain.result import Ok as DomainOk
 from .domain.result import Result as DomainResult
@@ -954,6 +954,27 @@ def _setup_reporting_failure(status: str) -> Tuple[str, str] | None:
     return ("setup-installer", f"setup-{status}")
 
 
+def _setup_reporting_key(
+    review: ConsumerReview,
+    coordinate: ArtifactCoordinate,
+    profile: str,
+    scope: str,
+) -> str:
+    """Bind an unversioned setup identity back to its exact consumer Review item."""
+
+    matches = tuple(
+        item.key
+        for item in review.items
+        if item.coordinate.source == coordinate.source
+        and item.coordinate.artifact == coordinate.artifact
+        and item.profile == profile
+        and item.scope == scope
+    )
+    if len(matches) == 1:
+        return matches[0]
+    return f"{coordinate}#{profile}/{scope}"
+
+
 def _canonical_setup_run(
     service: ConsumerApplicationService,
     review: ConsumerReview,
@@ -1007,7 +1028,12 @@ def _canonical_setup_run(
         write("Setup remains pending; installed payloads were not rolled back.")
         declined = tuple(
             SetupReportState(
-                f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}",
+                _setup_reporting_key(
+                    review,
+                    plan.request.coordinate,
+                    plan.request.profile,
+                    plan.request.scope,
+                ),
                 "queue-declined",
                 plan.recipe_digest,
                 "queue",
@@ -1053,12 +1079,18 @@ def _canonical_setup_run(
     reported_states: List[SetupReportState] = []
     for item in setup_outcome.items:
         key = f"{item.coordinate}#{item.profile}/{item.scope}"
+        reporting_key = _setup_reporting_key(
+            review,
+            item.coordinate,
+            item.profile,
+            item.scope,
+        )
         status = item.setup_status.value
         failure_spec = _setup_reporting_failure(status)
         setup_plan = plan_by_key.get(key)
         reported_states.append(
             SetupReportState(
-                key,
+                reporting_key,
                 status,
                 None if setup_plan is None else setup_plan.recipe_digest,
                 None if failure_spec is None else failure_spec[0],

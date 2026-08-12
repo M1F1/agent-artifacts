@@ -20,6 +20,7 @@ from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.profiles.builtin import builtin
 from agent_artifacts.reporting.application import ReportingApplicationService
 from agent_artifacts.reporting.model import ReportingDestination
+from agent_artifacts.reporting.projection import usage_report_from_consumer
 from agent_artifacts.tui_sources import build_source_stage
 from tests.canonical_setup_application_test import Fixture as SetupFixture
 from tests.canonical_symlink_test import _fixture
@@ -125,6 +126,49 @@ class TuiConsumerTextTest(unittest.TestCase):
             self.assertIn("Review setup queue", rendered)
             self.assertIn("Setup outcome: configured=1, incomplete=0", rendered)
             self.assertTrue((fixture.project / ".setup-config").exists())
+
+    def test_canonical_setup_reporting_reuses_versioned_consumer_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = SetupFixture(Path(raw))
+            (fixture.project / ".agent-artifacts/manifest.json").unlink()
+            service = ConsumerApplicationService(
+                ConsumerContext(
+                    fixture.catalog,
+                    fixture.effective,
+                    builtin(),
+                    fixture.location,
+                    fixture.paths,
+                ),
+                LocalConsumerAdapter(),
+            )
+            reviewed = service.prepare(
+                ConsumerActionRequest(
+                    "install",
+                    (fixture.catalog.items[0].coordinate,),
+                    ("claude",),
+                )
+            )
+            assert isinstance(reviewed, Ok), reviewed
+            payload = service.finalize(reviewed.value, reviewed.value.review_digest)
+            assert isinstance(payload, Ok), payload
+
+            setup = tui._canonical_setup_run(
+                service,
+                reviewed.value,
+                payload.value,
+                read=_scripted(["y", "y", "y"]),
+                write=lambda _line: None,
+            )
+
+            self.assertEqual(setup.reporting[0].key, reviewed.value.items[0].key)
+            report = usage_report_from_consumer(
+                reviewed.value,
+                payload.value,
+                setup.reporting,
+                aart_version="1.3.1",
+                interface="tui",
+            )
+            self.assertEqual(report.results[0].setup_outcome, "configured")
 
     def test_reviewed_source_enablement_builds_consumer_context_before_finalize(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
