@@ -1,6 +1,7 @@
 # Design: transparent setup review and manual fallback
 
-Status: proposed Track-3 follow-up; implementation has not started
+Status: proposed Track-3 follow-up ([issue #75](https://github.com/M1F1/agent-artifacts/issues/75));
+implementation has not started
 
 ## 1. Context
 

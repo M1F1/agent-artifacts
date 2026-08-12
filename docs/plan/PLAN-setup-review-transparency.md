@@ -1,6 +1,7 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
-Status: proposed; execute as ERR09 of
+Status: proposed; tracked by [issue #75](https://github.com/M1F1/agent-artifacts/issues/75);
+execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
 
 Design: [`DESIGN-setup-review-transparency.md`](../design/DESIGN-setup-review-transparency.md)

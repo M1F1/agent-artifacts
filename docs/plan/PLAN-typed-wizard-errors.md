@@ -1,6 +1,7 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
 - **Status:** proposed; documentation only, implementation not started
+- **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
   internal exception can never silently restart an active session.
@@ -306,6 +307,8 @@ Acceptance:
 The detailed contract and file map are in
 [`PLAN-setup-review-transparency.md`](PLAN-setup-review-transparency.md); its design is
 [`DESIGN-setup-review-transparency.md`](../design/DESIGN-setup-review-transparency.md).
+Public tracking is [#75 — Transparent setup review and manual `SETUP.md`
+fallback](https://github.com/M1F1/agent-artifacts/issues/75).
 
 This is the Track-3 follow-up to the completed legibility work. It makes setup-capable MCPs and
 other directory artifacts legible before an installer runs, and keeps a trusted manual route

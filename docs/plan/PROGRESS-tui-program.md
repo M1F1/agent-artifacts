@@ -30,6 +30,12 @@ discarding live sessions and would have swallowed exceptions during the legibili
 An issue summary for the legibility track was drafted but **not** filed on GitHub; it awaits
 authorization.
 
+Track 3 is now tracked publicly: [#74 — Typed stage failures and actionable TUI
+diagnostics](https://github.com/M1F1/agent-artifacts/issues/74) owns ERR01–ERR08, while
+[#75 — Transparent setup review and manual `SETUP.md`
+fallback](https://github.com/M1F1/agent-artifacts/issues/75) owns ERR09 after its explicit
+ERR04/ERR06 dependencies.
+
 ## Status
 
 | Item | State | Evidence |
