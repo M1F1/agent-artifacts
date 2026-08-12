@@ -19,7 +19,8 @@ from agent_artifacts.configuration.model import (
     OrganizationPolicy,
     default_user_configuration,
 )
-from agent_artifacts.domain.result import Ok
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.tui_sources import build_source_stage
 from agent_artifacts.wizard import WizardSession
 
@@ -174,6 +175,32 @@ class CursesFallbackBoundaryTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(fallback.call_count, 1)
+
+    def test_startup_sources_failure_is_a_typed_terminal_record_without_a_wizard_restart(self):
+        output = io.StringIO()
+        failure = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-invalid"),
+                    Severity.ERROR,
+                    "the configured Sources view cannot be loaded",
+                    remediation=("repair the source configuration and retry",),
+                ),
+            )
+        )
+
+        with (
+            mock.patch.object(tui, "_runtime_source_stage_context", return_value=failure),
+            mock.patch.object(tui, "_run_text", return_value=0) as fallback,
+            redirect_stdout(output),
+        ):
+            code = tui.run(user_home="/tmp/aart-home")
+
+        self.assertEqual(code, 2)
+        fallback.assert_not_called()
+        self.assertIn("Sources could not be loaded", output.getvalue())
+        self.assertIn("error [source-invalid]", output.getvalue())
+        self.assertIn("Quit = q", output.getvalue())
 
     def test_run_never_restarts_the_wizard_after_an_internal_defect(self):
         output = _TtyCapture()

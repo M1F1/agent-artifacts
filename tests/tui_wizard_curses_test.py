@@ -539,6 +539,21 @@ class ScreenChromeTests(unittest.TestCase):
 
 
 class CursesWizardPrimitiveTests(unittest.TestCase):
+    def test_source_notice_uses_the_content_measure_on_a_wide_terminal(self):
+        screen = Screen((ord("x"),), height=12, width=200)
+
+        tui._curses_notice(
+            screen,
+            WizardSession(current="source"),
+            "Source setup error",
+            ("x" * (CONTENT_MEASURE * 2),),
+        )
+
+        self.assertTrue(screen.history)
+        self.assertTrue(
+            all(len(line) <= CONTENT_MEASURE for _row, _column, line in screen.history[:-1])
+        )
+
     def test_onboarding_is_first_and_enter_continues(self):
         screen = Screen((10,))
 
@@ -641,6 +656,70 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
 
 
 class CursesWizardFlowTests(unittest.TestCase):
+    def test_review_prepare_failure_returns_to_artifacts_through_the_shared_record(self):
+        session = WizardSession(
+            current="artifacts",
+            role="user",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+        service = mock.Mock()
+        service.context.catalog.collections = ()
+        service.prepare.return_value = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-conflict"),
+                    Severity.ERROR,
+                    "the reviewed artifact plan is stale",
+                ),
+            )
+        )
+        loaded = Ok(
+            tui._UserWizardReadModel(
+                tui.Catalog({}, {}),
+                None,
+                (tui._Choice("artifact", "review", "skill", "review"),),
+                {},
+            )
+        )
+        selection: dict = {}
+
+        with (
+            mock.patch.object(tui, "_load_user_wizard_read_model", return_value=loaded),
+            mock.patch.object(tui, "ConsumerActionRequest", return_value=object()),
+            mock.patch.object(
+                tui,
+                "_curses_multi_event",
+                side_effect=(WizardInput("confirm", (0,)), WizardInput("quit")),
+            ),
+            mock.patch.object(
+                tui,
+                "_curses_stage_failure_recovery",
+                return_value=WizardInput("back"),
+            ) as recovery,
+            mock.patch.object(tui, "_curses_confirm_discard", return_value=True),
+        ):
+            returned = tui._run_user_curses_wizard(
+                curses,
+                object(),
+                session,
+                selection,
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+                consumer_service=service,
+            )
+
+        self.assertEqual(returned.current, "artifacts")
+        self.assertTrue(selection["cancelled"])
+        service.prepare.assert_called_once()
+        failure = recovery.call_args.args[2]
+        self.assertEqual(failure.stage, "review")
+        self.assertEqual(failure.choices, ("back", "quit"))
+        self.assertEqual(failure.diagnostics[0].code.value, "install-conflict")
+
     def test_artifacts_load_quit_confirms_an_existing_basket(self):
         session = WizardSession(
             current="artifacts",

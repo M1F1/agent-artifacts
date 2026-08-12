@@ -55,6 +55,118 @@ def _tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
 
 
 class TuiConsumerTextTest(unittest.TestCase):
+    def test_err06_review_prepare_failure_is_a_record_and_back_returns_to_artifacts(self) -> None:
+        session = WizardSession(
+            current="artifacts",
+            role="user",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+        service = mock.Mock()
+        service.context.catalog.collections = ()
+        service.prepare.return_value = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-conflict"),
+                    Severity.ERROR,
+                    "the reviewed artifact plan is stale",
+                    remediation=("return to Artifacts and choose current entries",),
+                ),
+            )
+        )
+        recovered = Ok(
+            tui._UserWizardReadModel(
+                tui.Catalog({}, {}),
+                None,
+                (tui._Choice("artifact", "review", "skill", "review"),),
+                {},
+            )
+        )
+        writes: list[str] = []
+
+        with (
+            mock.patch.object(tui, "_load_user_wizard_read_model", return_value=recovered),
+            mock.patch.object(tui, "ConsumerActionRequest", return_value=object()),
+        ):
+            code = tui._run_user_text_wizard(
+                session,
+                _scripted(["1", "b", "q", "y"]),
+                writes.append,
+                source_factory=mock.Mock(),
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+                consumer_service=service,
+            )
+
+        self.assertEqual(code, 0)
+        rendered = "\n".join(writes)
+        self.assertIn("Review could not be reviewed", rendered)
+        self.assertIn("error [install-conflict]", rendered)
+        self.assertIn("Back = b", rendered)
+        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        service.prepare.assert_called_once()
+
+    def test_err06_finalize_failure_is_a_record_and_back_returns_to_artifacts(self) -> None:
+        session = WizardSession(
+            current="artifacts",
+            role="user",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+        review = mock.Mock(review_digest=object())
+        service = mock.Mock()
+        service.context.catalog.collections = ()
+        service.prepare.return_value = Ok(review)
+        service.finalize.return_value = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-conflict"),
+                    Severity.ERROR,
+                    "the reviewed artifact plan changed before finalization",
+                    remediation=("return to Artifacts and review the current plan",),
+                ),
+            )
+        )
+        loaded = Ok(
+            tui._UserWizardReadModel(
+                tui.Catalog({}, {}),
+                None,
+                (tui._Choice("artifact", "review", "skill", "review"),),
+                {},
+            )
+        )
+        writes: list[str] = []
+
+        with (
+            mock.patch.object(tui, "_load_user_wizard_read_model", return_value=loaded),
+            mock.patch.object(tui, "ConsumerActionRequest", return_value=object()),
+            mock.patch.object(tui, "render_consumer_review", return_value=()),
+            mock.patch.object(tui, "can_finalize", return_value=True),
+        ):
+            code = tui._run_user_text_wizard(
+                session,
+                _scripted(["1", "y", "b", "q", "y"]),
+                writes.append,
+                source_factory=mock.Mock(),
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+                consumer_service=service,
+            )
+
+        self.assertEqual(code, 0)
+        rendered = "\n".join(writes)
+        self.assertIn("Review could not be finalized", rendered)
+        self.assertIn("error [install-conflict]", rendered)
+        self.assertIn("Back = b", rendered)
+        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        service.finalize.assert_called_once_with(review, review.review_digest)
+
     def test_err04_retry_reloads_only_artifacts_and_keeps_the_existing_basket(self) -> None:
         session = WizardSession(
             current="artifacts",

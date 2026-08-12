@@ -66,20 +66,23 @@ def wizard_stage_failure(
     result: Err,
     *,
     project: str | None = None,
+    stage: WizardStage | None = None,
+    recoverable: bool | None = None,
 ) -> WizardStageFailure:
     """Add stage context without transforming the domain diagnostics themselves."""
 
+    can_retry = operation == "load" if recoverable is None else recoverable
     choices: tuple[WizardRecoveryChoice, ...] = (
-        ("retry", "back", "quit") if operation == "load" else ("back", "quit")
+        ("retry", "back", "quit") if can_retry else ("back", "quit")
     )
     return WizardStageFailure(
-        stage=session.current,
+        stage=session.current if stage is None else stage,
         operation=operation,
         diagnostics=result.diagnostics,
         action=session.action,
         scope=session.scope,
         project=project,
-        recoverable=operation == "load",
+        recoverable=can_retry,
         choices=choices,
     )
 

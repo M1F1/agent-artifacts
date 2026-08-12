@@ -1780,6 +1780,17 @@ def _source_selection_from_indices(
     return planned if isinstance(planned, DomainErr) else planned.value
 
 
+def _domain_feedback(result: DomainErr) -> str:
+    """Summarize a recoverable list-local diagnostic in the list's fixed feedback slot."""
+
+    first, *remaining = result.diagnostics
+    suffix = "" if not remaining else f" (+{len(remaining)} more)"
+    return _ellipsize(
+        f"{first.severity.value} [{first.code.value}]: {first.message}{suffix}",
+        CONTENT_MEASURE,
+    )
+
+
 def _prompt_source_stage_text(
     session: WizardSession,
     view: SourceStageView,
@@ -1831,8 +1842,7 @@ def _prompt_source_stage_text(
             return event
         planned = _source_selection_from_indices(view, event.selected)
         if isinstance(planned, DomainErr):
-            for diagnostic in planned.diagnostics:
-                write(f"{diagnostic.severity.value}: {diagnostic.message}")
+            write(_domain_feedback(planned))
             continue
         return planned
 
@@ -2025,20 +2035,26 @@ def _finalize_source_selection(
     session: WizardSession,
     source_finalizer: Optional[SourceFinalizeFn],
     write: WriteFn,
-) -> Optional[int]:
+) -> DomainErr | None:
+    """Persist the reviewed source selection, preserving expected failures for the frontend."""
+
     selected = session.source_selection
     if selected is None or not selected.request.operations:
         return None
     if source_finalizer is None:
-        write("error: source configuration cannot be saved by this TUI runtime")
-        write("No artifact action was dispatched.")
-        return 2
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-unavailable"),
+                    Severity.ERROR,
+                    "source configuration cannot be saved by this TUI runtime",
+                    remediation=("return to Sources and retry with an available TUI runtime",),
+                ),
+            )
+        )
     finalized = source_finalizer(selected.request)
     if isinstance(finalized, DomainErr):
-        for diagnostic in finalized.diagnostics:
-            write(f"{diagnostic.severity.value}: {diagnostic.message}")
-        write("No artifact action was dispatched.")
-        return 2
+        return finalized
     count = len(selected.request.operations)
     write(f"Sources: applied {count} reviewed configuration change(s).")
     return None
@@ -2546,6 +2562,59 @@ def _prompt_stage_failure_recovery(
         write(f"Choose one available recovery: {allowed}.")
 
 
+def _recover_text_stage_failure(
+    failure: WizardStageFailure,
+    session: WizardSession,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardSession | int:
+    """Render one blocking record and keep only the recovery events it declares."""
+
+    recovery = _prompt_stage_failure_recovery(failure, read, write)
+    if recovery.kind == "back":
+        return wizard_back(session)
+    if _confirm_wizard_quit(session, read, write):
+        return _cancel(write)
+    return session
+
+
+def _source_stage_failure(session: WizardSession, result: DomainErr) -> WizardStageFailure:
+    """Attach Sources ownership to a post-selection read boundary without altering diagnostics."""
+
+    return wizard_stage_failure(
+        session,
+        "load",
+        result,
+        stage="source",
+        recoverable=False,
+    )
+
+
+def _maintainer_action_failure(session: WizardSession, result: DomainErr) -> WizardStageFailure:
+    """Keep a failed maintainer action loader attached to its owning stage."""
+
+    return wizard_stage_failure(
+        session,
+        "load",
+        result,
+        stage="maintainer_action",
+        recoverable=False,
+    )
+
+
+def _terminal_stage_failure(
+    session: WizardSession,
+    operation: WizardOperation,
+    result: DomainErr,
+) -> WizardStageFailure:
+    """Render a post-curses expected failure without advertising a recovery no longer available."""
+
+    return replace(
+        wizard_stage_failure(session, operation, result, recoverable=False),
+        choices=("quit",),
+    )
+
+
 def _run_user_text_wizard(
     session: WizardSession,
     read: ReadFn,
@@ -2768,9 +2837,16 @@ def _run_user_text_wizard(
                     )
                 )
                 if isinstance(prepared, DomainErr):
-                    for diagnostic in prepared.diagnostics:
-                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                    return 2
+                    recovered = _recover_text_stage_failure(
+                        wizard_stage_failure(session, "review", prepared, recoverable=False),
+                        session,
+                        read,
+                        write,
+                    )
+                    if isinstance(recovered, int):
+                        return recovered
+                    session = recovered
+                    continue
                 canonical_review = prepared.value
                 for line in render_consumer_review(canonical_review):
                     write(line)
@@ -2811,18 +2887,34 @@ def _run_user_text_wizard(
             if not can_finalize(session, revision=session.revision):
                 write("Wizard state changed; review it again before Finalize.")
                 continue
-            source_code = _finalize_source_selection(session, source_finalizer, write)
-            if source_code is not None:
-                return source_code
+            source_failure = _finalize_source_selection(session, source_finalizer, write)
+            if source_failure is not None:
+                recovered = _recover_text_stage_failure(
+                    wizard_stage_failure(session, "finalize", source_failure, recoverable=False),
+                    session,
+                    read,
+                    write,
+                )
+                if isinstance(recovered, int):
+                    return recovered
+                session = recovered
+                continue
             if canonical_review is not None:
                 finalized = consumer_service.finalize(  # type: ignore[union-attr]
                     canonical_review,
                     canonical_review.review_digest,
                 )
                 if isinstance(finalized, DomainErr):
-                    for diagnostic in finalized.diagnostics:
-                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                    return 2
+                    recovered = _recover_text_stage_failure(
+                        wizard_stage_failure(session, "finalize", finalized, recoverable=False),
+                        session,
+                        read,
+                        write,
+                    )
+                    if isinstance(recovered, int):
+                        return recovered
+                    session = recovered
+                    continue
                 for line in render_consumer_outcome(finalized.value):
                     write(line)
                 return _complete_canonical_consumer_action(
@@ -2956,9 +3048,15 @@ def _run_text(
             if consumer_service_factory is not None and session.role == "user":
                 loaded_consumer = consumer_service_factory(selected_source.request.after)
                 if isinstance(loaded_consumer, DomainErr):
-                    for diagnostic in loaded_consumer.diagnostics:
-                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                    session = wizard_back(session)
+                    recovered = _recover_text_stage_failure(
+                        _source_stage_failure(session, loaded_consumer),
+                        session,
+                        read,
+                        write,
+                    )
+                    if isinstance(recovered, int):
+                        return recovered
+                    session = recovered
                     continue
                 active_consumer_service = loaded_consumer.value
             if reporting_service_factory is not None and session.role == "user":
@@ -2979,9 +3077,15 @@ def _run_text(
                     repo=legacy_repo,
                 )
                 if isinstance(source_arguments, DomainErr):
-                    for diagnostic in source_arguments.diagnostics:
-                        write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                    session = wizard_back(session)
+                    recovered = _recover_text_stage_failure(
+                        _source_stage_failure(session, source_arguments),
+                        session,
+                        read,
+                        write,
+                    )
+                    if isinstance(recovered, int):
+                        return recovered
+                    session = recovered
                     continue
                 source_dir, repo = source_arguments.value
             if session.role == "user":
@@ -3076,9 +3180,17 @@ def _default_curation_service_factory(root: str) -> DomainResult[CurationService
 
 def _write_domain_diagnostics(result: DomainErr, write: WriteFn) -> None:
     for diagnostic in result.diagnostics:
-        write(f"{diagnostic.severity.value}: {diagnostic.message}")
+        for line in wrap(
+            f"{diagnostic.severity.value} [{diagnostic.code.value}]: {diagnostic.message}",
+            width=CONTENT_MEASURE,
+        ):
+            write(line)
         for remediation in diagnostic.remediation:
-            write(f"  remediation: {remediation}")
+            prefix = "  remediation: "
+            lines = wrap(remediation, width=CONTENT_MEASURE - len(prefix))
+            write(prefix + lines[0])
+            for line in lines[1:]:
+                write(" " * len(prefix) + line)
 
 
 def _prompt_wizard_csv(
@@ -3330,8 +3442,13 @@ def _run_canonical_maintainer_text(
     factory = curation_service_factory or _default_curation_service_factory
     loaded = factory(workspace)
     if isinstance(loaded, DomainErr):
-        _write_domain_diagnostics(loaded, write)
-        return 2
+        recovered = _recover_text_stage_failure(
+            _maintainer_action_failure(session, loaded),
+            session,
+            read,
+            write,
+        )
+        return recovered
     service = loaded.value
     request: Optional[CurationRequest] = None
     prepared: Optional[PreparedCuration] = None
@@ -3377,8 +3494,15 @@ def _run_canonical_maintainer_text(
                 if active_consumer_factory is not None and consumer_configuration is not None:
                     loaded_consumer = active_consumer_factory(consumer_configuration)
                     if isinstance(loaded_consumer, DomainErr):
-                        _write_domain_diagnostics(loaded_consumer, write)
-                        session = wizard_back(session)
+                        recovered = _recover_text_stage_failure(
+                            _maintainer_action_failure(session, loaded_consumer),
+                            session,
+                            read,
+                            write,
+                        )
+                        if isinstance(recovered, int):
+                            return recovered
+                        session = recovered
                         continue
                     consumer_service = loaded_consumer.value
                 if reporting_service_factory is not None and consumer_configuration is not None:
@@ -3455,9 +3579,16 @@ def _run_canonical_maintainer_text(
         if prepared is None:
             planned = service.prepare(request)
             if isinstance(planned, DomainErr):
-                _write_domain_diagnostics(planned, write)
-                write("Preview failed; no registry changes were applied.")
-                return 2
+                recovered = _recover_text_stage_failure(
+                    wizard_stage_failure(session, "review", planned, recoverable=False),
+                    session,
+                    read,
+                    write,
+                )
+                if isinstance(recovered, int):
+                    return recovered
+                session = recovered
+                continue
             prepared = planned.value
         for line in render_curation_review(prepared.review):
             write(line)
@@ -3478,14 +3609,30 @@ def _run_canonical_maintainer_text(
         if not can_finalize(session, revision=session.revision):
             write("Wizard state changed; review it again before Finalize.")
             continue
-        source_code = _finalize_source_selection(session, source_finalizer, write)
-        if source_code is not None:
-            return source_code
+        source_failure = _finalize_source_selection(session, source_finalizer, write)
+        if source_failure is not None:
+            recovered = _recover_text_stage_failure(
+                wizard_stage_failure(session, "finalize", source_failure, recoverable=False),
+                session,
+                read,
+                write,
+            )
+            if isinstance(recovered, int):
+                return recovered
+            session = recovered
+            continue
         finalized = service.finalize(prepared, prepared.review.review_digest)
         if isinstance(finalized, DomainErr):
-            _write_domain_diagnostics(finalized, write)
-            write("Finalize failed; use the remediation above and rerun the same reviewed action.")
-            return 2
+            recovered = _recover_text_stage_failure(
+                wizard_stage_failure(session, "finalize", finalized, recoverable=False),
+                session,
+                read,
+                write,
+            )
+            if isinstance(recovered, int):
+                return recovered
+            session = recovered
+            continue
         for rendered in render_curation_outcome(finalized.value):
             write(rendered)
         return 2 if finalized.value.status == "failed" else 0
@@ -3565,9 +3712,15 @@ def _run_maintainer_text(
                 if consumer_service_factory is not None and consumer_configuration is not None:
                     loaded_consumer = consumer_service_factory(consumer_configuration)
                     if isinstance(loaded_consumer, DomainErr):
-                        for diagnostic in loaded_consumer.diagnostics:
-                            write(f"{diagnostic.severity.value}: {diagnostic.message}")
-                        session = wizard_back(session)
+                        recovered = _recover_text_stage_failure(
+                            _maintainer_action_failure(session, loaded_consumer),
+                            session,
+                            read,
+                            write,
+                        )
+                        if isinstance(recovered, int):
+                            return recovered
+                        session = recovered
                         continue
                     consumer_service = loaded_consumer.value
                 if reporting_service_factory is not None and consumer_configuration is not None:
@@ -3726,9 +3879,18 @@ def _run_maintainer_text(
         if not can_finalize(session, revision=session.revision):
             write("Wizard state changed; review it again before Finalize.")
             continue
-        source_code = _finalize_source_selection(session, source_finalizer, write)
-        if source_code is not None:
-            return source_code
+        source_failure = _finalize_source_selection(session, source_finalizer, write)
+        if source_failure is not None:
+            recovered = _recover_text_stage_failure(
+                wizard_stage_failure(session, "finalize", source_failure, recoverable=False),
+                session,
+                read,
+                write,
+            )
+            if isinstance(recovered, int):
+                return recovered
+            session = recovered
+            continue
         if is_mutation:
             return _apply_maintainer_mutation(request, write)
         return _dispatch(request)
@@ -4265,6 +4427,7 @@ def _curses_multi_event(
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
     reasons: Optional[Sequence[str]] = None,
     detail_for: Optional[Callable[[int], Sequence[str]]] = None,
+    notice: str = "",
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -4285,6 +4448,7 @@ def _curses_multi_event(
             pane_for=pane_for,
             reasons=reasons,
             detail_for=detail_for,
+            notice=notice,
         )
     except TypeError as error:
         if "unexpected keyword argument" not in str(error):
@@ -4352,24 +4516,28 @@ def _curses_source_event(
         selected = tuple(index for index, row in enumerate(view.rows) if row.source.enabled)
     missing = view.unconfigured_required or view.unconfigured_recommended
     suffix = "" if not missing else " — configure: " + ", ".join(item.value for item in missing)
-    event = _curses_multi_event(
-        curses,
-        stdscr,
-        f"Sources{suffix}",
-        tuple(choice.label for choice in choices),
-        session,
-        selected=selected,
-        details=tuple(choice.description for choice in choices),
-        disabled=tuple(not choice.enabled for choice in choices),
-        reasons=tuple(choice.reason for choice in choices),
-        allow_add=True,
-    )
-    if event.kind != "confirm":
-        return event, None, None
-    planned = _source_selection_from_indices(view, event.selected)
-    if isinstance(planned, DomainErr):
-        return event, None, planned
-    return event, planned, None
+    notice = ""
+    while True:
+        event = _curses_multi_event(
+            curses,
+            stdscr,
+            f"Sources{suffix}",
+            tuple(choice.label for choice in choices),
+            session,
+            selected=selected,
+            details=tuple(choice.description for choice in choices),
+            disabled=tuple(not choice.enabled for choice in choices),
+            reasons=tuple(choice.reason for choice in choices),
+            allow_add=True,
+            notice=notice,
+        )
+        if event.kind != "confirm":
+            return event, None, None
+        planned = _source_selection_from_indices(view, event.selected)
+        if isinstance(planned, DomainErr):
+            notice = _domain_feedback(planned)
+            continue
+        return event, planned, None
 
 
 def _curses_text_input(
@@ -4447,9 +4615,10 @@ def _curses_notice(
         return
     content = _curses_header(stdscr, session) + (title, *lines)
     available = max(_width(stdscr) - 1, 1)
+    content_width = min(available, CONTENT_MEASURE)
     stdscr.clear()
     for row, line in enumerate(content[: max(_height(stdscr) - 1, 0)]):
-        stdscr.addstr(row, 0, _ellipsize(line, available))
+        stdscr.addstr(row, 0, _ellipsize(line, content_width))
     if _height(stdscr) > 0:
         stdscr.addstr(_height(stdscr) - 1, 0, _ellipsize("Press any key to continue.", available))
     stdscr.refresh()
@@ -4458,7 +4627,8 @@ def _curses_notice(
 
 def _source_addition_diagnostics(result: DomainErr) -> tuple[str, ...]:
     return tuple(
-        f"{diagnostic.severity.value}: {diagnostic.message}" for diagnostic in result.diagnostics
+        f"{diagnostic.severity.value} [{diagnostic.code.value}]: {diagnostic.message}"
+        for diagnostic in result.diagnostics
     )
 
 
@@ -4973,11 +5143,15 @@ def _run_user_curses_wizard(
                     )
                 )
                 if isinstance(prepared, DomainErr):
-                    selection["error"] = (
-                        "; ".join(item.message for item in prepared.diagnostics),
-                        2,
-                    )
-                    return session
+                    failure = wizard_stage_failure(session, "review", prepared, recoverable=False)
+                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                    if recovery.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _curses_confirm_discard(curses, stdscr, session):
+                        selection["cancelled"] = True
+                        return session
+                    continue
                 canonical_review = prepared.value
                 review = _curses_review(
                     curses,
@@ -5271,11 +5445,14 @@ def _run_curses(
                     )
                     continue
                 if source_error is not None:
-                    selection["error"] = (
-                        "; ".join(item.message for item in source_error.diagnostics),
-                        2,
-                    )
-                    return
+                    failure = _source_stage_failure(session, source_error)
+                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                    if recovery.kind == "back":
+                        continue
+                    if _curses_confirm_discard(curses, stdscr, session):
+                        selection["cancelled"] = True
+                        return
+                    continue
                 assert maybe_selected_source is not None
                 selected_source_value = maybe_selected_source
             session = wizard_select(session, "source", selected_source_value)
@@ -5291,11 +5468,15 @@ def _run_curses(
             if consumer_service_factory is not None and selected_role == "user":
                 loaded_consumer = consumer_service_factory(selected_source_value.request.after)
                 if isinstance(loaded_consumer, DomainErr):
-                    selection["error"] = (
-                        "; ".join(item.message for item in loaded_consumer.diagnostics),
-                        2,
-                    )
-                    return
+                    failure = _source_stage_failure(session, loaded_consumer)
+                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                    if recovery.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _curses_confirm_discard(curses, stdscr, session):
+                        selection["cancelled"] = True
+                        return
+                    continue
                 active_consumer_service = loaded_consumer.value
             if reporting_service_factory is not None and selected_role == "user":
                 loaded_reporting = reporting_service_factory(selected_source_value.request.after)
@@ -5313,11 +5494,15 @@ def _run_curses(
                     repo=repo,
                 )
                 if isinstance(source_arguments, DomainErr):
-                    selection["error"] = (
-                        "; ".join(item.message for item in source_arguments.diagnostics),
-                        2,
-                    )
-                    return
+                    failure = _source_stage_failure(session, source_arguments)
+                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                    if recovery.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _curses_confirm_discard(curses, stdscr, session):
+                        selection["cancelled"] = True
+                        return
+                    continue
                 active_source_dir, active_repo = source_arguments.value
             if selected_role == "user":
                 session = _run_user_curses_wizard(
@@ -5402,11 +5587,21 @@ def _run_curses(
                             selected_source_value.request.after
                         )
                         if isinstance(loaded_consumer, DomainErr):
-                            selection["error"] = (
-                                "; ".join(item.message for item in loaded_consumer.diagnostics),
-                                2,
+                            failure = wizard_stage_failure(
+                                session,
+                                "load",
+                                loaded_consumer,
+                                stage="maintainer_action",
+                                recoverable=False,
                             )
-                            return
+                            recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                            if recovery.kind == "back":
+                                session = wizard_back(session)
+                                continue
+                            if _curses_confirm_discard(curses, stdscr, session):
+                                selection["cancelled"] = True
+                                return
+                            continue
                         maintainer_consumer_service = loaded_consumer.value
                     if reporting_service_factory is not None:
                         loaded_reporting = reporting_service_factory(
@@ -5501,13 +5696,20 @@ def _run_curses(
 
     request = selection["request"]
     context.capture(selection["wizard_session"], "finalize")
-    source_code = _finalize_source_selection(
+    source_failure = _finalize_source_selection(
         selection["wizard_session"],
         source_finalizer,
         print,
     )
-    if source_code is not None:
-        return source_code
+    if source_failure is not None:
+        failure = _terminal_stage_failure(
+            selection["wizard_session"],
+            "finalize",
+            source_failure,
+        )
+        for line in render_wizard_stage_failure(failure):
+            print(line)
+        return _stage_failure_exit_code(failure)
     consumer_review = selection.get("consumer_review")
     if consumer_review is not None:
         active_consumer_service = selection.get("active_consumer_service", consumer_service)
@@ -5517,9 +5719,14 @@ def _run_curses(
             consumer_review.review_digest,
         )
         if isinstance(finalized, DomainErr):
-            for diagnostic in finalized.diagnostics:
-                print(f"{diagnostic.severity.value}: {diagnostic.message}")
-            return 2
+            failure = _terminal_stage_failure(
+                selection["wizard_session"],
+                "finalize",
+                finalized,
+            )
+            for line in render_wizard_stage_failure(failure):
+                print(line)
+            return _stage_failure_exit_code(failure)
         for line in render_consumer_outcome(finalized.value):
             print(line)
         if selection.get("reporting_warning"):
@@ -5569,6 +5776,7 @@ def _curses_multiselect(
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
     reasons: Optional[Sequence[str]] = None,
     detail_for: Optional[Callable[[int], Sequence[str]]] = None,
+    notice: str = "",
 ):
     """A checkbox list, optionally returning explicit wizard navigation and position.
 
@@ -5590,7 +5798,6 @@ def _curses_multiselect(
         toggle=True, back=wizard, details=details is not None, add=wizard and allow_add
     )
     selectable = disabled is None or not all(disabled)
-    notice = ""
     while True:
         scroll = _draw_list(
             curses,
@@ -6197,9 +6404,14 @@ def run(
         user_home=user_home,
     )
     if isinstance(source_context, DomainErr):
-        for diagnostic in source_context.diagnostics:
-            print(f"{diagnostic.severity.value}: {diagnostic.message}")
-        return 2
+        failure = _terminal_stage_failure(
+            WizardSession(current="source"),
+            "load",
+            source_context,
+        )
+        for line in render_wizard_stage_failure(failure):
+            print(line)
+        return _stage_failure_exit_code(failure)
     source_runtime = source_context.value
     source_stage_view = source_runtime.view
     source_finalizer = source_runtime.source_finalizer

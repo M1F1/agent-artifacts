@@ -156,6 +156,27 @@ class WizardStageFailureTests(unittest.TestCase):
         self.assertEqual(failure.choices, ("retry", "back", "quit"))
         self.assertNotIn("legacy exit code", "\n".join(render_wizard_stage_failure(failure)))
 
+    def test_adapter_can_name_the_owning_stage_and_conservative_recovery(self) -> None:
+        diagnostic = Diagnostic(
+            DiagnosticCode("source-incompatible"),
+            Severity.ERROR,
+            "the selected source cannot serve this view",
+        )
+        failure = wizard_stage_failure(
+            WizardSession(current="profiles", action="install", scope="project"),
+            "load",
+            Err((diagnostic,)),
+            stage="source",
+            recoverable=False,
+        )
+
+        self.assertEqual(failure.stage, "source")
+        self.assertFalse(failure.recoverable)
+        self.assertEqual(failure.choices, ("back", "quit"))
+        self.assertIn(
+            "Sources could not be loaded", "\n".join(render_wizard_stage_failure(failure))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

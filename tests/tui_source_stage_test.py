@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import curses
 import os
 import pathlib
 import sys
@@ -997,13 +998,10 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertIn("Enter 'a' to add a registry or compatible source", rendered)
         self.assertIn("no registry was forced", rendered)
 
-    def test_err01_maintainer_registry_source_returns_to_sources_without_writes(self) -> None:
-        """Characterize the dead end that ERR08 will remove.
-
-        Maintainer currently receives the consumer-only Sources question.  A selected registry
-        cannot cross the legacy command bridge, so text mode prints one flattened diagnostic and
-        returns to Sources; quitting is clean and does not apply a source mutation.
-        """
+    def test_err06_maintainer_registry_bridge_renders_a_sources_record_and_recovers_without_writes(
+        self,
+    ) -> None:
+        """The retained bridge is actionable until ERR08 makes this path unreachable by default."""
 
         registry = _source(
             "registry",
@@ -1032,7 +1030,7 @@ class SourceFrontendTests(unittest.TestCase):
             before = snapshot()
             writes: list[str] = []
             finalize = mock.Mock(return_value=Ok(object()))
-            answers = iter(("", "2", "1", "q"))
+            answers = iter(("", "2", "1", "b", "q"))
 
             code = tui._run_text(
                 lambda _prompt="": next(answers),
@@ -1043,14 +1041,67 @@ class SourceFrontendTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 0)
-            self.assertIn(
-                "error: registry registry is ready for source management, but artifact browsing "
-                "requires the federated marketplace view",
-                "\n".join(writes),
-            )
-            self.assertGreaterEqual("\n".join(writes).count("▸ Sources"), 2)
+            rendered = "\n".join(writes)
+            self.assertIn("Sources could not be loaded", rendered)
+            self.assertIn("error [source-incompatible]", rendered)
+            self.assertIn("registry registry is ready for source management", rendered)
+            self.assertIn("Back = b", rendered)
+            self.assertGreaterEqual(rendered.count("▸ Sources"), 2)
             finalize.assert_not_called()
             self.assertEqual(snapshot(), before)
+
+    def test_err06_curses_registry_bridge_returns_to_sources_through_the_shared_record(
+        self,
+    ) -> None:
+        registry = _source(
+            "registry",
+            SourceKind.REGISTRY_GIT,
+            "https://github.example.com/platform/agent-artifacts-registry.git",
+            enabled=True,
+        )
+        view = build_source_stage(
+            _configuration(registry, default="registry"), OrganizationPolicy(1), {}
+        )
+        assert isinstance(view, Ok)
+        selected = plan_source_management(view.value, (registry.alias,))
+        assert isinstance(selected, Ok)
+        source_events = iter(
+            (
+                (WizardInput("confirm", (0,)), selected.value, None),
+                (WizardInput("quit"), None, None),
+            )
+        )
+
+        def wrapper(callback) -> None:
+            callback(object())
+
+        with (
+            mock.patch.object(curses, "wrapper", side_effect=wrapper),
+            mock.patch.object(curses, "curs_set", return_value=None),
+            mock.patch.object(tui, "_curses_onboarding", return_value=WizardInput("confirm")),
+            mock.patch.object(
+                tui,
+                "_curses_single_event",
+                return_value=WizardInput("confirm", (1,)),
+            ),
+            mock.patch.object(
+                tui,
+                "_curses_source_event",
+                side_effect=lambda *_args: next(source_events),
+            ),
+            mock.patch.object(
+                tui,
+                "_curses_stage_failure_recovery",
+                return_value=WizardInput("back"),
+            ) as recovery,
+        ):
+            code = tui._run_curses(source_stage_view=view.value)
+
+        self.assertEqual(code, 0)
+        failure = recovery.call_args.args[2]
+        self.assertEqual(failure.stage, "source")
+        self.assertEqual(failure.choices, ("back", "quit"))
+        self.assertEqual(failure.diagnostics[0].code.value, "source-incompatible")
 
     def test_text_first_use_can_add_sync_and_refresh_a_registry_source(self) -> None:
         empty = build_source_stage(default_user_configuration(), OrganizationPolicy(1), {})
@@ -1250,6 +1301,74 @@ class SourceFrontendTests(unittest.TestCase):
         self.assertIsNone(selected)
         self.assertIsNone(error)
         self.assertTrue(multi.call_args.kwargs["allow_add"])
+
+    def test_curses_source_selection_error_stays_in_the_list_feedback_slot(self) -> None:
+        view = self._view()
+        session = advance(initial_session())
+        session = select(session, "role", "user")
+        session = advance(session)
+
+        with mock.patch.object(
+            tui,
+            "_curses_multi_event",
+            side_effect=(
+                WizardInput("confirm", ()),
+                WizardInput("quit", cursor=0, scroll=0),
+            ),
+        ) as multi:
+            event, selected, error = tui._curses_source_event(
+                object(),
+                object(),
+                session,
+                view,
+            )
+
+        self.assertEqual(event.kind, "quit")
+        self.assertIsNone(selected)
+        self.assertIsNone(error)
+        self.assertEqual(
+            multi.call_args_list[1].kwargs["notice"],
+            "error [source-selection-invalid]: select at least one source or explicitly "
+            "continue without sources",
+        )
+
+    def test_list_feedback_has_the_same_horizontal_content_limit_as_artifact_rows(self) -> None:
+        feedback = tui._domain_feedback(
+            Err(
+                (
+                    Diagnostic(
+                        DiagnosticCode("source-selection-invalid"),
+                        Severity.ERROR,
+                        "x" * (tui.CONTENT_MEASURE * 2),
+                    ),
+                )
+            )
+        )
+
+        self.assertLessEqual(len(feedback), tui.CONTENT_MEASURE)
+        self.assertTrue(feedback.endswith("…"))
+
+    def test_text_source_setup_diagnostics_wrap_to_the_content_measure(self) -> None:
+        writes: list[str] = []
+
+        tui._write_domain_diagnostics(
+            Err(
+                (
+                    Diagnostic(
+                        DiagnosticCode("source-invalid"),
+                        Severity.ERROR,
+                        "x" * (tui.CONTENT_MEASURE * 2),
+                        remediation=("y" * (tui.CONTENT_MEASURE * 2),),
+                    ),
+                )
+            ),
+            writes.append,
+        )
+
+        self.assertTrue(writes)
+        self.assertTrue(all(len(line) <= tui.CONTENT_MEASURE for line in writes))
+        self.assertTrue(writes[0].startswith("error [source-invalid]"))
+        self.assertTrue(any(line.startswith("  remediation: ") for line in writes))
 
     def test_curses_empty_required_sources_keeps_add_navigation_available(self) -> None:
         view = build_source_stage(

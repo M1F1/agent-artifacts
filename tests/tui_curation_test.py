@@ -91,8 +91,9 @@ class TuiCurationTest(unittest.TestCase):
                 return session
 
             singles = iter((1, 10))  # Maintainer, Enter User workflows
+            output = io.StringIO()
             with (
-                redirect_stdout(io.StringIO()),
+                redirect_stdout(output),
                 mock.patch.object(curses, "wrapper", side_effect=wrapper),
                 mock.patch.object(curses, "curs_set", return_value=None),
                 mock.patch.object(
@@ -114,6 +115,8 @@ class TuiCurationTest(unittest.TestCase):
 
             self.assertEqual(code, 2)
             consumer.finalize.assert_called_once_with(review, review.review_digest)
+            self.assertIn("error [expected-test-stop]", output.getvalue())
+            self.assertIn("Quit = q", output.getvalue())
 
     def test_canonical_maintainer_user_action_loads_canonical_consumer_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
