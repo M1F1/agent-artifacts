@@ -11,7 +11,8 @@ agreed order:
 1. **ERR05a — constrain the curses fallback.** Done.
 2. **TUI legibility program.** Current.
 3. **Typed wizard errors, ERR01 onward.** After legibility, so diagnostics render as records
-   through the `tui_layout` kernel instead of being flattened into strings.
+   through the `tui_layout` kernel instead of being flattened into strings. Its follow-up wave,
+   ERR09, applies the same record contract to setup reviews, manual fallback and effect outcomes.
 
 The order is deliberate. Legibility builds the rendering kernel that typed errors need, and its D5
 removes the most frequently hit false failure (`No artifacts selected`), shrinking what the
@@ -24,6 +25,7 @@ discarding live sessions and would have swallowed exceptions during the legibili
 |---|---|---|
 | Legibility | [DESIGN-tui-legibility.md](../design/DESIGN-tui-legibility.md) | [PLAN-tui-legibility.md](PLAN-tui-legibility.md) |
 | Typed errors | [DESIGN-typed-wizard-errors.md](../design/DESIGN-typed-wizard-errors.md) | [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md) |
+| Track-3 setup follow-up | [DESIGN-setup-review-transparency.md](../design/DESIGN-setup-review-transparency.md) | [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md) |
 
 An issue summary for the legibility track was drafted but **not** filed on GitHub; it awaits
 authorization.
@@ -43,7 +45,7 @@ authorization.
 | Legibility WP-3 steps 5 and 7 | committed | 5 tests in `EnterSemanticsTests`, 3 across text tests |
 | Legibility WP-3 steps 8, 9, 10 | committed | 4 tests in `DetailRecordAndWidthTests`, 2 more across text tests |
 | Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
-| Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07, ERR08 | not started | — |
+| Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
 
 Baseline at the time of writing: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. `main` is ahead of `origin/main` and has not been pushed.
@@ -69,6 +71,11 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 **ERR01 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — track 3 begins. The
 legibility kernel it was sequenced behind now exists, so a diagnostic can be rendered as a record
 through `tui_layout.field_block` rather than flattened into a sentence.
+
+**ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
+failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
+the current v1 protocol while making `SETUP.md`, bounded effect records and a manual route the
+standard for new setup-capable artifacts.
 
 Read that plan for the package order. ERR05a is already delivered (`6ce2e25`); ERR05b — the
 `WizardStageFailure` type, stage and operation on the crash boundary, an opt-in debug traceback,

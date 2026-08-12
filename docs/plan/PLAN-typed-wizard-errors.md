@@ -175,7 +175,11 @@ Acceptance:
    - Quit exits cleanly;
    - Retry repeats only the read-model load and preserves the session/basket.
 5. Curses Artifacts behavior mirrors text and returns to the same screen after dismiss/retry.
-6. Add narrow-terminal rendering tests and verify no color dependency.
+6. Use the fixed lower pane for list-local feedback only. A stage-blocking
+   `WizardStageFailure` uses the scrollable record view; it must not be rendered beneath a stale
+   or unavailable list. Add one test for each placement and assert that the status bar only names
+   available recovery keys.
+7. Add narrow-terminal rendering tests and verify no color dependency.
 
 Acceptance:
 
@@ -296,9 +300,50 @@ Acceptance:
 - the stepper never lists a stage the session cannot reach;
 - no writes occur anywhere on this path.
 
+### ERR09 — bounded setup review and manual `SETUP.md` fallback
+
+**Status:** pending; follows ERR04's shared record renderer and ERR06's setup-boundary audit.
+The detailed contract and file map are in
+[`PLAN-setup-review-transparency.md`](PLAN-setup-review-transparency.md); its design is
+[`DESIGN-setup-review-transparency.md`](../design/DESIGN-setup-review-transparency.md).
+
+This is the Track-3 follow-up to the completed legibility work. It makes setup-capable MCPs and
+other directory artifacts legible before an installer runs, and keeps a trusted manual route
+visible for users who decline or do not trust automation.
+
+1. Add a forward-compatible setup protocol revision: new/updated setup-capable artifacts require
+   a package-root `SETUP.md`; existing version-1 installers remain readable and are never made
+   invalid retrospectively.
+2. Show a standard manual-alternative preamble before every setup review and on every setup
+   failure/cancellation: repository-relative `SETUP.md`, a commit-pinned repository URL when the
+   source can provide one, otherwise an absolute local source path, and an explicit statement that
+   no setup effect has run yet.
+3. Replace flattened `module: summary -> target` output with a stable effect record bounded by
+   `CONTENT_MEASURE`: identity, purpose, target, capability, reversibility/recovery and safe
+   command detail. The shared text/curses projection is the only renderer; no terminal-width
+   string may be constructed independently.
+4. Require the same preamble at the runtime boundary for static and custom installers. A custom
+   script also carries the standard non-executing header pointing to `../SETUP.md`, but a script
+   cannot suppress the runtime's user-facing manual route.
+5. After a payload has installed, a failed, skipped, or declined setup outcome names the known
+   payload result first and then renders its manual route. It remains a typed, non-secret outcome;
+   no path implies rollback of the payload.
+
+Acceptance:
+
+- a user can decline every setup effect and still receives a concrete manual path or immutable
+  repository link;
+- every effect is comprehensible as a bounded record at widths 40, 80, 120 and 200;
+- v1 artifacts remain compatible, while a newly authored setup artifact without `SETUP.md` is
+  rejected before installation;
+- list-local setup validation feedback uses the fixed lower pane, whereas a blocking setup review
+  or execution failure uses the record presentation defined in the design;
+- no manual route, effect rendering, or failure output exposes a secret, setup input, raw process
+  output, or unbounded command line.
+
 ### ERR07 — documentation, quality, and release handoff
 
-**Status:** pending; depends on ERR01–ERR06 and ERR08
+**Status:** pending; depends on ERR01–ERR06, ERR08 and ERR09
 
 1. Update user documentation with the rendered legacy-state example, migration preview, source-map
    follow-up, and distinction between project and user scope.
@@ -332,6 +377,7 @@ Minimum focused coverage:
 | privacy | internal/setup failures | no secret, raw output, or traceback by default |
 | regression | installed MCP lifecycle join | Artifacts renders; unique statuses retained |
 | regression | setup/reporting | artifact outcome preserved independently |
+| setup review | manual fallback and effect list | `SETUP.md` route, bounded records, no secret output |
 
 Before implementation handoff or PR, run:
 
@@ -361,6 +407,7 @@ claiming the complete gate passes.
 - [ ] ERR04 renders and recovers equivalently in text and curses.
 - [ ] ERR05 prevents post-start fallback/restart and types internal failures.
 - [ ] ERR06 audits all stage boundaries without exception laundering.
+- [ ] ERR09 gives every new setup installer a `SETUP.md` fallback and a bounded effect review.
 - [ ] ERR07 documents, packages, and hands off release decisions.
 - [ ] No automatic migration or state overwrite was introduced.
 - [ ] No analytics payload gained local diagnostic context.

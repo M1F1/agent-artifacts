@@ -261,7 +261,7 @@ Next steps:
     aart migrate state --from 0.1 --scope project --dry-run
   Or go Back and select User scope.
 
-Retry = r · Back = b · Quit = q
+Retry = r, Back = b, Quit = q
 ```
 
 If migration preview later cannot resolve an artifact, its own typed diagnostic is rendered:
@@ -284,6 +284,31 @@ Rendering rules:
 - do not display raw exception text for internal failures;
 - never claim “no changes were made” after a finalize boundary unless the known outcome proves it;
   artifact/setup/reporting outcomes remain independently reported.
+
+### Diagnostic placement
+
+The lower pane introduced by the legibility work is the right place for a **list-local** problem,
+not for every failure. The two presentations have different jobs:
+
+- When the list remains usable — for example Enter lands on a disabled artifact, a selected
+  installation mode becomes unavailable, or an effect row cannot be approved — the fixed-height
+  pane below the list temporarily renders a `Feedback` record. It contains the diagnostic code,
+  bounded explanation, and the next available action. It replaces the cursor-detail record rather
+  than being appended below it, so the list geometry and pinned status bar do not move.
+- When a stage cannot produce its list or review at all — for example Artifacts cannot load, a
+  source cannot be read, or a pre-finalize review fails — there is no useful list to leave behind.
+  Curses opens the same scrollable record view used by `?`, headed by the failed stage and
+  operation; text prints that record immediately before the Retry/Back/Quit prompt. This is the
+  authoritative presentation for `WizardStageFailure`.
+- Setup happens after the payload outcome is known and curses has already yielded the terminal.
+  Its failure is a bounded terminal record that first states the payload outcome, then the setup
+  status and manual `SETUP.md` route. It must never be squeezed into a stale artifact pane or say
+  that the payload was rolled back.
+
+The status bar is never the sole error surface: it is intentionally terse and may degrade under
+width pressure. The pane/record carries the code and recovery; the bar only advertises the keys
+that act on it. This gives a selection error the low, stable placement suggested by the artifact
+view without hiding a stage-blocking diagnostic under a list that does not exist.
 
 ## 7. Curses fallback boundary
 

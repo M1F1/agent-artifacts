@@ -17,7 +17,10 @@ the contract.
 
 The initial delivery makes these decisions:
 
-- `setup/installer.json` is canonical; `SETUP.md` is optional reference only.
+- In the implemented version-1 protocol, `setup/installer.json` is canonical and `SETUP.md` is an
+  optional reference only. The planned Track-3 follow-up
+  [`DESIGN-setup-review-transparency.md`](DESIGN-setup-review-transparency.md) introduces the
+  mandatory manual fallback for newly authored setup-capable artifacts without invalidating v1.
 - Setup belongs to a directory-shaped artifact package. Flat guideline/memory/MCP files cannot
   declare executable setup.
 - Core artifact installation finishes before setup starts. Setup failure never rolls back an
