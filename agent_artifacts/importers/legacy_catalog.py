@@ -16,7 +16,12 @@ from agent_artifacts.domain.diagnostics import (
     SourceLocation,
     sort_diagnostics,
 )
-from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceId
+from agent_artifacts.domain.identifiers import (
+    ArtifactIdentity,
+    ArtifactKind,
+    ObjectDigest,
+    SourceId,
+)
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.model import Artifact as LegacyArtifact
 from agent_artifacts.model import ArtifactType as LegacyArtifactType
@@ -105,6 +110,8 @@ _MAX_ENTRIES = 100_000
 _MAX_FILE_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_BYTES = 256 * 1024 * 1024
 _KNOWN_ROOTS = frozenset({"skills", "guidelines", "mcp", "hooks", "memory", "bundles"})
+# Every artifact kind a legacy bundle can include; ``collection`` is never a bundle member.
+_BUNDLED_KINDS: tuple[ArtifactKind, ...] = ("skill", "guideline", "mcp", "hook", "memory")
 
 
 def _diagnostic(code: DiagnosticCode, message: str, path: str | None = None) -> Diagnostic:
@@ -764,7 +771,7 @@ def _parse_collections(
         bundle = bundles[name]
         selectors = tuple(
             ArtifactSelector(ArtifactIdentity(artifact_type, artifact_name))
-            for artifact_type in ("skill", "guideline", "mcp", "hook", "memory")
+            for artifact_type in _BUNDLED_KINDS
             for artifact_name in bundle.includes.get(artifact_type, ())
         )
         extensions: tuple[tuple[str, JsonValue], ...] = ()

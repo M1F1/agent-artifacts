@@ -49,6 +49,18 @@ class LegacyImporterTest(unittest.TestCase):
         self.assertTrue(manifests)
         self.assertTrue(all(b'"license":"MIT"' in content for content in manifests))
 
+    def test_converted_bundle_keeps_a_member_for_every_importable_artifact_kind(self) -> None:
+        request = importer_input()
+
+        scanned = scan_legacy_catalog(request)
+
+        assert isinstance(scanned, Ok), scanned
+        self.assertEqual(len(scanned.value.collections), 1)
+        self.assertEqual(
+            tuple(str(item.identity) for item in scanned.value.collections[0].artifacts),
+            ("skill/demo", "guideline/style", "mcp/database", "hook/lint", "memory/house"),
+        )
+
     def test_complete_legacy_catalog_materializes_as_valid_canonical_source(self) -> None:
         request = importer_input()
         scanned = scan_legacy_catalog(request)
