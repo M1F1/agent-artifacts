@@ -33,7 +33,7 @@ WizardDecision = Literal["quit", "confirm_quit"]
 # ``add`` is a navigation event owned by the Sources screen.  It does not mutate the
 # persistent wizard session by itself; the frontend collects a separately reviewed
 # source-addition request before returning to the same Sources stage.
-WizardInputKind = Literal["confirm", "back", "quit", "add"]
+WizardInputKind = Literal["confirm", "back", "quit", "add", "retry"]
 
 _STAGE_LABELS: Mapping[WizardStage, str] = {
     "onboarding": "How it works",
@@ -404,6 +404,12 @@ def _stage_token(session: WizardSession, stage: WizardStage) -> str:
     else:
         marker = STAGE_PENDING
     return f"{marker} {_STAGE_LABELS[stage]}"
+
+
+def stage_label(stage: WizardStage) -> str:
+    """Return the stable human label for a typed stage context."""
+
+    return _STAGE_LABELS[stage]
 
 
 def render_stepper(session: WizardSession, *, width: int) -> Tuple[str, ...]:

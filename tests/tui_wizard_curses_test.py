@@ -20,15 +20,18 @@ from agent_artifacts.consumer import (
     ConsumerContext,
     LocalConsumerAdapter,
 )
-from agent_artifacts.domain.result import Ok
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
 from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.tui_failures import WizardStageFailure
 from agent_artifacts.tui_layout import CONTENT_MEASURE, READABLE_MEASURE
 from agent_artifacts.tui_marketplace import MarketplaceTarget, project_marketplace_rows
 from agent_artifacts.tui_sources import build_source_stage
 from agent_artifacts.wizard import (
     BasketItem,
     WizardInput,
+    WizardSession,
     initial_session,
 )
 from agent_artifacts.wizard import (
@@ -504,6 +507,36 @@ class ScreenChromeTests(unittest.TestCase):
         )
         self.assertEqual(tui._curses_install_mode(curses, Screen((ord("b"),))), "back")
 
+    def test_stage_failure_uses_a_scrollable_record_and_only_its_recovery_bar(self) -> None:
+        failure = WizardStageFailure(
+            "artifacts",
+            "load",
+            (
+                Diagnostic(
+                    DiagnosticCode("install-state-legacy"),
+                    Severity.ERROR,
+                    "AART 0.1 installation state was detected.",
+                ),
+            ),
+            "install",
+            "project",
+            "/work/project",
+            True,
+            ("retry", "back", "quit"),
+        )
+        screen = Screen((ord("r"),), height=14, width=70)
+
+        recovery = tui._curses_stage_failure_recovery(curses, screen, failure)
+
+        self.assertEqual(recovery.kind, "retry")
+        self.assertIn(
+            "error [install-state-legacy]", "\n".join(value for *_rest, value in screen.history)
+        )
+        footer = self.footer(screen)
+        self.assertIn("r=retry", footer)
+        self.assertIn("b=back", footer)
+        self.assertIn("q=quit", footer)
+
 
 class CursesWizardPrimitiveTests(unittest.TestCase):
     def test_onboarding_is_first_and_enter_continues(self):
@@ -608,6 +641,150 @@ class CursesWizardPrimitiveTests(unittest.TestCase):
 
 
 class CursesWizardFlowTests(unittest.TestCase):
+    def test_artifacts_load_quit_confirms_an_existing_basket(self):
+        session = WizardSession(
+            current="artifacts",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+            basket=(BasketItem("artifact", "skill/review", "review"),),
+        )
+        failure = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-state-legacy"),
+                    Severity.ERROR,
+                    "AART 0.1 installation state was detected.",
+                ),
+            )
+        )
+        selection: dict = {}
+
+        with (
+            mock.patch.object(tui, "_load_user_wizard_read_model", return_value=failure),
+            mock.patch.object(
+                tui,
+                "_curses_stage_failure_recovery",
+                return_value=WizardInput("quit"),
+            ),
+            mock.patch.object(tui, "_curses_confirm_discard", return_value=True) as confirm,
+        ):
+            returned = tui._run_user_curses_wizard(
+                curses,
+                object(),
+                session,
+                selection,
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+            )
+
+        self.assertEqual(returned.basket, session.basket)
+        confirm.assert_called_once_with(curses, mock.ANY, session)
+        self.assertTrue(selection["cancelled"])
+
+    def test_artifacts_load_back_returns_to_mode_without_mutating_the_session(self):
+        session = WizardSession(
+            current="artifacts",
+            role="user",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+            source_selection=source_selection(),
+        )
+        failure = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-state-legacy"),
+                    Severity.ERROR,
+                    "AART 0.1 installation state was detected.",
+                ),
+            )
+        )
+        selection: dict = {}
+
+        with (
+            mock.patch.object(tui, "_load_user_wizard_read_model", return_value=failure),
+            mock.patch.object(
+                tui,
+                "_curses_stage_failure_recovery",
+                return_value=WizardInput("back"),
+            ),
+            mock.patch.object(tui, "_curses_install_mode", return_value=WizardInput("quit")),
+        ):
+            returned = tui._run_user_curses_wizard(
+                curses,
+                object(),
+                session,
+                selection,
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+            )
+
+        self.assertEqual(returned.current, "mode")
+        self.assertEqual(returned.profiles, session.profiles)
+        self.assertEqual(returned.scope, session.scope)
+        self.assertTrue(selection["cancelled"])
+
+    def test_artifacts_load_retry_reuses_the_same_curses_session_before_listing_choices(self):
+        session = WizardSession(
+            current="artifacts",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+        failure = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-state-legacy"),
+                    Severity.ERROR,
+                    "AART 0.1 installation state was detected.",
+                ),
+            )
+        )
+        recovered = Ok(
+            tui._UserWizardReadModel(
+                tui.Catalog({}, {}),
+                None,
+                (tui._Choice("artifact", "review", "skill", "review"),),
+                {},
+            )
+        )
+        selection: dict = {}
+
+        with (
+            mock.patch.object(
+                tui, "_load_user_wizard_read_model", side_effect=(failure, recovered)
+            ) as load,
+            mock.patch.object(
+                tui,
+                "_curses_stage_failure_recovery",
+                return_value=WizardInput("retry"),
+            ) as recovery,
+            mock.patch.object(tui, "_curses_multi_event", return_value=WizardInput("quit")),
+        ):
+            returned = tui._run_user_curses_wizard(
+                curses,
+                object(),
+                session,
+                selection,
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+            )
+
+        self.assertEqual(returned.current, "artifacts")
+        self.assertEqual(returned.basket, session.basket)
+        self.assertEqual(returned.profiles, session.profiles)
+        self.assertEqual(returned.scope, session.scope)
+        self.assertEqual(load.call_count, 2)
+        recovery.assert_called_once()
+        self.assertTrue(selection["cancelled"])
+
     def test_canonical_consumer_finalizes_after_curses_teardown_without_legacy_dispatch(self):
         with tempfile.TemporaryDirectory() as raw:
             fixture = _fixture(Path(raw), "skill")

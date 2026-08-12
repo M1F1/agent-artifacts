@@ -22,7 +22,7 @@ from agent_artifacts.reporting.application import ReportingApplicationService
 from agent_artifacts.reporting.model import ReportingDestination
 from agent_artifacts.reporting.projection import usage_report_from_consumer
 from agent_artifacts.tui_sources import build_source_stage
-from agent_artifacts.wizard import WizardSession
+from agent_artifacts.wizard import BasketItem, WizardSession
 from tests.canonical_setup_application_test import Fixture as SetupFixture
 from tests.canonical_symlink_test import _fixture
 from tests.marketplace_fixtures import source_state
@@ -55,6 +55,54 @@ def _tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
 
 
 class TuiConsumerTextTest(unittest.TestCase):
+    def test_err04_retry_reloads_only_artifacts_and_keeps_the_existing_basket(self) -> None:
+        session = WizardSession(
+            current="artifacts",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+            basket=(BasketItem("artifact", "skill/review", "review"),),
+        )
+        failed = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("install-state-legacy"),
+                    Severity.ERROR,
+                    "AART 0.1 installation state was detected.",
+                ),
+            )
+        )
+        recovered = Ok(
+            tui._UserWizardReadModel(
+                tui.Catalog({}, {}),
+                None,
+                (tui._Choice("artifact", "review", "skill", "review"),),
+                {},
+            )
+        )
+        writes: list[str] = []
+
+        with mock.patch.object(
+            tui, "_load_user_wizard_read_model", side_effect=(failed, recovered)
+        ) as load:
+            code = tui._run_user_text_wizard(
+                session,
+                _scripted(["r", "q", "y"]),
+                writes.append,
+                source_factory=mock.Mock(),
+                source_dir=None,
+                repo=None,
+                project="/work/project",
+                user_home=None,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(load.call_count, 2)
+        rendered = "\n".join(writes)
+        self.assertIn("Retry = r", rendered)
+        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        self.assertIn("Discard 1 selected basket item(s)?", rendered)
+
     def test_err03_canonical_loader_returns_the_original_domain_error_unchanged(self) -> None:
         diagnostic = Diagnostic(
             DiagnosticCode("install-state-legacy"),
@@ -118,10 +166,10 @@ class TuiConsumerTextTest(unittest.TestCase):
         )
         source_factory.assert_called_once()
 
-    def test_err02_legacy_project_state_reaches_artifacts_as_one_flattened_error_without_writes(
+    def test_err04_legacy_project_state_renders_a_record_and_back_allows_user_scope_without_writes(
         self,
     ) -> None:
-        """ERR03 will preserve this diagnostic instead of flattening it at the text boundary."""
+        """A project-only legacy state cannot block a user-scoped Artifacts view."""
 
         with tempfile.TemporaryDirectory() as raw:
             fixture = _fixture(Path(raw), "skill")
@@ -152,18 +200,25 @@ class TuiConsumerTextTest(unittest.TestCase):
 
             with mock.patch.object(tui.sys, "platform", "darwin"):
                 code = tui._run_text(
-                    _scripted(["", "1", "1", "1", "install", "1", ""]),
+                    _scripted(["", "1", "1", "1", "install", "1", "", "b", "b", "2", "", "q"]),
                     writes.append,
                     project=str(project),
                     source_stage_view=stage.value,
                     consumer_service=service,
                 )
 
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 0)
+            rendered = "\n".join(writes)
+            compact = "".join(rendered.split())
+            self.assertIn("Artifacts could not be loaded", rendered)
+            self.assertIn("error [install-state-legacy]", rendered)
+            self.assertIn(str(project), rendered)
+            self.assertIn(str(state_path), compact)
             self.assertIn(
-                "error: AART 0.1 installation state was detected.",
-                "\n".join(writes),
+                "aartmigratestate--from0.1--scopeproject--dry-run",
+                compact,
             )
+            self.assertIn("Select artifact(s)/bundle(s)", rendered)
             self.assertEqual((_tree_snapshot(project), _tree_snapshot(Path(paths.root))), before)
 
     def test_federated_collection_row_expands_to_members_before_review(self) -> None:

@@ -94,7 +94,11 @@ from .reporting.projection import (
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
-from .tui_failures import WizardStageFailure, wizard_stage_failure
+from .tui_failures import (
+    WizardStageFailure,
+    render_wizard_stage_failure,
+    wizard_stage_failure,
+)
 from .tui_layout import (
     BOX_CHECKED,
     BOX_DISABLED,
@@ -2396,6 +2400,7 @@ def _load_user_wizard_read_model(
                         remediation=(
                             "choose a local catalog with aart install --source DIR --link",
                         ),
+                        details=(("legacy_exit_code", "2"),),
                     ),
                 )
             )
@@ -2467,11 +2472,9 @@ def _legacy_wizard_read_failure(result: Err) -> DomainErr:
 
 
 def _stage_failure_exit_code(failure: WizardStageFailure) -> int:
-    """Retain a legacy command's nonzero exit code at its one compatibility boundary."""
+    """Read an explicit nonzero compatibility exit code carried by one old command adapter."""
 
     for diagnostic in failure.diagnostics:
-        if diagnostic.code.value != "legacy-wizard-read-failed":
-            continue
         legacy_code = dict(diagnostic.details).get("legacy_exit_code")
         if legacy_code is None:
             continue
@@ -2482,6 +2485,16 @@ def _stage_failure_exit_code(failure: WizardStageFailure) -> int:
         if parsed > 0:
             return parsed
     return 2
+
+
+def _has_compatibility_exit_code(failure: WizardStageFailure) -> bool:
+    """Whether this record crossed a legacy command boundary with a preserved exit status."""
+
+    return any(
+        key == "legacy_exit_code"
+        for diagnostic in failure.diagnostics
+        for key, _value in diagnostic.details
+    )
 
 
 def _confirm_wizard_quit(session: WizardSession, read: ReadFn, write: WriteFn) -> bool:
@@ -2496,6 +2509,33 @@ def _confirm_wizard_quit(session: WizardSession, read: ReadFn, write: WriteFn) -
         return True
     write("Returning to the wizard; no changes were made.")
     return False
+
+
+def _failure_project_context(session: WizardSession, project: Optional[str]) -> str | None:
+    """Expose the selected project root only for the project-scoped local diagnostic view."""
+
+    return os.path.abspath(project or ".") if session.scope == "project" else None
+
+
+def _prompt_stage_failure_recovery(
+    failure: WizardStageFailure,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardInput:
+    """Render one record in text mode and return only one recovery the record advertised."""
+
+    width = shutil.get_terminal_size(fallback=(100, 24)).columns
+    for line in render_wizard_stage_failure(failure, width=max(width, 1)):
+        write(line)
+    shortcuts = {"retry": "r", "back": "b", "quit": "q"}
+    allowed = ", ".join(f"{shortcuts[choice]}={choice}" for choice in failure.choices)
+    while True:
+        recovery_line = _read_line(read, f"Recovery ({allowed}): ")
+        answer = "quit" if recovery_line is None else recovery_line.strip().lower()
+        for choice, shortcut in shortcuts.items():
+            if choice in failure.choices and answer in (choice, shortcut):
+                return WizardInput(choice)
+        write(f"Choose one available recovery: {allowed}.")
 
 
 def _run_user_text_wizard(
@@ -2613,12 +2653,25 @@ def _run_user_text_wizard(
                     consumer_service=consumer_service,
                 )
                 if isinstance(loaded, DomainErr):
-                    failure = wizard_stage_failure(session, "load", loaded)
-                    for diagnostic in failure.diagnostics:
-                        write(f"error: {diagnostic.message}")
-                        for remediation in diagnostic.remediation:
-                            write(f"  remediation: {remediation}")
-                    return _stage_failure_exit_code(failure)
+                    failure = wizard_stage_failure(
+                        session,
+                        "load",
+                        loaded,
+                        project=_failure_project_context(session, project),
+                    )
+                    recovery = _prompt_stage_failure_recovery(failure, read, write)
+                    if recovery.kind == "retry":
+                        read_model = None
+                        read_key = None
+                        continue
+                    if recovery.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _has_compatibility_exit_code(failure):
+                        return _stage_failure_exit_code(failure)
+                    if _confirm_wizard_quit(session, read, write):
+                        return _cancel(write)
+                    continue
                 read_model = loaded.value
                 read_key = key
             if not read_model.choices:
@@ -4785,8 +4838,27 @@ def _run_user_curses_wizard(
                     consumer_service=consumer_service,
                 )
                 if isinstance(loaded, DomainErr):
-                    selection["error"] = wizard_stage_failure(session, "load", loaded)
-                    return session
+                    failure = wizard_stage_failure(
+                        session,
+                        "load",
+                        loaded,
+                        project=_failure_project_context(session, project),
+                    )
+                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                    if recovery.kind == "retry":
+                        read_model = None
+                        read_key = None
+                        continue
+                    if recovery.kind == "back":
+                        session = wizard_back(session)
+                        continue
+                    if _has_compatibility_exit_code(failure):
+                        selection["error"] = failure
+                        return session
+                    if _curses_confirm_discard(curses, stdscr, session):
+                        selection["cancelled"] = True
+                        return session
+                    continue
                 read_model = loaded.value
                 read_key = key
             if not read_model.choices:
@@ -5328,10 +5400,8 @@ def _run_curses(
     if "error" in selection:
         failure_or_error = selection["error"]
         if isinstance(failure_or_error, WizardStageFailure):
-            for diagnostic in failure_or_error.diagnostics:
-                print(f"error: {diagnostic.message}")
-                for remediation in diagnostic.remediation:
-                    print(f"  remediation: {remediation}")
+            for line in render_wizard_stage_failure(failure_or_error):
+                print(line)
             return _stage_failure_exit_code(failure_or_error)
         reason, code = failure_or_error
         print(f"error: {reason}")
@@ -5980,6 +6050,45 @@ def _draw_detail(
             offset = max(offset - content_height, 0)
         else:
             return
+
+
+def _curses_stage_failure_recovery(
+    curses,
+    stdscr,
+    failure: WizardStageFailure,
+) -> WizardInput:
+    """Show a blocking stage record and accept only its declared recovery events."""
+
+    required = ("clear", "addstr", "refresh", "getch", "getmaxyx")
+    if not all(hasattr(stdscr, name) for name in required):
+        return WizardInput("quit")
+    shortcuts = {"retry": "r", "back": "b", "quit": "q"}
+    available = max(_width(stdscr) - 1, 1)
+    height = _height(stdscr)
+    body_height = max(height - 1, 1)
+    record = render_wizard_stage_failure(failure, width=available)
+    max_offset = max(len(record) - body_height, 0)
+    offset = 0
+    hints = tuple((shortcuts[choice], choice) for choice in failure.choices)
+    while True:
+        stdscr.clear()
+        for row, line in enumerate(record[offset : offset + body_height]):
+            stdscr.addstr(row, 0, _ellipsize(line, available))
+        if height > 0:
+            stdscr.addstr(height - 1, 0, status_bar(hints, width=available))
+        stdscr.refresh()
+        key = stdscr.getch()
+        for choice, shortcut in shortcuts.items():
+            if choice in failure.choices and key in (ord(shortcut), ord(shortcut.upper())):
+                return WizardInput(choice)
+        if key in (getattr(curses, "KEY_DOWN", -1), ord("j")) and offset < max_offset:
+            offset += 1
+        elif key in (getattr(curses, "KEY_UP", -1), ord("k")) and offset > 0:
+            offset -= 1
+        elif key == getattr(curses, "KEY_NPAGE", -1) and offset < max_offset:
+            offset = min(offset + body_height, max_offset)
+        elif key == getattr(curses, "KEY_PPAGE", -1) and offset > 0:
+            offset = max(offset - body_height, 0)
 
 
 def _height(stdscr) -> int:
