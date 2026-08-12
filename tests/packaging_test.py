@@ -178,5 +178,39 @@ class BuildWheelTest(unittest.TestCase):
         self.assertEqual(names, recorded)
 
 
+class TypedBehaviorProbeTest(unittest.TestCase):
+    """ERR07: a built wheel must reproduce the checkout's typed diagnostics, not merely import."""
+
+    def setUp(self):
+        self.packaging = _load_script("packaging_check")
+
+    def test_probe_renders_the_legacy_state_record_from_the_installed_package_alone(self):
+        rendered = self.packaging.run_typed_behavior_probe(sys.executable, env=None, cwd=REPO_ROOT)
+
+        # The probe must exercise the whole typed path — parser code, stage record, renderer —
+        # not just prove that an import succeeded.
+        self.assertIn("error [install-state-legacy]", rendered)
+        self.assertIn("Artifacts could not be loaded", rendered)
+        self.assertIn("install-state-v0.1", rendered)
+        self.assertIn("error [install-state-invalid]", rendered)
+        self.assertIn("internal error: tui-stage-internal", rendered)
+        self.assertIn("Quit = q", rendered)
+
+    def test_probe_output_is_free_of_environment_specific_text(self):
+        rendered = self.packaging.run_typed_behavior_probe(sys.executable, env=None, cwd=REPO_ROOT)
+
+        # Equality between two interpreters is only meaningful if nothing local leaks in.
+        self.assertNotIn(str(REPO_ROOT), rendered)
+        self.assertNotIn(sys.prefix, rendered)
+        self.assertNotIn("Traceback", rendered)
+
+    def test_mismatched_typed_behavior_is_a_packaging_failure(self):
+        with self.assertRaisesRegex(ValueError, "typed behavior differs"):
+            self.packaging._compare_typed_behavior("checkout-record\n", "wheel-record\n")
+
+    def test_identical_typed_behavior_passes(self):
+        self.assertIsNone(self.packaging._compare_typed_behavior("same\n", "same\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -175,6 +175,75 @@ def _validate_wheel(wheel: Path, install_root: Path) -> None:
         archive.extractall(install_root)
 
 
+_TYPED_BEHAVIOR_PROBE = """
+import json
+from agent_artifacts.install_state.schema import parse_install_state
+from agent_artifacts.tui import InternalFailureContext, internal_failure_lines
+from agent_artifacts.tui_failures import WizardStageFailure, render_wizard_stage_failure
+
+LEGACY = json.dumps({"repo": "org/aart", "installed": []}).encode()
+INVALID = b'{"schema_version": 2, "installations": '
+
+
+def record(raw, path):
+    parsed = parse_install_state(raw, path=path)
+    return WizardStageFailure(
+        stage="artifacts",
+        operation="load",
+        diagnostics=parsed.diagnostics,
+        action="install",
+        scope="project",
+        project="/probe/project",
+        recoverable=True,
+        choices=("retry", "back", "quit"),
+    )
+
+
+for raw, path in (
+    (LEGACY, "/probe/project/.agent-artifacts/manifest.json"),
+    (INVALID, "/probe/project/.agent-artifacts/state.json"),
+):
+    for line in render_wizard_stage_failure(record(raw, path), width=80):
+        print(line)
+
+context = InternalFailureContext()
+context.stage = "artifacts"
+context.operation = "load"
+for line in internal_failure_lines(ValueError("probe"), context):
+    print(line)
+"""
+
+
+def run_typed_behavior_probe(
+    interpreter: str,
+    *,
+    env: dict[str, str] | None,
+    cwd: Path,
+) -> str:
+    """Render the track's typed diagnostics through one interpreter.
+
+    Every path in the snippet is synthetic, so two interpreters that agree on the typed contract
+    produce byte-identical output regardless of where they run from.
+    """
+
+    completed = subprocess.run(
+        [interpreter, "-c", _TYPED_BEHAVIOR_PROBE],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        check=True,
+    )
+    return completed.stdout.decode("utf-8")
+
+
+def _compare_typed_behavior(checkout: str, wheel: str) -> None:
+    if checkout != wheel:
+        raise ValueError(
+            "typed behavior differs between the checkout and the built wheel; "
+            "the wheel does not reproduce the same diagnostics"
+        )
+
+
 def check_packaging(root: Path = ROOT) -> Path:
     with tempfile.TemporaryDirectory(prefix="aart-packaging-") as raw:
         temp_root = Path(raw)
@@ -203,6 +272,15 @@ def check_packaging(root: Path = ROOT) -> Path:
             cwd=temp_root,
             env=environment,
             check=True,
+        )
+        # Importability is not the contract users depend on: the typed diagnostics are. The wheel
+        # is run from a directory that contains no checkout, so only the extracted package answers.
+        checkout_environment = os.environ.copy()
+        checkout_environment.pop("PYTHONPATH", None)
+        checkout_environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        _compare_typed_behavior(
+            run_typed_behavior_probe(sys.executable, env=checkout_environment, cwd=root),
+            run_typed_behavior_probe(sys.executable, env=environment, cwd=temp_root),
         )
         return Path(wheel.name)
 
