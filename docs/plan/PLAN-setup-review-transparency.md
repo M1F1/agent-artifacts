@@ -1,7 +1,7 @@
 # Plan: Track-3 follow-up — transparent setup review and manual fallback
 
-Status: in delivery; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C/D
-pending; tracked by
+Status: in delivery; ERR09-A completed in `819b885`, ERR09-B completed in `0cfee2a`, ERR09-C
+completed in `74c22e9`, ERR09-D pending; tracked by
 [issue #75](https://github.com/M1F1/agent-artifacts/issues/75); execute as ERR09 of
 [`PLAN-typed-wizard-errors.md`](PLAN-typed-wizard-errors.md), after ERR04 and ERR06.
 
@@ -100,6 +100,8 @@ Delivered:
 
 ## ERR09-C — review, consent and typed outcomes
 
+**Status:** completed in `74c22e9`.
+
 **Owns:** setup queue adapters/runtime presentation, TUI integration and focused tests.
 
 1. Show setup-capable selections and their manual route at the user-facing Review before Finalize;
@@ -119,6 +121,27 @@ Delivered:
 Acceptance: declining setup leaves the payload installed and provides the manual path; a failed
 effect is recoverable without claiming payload rollback; custom and static paths cannot omit the
 preamble; no failure starts a second wizard.
+
+Delivered:
+
+- The Install confirmation lists the manual route for every setup-capable selection, bounded to
+  the terminal width the curses confirmation actually has. The complete bounded review is
+  re-rendered immediately before consent on the retained, canonical and non-interactive paths;
+  the machine-readable plan payload carries the same reviewed effect facts and manual route.
+- Planning failure, decline and execution outcomes render the payload statement first and then one
+  `render_setup_outcome` record per item, with the `SETUP.md` route whenever the status is not
+  complete. A denial after recipe validation keeps the route it proved, through
+  `CanonicalSetupAttempt`; a failure before it claims none. The unstarted statuses are named
+  explicitly, and `skipped` is excluded because a completed rollback reports it too.
+- Item 4 was audited rather than assumed. The fixed lower pane is already list-local only —
+  setup runs after the frontend closed, now pinned by a curses test that observes the setup stage
+  executing outside `curses.wrapper`. The retained runner's loose `error: <reason>` line was the
+  one real gap; it now crosses a single named bridge into `WizardStageFailure`, keeping ERR04's
+  record, ERR06's terminal recovery and its legacy exit status, without a second error system.
+- Consent semantics are unchanged: `--yes`, `--approve-setup-effects`, trust authorization and
+  per-effect approval behave exactly as before, and the manual route never applies an effect.
+- Independent review found no critical issue; all ten quality gates passed with 1892 tests and
+  85.27% branch coverage.
 
 ## ERR09-D — authoring guidance, documentation and final gate
 

@@ -60,9 +60,9 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR08 | completed | `b331060`; default Maintainer curates `cwd`, skips consumer Sources in text/curses, preserves explicit legacy route and pure Back/stepper behavior; all 10 quality gates green (1866 tests) |
 | Typed errors ERR09-A | completed | `819b885`; versioned `1/1` → `2/2` setup contract derives package-root `SETUP.md`, validates safe v2 documents/custom headers and retains v1 behavior; all 10 quality gates green (1870 tests) |
 | Typed errors ERR09-B | completed | `0cfee2a`; one typed, width-bounded setup review has safe effect records and only local/commit-pinned manual routes; v1 remains explicitly unavailable; all 10 quality gates green (1876 tests) |
-| Typed errors ERR09-C.1 | in working tree | manual route survives a denied setup plan; `CanonicalSetupAttempt` splits object validation from trust/policy binding; 4 new tests across `tests/canonical_setup_application_test.py` and `tests/setup_review_test.py` |
 | Pre-existing typecheck repair | committed | `c92cf52`; **not a regression of this track** — the legacy-importer bundle-kind tuple failed `mypy` unchanged on the prior HEAD. Typed module constant plus one bundle-membership regression test; all 10 quality gates green (1889 tests, 85.25% branch coverage) |
-| Typed errors ERR07, ERR09-C/D | pending | — |
+| Typed errors ERR09-C | completed | `74c22e9`; both adapters render one bounded setup outcome with the `SETUP.md` route, a denied plan keeps its verified route through `CanonicalSetupAttempt`, and a blocking retained run crosses one named bridge into `WizardStageFailure`; all 10 quality gates green (1892 tests, 85.27% branch coverage) |
+| Typed errors ERR07, ERR09-D | pending | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -86,13 +86,15 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR09-C of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — wire the
-shared setup review and manual preamble into text, curses and canonical setup consent/outcomes.
-Keep payload outcome first, repeat the route after incomplete setup, and retain consent semantics.
+**ERR09-D of [PLAN-setup-review-transparency.md](PLAN-setup-review-transparency.md)** — authoring
+guidance and documentation: start new setup artifacts from `SETUP.md`, add the custom-script
+header template, state v1 compatibility precisely in the README without promising retroactive
+validation, and add representative MCP and non-MCP fixtures for the static, custom and
+local-source routes. ERR07 then closes the track with its documentation and handoff.
 
-ERR09-A/B now provide the manual-document boundary and pure bounded review. ERR09-C/D reuse
-ERR04's record renderer and ERR06's setup-boundary classification; payload and setup outcomes
-must remain distinct throughout the remaining work.
+ERR09-A/B/C now provide the manual-document boundary, the pure bounded review and the wired
+outcomes in both adapters. The remaining work reuses ERR04's record renderer and ERR06's
+setup-boundary classification; payload and setup outcomes must remain distinct throughout.
 
 Read that plan for the package order. ERR05 is complete (`6ce2e25`, `13b3b99`): expected
 stage errors have ERR04's record renderer; internal errors have safe stage context, an opt-in
@@ -185,6 +187,37 @@ Useful facts carried over from the legibility work:
 - The registry-only reproducer, both frontend gates, stage/Back invariants and explicit-path
   regression coverage pass. Independent review found no critical issue; all ten quality gates
   passed with 1866 tests.
+
+### ERR09-C delivery notes
+
+- Both adapters now render `render_setup_outcome` for every post-payload result: the retained
+  post-install runner and `aart setup` records, and the canonical planning failure, decline and
+  execution paths. The payload statement always comes first, and the outcome record carries the
+  `SETUP.md` route whenever the status is not complete. The flattened `module: summary -> target`
+  effect sentence is gone from both consent paths; each effect is approved by its reviewed index,
+  identity and recovery.
+- A denied plan keeps the route it already proved. `prepare_setup` splits at the seam where the
+  recipe — and with it a v2 `SETUP.md` — is validated but trust and policy have not yet applied.
+  `prepare_setup_attempt` returns a `CanonicalSetupAttempt` whose invariant is that a planned
+  attempt always carries a manual route, so a failure before that seam claims none rather than
+  inventing one. `prepare_setup` keeps its signature; no existing caller changed.
+- The manual status distinguishes an unstarted setup (`declined`, `planning-failed`,
+  `unsupported` → "No setup effect has run.") from a partial one. `skipped` is deliberately not
+  unstarted: `rollback_record` also reports it after a *completed* rollback, where effects did run.
+- **Audit of plan item 4.** The fixed bottom pane is already list-local only: no setup code runs
+  inside the curses wizard, so a setup record cannot reach it. That is now pinned behaviorally —
+  the setup stage is observed to execute after `curses.wrapper` returned, not merely after the
+  last screen. The one real gap was the retained runner, which printed `error: <reason>` for a
+  blocking failure. It now crosses one named 0.1 bridge into `WizardStageFailure`, reusing ERR04's
+  record and ERR06's terminal-recovery rule, and preserves its legacy exit status. No second
+  setup-only error system was introduced.
+- **Known imprecision, carried as a follow-up.** The retained `run_queue` returns a bare `Err` and
+  discards the records it already completed, so a mid-queue receipt/state persistence failure
+  cannot name which items finished. The blocking record therefore offers each queued route as
+  possibly-incomplete work rather than claiming that no effect ran. Making that runner return its
+  completed records alongside the failure is worth doing when the retained path is next touched.
+- Independent review found no critical issue. All ten `python scripts/quality.py` gates pass
+  (1892 unit + 52 integration tests, 85.27% branch coverage).
 
 ## Working agreements
 

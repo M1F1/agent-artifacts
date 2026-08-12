@@ -147,3 +147,25 @@ list merely to place an error at the bottom.
    `SETUP.md` comment header.
 6. No route or record leaks a credential, setup input, environment value, raw subprocess output,
    arbitrary script body, or unpinned source URL.
+
+## 5. Delivery record
+
+D1 landed in `819b885`, D3 in `0cfee2a`, and D2/D4 in `74c22e9`. Two decisions were sharpened by
+the implementation and are recorded here rather than left implicit in the code:
+
+- **A proven route survives a denied plan.** D2 promises the manual alternative before automation,
+  but trust and policy can deny a plan *after* its recipe and `SETUP.md` have already been
+  validated. Planning is therefore split at that seam and returns an attempt value whose invariant
+  is that a planned attempt always carries its route. This keeps the promise without ever
+  re-reading, guessing or fabricating a route for a failure that occurred before validation.
+- **"Incomplete" and "unstarted" are different claims.** After an outcome the record states
+  either that no effect has run or that automated setup is incomplete. Only statuses that prove
+  nothing was attempted may claim the former; `skipped` is excluded because a *completed* rollback
+  also reports it. When the retained runner fails mid-queue it discards the records it completed,
+  so its blocking record makes the weaker, provable claim.
+
+D4 was audited, not re-implemented. The lower fixed pane was already list-local by construction —
+setup runs only after the frontend closes — and that is now pinned by observing the setup stage
+execute outside the curses wrapper. The one violation was a retained blocking run printing a loose
+error line; it crosses a single named bridge into the typed stage record instead. No parallel,
+setup-only error or layout system exists.
