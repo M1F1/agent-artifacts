@@ -28,6 +28,7 @@ import functools
 import os
 import shutil
 import sys
+import traceback
 from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
@@ -95,6 +96,7 @@ from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
 from .tui_failures import (
+    WizardOperation,
     WizardStageFailure,
     render_wizard_stage_failure,
     wizard_stage_failure,
@@ -136,6 +138,7 @@ from .wizard import (
     BasketItem,
     WizardInput,
     WizardSession,
+    WizardStage,
     can_finalize,
     initial_session,
     onboarding_lines,
@@ -1233,8 +1236,13 @@ def _complete_canonical_consumer_action(
     *,
     read: ReadFn,
     write: WriteFn,
+    failure_context: InternalFailureContext | None = None,
 ) -> int:
+    if failure_context is not None:
+        failure_context.capture_operation("setup")
     setup = _canonical_setup_run(consumer, review, outcome, read=read, write=write)
+    if failure_context is not None:
+        failure_context.capture_operation("reporting")
     try:
         event = usage_report_from_consumer(
             review,
@@ -4671,11 +4679,14 @@ def _run_user_curses_wizard(
     project: Optional[str],
     user_home: Optional[str],
     consumer_service: Optional[ConsumerApplicationService] = None,
+    failure_context: InternalFailureContext | None = None,
 ) -> WizardSession:
+    context = failure_context or InternalFailureContext()
     profile_names = tuple(sorted(load_profiles(project)))
     read_model: Optional[_UserWizardReadModel] = None
     read_key: Optional[tuple] = None
     while session.current not in ("role", "source", "maintainer_action"):
+        context.capture(session)
         if session.current == "profiles":
             selected = tuple(
                 index for index, name in enumerate(profile_names) if name in session.profiles
@@ -4919,6 +4930,7 @@ def _run_user_curses_wizard(
             continue
 
         if session.current == "review":
+            context.capture(session, "review")
             chosen: Tuple[_Choice, ...] = ()
             if read_model is not None:
                 by_key = {_basket_key(choice): choice for choice in read_model.choices}
@@ -5047,24 +5059,58 @@ class CursesUnavailable(Exception):
 INTERNAL_FAILURE_CODE = "tui-stage-internal"
 
 
-def internal_failure_lines(error: BaseException) -> Tuple[str, ...]:
+@dataclass(slots=True)
+class InternalFailureContext:
+    """The last safe frontend boundary, kept outside the persistent wizard session."""
+
+    stage: WizardStage = "onboarding"
+    operation: WizardOperation = "load"
+
+    def capture(self, session: WizardSession, operation: WizardOperation = "load") -> None:
+        self.stage = session.current
+        self.operation = operation
+
+    def capture_operation(self, operation: WizardOperation) -> None:
+        """Mark a shell operation while retaining the stage captured at its boundary."""
+
+        self.operation = operation
+
+
+def internal_failure_lines(
+    error: BaseException,
+    context: InternalFailureContext | None = None,
+) -> Tuple[str, ...]:
     """Project a defect into stable, redacted terminal lines.
 
     Only the exception *type* is disclosed. Messages can carry filesystem paths, subprocess
-    output, or setup input, so they are withheld by default; the opt-in local debug channel that
-    reveals more is ERR05b in PLAN-typed-wizard-errors.
+    output, or setup input, so they are withheld by default. Context contains only the last safe
+    stage and operation; it never owns terminal, service, or domain-state objects.
     """
 
+    failure_context = context or InternalFailureContext()
     return (
         f"internal error: {INTERNAL_FAILURE_CODE}",
+        f"  stage: {failure_context.stage}",
+        f"  operation: {failure_context.operation}",
         f"  type: {type(error).__name__}",
         "next: rerun the command; if it repeats, report it with the steps that reached this screen.",
     )
 
 
-def _render_internal_failure(error: BaseException) -> int:
-    for line in internal_failure_lines(error):
+def _debug_traceback_enabled() -> bool:
+    """Enable an explicitly local traceback channel without changing normal terminal output."""
+
+    return os.environ.get("AART_DEBUG") == "1"
+
+
+def _render_internal_failure(
+    error: BaseException,
+    context: InternalFailureContext | None = None,
+) -> int:
+    for line in internal_failure_lines(error, context):
         print(line)
+    if _debug_traceback_enabled():
+        traceback.print_exception(error, file=sys.stderr)
     return 2
 
 
@@ -5083,10 +5129,15 @@ def _run_curses(
     reporting_service: Optional[ReportingApplicationService] = None,
     reporting_service_factory: Optional[ReportingServiceFactory] = None,
     curation_service_factory: Optional[CurationServiceFactory] = None,
+    failure_context: InternalFailureContext | None = None,
 ) -> int:
     """Collect a persistent wizard session and dispatch only after curses teardown."""
-    import curses  # stdlib; imported lazily so the text path needs no terminal at all.
+    try:
+        import curses  # stdlib; imported lazily so the text path needs no terminal at all.
+    except ImportError as error:
+        raise CursesUnavailable("the curses wizard could not start") from error
 
+    context = failure_context or InternalFailureContext()
     if not load_profiles(project):  # pragma: no cover - built-ins always present
         print("No profiles available.")
         return 0
@@ -5106,12 +5157,14 @@ def _run_curses(
         # defect in the wizard, not a terminal that cannot host it.
         interacted = True
         session = initial_session()
+        context.capture(session)
         onboarding = _curses_onboarding(curses, stdscr)
         if onboarding.kind == "quit":
             selection["cancelled"] = True
             return
         session = wizard_advance(session)
         while session.current in ("role", "source"):
+            context.capture(session)
             if session.current == "role":
                 event = _curses_single_event(
                     curses,
@@ -5169,6 +5222,7 @@ def _run_curses(
                         stdscr.clear()
                         stdscr.addstr(0, 0, "Synchronizing and validating the source…")
                         stdscr.refresh()
+                    context.capture(session, "finalize")
                     finalized_addition = source_addition_finalizer(addition)
                     if isinstance(finalized_addition, DomainErr):
                         _curses_notice(
@@ -5181,6 +5235,7 @@ def _run_curses(
                             ),
                         )
                         continue
+                    context.capture(session)
                     refreshed = source_stage_loader()
                     if isinstance(refreshed, DomainErr):
                         _curses_notice(
@@ -5275,6 +5330,7 @@ def _run_curses(
                     project=project,
                     user_home=user_home,
                     consumer_service=active_consumer_service,
+                    failure_context=context,
                 )
                 if selection.get("consumer_review") is not None:
                     selection["active_consumer_service"] = active_consumer_service
@@ -5307,6 +5363,7 @@ def _run_curses(
                     return
                 maintainer_actions = MAINTAINER_ACTIONS
             while session.current == "maintainer_action":
+                context.capture(session)
                 event = _curses_single_event(
                     curses,
                     stdscr,
@@ -5370,6 +5427,7 @@ def _run_curses(
                         project=project,
                         user_home=user_home,
                         consumer_service=maintainer_consumer_service,
+                        failure_context=context,
                     )
                     if selection.get("consumer_review") is not None:
                         selection["active_consumer_service"] = maintainer_consumer_service
@@ -5442,6 +5500,7 @@ def _run_curses(
         return _cancel(print)
 
     request = selection["request"]
+    context.capture(selection["wizard_session"], "finalize")
     source_code = _finalize_source_selection(
         selection["wizard_session"],
         source_finalizer,
@@ -5467,6 +5526,7 @@ def _run_curses(
             print(
                 "warning: usage reporting is unavailable; artifact installation remains available"
             )
+        context.capture(selection["wizard_session"], "setup")
         return _complete_canonical_consumer_action(
             active_consumer_service,
             consumer_review,
@@ -5474,12 +5534,14 @@ def _run_curses(
             selection.get("active_reporting_service", reporting_service),
             read=input,
             write=print,
+            failure_context=context,
         )
     outcome = _dispatch_result(request)
     code = _render_result(outcome, print)
     confirmation = selection.get("confirmation")
     if code != 0 or confirmation is None:
         return code
+    context.capture(selection["wizard_session"], "setup")
     return _run_post_install_setup(
         confirmation.setup_queue,
         request,
@@ -6099,6 +6161,19 @@ def _width(stdscr) -> int:
     return stdscr.getmaxyx()[1]
 
 
+def _curses_supported() -> bool:
+    """Return false only for expected pre-interaction terminal capability failures."""
+
+    try:
+        import curses  # noqa: F401  (presence check only)
+    except ImportError:
+        return False
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except OSError:
+        return False
+
+
 # --------------------------------------------------------------------------- #
 # Entry point — chooses curses vs text and delegates.                           #
 # --------------------------------------------------------------------------- #
@@ -6165,12 +6240,12 @@ def run(
             )
 
         reporting_service_factory = runtime_reporting_service
+    failure_context = InternalFailureContext()
     try:
-        import curses  # noqa: F401  (presence check only)
-
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            raise RuntimeError("not a tty")
-    except Exception:
+        curses_supported = _curses_supported()
+    except Exception as error:
+        return _render_internal_failure(error, failure_context)
+    if not curses_supported:
         return _run_text(
             source_dir=source_dir,
             repo=repo,
@@ -6200,6 +6275,7 @@ def run(
             consumer_service_factory=consumer_service_factory,
             reporting_service=reporting_service,
             reporting_service_factory=reporting_service_factory,
+            failure_context=failure_context,
         )
     except CursesUnavailable:
         return _run_text(
@@ -6219,4 +6295,4 @@ def run(
     except Exception as error:
         # The outermost crash boundary. ``curses.wrapper`` has already restored the terminal.
         # Broad catching is permitted here for rendering only, never to start a second wizard.
-        return _render_internal_failure(error)
+        return _render_internal_failure(error, failure_context)
