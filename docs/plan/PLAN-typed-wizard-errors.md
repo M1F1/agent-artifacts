@@ -124,7 +124,7 @@ Acceptance:
 
 ### ERR02 — discriminate legacy installation state in the parser
 
-**Status:** pending; depends on ERR01
+**Status:** completed; depends on ERR01
 
 1. Add `INSTALL_STATE_LEGACY = DiagnosticCode("install-state-legacy")` beside
    `STATE_INVALID` in `agent_artifacts/install_state/schema.py`.
@@ -410,7 +410,7 @@ claiming the complete gate passes.
 ## Completion checklist
 
 - [x] ERR01 characterization tests exist and failed before implementation.
-- [ ] ERR02 distinguishes legacy and invalid installation state.
+- [x] ERR02 distinguishes legacy and invalid installation state.
 - [ ] ERR03 preserves typed diagnostics through stage loading.
 - [ ] ERR04 renders and recovers equivalently in text and curses.
 - [ ] ERR05 prevents post-start fallback/restart and types internal failures.

@@ -254,7 +254,7 @@ An expected failure is concise first and detailed enough to act on:
 ```text
 Artifacts could not be loaded
 
-error [install-state-legacy]: This project uses AART 0.1 installation state.
+error [install-state-legacy]: AART 0.1 installation state was detected.
   project: /Users/mifi/code/agent-artifacts
   path: /Users/mifi/code/agent-artifacts/.agent-artifacts/manifest.json
 

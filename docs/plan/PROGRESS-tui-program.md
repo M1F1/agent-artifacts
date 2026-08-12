@@ -52,7 +52,8 @@ ERR04/ERR06 dependencies.
 | Legibility WP-3 steps 8, 9, 10 | committed | 4 tests in `DetailRecordAndWidthTests`, 2 more across text tests |
 | Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
 | Typed errors ERR01 | completed | parser fixtures and 4 characterization tests across `tests/install_state_schema_test.py`, `tests/tui_consumer_text_test.py`, and `tests/tui_source_stage_test.py`; all 10 quality gates green (1832 unit tests) |
-| Typed errors ERR02 … ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR02 | completed | `install-state-legacy` recognizes only the exact `repo`/`installed` v0.1 envelope; every other parser failure is `install-state-invalid` with its original safe location/message; all 10 quality gates green (1833 unit tests) |
+| Typed errors ERR03, ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -76,10 +77,9 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR02 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — recognize only the
-bounded 0.1 installation-state signature and return one `install-state-legacy` diagnostic without
-writing or inferring source mappings. ERR01 established that the parser currently reports four
-raw `protocol-schema-*` diagnostics and the legacy text path flattens them later.
+**ERR03 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — change the canonical
+Artifacts read-model loader to preserve the `DomainErr` just produced by ERR02. Introduce the
+immutable stage-failure envelope at that frontend boundary; rendering and recovery stay in ERR04.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves

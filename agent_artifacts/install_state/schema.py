@@ -32,6 +32,12 @@ from .model import (
 )
 
 STATE_INVALID = DiagnosticCode("install-state-invalid")
+INSTALL_STATE_LEGACY = DiagnosticCode("install-state-legacy")
+_LEGACY_V01_FIELDS = frozenset({"repo", "installed"})
+_LEGACY_MIGRATION_REMEDIATION = (
+    "Preview a project-scope migration: aart migrate state --from 0.1 --scope project --dry-run",
+    "Preview a user-scope migration: aart migrate state --from 0.1 --scope user --dry-run",
+)
 
 
 def _location(path: str, pointer: str | None = None) -> SourceLocation:
@@ -40,6 +46,61 @@ def _location(path: str, pointer: str | None = None) -> SourceLocation:
 
 def _error(message: str, *, path: str, pointer: str | None = None) -> Err:
     return Err((Diagnostic(STATE_INVALID, Severity.ERROR, message, _location(path, pointer)),))
+
+
+def _legacy_v01_error(path: str) -> Err:
+    """Report the exact legacy envelope without reading or inferring its artifact mappings."""
+
+    return Err(
+        (
+            Diagnostic(
+                INSTALL_STATE_LEGACY,
+                Severity.ERROR,
+                "AART 0.1 installation state was detected.",
+                _location(path),
+                remediation=_LEGACY_MIGRATION_REMEDIATION,
+                details=(
+                    ("detected_schema", "install-state-v0.1"),
+                    ("required_schema", "install-state-v2"),
+                ),
+            ),
+        )
+    )
+
+
+def _is_legacy_v01_envelope(value: JsonValue) -> bool:
+    """Recognize only the complete 0.1 top-level signature before v2 validation."""
+
+    if not isinstance(value, JsonObject):
+        return False
+    fields = dict(value.entries)
+    return (
+        frozenset(fields) == _LEGACY_V01_FIELDS
+        and isinstance(fields["repo"], str)
+        and isinstance(fields["installed"], JsonArray)
+    )
+
+
+def _as_install_state_invalid(result: Err) -> Err:
+    """Keep parser failures in the installation-state diagnostic family.
+
+    The underlying JSON and protocol validators still provide the bounded message and precise
+    location.  Their generic codes are not the public contract of this state parser.
+    """
+
+    return Err(
+        tuple(
+            Diagnostic(
+                STATE_INVALID,
+                diagnostic.severity,
+                diagnostic.message,
+                diagnostic.location,
+                remediation=diagnostic.remediation,
+                details=diagnostic.details,
+            )
+            for diagnostic in result.diagnostics
+        )
+    )
 
 
 def _object(
@@ -394,9 +455,16 @@ def parse_install_state(
 ) -> Result[InstallState]:
     parsed = parse_json(data, location=_location(path))
     if isinstance(parsed, Err):
-        return parsed
+        return _as_install_state_invalid(parsed)
+    if _is_legacy_v01_envelope(parsed.value):
+        return _legacy_v01_error(path)
+    parsed_v2 = _parse_v2_install_state(parsed.value, path=path)
+    return parsed_v2 if isinstance(parsed_v2, Ok) else _as_install_state_invalid(parsed_v2)
+
+
+def _parse_v2_install_state(value: JsonValue, *, path: str) -> Result[InstallState]:
     fields = _object(
-        parsed.value,
+        value,
         required=frozenset({"schema_version", "installations"}),
         path=path,
         pointer="",

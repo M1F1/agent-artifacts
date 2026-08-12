@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from agent_artifacts.configuration.model import SourceKind
+from agent_artifacts.domain.diagnostics import diagnostic_to_data
 from agent_artifacts.domain.identifiers import (
     ArtifactCoordinate,
     ArtifactIdentity,
@@ -76,43 +77,55 @@ def _record() -> InstallationRecord:
 class InstallStateSchemaTests(unittest.TestCase):
     fixtures = Path(__file__).resolve().parent / "fixtures" / "install-state"
 
-    def test_err01_recognized_v01_state_currently_reports_v2_field_errors(self) -> None:
-        """Characterize ERR01 before ERR02 gives the recognized legacy shape its own code."""
+    def test_err02_recognized_v01_state_has_one_typed_diagnostic_for_project_and_user_paths(
+        self,
+    ) -> None:
+        """Recognized 0.1 state is distinct from malformed v2 without inspecting its content."""
 
-        result = parse_install_state(
-            (self.fixtures / "legacy-v01-manifest.json").read_bytes(),
-            path="/fixture/project/.agent-artifacts/manifest.json",
-        )
+        payload = (self.fixtures / "legacy-v01-manifest.json").read_bytes()
+        for path in (
+            "/fixture/project/.agent-artifacts/manifest.json",
+            "/fixture/user/.agent-artifacts/manifest.json",
+        ):
+            with self.subTest(path=path):
+                result = parse_install_state(payload, path=path)
 
-        self.assertIsInstance(result, Err)
-        assert isinstance(result, Err)
-        self.assertEqual(
-            tuple(diagnostic.code.value for diagnostic in result.diagnostics),
-            (
-                "protocol-schema-missing-field",
-                "protocol-schema-missing-field",
-                "protocol-schema-unknown-field",
-                "protocol-schema-unknown-field",
-            ),
-        )
-        self.assertEqual(
-            tuple(diagnostic.message for diagnostic in result.diagnostics),
-            (
-                "missing required field 'installations'",
-                "missing required field 'schema_version'",
-                "unknown field 'installed'",
-                "unknown field 'repo'",
-            ),
-        )
-        self.assertTrue(
-            all(
-                diagnostic.location is not None
-                and diagnostic.location.path == "/fixture/project/.agent-artifacts/manifest.json"
-                for diagnostic in result.diagnostics
-            )
-        )
+                self.assertIsInstance(result, Err)
+                assert isinstance(result, Err)
+                self.assertEqual(len(result.diagnostics), 1)
+                diagnostic = result.diagnostics[0]
+                self.assertEqual(diagnostic.code.value, "install-state-legacy")
+                self.assertEqual(
+                    diagnostic.message,
+                    "AART 0.1 installation state was detected.",
+                )
+                self.assertEqual(
+                    diagnostic_to_data(diagnostic),
+                    {
+                        "code": "install-state-legacy",
+                        "severity": "error",
+                        "message": "AART 0.1 installation state was detected.",
+                        "location": {
+                            "source": None,
+                            "path": path,
+                            "pointer": None,
+                            "line": None,
+                            "column": None,
+                        },
+                        "remediation": [
+                            "Preview a project-scope migration: aart migrate state --from 0.1 "
+                            "--scope project --dry-run",
+                            "Preview a user-scope migration: aart migrate state --from 0.1 "
+                            "--scope user --dry-run",
+                        ],
+                        "details": {
+                            "detected_schema": "install-state-v0.1",
+                            "required_schema": "install-state-v2",
+                        },
+                    },
+                )
 
-    def test_err01_malformed_v2_fixture_is_a_distinct_current_parser_case(self) -> None:
+    def test_err02_malformed_v2_fixture_remains_invalid(self) -> None:
         """ERR02 must not mistake a malformed v2 shape for the bounded legacy signature."""
 
         result = parse_install_state(
@@ -130,6 +143,30 @@ class InstallStateSchemaTests(unittest.TestCase):
             tuple(diagnostic.message for diagnostic in result.diagnostics),
             ("installations must be an array",),
         )
+
+    def test_err02_uses_install_state_invalid_for_every_nonlegacy_top_level_shape(self) -> None:
+        """Only the exact recognized 0.1 envelope is legacy; malformed state has one family."""
+
+        malformed = (
+            b"{",
+            b'{"unrelated":true}',
+            b'{"repo":"M1F1/agent-artifacts","installed":[],"extra":true}',
+            b'{"repo":1,"installed":[]}',
+            b'{"repo":"M1F1/agent-artifacts","installed":{}}',
+            b'{"schema_version":1,"installations":[]}',
+            b'{"schema_version":3,"installations":[]}',
+            b'{"schema_version":2,"installations":[{}]}',
+        )
+        for payload in malformed:
+            with self.subTest(payload=payload):
+                result = parse_install_state(payload)
+
+                self.assertIsInstance(result, Err)
+                assert isinstance(result, Err)
+                self.assertEqual(
+                    {diagnostic.code.value for diagnostic in result.diagnostics},
+                    {"install-state-invalid"},
+                )
 
     def test_v2_round_trip_is_canonical_and_deterministic(self) -> None:
         state = InstallState(schema_version=2, installations=(_record(),))

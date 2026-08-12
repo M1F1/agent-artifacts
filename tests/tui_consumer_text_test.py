@@ -54,10 +54,10 @@ def _tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
 
 
 class TuiConsumerTextTest(unittest.TestCase):
-    def test_err01_legacy_project_state_reaches_artifacts_as_one_flattened_error_without_writes(
+    def test_err02_legacy_project_state_reaches_artifacts_as_one_flattened_error_without_writes(
         self,
     ) -> None:
-        """Characterize the current Artifacts failure before ERR02–ERR04 replace it."""
+        """ERR03 will preserve this diagnostic instead of flattening it at the text boundary."""
 
         with tempfile.TemporaryDirectory() as raw:
             fixture = _fixture(Path(raw), "skill")
@@ -97,8 +97,7 @@ class TuiConsumerTextTest(unittest.TestCase):
 
             self.assertEqual(code, 2)
             self.assertIn(
-                "error: missing required field 'installations'; missing required field "
-                "'schema_version'; unknown field 'installed'; unknown field 'repo'",
+                "error: AART 0.1 installation state was detected.",
                 "\n".join(writes),
             )
             self.assertEqual((_tree_snapshot(project), _tree_snapshot(Path(paths.root))), before)
