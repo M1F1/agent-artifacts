@@ -39,7 +39,8 @@ authorization.
 | Legibility WP-2 artifact projections | committed | 10 tests in `tests/tui_marketplace_test.py`; 4 moved off `render_marketplace_row` |
 | Legibility WP-3 steps 1, 2, 6 | committed | 6 tests in `tests/tui_wizard_curses_test.py::StatusBarTests` |
 | Legibility WP-3 step 3 | committed | 6 tests in `tests/tui_wizard_curses_test.py::ScreenChromeTests` |
-| Legibility WP-3 steps 4, 5, 7, 8, 9, 10 | not started | — |
+| Legibility WP-3 step 4 | committed | 4 tests in `tests/tui_wizard_curses_test.py::DetailPaneTests` |
+| Legibility WP-3 steps 5, 7, 8, 9, 10 | not started | — |
 | Legibility WP-4 | not started | — |
 | Typed errors ERR01 … ERR04, ERR05b, ERR06, ERR07 | not started | — |
 
@@ -61,22 +62,28 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 4 onward** — curses and text
+**WP-3 of [PLAN-tui-legibility.md](PLAN-tui-legibility.md), step 5 onward** — curses and text
 wiring. Runs inline on `main`, owns `agent_artifacts/tui.py` and the eight test files that assert
 on old screen strings.
 
-Done so far: **step 2** (landed with WP-1), **steps 1 and 6** (the pinned bar, `b`, `[!]`) and
+Done so far: **step 2** (landed with WP-1), **steps 1 and 6** (the pinned bar, `b`, `[!]`),
 **step 3** (titles are nouns, every footer is a `status_bar`, no `·` separator survives in
-`tui.py`). Steps 1 and 6 landed together on purpose — the bar advertises `b=back`, and shipping
-that sentence before the key worked would have made the bar lie.
+`tui.py`) and **step 4** (the pane and the column grid). Steps 1 and 6 landed together on purpose
+— the bar advertises `b=back`, and shipping that sentence before the key worked would have made
+the bar lie.
 
-Remaining: **4** (detail pane + `columns` rows), **5** (Enter semantics), **7** (text parity),
-**8** (`_draw_detail` through `render_artifact_detail`), **9** (drop `render_marketplace_row`),
-**10** (bound the width). Two guard tests now fail loudly if a regression reintroduces old chrome:
-`ScreenChromeTests` parses `tui.py` and rejects any string literal that names a key outside a text
-prompt, or uses ` · ` as a separator.
+Remaining: **5** (Enter semantics), **7** (text parity), **8** (`_draw_detail` through
+`render_artifact_detail`), **9** (drop `render_marketplace_row`), **10** (bound the width). Two
+guard tests fail loudly if a regression reintroduces old chrome: `ScreenChromeTests` parses
+`tui.py` and rejects any string literal that names a key outside a text prompt, or uses ` · ` as a
+separator.
 
-What steps 1 and 3 established, for the steps that build on them:
+Step 5 is partly paid for already: the pane shows the cursor row's `status` field, and for an
+incompatible row that field reads `unavailable: <first reason>`. What step 5 still owes is the
+*key handling* — Enter on an empty tick set takes the cursor row, and refuses without leaving when
+that row is disabled.
+
+What steps 1, 3 and 4 established, for the steps that build on them:
 
 - `_draw_list` reserves `height - 1` for the body and paints `status_bar` on the last row every
   frame. Step 4's pane comes out of `body_height`, not out of the bar.
@@ -92,6 +99,17 @@ What steps 1 and 3 established, for the steps that build on them:
 - `onboarding_lines` lost "Press Enter to start." (D11): the bar says it in curses and the prompt
   says it in text. That edit is in `wizard.py`, WP-1's file — same sequential-ownership deviation
   as before, recorded above.
+- `_draw_list` takes `cells=` (a shared column grid, laid out across every row at once) and
+  `pane_for=(index, width) -> lines`. Both are optional; only the artifacts screen passes them,
+  because that is the screen observation 7 was about. `_Choice` carries `cells` and `row` so the
+  screen can hand them over, and `_choice_pane` covers collections, which have no security record.
+- `_fitting_cells` drops whole trailing columns when they no longer fit, rather than letting
+  `columns` shrink them to `regist…`. This is the caller-side half of the WP-2 decision below.
+- The pane sits directly under the last list row, or just above the bar when the list is long.
+  Both positions depend only on frame constants, so nothing moves while the cursor does.
+- `render_artifact_pane` abbreviates the revision to seven characters (`aaaaaaa…`). At 62 columns
+  the full hash wrapped over three lines and pushed the `status` field — the one carrying the
+  refusal reason — off the bottom of the pane. `render_artifact_detail` still prints it whole.
 
 Everything else WP-3 needs is pure and tested:
 

@@ -25,7 +25,14 @@ from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_models import InstallEffect
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
-from agent_artifacts.tui_layout import CONTENT_MEASURE, columns, field_block, measure, wrap
+from agent_artifacts.tui_layout import (
+    CONTENT_MEASURE,
+    STAGE_PROJECTION,
+    columns,
+    field_block,
+    measure,
+    wrap,
+)
 
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _TRUSTS = frozenset(
@@ -410,6 +417,22 @@ def _status_text(row: MarketplaceArtifactRow) -> str:
     return f"unavailable: {reasons[0].message}" if reasons else "unavailable"
 
 
+_REVISION_PREFIX = 7
+
+
+def _short_revision(revision: str) -> str:
+    """Abbreviate a revision for the pane; the detail record keeps it whole.
+
+    A resolved revision is usually a full hash, and at pane width it wraps over three lines and
+    pushes the ``status`` field — the one carrying the reason a row is unavailable — off the
+    bottom. Seven characters is the length every git tool abbreviates to.
+    """
+
+    if len(revision) <= _REVISION_PREFIX:
+        return revision
+    return revision[:_REVISION_PREFIX] + STAGE_PROJECTION
+
+
 def _one_line(text: str, *, indent: int, width: int) -> str:
     """One line bounded to the content measure, indented and truncated by the layout kernel."""
 
@@ -451,7 +474,7 @@ def render_artifact_pane(row: MarketplaceArtifactRow, *, width: int) -> Tuple[st
             (
                 (
                     "source",
-                    f"{row.source_alias} ({row.trust}) at {row.source_revision}, "
+                    f"{row.source_alias} ({row.trust}) at {_short_revision(row.source_revision)}, "
                     f"{row.source_health}",
                 ),
                 ("risk", _risk_text(row.security)),

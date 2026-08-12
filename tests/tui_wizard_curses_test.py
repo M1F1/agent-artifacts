@@ -173,6 +173,92 @@ class StatusBarTests(unittest.TestCase):
         self.assertNotIn("[-]", rendered)
 
 
+class DetailPaneTests(unittest.TestCase):
+    """WP-3 step 4: the pane lives outside the list, so the list never reflows (D6)."""
+
+    CELLS = tuple(
+        (f"team/skill/artifact-{index}@1.0.0", "available", "risk low", "direct-source")
+        for index in range(12)
+    )
+
+    def rows_of(self, screen: Screen, height: int) -> dict:
+        return {
+            row: value
+            for row, _column, value in screen.lines
+            if value.startswith(("> ", "  [")) or value.startswith("  ")
+        }
+
+    def draw(self, screen: Screen, cursor: int, *, pane=True) -> None:
+        tui._draw_list(
+            curses,
+            screen,
+            "Artifacts",
+            tuple(cells[0] for cells in self.CELLS),
+            cursor,
+            [False] * len(self.CELLS),
+            cells=self.CELLS,
+            pane_for=(lambda index, width: (f"  {self.CELLS[index][0]}", "  a summary"))
+            if pane
+            else None,
+            hints=(("enter", "confirm"), ("q", "quit")),
+        )
+
+    def test_the_pane_sits_between_the_list_and_the_bar(self) -> None:
+        screen = Screen(height=20, width=90)
+
+        self.draw(screen, 0)
+
+        painted = {row: value for row, _column, value in screen.lines}
+        bar_row = screen.height - 1
+        pane_rows = [row for row, value in painted.items() if "artifact-0" in value]
+        self.assertGreaterEqual(len(pane_rows), 2)
+        self.assertLess(max(pane_rows), bar_row)
+        self.assertIn("enter=confirm", painted[bar_row])
+
+    def test_moving_the_cursor_changes_no_row_text_or_position(self) -> None:
+        first = Screen(height=20, width=90)
+        second = Screen(height=20, width=90)
+
+        self.draw(first, 0)
+        self.draw(second, 1)
+
+        def list_rows(screen):
+            return {
+                row: value[2:]
+                for row, _column, value in screen.lines
+                if value.startswith(("> [", "  ["))
+            }
+
+        self.assertEqual(list_rows(first), list_rows(second))
+
+    def test_a_short_terminal_drops_the_pane_before_the_list(self) -> None:
+        tall = Screen(height=20, width=90)
+        short = Screen(height=10, width=90)
+
+        self.draw(tall, 0)
+        self.draw(short, 0)
+
+        def list_row_count(screen):
+            return sum(
+                1 for _row, _column, value in screen.lines if value.startswith(("> [", "  ["))
+            )
+
+        self.assertGreaterEqual(list_row_count(tall), 3)
+        self.assertGreaterEqual(list_row_count(short), 3)
+        self.assertNotIn("a summary", "\n".join(value for _row, _column, value in short.lines))
+
+    def test_rows_share_one_column_grid_so_positions_never_drift(self) -> None:
+        screen = Screen(height=24, width=100)
+
+        self.draw(screen, 0)
+
+        rows = [value for _row, _column, value in screen.lines if value.startswith(("> [", "  ["))]
+        self.assertGreater(len(rows), 1)
+        offsets = {row.index("available") for row in rows}
+        self.assertEqual(len(offsets), 1)
+        self.assertTrue(all(len(row) <= 99 for row in rows))
+
+
 _KEY_HINT = re.compile(
     r"(?:^|[\s(])[\w?↑↓/]+\s*=\s*"
     r"(?:toggle|confirm|back|quit|details|add|start|scroll|finalize|cancel|choose|continue)",

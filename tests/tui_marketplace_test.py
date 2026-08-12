@@ -400,6 +400,17 @@ class ArtifactProjectionTest(unittest.TestCase):
         self.assertTrue(all(len(line) <= 40 for line in pane))
         self.assertGreater(len(pane), 5)
 
+    def test_the_pane_abbreviates_the_revision_the_record_keeps_whole(self) -> None:
+        row = self.rows()[0]
+
+        pane = _flat(render_artifact_pane(row, width=62))
+        detail = _flat(render_artifact_detail(row))
+
+        self.assertIn(f"at {row.source_revision[:7]}…", pane)
+        self.assertNotIn(row.source_revision, pane)
+        self.assertIn(row.source_revision, detail)
+        self.assertLessEqual(len(render_artifact_pane(row, width=62)), 6)
+
     def test_no_structured_pane_line_outgrows_the_content_measure(self) -> None:
         rows = self.rows()
         for width in (40, 80, 120, 200):

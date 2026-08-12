@@ -24,6 +24,7 @@ functions, so no command logic is ever duplicated here.
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
 import sys
@@ -99,11 +100,22 @@ from .tui_layout import (
     BOX_DISABLED,
     BOX_EMPTY,
     CHROME_ROWS,
+    CONTENT_MEASURE,
     HINT_ORDER,
     STAGE_CURRENT,
+    columns,
+    field_block,
+    pane_budget,
     status_bar,
+    wrap,
 )
-from .tui_marketplace import MarketplaceArtifactRow, MarketplaceTarget, render_marketplace_row
+from .tui_marketplace import (
+    MarketplaceArtifactRow,
+    MarketplaceTarget,
+    artifact_cells,
+    render_artifact_pane,
+    render_marketplace_row,
+)
 from .tui_sources import (
     SourceAdditionRequest,
     SourceManagementRequest,
@@ -316,6 +328,8 @@ class _Choice:
     linked_count: int = 0
     copied_count: int = 0
     qualified_key: str = ""
+    cells: Tuple[str, ...] = ()
+    row: Optional[MarketplaceArtifactRow] = None
 
 
 def _type_rank(t: ArtifactType) -> int:
@@ -2076,6 +2090,8 @@ def _canonical_choice(row: MarketplaceArtifactRow) -> _Choice:
         linked_count=sum(mode == "symlink" for mode in row.actual_modes),
         copied_count=sum(mode == "copy" for mode in row.actual_modes),
         qualified_key=row.key,
+        cells=artifact_cells(row),
+        row=row,
     )
 
 
@@ -2116,6 +2132,11 @@ def _canonical_collection_choices(
                 linked_count=sum("symlink" in row.actual_modes for row in available),
                 copied_count=sum("copy" in row.actual_modes for row in available),
                 qualified_key=str(collection.coordinate),
+                cells=(
+                    f"[collection] {collection.coordinate}",
+                    "available" if enabled else "unavailable",
+                    f"{len(collection.members)} members",
+                ),
             )
         )
     return tuple(choices)
@@ -4135,6 +4156,8 @@ def _curses_multi_event(
     details: Optional[Sequence[str]] = None,
     disabled: Optional[Sequence[bool]] = None,
     allow_add: bool = False,
+    cells: Optional[Sequence[Sequence[str]]] = None,
+    pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -4151,6 +4174,8 @@ def _curses_multi_event(
             initial_cursor=cursor,
             initial_scroll=scroll,
             header=_curses_header(stdscr, session),
+            cells=cells,
+            pane_for=pane_for,
         )
     except TypeError as error:
         if "unexpected keyword argument" not in str(error):
@@ -4738,6 +4763,8 @@ def _run_user_curses_wizard(
                 selected=selected,
                 details=tuple(choice.description for choice in read_model.choices),
                 disabled=tuple(not choice.enabled for choice in read_model.choices),
+                cells=tuple(choice.cells or (choice.label,) for choice in read_model.choices),
+                pane_for=functools.partial(_choice_pane, read_model.choices),
             )
             session = remember_position(
                 session, "artifacts", cursor=event.cursor, scroll=event.scroll
@@ -5348,6 +5375,8 @@ def _curses_multiselect(
     initial_cursor: int = 0,
     initial_scroll: int = 0,
     header: Sequence[str] = (),
+    cells: Optional[Sequence[Sequence[str]]] = None,
+    pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
 ):
     """A checkbox list, optionally returning explicit wizard navigation and position."""
     if not labels:
@@ -5374,6 +5403,8 @@ def _curses_multiselect(
             header=header,
             scroll=scroll,
             hints=hints,
+            cells=cells,
+            pane_for=pane_for,
         )
         ch = stdscr.getch()
         if ch in (ord("q"), 27):  # q / ESC
@@ -5441,6 +5472,50 @@ def _curses_singleselect(
             return WizardInput("confirm", (cursor,), cursor, scroll) if wizard else cursor
 
 
+PANE_ROWS = 8
+"""Rows the artifact pane asks for: one rule, identity, a summary line, and the field block."""
+
+
+def _fitting_cells(cells: Sequence[Sequence[str]], width: int) -> Tuple[Tuple[str, ...], ...]:
+    """Keep the leading columns that still fit, and drop the rest whole.
+
+    ``columns`` shrinks a column toward one character rather than dropping it, which turns
+    ``registry-reviewed`` into ``regist…`` — the same width, none of the meaning. The projections
+    order their cells by importance precisely so this can cut from the right instead.
+    """
+
+    if not cells:
+        return ()
+    count = max(len(row) for row in cells)
+    widths = [
+        max((len(row[index]) for row in cells if index < len(row)), default=0)
+        for index in range(count)
+    ]
+    keep = 1
+    while keep < count and sum(widths[: keep + 1]) + 2 * keep <= width:
+        keep += 1
+    return tuple(tuple(row[:keep]) for row in cells)
+
+
+def _choice_pane(choices: Sequence[_Choice], index: int, width: int) -> Tuple[str, ...]:
+    """The pane body for the cursor row, whatever kind of row it is.
+
+    An artifact has a projection of its own; a collection has no security record, so it gets the
+    same shape assembled from what the choice already knows. Both keep the pane the same height,
+    which is what stops the list from moving under the cursor.
+    """
+
+    choice = choices[index]
+    if choice.row is not None:
+        return render_artifact_pane(choice.row, width=width)
+    status = "available" if choice.enabled else f"unavailable: {choice.reason}"
+    return (
+        f"  {choice.cells[0] if choice.cells else choice.label}",
+        *(f"  {line}" for line in wrap(choice.description, width=max(width - 2, 1))),
+        *field_block((("status", status),), indent=4, width=width),
+    )
+
+
 def _list_hints(
     *, toggle: bool, back: bool, details: bool, add: bool
 ) -> Tuple[Tuple[str, str], ...]:
@@ -5462,12 +5537,19 @@ def _draw_list(
     header: Sequence[str] = (),
     scroll: int = 0,
     hints: Sequence[Tuple[str, str]] = (),
+    cells: Optional[Sequence[Sequence[str]]] = None,
+    pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
 ) -> int:
     """Render *title* + the labels, marking the cursor row and any checked rows.
 
     The last row belongs to the status bar and to nothing else (D2). Everything above it — header,
     title and the list viewport — is laid out inside ``height - 1``, the same reservation
     ``_curses_onboarding`` already makes for its footer.
+
+    ``cells`` replaces the flat label with a shared column grid computed across every row at once,
+    so a column starts at the same offset on all of them. ``pane_for`` supplies the detail pane for
+    the cursor row; it is reserved out of the viewport at a height fixed for the whole frame, which
+    is what keeps the list from reflowing under a moving cursor (D6). One item is still one row.
     """
     stdscr.clear()
     available = max(_width(stdscr) - 1, 0)
@@ -5501,15 +5583,18 @@ def _draw_list(
     if row < body_height:
         stdscr.addstr(row, 0, _ellipsize(title, available))
     list_start = row + 2
-    visible_rows = max(body_height - list_start, 1)
+    pane_height = 0 if pane_for is None else pane_budget(height=height, requested=PANE_ROWS)
+    visible_rows = max(body_height - list_start - pane_height, 1)
     max_scroll = max(len(labels) - visible_rows, 0)
     scroll = min(max(scroll, 0), max_scroll)
     if cursor < scroll:
         scroll = cursor
     elif cursor >= scroll + visible_rows:
         scroll = cursor - visible_rows + 1
+    gutter = 2 + (4 if checked is not None else 0)
+    row_width = max(min(available, CONTENT_MEASURE) - gutter, 1)
+    texts = labels if cells is None else columns(_fitting_cells(cells, row_width), width=row_width)
     for display_row, i in enumerate(range(scroll, min(len(labels), scroll + visible_rows))):
-        label = labels[i]
         prefix = "> " if i == cursor else "  "
         box = ""
         if checked is not None:
@@ -5517,10 +5602,20 @@ def _draw_list(
                 box = f"{BOX_DISABLED} "
             else:
                 box = f"{BOX_CHECKED} " if checked[i] else f"{BOX_EMPTY} "
-        line = f"{prefix}{box}{label}"
+        line = f"{prefix}{box}{texts[i]}"
         target_row = list_start + display_row
         if target_row < body_height:
             stdscr.addstr(target_row, 0, _ellipsize(line, available))
+    if pane_height and pane_for is not None:
+        # Directly under the last row when the list is short, otherwise just above the bar. Both
+        # depend only on frame constants, so the pane never moves while the cursor does.
+        pane_top = min(list_start + min(len(labels), visible_rows) + 1, body_height - pane_height)
+        pane_lines = (
+            "─" * min(available, CONTENT_MEASURE),
+            *pane_for(cursor, min(available, CONTENT_MEASURE)),
+        )
+        for offset, line in enumerate(pane_lines[:pane_height]):
+            stdscr.addstr(pane_top + offset, 0, _ellipsize(line, available))
     if height:
         stdscr.addstr(
             height - 1,
