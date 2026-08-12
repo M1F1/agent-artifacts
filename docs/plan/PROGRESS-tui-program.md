@@ -54,7 +54,8 @@ ERR04/ERR06 dependencies.
 | Typed errors ERR01 | completed | parser fixtures and 4 characterization tests across `tests/install_state_schema_test.py`, `tests/tui_consumer_text_test.py`, and `tests/tui_source_stage_test.py`; all 10 quality gates green (1832 unit tests) |
 | Typed errors ERR02 | completed | `install-state-legacy` recognizes only the exact `repo`/`installed` v0.1 envelope; every other parser failure is `install-state-invalid` with its original safe location/message; all 10 quality gates green (1833 unit tests) |
 | Typed errors ERR03 | completed | canonical Artifacts loader returns `DomainResult`; immutable `WizardStageFailure` preserves diagnostics and read-only recovery context; legacy command errors cross one named adapter |
-| Typed errors ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR04 | completed | `c87935e`; one pure, width-bounded record renderer for text and curses; in-place Retry/Back/Quit preserves session and basket; all 10 quality gates green (1845 tests) |
+| Typed errors ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -78,19 +79,37 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR04 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — add one pure renderer
-for `WizardStageFailure`, then make both frontends render and recover from an Artifacts load
-failure in place. The record view must name stage, operation, code, path, safe details and
-remediation; its available controls must exactly match its recovery choices.
+**ERR05b of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — attach last safe stage
+and operation to the outer internal-failure boundary, decide and implement the opt-in local-only
+debug traceback mechanism, then narrow the pre-interaction curses probe. Expected errors already
+use ERR04's `WizardStageFailure`; an unexpected exception must remain redacted, exit nonzero and
+never restart the wizard.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves
 the current v1 protocol while making `SETUP.md`, bounded effect records and a manual route the
 standard for new setup-capable artifacts.
 
-Read that plan for the package order. ERR05a is already delivered (`6ce2e25`); ERR05b — the
-`WizardStageFailure` type, stage and operation on the crash boundary, an opt-in debug traceback,
-and narrowing the probe's broad `except` — is still open and is recorded there as split out.
+Read that plan for the package order. ERR05a is already delivered (`6ce2e25`); ERR05b — last
+stage/operation on the crash boundary, an opt-in debug traceback, and narrowing the probe's broad
+`except` — is still open and is recorded there as split out.
+
+### ERR04 delivery notes
+
+- `render_wizard_stage_failure` is the shared functional-core projection. It bounds normal lines,
+  renders stage, operation, safe context, locations, remediation and only declared recovery
+  actions. Its allowlist excludes secret-shaped details and the adapter-only compatibility exit
+  status.
+- Both frontends implement the same `retry` event. It repeats only the read-model load; `back`
+  uses normal immutable-session navigation; `quit` preserves the existing basket-discard
+  confirmation. Curses uses a scrollable record with a recovery-only bottom bar, not a stale
+  artifact pane.
+- The one legacy-command bridge keeps its historical nonzero exit status only after the user quits
+  its record. That transport detail is neither rendered nor allowed to weaken Retry/Back for the
+  canonical typed path.
+- Independent review found and fixed the initial curses quit/basket asymmetry. Focused TUI tests,
+  `git diff --check`, and all ten `python scripts/quality.py` gates pass. No manifest,
+  configuration, source store, project tree, setup state or analytics write is on this path.
 
 Useful facts carried over from the legibility work:
 

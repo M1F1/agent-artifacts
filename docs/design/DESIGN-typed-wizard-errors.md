@@ -1,6 +1,6 @@
 # Design: typed stage failures and actionable TUI diagnostics
 
-Status: proposed; implementation has not started
+Status: in delivery; ERR01–ERR04 completed, ERR05b–ERR09 pending
 
 ## 1. Context
 
@@ -385,7 +385,19 @@ The implementer must resolve these narrowly and record the choice in the plan/ta
 
 - whether local debug tracebacks use an `AART_DEBUG=1` environment flag or an existing/new global
   CLI flag; do not expose them by default;
-- whether Retry is initially supported in curses and text together or omitted from both until the
-  shared event is implemented;
 - whether startup shows a non-blocking legacy-state notice before Role or relies exclusively on the
   first affected stage. The stage diagnostic is mandatory either way.
+
+## 12. Delivery record
+
+ERR01–ERR04 are implemented. The renderer is a pure `WizardStageFailure` projection shared by
+text and curses; it uses the layout kernel's bounded wrapping and an explicit non-secret detail
+allowlist. Retry is available in both frontends and repeats only the read-model load. Back uses
+the immutable wizard transition, and Quit preserves the existing basket-discard confirmation.
+Stage-blocking failures use the full scrollable record; the fixed lower pane remains for
+list-local feedback only.
+
+The retained 0.1 command bridge carries an adapter-only nonzero exit status for the existing
+command surface. It is not rendered and never removes canonical recovery choices. This preserves
+the narrow compatibility boundary without extending the legacy protocol or changing v1 artifact
+validity.

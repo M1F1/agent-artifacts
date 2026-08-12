@@ -1,6 +1,6 @@
 # Plan: typed stage failures and actionable TUI diagnostics
 
-- **Status:** proposed; documentation only, implementation not started
+- **Status:** in delivery; ERR01–ERR04 completed, ERR05b–ERR09 pending
 - **Tracking issue:** [#74 — Typed stage failures and actionable TUI diagnostics](https://github.com/M1F1/agent-artifacts/issues/74)
 - **Design:** [`DESIGN-typed-wizard-errors.md`](../design/DESIGN-typed-wizard-errors.md)
 - **Primary outcome:** expected failures retain typed diagnostics through the wizard, and an
@@ -17,8 +17,9 @@ independently understandable in history:
   identity fix;
 - `agent_artifacts/tui_marketplace.py` and `tests/tui_marketplace_test.py` contain the local
   lifecycle-status deduplication fix that prevents the observed Artifacts restart;
-No typed-error implementation was made while writing this plan. A new agent should verify that the
-preceding fixes are present in history, then implement ERR01 onward as a separate reviewable change.
+ERR01–ERR04 now landed in separate reviewable commits. A continuing agent should verify their
+evidence in this plan and `PROGRESS-tui-program.md`, then continue at ERR05b rather than repeating
+the completed implementation.
 
 Since then, **ERR05a has landed out of order** — see that package for exactly what is delivered and
 what remains. The agreed sequence from that point is: ERR05a (done), then the TUI legibility
@@ -40,7 +41,7 @@ aart
   User -> configured registry -> Claude -> Install -> Project -> Copy -> Artifacts
 ```
 
-Current unhelpful output:
+Characterized output before ERR02:
 
 ```text
 error: missing required field 'installations'; missing required field 'schema_version';
@@ -167,7 +168,7 @@ Acceptance:
 
 ### ERR04 — shared deterministic rendering and recovery
 
-**Status:** pending; depends on ERR03
+**Status:** completed; depends on ERR03
 
 1. Add one pure renderer for `WizardStageFailure` used by text and curses.
 2. Render stage, operation, codes, locations, details, remediation, and only the allowed recovery
@@ -192,6 +193,20 @@ Acceptance:
 - legacy state output names Artifacts, project, path, code, and migration preview;
 - choosing Back preserves valid earlier selections and permits User scope;
 - no error path finalizes a plan or mutates state.
+
+Delivered in `c87935e`:
+
+- `render_wizard_stage_failure` is the sole deterministic projection used by text and curses;
+  it bounds normal lines, renders safe stage/context/location/remediation facts, and redacts
+  adapter-only and nonallowlisted details.
+- Both frontends accept Retry, Back and Quit in place. Retry repeats only the read loader; Back
+  preserves valid selections through `wizard_back`; Quit preserves the existing basket-discard
+  confirmation. Curses shows a scrollable record with a recovery-only bar rather than a stale
+  list pane.
+- The retained legacy command adapter keeps an explicit old nonzero exit code only after Quit.
+  It neither appears in the record nor changes canonical recovery choices.
+- Focused width/recovery/no-write tests plus every `python scripts/quality.py` gate pass (1845
+  tests). An independent review caught and fixed a curses basket-confirmation asymmetry.
 
 ### ERR05 — constrain curses fallback and type internal failures
 
@@ -412,7 +427,7 @@ claiming the complete gate passes.
 - [x] ERR01 characterization tests exist and failed before implementation.
 - [x] ERR02 distinguishes legacy and invalid installation state.
 - [x] ERR03 preserves typed diagnostics through stage loading.
-- [ ] ERR04 renders and recovers equivalently in text and curses.
+- [x] ERR04 renders and recovers equivalently in text and curses.
 - [ ] ERR05 prevents post-start fallback/restart and types internal failures.
 - [ ] ERR06 audits all stage boundaries without exception laundering.
 - [ ] ERR09 gives every new setup installer a `SETUP.md` fallback and a bounded effect review.
