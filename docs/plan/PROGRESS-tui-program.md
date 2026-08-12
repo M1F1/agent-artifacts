@@ -53,7 +53,8 @@ ERR04/ERR06 dependencies.
 | Legibility WP-4 docs and gate | committed | statuses flipped, README screen block rewritten |
 | Typed errors ERR01 | completed | parser fixtures and 4 characterization tests across `tests/install_state_schema_test.py`, `tests/tui_consumer_text_test.py`, and `tests/tui_source_stage_test.py`; all 10 quality gates green (1832 unit tests) |
 | Typed errors ERR02 | completed | `install-state-legacy` recognizes only the exact `repo`/`installed` v0.1 envelope; every other parser failure is `install-state-invalid` with its original safe location/message; all 10 quality gates green (1833 unit tests) |
-| Typed errors ERR03, ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
+| Typed errors ERR03 | completed | canonical Artifacts loader returns `DomainResult`; immutable `WizardStageFailure` preserves diagnostics and read-only recovery context; legacy command errors cross one named adapter |
+| Typed errors ERR04, ERR05b, ERR06, ERR07, ERR08, ERR09 | not started | — |
 
 Baseline before ERR01: 1828 unit + 52 integration tests, all ten gates of
 `python scripts/quality.py` green. The current branch was pushed through `4653775` before this
@@ -77,9 +78,10 @@ binding constraint is instead that every commit leaves the suite green. WP-1 the
 
 ## Next task
 
-**ERR03 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — change the canonical
-Artifacts read-model loader to preserve the `DomainErr` just produced by ERR02. Introduce the
-immutable stage-failure envelope at that frontend boundary; rendering and recovery stay in ERR04.
+**ERR04 of [PLAN-typed-wizard-errors.md](PLAN-typed-wizard-errors.md)** — add one pure renderer
+for `WizardStageFailure`, then make both frontends render and recover from an Artifacts load
+failure in place. The record view must name stage, operation, code, path, safe details and
+remediation; its available controls must exactly match its recovery choices.
 
 **ERR09 is the planned follow-up wave, not the next task.** It must wait for ERR04's shared
 failure renderer and ERR06's audit of setup boundaries. Its separate setup-review design preserves

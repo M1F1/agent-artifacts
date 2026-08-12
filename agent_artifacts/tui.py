@@ -94,6 +94,7 @@ from .reporting.projection import (
 from .setup import build_queue, recovery_messages
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
+from .tui_failures import WizardStageFailure, wizard_stage_failure
 from .tui_layout import (
     BOX_CHECKED,
     BOX_DISABLED,
@@ -2308,7 +2309,7 @@ def _load_user_wizard_read_model(
     project: Optional[str],
     user_home: Optional[str],
     consumer_service: Optional[ConsumerApplicationService] = None,
-) -> _UserWizardReadModel | Err:
+) -> DomainResult[_UserWizardReadModel]:
     assert session.action is not None
     base_profiles = load_profiles(project)
     resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -2335,7 +2336,7 @@ def _load_user_wizard_read_model(
             sources=selected_sources,
         )
         if isinstance(projected, DomainErr):
-            return Err("; ".join(item.message for item in projected.diagnostics), code=2)
+            return projected
         rows = projected.value
         if session.action in ("update", "uninstall"):
             rows = tuple(row for row in rows if row.installed)
@@ -2346,14 +2347,16 @@ def _load_user_wizard_read_model(
                 rows,
                 sources=selected_sources,
             )
-        return _UserWizardReadModel(
-            Catalog(artifacts={}, bundles={}),
-            None,
-            choices,
-            profiles_map,
-            "federated configured marketplace",
-            consumer_service.context.store_paths.root,
-            rows,
+        return DomainOk(
+            _UserWizardReadModel(
+                Catalog(artifacts={}, bundles={}),
+                None,
+                choices,
+                profiles_map,
+                "federated configured marketplace",
+                consumer_service.context.store_paths.root,
+                rows,
+            )
         )
     request_project = project if scope == "project" else None
     catalog = Catalog(artifacts={}, bundles={})
@@ -2371,11 +2374,11 @@ def _load_user_wizard_read_model(
             )
         )
         if isinstance(source_result, Err):
-            return source_result
+            return _legacy_wizard_read_failure(source_result)
         source = source_result.value
         catalog_result = source.catalog()
         if isinstance(catalog_result, Err):
-            return catalog_result
+            return _legacy_wizard_read_failure(catalog_result)
         catalog = catalog_result.value
         source_label = source.label()
         source_root = getattr(source, "root", source_label.removeprefix("local:"))
@@ -2384,10 +2387,17 @@ def _load_user_wizard_read_model(
             and session.install_mode == "symlink"
             and not source_label.startswith("local:")
         ):
-            return Err(
-                "Symlink requires a durable local catalog; choose one with "
-                "aart install ... --source DIR --link",
-                code=2,
+            return DomainErr(
+                (
+                    Diagnostic(
+                        DiagnosticCode("install-mode-incompatible"),
+                        Severity.ERROR,
+                        "Symlink requires a durable local catalog.",
+                        remediation=(
+                            "choose a local catalog with aart install --source DIR --link",
+                        ),
+                    ),
+                )
             )
     elif session.action == "uninstall":
         source_result = source_factory(
@@ -2418,7 +2428,7 @@ def _load_user_wizard_read_model(
             user_home=user_home,
         )
         if isinstance(manifest_result, Err):
-            return manifest_result
+            return _legacy_wizard_read_failure(manifest_result)
         manifest = manifest_result.value
     choices = build_action_choices(
         session.action,
@@ -2429,14 +2439,49 @@ def _load_user_wizard_read_model(
         install_mode=session.install_mode,  # type: ignore[arg-type]
         scope=scope,  # type: ignore[arg-type]
     )
-    return _UserWizardReadModel(
-        catalog,
-        manifest,
-        choices,
-        profiles_map,
-        source_label,
-        source_root,
+    return DomainOk(
+        _UserWizardReadModel(
+            catalog,
+            manifest,
+            choices,
+            profiles_map,
+            source_label,
+            source_root,
+        )
     )
+
+
+def _legacy_wizard_read_failure(result: Err) -> DomainErr:
+    """Name the sole 0.1 command-result bridge used by the canonical loader."""
+
+    return DomainErr(
+        (
+            Diagnostic(
+                DiagnosticCode("legacy-wizard-read-failed"),
+                Severity.ERROR,
+                result.reason,
+                details=(("legacy_exit_code", str(result.code)),),
+            ),
+        )
+    )
+
+
+def _stage_failure_exit_code(failure: WizardStageFailure) -> int:
+    """Retain a legacy command's nonzero exit code at its one compatibility boundary."""
+
+    for diagnostic in failure.diagnostics:
+        if diagnostic.code.value != "legacy-wizard-read-failed":
+            continue
+        legacy_code = dict(diagnostic.details).get("legacy_exit_code")
+        if legacy_code is None:
+            continue
+        try:
+            parsed = int(legacy_code)
+        except ValueError:
+            continue
+        if parsed > 0:
+            return parsed
+    return 2
 
 
 def _confirm_wizard_quit(session: WizardSession, read: ReadFn, write: WriteFn) -> bool:
@@ -2567,10 +2612,14 @@ def _run_user_text_wizard(
                     user_home=user_home,
                     consumer_service=consumer_service,
                 )
-                if isinstance(loaded, Err):
-                    write(f"error: {loaded.reason}")
-                    return loaded.code
-                read_model = loaded
+                if isinstance(loaded, DomainErr):
+                    failure = wizard_stage_failure(session, "load", loaded)
+                    for diagnostic in failure.diagnostics:
+                        write(f"error: {diagnostic.message}")
+                        for remediation in diagnostic.remediation:
+                            write(f"  remediation: {remediation}")
+                    return _stage_failure_exit_code(failure)
+                read_model = loaded.value
                 read_key = key
             if not read_model.choices:
                 write(_empty_choices_message(session.action or "", session.profiles))
@@ -4735,10 +4784,10 @@ def _run_user_curses_wizard(
                     user_home=user_home,
                     consumer_service=consumer_service,
                 )
-                if isinstance(loaded, Err):
-                    selection["error"] = (loaded.reason, loaded.code)
+                if isinstance(loaded, DomainErr):
+                    selection["error"] = wizard_stage_failure(session, "load", loaded)
                     return session
-                read_model = loaded
+                read_model = loaded.value
                 read_key = key
             if not read_model.choices:
                 selection["empty"] = (session.action or "selection", session.profiles)
@@ -5277,7 +5326,14 @@ def _run_curses(
         raise CursesUnavailable("the curses wizard could not start") from error
 
     if "error" in selection:
-        reason, code = selection["error"]
+        failure_or_error = selection["error"]
+        if isinstance(failure_or_error, WizardStageFailure):
+            for diagnostic in failure_or_error.diagnostics:
+                print(f"error: {diagnostic.message}")
+                for remediation in diagnostic.remediation:
+                    print(f"  remediation: {remediation}")
+            return _stage_failure_exit_code(failure_or_error)
+        reason, code = failure_or_error
         print(f"error: {reason}")
         return code
     if "empty" in selection:

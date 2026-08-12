@@ -147,7 +147,7 @@ Acceptance:
 
 ### ERR03 — preserve DomainErr through the Artifacts loader
 
-**Status:** pending; depends on ERR02
+**Status:** completed; depends on ERR02
 
 1. Change `_load_user_wizard_read_model` to return
    `DomainResult[_UserWizardReadModel]` for the canonical configured-marketplace path.
@@ -411,7 +411,7 @@ claiming the complete gate passes.
 
 - [x] ERR01 characterization tests exist and failed before implementation.
 - [x] ERR02 distinguishes legacy and invalid installation state.
-- [ ] ERR03 preserves typed diagnostics through stage loading.
+- [x] ERR03 preserves typed diagnostics through stage loading.
 - [ ] ERR04 renders and recovers equivalently in text and curses.
 - [ ] ERR05 prevents post-start fallback/restart and types internal failures.
 - [ ] ERR06 audits all stage boundaries without exception laundering.

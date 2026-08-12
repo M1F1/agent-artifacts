@@ -22,6 +22,7 @@ from agent_artifacts.reporting.application import ReportingApplicationService
 from agent_artifacts.reporting.model import ReportingDestination
 from agent_artifacts.reporting.projection import usage_report_from_consumer
 from agent_artifacts.tui_sources import build_source_stage
+from agent_artifacts.wizard import WizardSession
 from tests.canonical_setup_application_test import Fixture as SetupFixture
 from tests.canonical_symlink_test import _fixture
 from tests.marketplace_fixtures import source_state
@@ -54,6 +55,69 @@ def _tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
 
 
 class TuiConsumerTextTest(unittest.TestCase):
+    def test_err03_canonical_loader_returns_the_original_domain_error_unchanged(self) -> None:
+        diagnostic = Diagnostic(
+            DiagnosticCode("install-state-legacy"),
+            Severity.ERROR,
+            "AART 0.1 installation state was detected.",
+            details=(("detected_schema", "install-state-v0.1"),),
+        )
+        expected = Err((diagnostic,))
+        service = mock.Mock()
+        service.browse.return_value = expected
+        session = WizardSession(
+            current="artifacts",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+
+        loaded = tui._load_user_wizard_read_model(
+            session,
+            source_factory=mock.Mock(),
+            source_dir=None,
+            repo=None,
+            project=None,
+            user_home=None,
+            consumer_service=service,
+        )
+
+        self.assertIs(loaded, expected)
+        service.browse.assert_called_once()
+
+    def test_err03_legacy_loader_adapts_command_errors_at_one_named_boundary(self) -> None:
+        source_factory = mock.Mock(return_value=tui.Err("legacy catalog could not open", code=7))
+        session = WizardSession(
+            current="artifacts",
+            action="install",
+            profiles=("claude",),
+            scope="project",
+        )
+
+        loaded = tui._load_user_wizard_read_model(
+            session,
+            source_factory=source_factory,
+            source_dir="/legacy/catalog",
+            repo=None,
+            project=None,
+            user_home=None,
+        )
+
+        self.assertIsInstance(loaded, Err)
+        assert isinstance(loaded, Err)
+        self.assertEqual(
+            loaded.diagnostics,
+            (
+                Diagnostic(
+                    DiagnosticCode("legacy-wizard-read-failed"),
+                    Severity.ERROR,
+                    "legacy catalog could not open",
+                    details=(("legacy_exit_code", "7"),),
+                ),
+            ),
+        )
+        source_factory.assert_called_once()
+
     def test_err02_legacy_project_state_reaches_artifacts_as_one_flattened_error_without_writes(
         self,
     ) -> None:
