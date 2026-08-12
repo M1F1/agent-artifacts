@@ -923,6 +923,74 @@ class CursesWizardFlowTests(unittest.TestCase):
             self.assertIn("Install outcome: succeeded", output.getvalue())
             self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
 
+    def test_setup_stage_runs_only_after_teardown_so_no_record_reaches_the_bottom_pane(self):
+        """ERR09-C: the fixed pane is list-local only; setup owns a post-curses record."""
+
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = _fixture(Path(raw), "skill")
+            project, _checkout, paths, location, _request, catalog, effective = fixture
+            service = ConsumerApplicationService(
+                ConsumerContext(catalog, effective, builtin(), location, paths),
+                LocalConsumerAdapter(),
+            )
+            configured = effective.configuration.sources[0]
+            state = source_state(configured, "direct-source", display_order=0)
+            source_view = build_source_stage(
+                effective.configuration,
+                effective.policy,
+                {configured.alias: state.health},
+                first_run=False,
+            )
+            assert isinstance(source_view, Ok), source_view
+            inside_wrapper = {"value": False}
+            setup_ran_inside: list[bool] = []
+
+            def wrapper(callback):
+                inside_wrapper["value"] = True
+                callback(object())
+                inside_wrapper["value"] = False
+
+            def record_setup(*_args, **_kwargs):
+                setup_ran_inside.append(inside_wrapper["value"])
+                return 0
+
+            singles = iter((0, 0))  # User, Install
+            multis = iter(((0,), (0,), (0,)))  # source, profile, artifact
+            output = io.StringIO()
+            with (
+                redirect_stdout(output),
+                mock.patch.object(tui.sys, "platform", "darwin"),
+                mock.patch.object(curses, "wrapper", side_effect=wrapper),
+                mock.patch.object(curses, "curs_set", return_value=None),
+                mock.patch.object(
+                    tui,
+                    "_curses_singleselect",
+                    side_effect=lambda *_args, **_kwargs: next(singles),
+                ),
+                mock.patch.object(
+                    tui,
+                    "_curses_multiselect",
+                    side_effect=lambda *_args, **_kwargs: next(multis),
+                ),
+                mock.patch.object(tui, "_curses_install_scope", return_value="project"),
+                mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
+                mock.patch.object(tui, "_curses_review", return_value=True),
+                mock.patch.object(
+                    tui,
+                    "_complete_canonical_consumer_action",
+                    side_effect=record_setup,
+                ),
+                mock.patch.object(tui, "_run_post_install_setup", side_effect=record_setup),
+            ):
+                code = tui._run_curses(
+                    project=str(project),
+                    source_stage_view=source_view.value,
+                    consumer_service=service,
+                )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(setup_ran_inside, [False])
+
     def test_review_back_keeps_basket_and_finalize_dispatches_once_after_teardown(self):
         inside_wrapper = {"value": False}
 

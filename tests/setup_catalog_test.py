@@ -106,6 +106,26 @@ class SetupRecipeParserTests(unittest.TestCase):
         self.assertEqual(result.value.protocol_version, 2)
         self.assertEqual(result.value.manual_path, "mcp/atlassian/SETUP.md")
 
+    def test_v2_recipe_at_a_canonical_object_root_derives_root_setup_document(self):
+        result = parse_installer(
+            recipe(schema_version=2, protocol_version=2),
+            artifact_key="mcp/atlassian",
+            descriptor_path="setup/installer.json",
+        )
+
+        self.assertIsInstance(result, Ok, getattr(result, "reason", ""))
+        self.assertEqual(result.value.manual_path, "SETUP.md")
+
+    def test_v2_recipe_at_object_root_rejects_a_noncanonical_descriptor_path(self):
+        result = parse_installer(
+            recipe(schema_version=2, protocol_version=2),
+            artifact_key="mcp/atlassian",
+            descriptor_path="./setup/installer.json",
+        )
+
+        self.assertIsInstance(result, Err)
+        self.assertIn("path", result.reason)
+
     def test_v2_recipe_rejects_a_noncanonical_descriptor_path(self):
         result = parse_installer(
             recipe(schema_version=2, protocol_version=2),

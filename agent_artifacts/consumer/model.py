@@ -12,7 +12,7 @@ from agent_artifacts.install_state.model import InstallScope
 from agent_artifacts.installation.model import InstallLocation, InstallMode, InstallPlan
 from agent_artifacts.lifecycle.model import LifecycleItem, UninstallPlan, UpdatePlan
 from agent_artifacts.marketplace.model import MarketplaceCatalog
-from agent_artifacts.model import Profile
+from agent_artifacts.model import Profile, SetupManualReference
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
@@ -292,6 +292,7 @@ class ConsumerOutcome:
 class ConsumerSetupFailure:
     key: str
     detail: str
+    manual: SetupManualReference | None = None
 
     def __post_init__(self) -> None:
         if not self.key or not self.detail or "\r" in self.detail:

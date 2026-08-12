@@ -49,7 +49,7 @@ from agent_artifacts.setup_engine.application import (
     SetupApplyPorts,
     SetupReadPorts,
     execute_setup_queue,
-    prepare_setup,
+    prepare_setup_attempt,
 )
 from agent_artifacts.setup_engine.model import SetupQueueOutcome, SetupRequest
 from agent_artifacts.setup_runtime import SetupRuntime, production_runtime
@@ -717,7 +717,7 @@ def prepare_consumer_setup_queue(
             authorize_custom_entrypoint=authorize_custom_entrypoint,
             platform=review.request.platform,
         )
-        prepared = prepare_setup(
+        attempt = prepare_setup_attempt(
             request,
             context.catalog,
             context.effective,
@@ -725,10 +725,12 @@ def prepare_consumer_setup_queue(
             context.store_paths,
             ports,
         )
-        if isinstance(prepared, Err):
-            failures.append(ConsumerSetupFailure(item.key, _detail(prepared.diagnostics)))
+        if isinstance(attempt.result, Err):
+            failures.append(
+                ConsumerSetupFailure(item.key, _detail(attempt.result.diagnostics), attempt.manual)
+            )
         else:
-            plans.append(prepared.value)
+            plans.append(attempt.result.value)
     return ConsumerSetupQueue(tuple(plans), tuple(failures))
 
 

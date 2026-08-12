@@ -188,6 +188,8 @@ def _manual_path(descriptor_path: str) -> str:
     """Derive the one conventional package-root manual route from a recipe path."""
 
     normalized = os.path.normpath(descriptor_path)
+    if descriptor_path == normalized == os.path.join("setup", "installer.json"):
+        return "SETUP.md"
     package = os.path.dirname(os.path.dirname(normalized))
     if (
         not package
@@ -894,6 +896,83 @@ def project_setup_review(plan: SetupPlan) -> SetupReview:
     )
 
 
+_SETUP_COMPLETE = frozenset({"configured", "already_configured", "already-configured"})
+# Statuses that prove no effect was attempted, so the manual route is the only remaining work.
+# ``skipped`` is deliberately absent: a completed rollback also reports it, and effects did run.
+_SETUP_UNSTARTED = frozenset({"declined", "planning-failed", "unsupported"})
+
+
+def render_manual_alternative(
+    reference: SetupManualReference,
+    *,
+    width: int = CONTENT_MEASURE,
+    incomplete: bool = False,
+) -> Tuple[str, ...]:
+    """Render the non-executing manual route before consent or after an incomplete outcome."""
+
+    lines: Tuple[str, ...] = ("Manual alternative",)
+    if reference.legacy:
+        return lines + field_block(
+            (("instructions", "legacy installer; manual documentation unavailable"),),
+            indent=2,
+            width=width,
+        )
+    assert reference.relative_path is not None and reference.source is not None
+    return lines + field_block(
+        (
+            ("instructions", _public_text(reference.relative_path)),
+            ("source", _public_text(reference.source)),
+            (
+                "status",
+                (
+                    "Automated setup is incomplete; manual action may be needed."
+                    if incomplete
+                    else "No setup effect has run."
+                ),
+            ),
+        ),
+        indent=2,
+        width=width,
+    )
+
+
+def render_setup_outcome(
+    *,
+    artifact: str,
+    profile: str,
+    scope: str,
+    status: str,
+    detail: str,
+    retry_command: str = "",
+    rollback_command: str = "",
+    recovery: Sequence[str] = (),
+    manual: SetupManualReference | None = None,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """Render one post-payload setup result as a bounded, redacted terminal record."""
+
+    incomplete = status not in _SETUP_COMPLETE
+    lines = wrap(f"Setup outcome: {artifact}@{profile} ({scope})", width=width)
+    fields: list[tuple[str, str]] = [
+        ("status", _public_text(status)),
+        ("details", _public_text(redact_text(detail))),
+    ]
+    if retry_command:
+        fields.append(("retry", _public_text(redact_text(retry_command))))
+    if rollback_command:
+        fields.append(("rollback", _public_text(redact_text(rollback_command))))
+    lines += field_block(tuple(fields), indent=2, width=width)
+    if recovery:
+        lines += ("Recovery",)
+        for item in recovery:
+            lines += wrap(f"  {_public_text(redact_text(item))}", width=width)
+    if incomplete and manual is not None:
+        lines += render_manual_alternative(
+            manual, width=width, incomplete=status not in _SETUP_UNSTARTED
+        )
+    return lines
+
+
 def render_setup_review(plan: SetupPlan, *, width: int = CONTENT_MEASURE) -> Tuple[str, ...]:
     """Render the shared review as bounded records, never as horizontal effect sentences."""
 
@@ -915,24 +994,7 @@ def render_setup_review(plan: SetupPlan, *, width: int = CONTENT_MEASURE) -> Tup
         indent=2,
         width=width,
     )
-    lines += ("Manual alternative",)
-    if review.manual.legacy:
-        lines += field_block(
-            (("instructions", "legacy installer; manual documentation unavailable"),),
-            indent=2,
-            width=width,
-        )
-    else:
-        assert review.manual.relative_path is not None and review.manual.source is not None
-        lines += field_block(
-            (
-                ("instructions", _public_text(review.manual.relative_path)),
-                ("source", _public_text(review.manual.source)),
-                ("status", "No setup effect has run."),
-            ),
-            indent=2,
-            width=width,
-        )
+    lines += render_manual_alternative(review.manual, width=width)
     lines += ("Effects",)
     for effect in review.effects:
         lines += wrap(f"{effect.index}. {effect.identity}", width=width)

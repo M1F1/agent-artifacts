@@ -4,12 +4,14 @@ from .application import (
     execute_setup_queue,
     finalize_setup,
     prepare_setup,
+    prepare_setup_attempt,
     retryable_plans,
     rollback_setup,
     setup_outcome_event,
 )
 from .io import LocalSetupAdapter
 from .model import (
+    CanonicalSetupAttempt,
     CanonicalSetupPlan,
     PayloadStatus,
     SetupExecutionStatus,
@@ -19,6 +21,7 @@ from .model import (
 )
 
 __all__ = [
+    "CanonicalSetupAttempt",
     "CanonicalSetupPlan",
     "LocalSetupAdapter",
     "PayloadStatus",
@@ -29,6 +32,7 @@ __all__ = [
     "execute_setup_queue",
     "finalize_setup",
     "prepare_setup",
+    "prepare_setup_attempt",
     "retryable_plans",
     "rollback_setup",
     "setup_outcome_event",

@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from enum import Enum
 
 from agent_artifacts.domain.identifiers import ArtifactCoordinate, ObjectDigest
+from agent_artifacts.domain.result import Ok, Result
 from agent_artifacts.install_state.model import InstallationRecord, InstallScope, InstallState
 from agent_artifacts.install_state.schema import install_state_bytes
 from agent_artifacts.installation.model import PathSnapshot
+from agent_artifacts.model import SetupManualReference, SetupStateRecord
 from agent_artifacts.model import SetupPlan as LegacySetupPlan
-from agent_artifacts.model import SetupStateRecord
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
@@ -237,6 +238,18 @@ class CanonicalSetupPlan:
             or self.review_digest not in {placeholder, expected_review}
         ):
             raise ValueError("canonical setup plan is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalSetupAttempt:
+    """One planning attempt: its typed result plus any manual route already proven valid."""
+
+    result: Result[CanonicalSetupPlan]
+    manual: SetupManualReference | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.result, Ok) and self.manual is None:
+            raise ValueError("a planned setup attempt must carry its manual route")
 
 
 @dataclass(frozen=True, slots=True)

@@ -92,7 +92,15 @@ from .reporting.projection import (
     usage_report_from_consumer,
     usage_reports_by_registry_from_consumer,
 )
-from .setup import build_queue, recovery_messages
+from .setup import (
+    build_queue,
+    manual_reference,
+    project_setup_review,
+    recovery_messages,
+    render_manual_alternative,
+    render_setup_outcome,
+    render_setup_review,
+)
 from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
 from .tui_failures import (
@@ -675,7 +683,11 @@ def build_install_confirmation(
     )
 
 
-def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str, ...]:
+def render_install_confirmation(
+    confirmation: InstallConfirmation,
+    *,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
     """Pure text projection shared by text and curses Install confirmation."""
 
     mode_label = "Symlink" if confirmation.requested_mode == "symlink" else "Copy"
@@ -710,6 +722,8 @@ def render_install_confirmation(confirmation: InstallConfirmation) -> Tuple[str,
             )
             for item in confirmation.setup_queue
         )
+        for item in confirmation.setup_queue:
+            lines += render_manual_alternative(manual_reference(item), width=width)
     return lines
 
 
@@ -881,6 +895,52 @@ def _dispatch_result(request: Request) -> CommandOutcome:
     )
 
 
+def _legacy_setup_stage_failure(request: Request, result: Err) -> WizardStageFailure:
+    """Name the sole 0.1 setup-run bridge into the shared stage record.
+
+    The setup queue is owned by Review and always runs after the frontend closed, so the record
+    offers the terminal recovery only: there is no live stage left to retry into.
+    """
+
+    return WizardStageFailure(
+        stage="review",
+        operation="setup",
+        diagnostics=(
+            Diagnostic(
+                DiagnosticCode("legacy-setup-run-failed"),
+                Severity.ERROR,
+                result.reason,
+                details=(("legacy_exit_code", str(result.code)),),
+            ),
+        ),
+        action=request.command,
+        scope=request.scope,
+        project=None,
+        recoverable=False,
+        choices=("quit",),
+    )
+
+
+def _write_setup_stage_failure(
+    result: Err,
+    request: Request,
+    write: WriteFn,
+    *,
+    manual: Sequence[SetupQueueItem] = (),
+) -> int:
+    """Report a blocking setup run as one bounded record instead of a loose error line."""
+
+    failure = _legacy_setup_stage_failure(request, result)
+    for line in render_wizard_stage_failure(failure):
+        write(line)
+    for item in manual:
+        # The retained runner discards the records it already completed, so the route is offered
+        # as possibly incomplete work; never claim no effect ran without proof.
+        for line in render_manual_alternative(manual_reference(item), incomplete=True):
+            write(line)
+    return _stage_failure_exit_code(failure)
+
+
 def _run_post_install_setup(
     queue: Sequence[SetupQueueItem],
     request: Request,
@@ -911,19 +971,26 @@ def _run_post_install_setup(
         write=write,
     )
     if isinstance(result, Err):
-        write(f"error: {result.reason}")
-        return result.code
+        return _write_setup_stage_failure(result, request, write, manual=queue)
+    queue_by_key = {
+        (item.artifact_type, item.artifact_name, item.profile, item.scope): item for item in queue
+    }
     for record in result:
-        write(
-            f"Setup {record.artifact_type}/{record.artifact_name}@{record.profile}: "
-            f"{record.status} — {record.detail}"
+        item = queue_by_key.get(
+            (record.artifact_type, record.artifact_name, record.profile, record.scope)
         )
-        if record.retry_command:
-            write(f"  Retry: {record.retry_command}")
-        if record.rollback_command:
-            write(f"  Rollback: {record.rollback_command}")
-        for message in recovery_messages(record):
-            write(f"  Recovery: {message}")
+        for line in render_setup_outcome(
+            artifact=f"{record.artifact_type}/{record.artifact_name}",
+            profile=record.profile,
+            scope=record.scope,
+            status=record.status,
+            detail=record.detail,
+            retry_command=record.retry_command,
+            rollback_command=record.rollback_command,
+            recovery=recovery_messages(record),
+            manual=None if item is None else manual_reference(item),
+        ):
+            write(line)
     incomplete = tuple(
         record for record in result if record.status not in ("configured", "already_configured")
     )
@@ -951,17 +1018,24 @@ def _run_post_install_setup(
             write=write,
         )
         if isinstance(retried, Err):
-            write(f"error: {retried.reason}")
-            return retried.code
+            # Each retried item already carried its own outcome record and manual route.
+            return _write_setup_stage_failure(retried, request, write)
         for record in retried:
-            write(
-                f"Setup retry {record.artifact_type}/{record.artifact_name}@{record.profile}: "
-                f"{record.status} — {record.detail}"
+            item = queue_by_key.get(
+                (record.artifact_type, record.artifact_name, record.profile, record.scope)
             )
-            if record.rollback_command:
-                write(f"  Rollback: {record.rollback_command}")
-            for message in recovery_messages(record):
-                write(f"  Recovery: {message}")
+            for line in render_setup_outcome(
+                artifact=f"{record.artifact_type}/{record.artifact_name}",
+                profile=record.profile,
+                scope=record.scope,
+                status=record.status,
+                detail=record.detail,
+                retry_command=record.retry_command,
+                rollback_command=record.rollback_command,
+                recovery=recovery_messages(record),
+                manual=None if item is None else manual_reference(item),
+            ):
+                write(line)
         return (
             0
             if all(record.status in ("configured", "already_configured") for record in retried)
@@ -1032,9 +1106,21 @@ def _canonical_setup_run(
                 authorize_untrusted_source=True,
                 authorize_custom_entrypoint=True,
             )
+    if queue.failures:
+        write("Payload outcome: installed; setup planning did not change installed payloads.")
     for failure in queue.failures:
-        write(f"Setup planning failed for {failure.key}: {failure.detail}")
-        write(f"  Retry: aart setup retry --artifact {failure.key.split('#', 1)[0]}")
+        key, _separator, selector = failure.key.partition("#")
+        profile, _separator, scope = selector.partition("/")
+        for line in render_setup_outcome(
+            artifact=key,
+            profile=profile or "selected profile",
+            scope=scope or "selected scope",
+            status="planning-failed",
+            detail=failure.detail,
+            retry_command=f"aart setup retry --artifact {key}",
+            manual=failure.manual,
+        ):
+            write(line)
     if not queue.plans:
         plan_failures = tuple(
             SetupReportState(
@@ -1047,19 +1133,36 @@ def _canonical_setup_run(
         )
         return _CanonicalSetupRun(1 if queue.failures else 0, plan_failures)
     write("Review setup queue (runs sequentially after installed payloads):")
+    # Keyed by identity because one ``step_id`` is only unique inside its own plan, and every
+    # plan stays referenced by ``queue.plans`` for the whole run.
+    safe_effects = {}
     for plan in queue.plans:
-        write(
-            f"  - {plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}, "
-            f"trust {plan.trust}, recipe {plan.recipe_path}, review {plan.review_digest}"
+        for line in render_setup_review(plan.legacy_plan):
+            write(line)
+        safe_effects.update(
+            {
+                id(effect): rendered
+                for effect, rendered in zip(
+                    plan.legacy_plan.effects,
+                    project_setup_review(plan.legacy_plan).effects,
+                    strict=True,
+                )
+            }
         )
-        for effect in plan.legacy_plan.effects:
-            write(
-                f"      {effect.module}: {effect.summary}"
-                + (f" -> {effect.target}" if effect.target else "")
-            )
     answer = _read_line(read, "Finalize this setup queue? [y/N]: ")
     if answer is None or answer.strip().lower() not in ("y", "yes"):
-        write("Setup remains pending; installed payloads were not rolled back.")
+        write("Payload outcome: installed; installed payloads were not rolled back.")
+        write("Setup remains pending.")
+        for plan in queue.plans:
+            for line in render_setup_outcome(
+                artifact=str(plan.request.coordinate),
+                profile=plan.request.profile,
+                scope=plan.request.scope,
+                status="declined",
+                detail="setup was declined before any effect ran",
+                manual=project_setup_review(plan.legacy_plan).manual,
+            ):
+                write(line)
         declined = tuple(
             SetupReportState(
                 _setup_reporting_key(
@@ -1087,29 +1190,40 @@ def _canonical_setup_run(
         return _CanonicalSetupRun(1, (*declined, *planning))
 
     def consent(effect) -> bool:
-        write(
-            f"Approve {effect.module}: {effect.summary} "
-            f"[{'reversible' if effect.reversible else 'not automatically reversible'}]"
-        )
+        reviewed = safe_effects.get(id(effect))
+        if reviewed is None:
+            write("Approve this reviewed setup effect.")
+        else:
+            write(f"Approve {reviewed.index}. {reviewed.identity}. {reviewed.recovery}.")
         decision = _read_line(read, "Approve this exact effect? [y/N]: ")
         return decision is not None and decision.strip().lower() in ("y", "yes")
 
     setup_outcome = service.finalize_setup_queue(queue, consent=consent)
+    plan_by_key = {
+        f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}": plan
+        for plan in queue.plans
+    }
     write(
         f"Setup outcome: configured={setup_outcome.configured}, "
         f"incomplete={setup_outcome.incomplete}."
     )
     for item in setup_outcome.items:
-        write(
-            f"  - {item.coordinate}#{item.profile}/{item.scope}: "
-            f"{item.setup_status.value} — {item.detail}"
-        )
-        if not item.successful:
-            write(f"    Retry: aart setup retry --artifact {item.coordinate}")
-    plan_by_key = {
-        f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}": plan
-        for plan in queue.plans
-    }
+        setup_plan = plan_by_key.get(f"{item.coordinate}#{item.profile}/{item.scope}")
+        for line in render_setup_outcome(
+            artifact=str(item.coordinate),
+            profile=item.profile,
+            scope=item.scope,
+            status=item.setup_status.value,
+            detail=item.detail,
+            retry_command=(
+                "" if item.successful else f"aart setup retry --artifact {item.coordinate}"
+            ),
+            recovery=() if item.record is None else recovery_messages(item.record),
+            manual=None
+            if setup_plan is None
+            else project_setup_review(setup_plan.legacy_plan).manual,
+        ):
+            write(line)
     reported_states: List[SetupReportState] = []
     for item in setup_outcome.items:
         key = f"{item.coordinate}#{item.profile}/{item.scope}"
@@ -6346,8 +6460,8 @@ def _curses_confirm_install(
 ):
     """Render shared confirmation facts and return true only on explicit confirmation."""
 
-    lines = tuple(header) + render_install_confirmation(confirmation)
     available = max(_width(stdscr) - 1, 0)
+    lines = tuple(header) + render_install_confirmation(confirmation, width=available)
     height = _height(stdscr)
     body_height = max(height - 1, 1)
     max_offset = max(len(lines) - body_height, 0)

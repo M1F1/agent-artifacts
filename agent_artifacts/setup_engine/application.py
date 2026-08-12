@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import posixpath
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Callable, Protocol, Sequence, cast
 
+from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import (
     EffectiveConfiguration,
 )
@@ -16,12 +17,22 @@ from agent_artifacts.configuration.schema import organization_policy_bytes
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.install_state.model import ArtifactEvidence, InstallationRecord, SourceEvidence
+from agent_artifacts.install_state.model import (
+    ArtifactEvidence,
+    InstallationRecord,
+    InstallStatePaths,
+    SourceEvidence,
+)
 from agent_artifacts.install_state.paths import install_state_paths
 from agent_artifacts.installation.application import InstallReadPorts
 from agent_artifacts.installation.model import InstallLocation, PathSnapshot
 from agent_artifacts.marketplace.catalog import resolve_artifact
-from agent_artifacts.marketplace.model import ArtifactQuery, MarketplaceCatalog, TrustClass
+from agent_artifacts.marketplace.model import (
+    ArtifactQuery,
+    MarketplaceCatalog,
+    MarketplaceItem,
+    TrustClass,
+)
 from agent_artifacts.model import (
     ArtifactType,
     SetupEffect,
@@ -38,14 +49,17 @@ from agent_artifacts.model import (
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
+from agent_artifacts.protocol.native_models import ArtifactManifest
 from agent_artifacts.protocol.native_schema import (
     artifact_manifest_to_json,
     parse_artifact_manifest,
 )
-from agent_artifacts.protocol.native_tree import SnapshotEntryKind
-from agent_artifacts.protocol.paths import parse_relative_path
+from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
+from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
 from agent_artifacts.setup import (
     custom_entrypoint_name,
+    has_manual_setup_header,
+    manual_reference,
     parse_installer,
     parse_setup_state,
     plan_setup,
@@ -65,6 +79,7 @@ from agent_artifacts.store.model import (
 )
 
 from .model import (
+    CanonicalSetupAttempt,
     CanonicalSetupPlan,
     PayloadStatus,
     SetupExecutionStatus,
@@ -233,6 +248,18 @@ def _setup_recipe(
     if isinstance(parsed_installer, LegacyErr):
         return _error(SETUP_INVALID, parsed_installer.reason)
     assert isinstance(parsed_installer, LegacyOk)
+    if parsed_installer.value.manual_path is not None:
+        manual_entry = by_path.get(parsed_installer.value.manual_path)
+        if manual_entry is None or manual_entry.kind is not SnapshotEntryKind.FILE:
+            return _error(SETUP_INVALID, "version-2 setup requires a regular SETUP.md object file")
+        try:
+            manual_text = manual_entry.content.decode("utf-8")
+        except UnicodeDecodeError:
+            return _error(SETUP_INVALID, "version-2 SETUP.md must be valid UTF-8")
+        if not manual_text.strip() or "\x00" in manual_text:
+            return _error(SETUP_INVALID, "version-2 SETUP.md must be non-empty safe UTF-8 text")
+        if custom_entry is not None and not has_manual_setup_header(custom_entry.content):
+            return _error(SETUP_INVALID, "version-2 custom entrypoint lacks the SETUP.md header")
     if parsed_installer.value.platforms != manifest.setup.platforms:
         return _error(
             SETUP_INVALID,
@@ -245,6 +272,18 @@ def _setup_recipe(
         custom_path,
         custom_entry,
     )
+
+
+def _manual_source_url(source: SourceEvidence) -> str:
+    """Build a safe immutable web root from installation provenance when one exists."""
+
+    if source.kind is SourceKind.SOURCE_LOCAL:
+        return ""
+    parts = git_location_parts(source.origin) or git_location_parts(f"https://{source.origin}")
+    if parts is None:
+        return ""
+    host, repository = parts
+    return f"https://{host}/{repository}/blob/{source.resolved_commit}"
 
 
 def _planned_capabilities(installer: SetupInstaller) -> tuple[Capability, ...]:
@@ -319,15 +358,30 @@ def _previous_record(snapshot: PathSnapshot) -> Result[SetupStateRecord | None]:
     return Ok(parsed.value.records[0])
 
 
-def prepare_setup(
+@dataclass(frozen=True, slots=True)
+class _SetupObject:
+    """One installed record and the exact object facts proven before trust and policy apply."""
+
+    state_paths: InstallStatePaths
+    record: InstallationRecord
+    item: MarketplaceItem
+    stored: StoredObject
+    manifest: ArtifactManifest
+    recipe_entry: SnapshotEntry
+    custom_path: SafeRelativePath | None
+    custom_entry: SnapshotEntry | None
+    queue_item: SetupQueueItem
+
+
+def _prepare_setup_object(
     request: SetupRequest,
     catalog: MarketplaceCatalog,
     effective: EffectiveConfiguration,
     location: InstallLocation,
     store_paths: ObjectStorePaths,
     ports: SetupReadPorts,
-) -> Result[CanonicalSetupPlan]:
-    """Build a non-secret plan from one installed record and its exact CAS object."""
+) -> Result[_SetupObject]:
+    """Resolve and validate the installed object, including any required manual document."""
 
     state_paths = install_state_paths(
         request.scope,
@@ -362,15 +416,83 @@ def prepare_setup(
     if isinstance(recipe, Err):
         return recipe
     manifest, recipe_entry, installer, custom_path, custom_entry = recipe
-    queue_item = SetupQueueItem(
-        cast(ArtifactType, record.artifact.identity.kind),
-        record.artifact.identity.name,
-        record.profile,
-        record.scope,
-        str(record.coordinate.source),
-        stored.root,
-        installer,
+    return Ok(
+        _SetupObject(
+            state_paths,
+            record,
+            item,
+            stored,
+            manifest,
+            recipe_entry,
+            custom_path,
+            custom_entry,
+            SetupQueueItem(
+                cast(ArtifactType, record.artifact.identity.kind),
+                record.artifact.identity.name,
+                record.profile,
+                record.scope,
+                str(record.coordinate.source),
+                stored.root,
+                installer,
+                _manual_source_url(record.source),
+            ),
+        )
     )
+
+
+def prepare_setup_attempt(
+    request: SetupRequest,
+    catalog: MarketplaceCatalog,
+    effective: EffectiveConfiguration,
+    location: InstallLocation,
+    store_paths: ObjectStorePaths,
+    ports: SetupReadPorts,
+) -> CanonicalSetupAttempt:
+    """Plan setup and keep the verified manual route even when trust or policy denies the plan."""
+
+    prepared = _prepare_setup_object(request, catalog, effective, location, store_paths, ports)
+    if isinstance(prepared, Err):
+        return CanonicalSetupAttempt(prepared)
+    return CanonicalSetupAttempt(
+        _prepare_setup_plan(prepared.value, request, effective, location, store_paths, ports),
+        manual_reference(prepared.value.queue_item),
+    )
+
+
+def prepare_setup(
+    request: SetupRequest,
+    catalog: MarketplaceCatalog,
+    effective: EffectiveConfiguration,
+    location: InstallLocation,
+    store_paths: ObjectStorePaths,
+    ports: SetupReadPorts,
+) -> Result[CanonicalSetupPlan]:
+    """Build a non-secret plan from one installed record and its exact CAS object."""
+
+    return prepare_setup_attempt(request, catalog, effective, location, store_paths, ports).result
+
+
+def _prepare_setup_plan(
+    prepared: _SetupObject,
+    request: SetupRequest,
+    effective: EffectiveConfiguration,
+    location: InstallLocation,
+    store_paths: ObjectStorePaths,
+    ports: SetupReadPorts,
+) -> Result[CanonicalSetupPlan]:
+    """Bind trust, policy, effect plan, and durable preconditions to one validated object."""
+
+    state_paths = prepared.state_paths
+    record = prepared.record
+    item = prepared.item
+    stored = prepared.stored
+    manifest = prepared.manifest
+    recipe_entry = prepared.recipe_entry
+    custom_path = prepared.custom_path
+    custom_entry = prepared.custom_entry
+    queue_item = prepared.queue_item
+    installer = queue_item.installer
+    assert manifest.setup is not None
     target_root = location.project_root if request.scope == "project" else location.user_home
     legacy_plan = plan_setup(
         queue_item,

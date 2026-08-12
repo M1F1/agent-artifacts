@@ -8,7 +8,7 @@ from unittest import mock
 
 from agent_artifacts import tui
 from agent_artifacts.compiler import CollectionCoordinate, MarketplaceCollection
-from agent_artifacts.configuration.model import ReportingMode
+from agent_artifacts.configuration.model import OrganizationPolicy, ReportingMode
 from agent_artifacts.consumer import (
     ConsumerActionRequest,
     ConsumerApplicationService,
@@ -18,6 +18,7 @@ from agent_artifacts.consumer import (
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.reporting.application import ReportingApplicationService
 from agent_artifacts.reporting.model import ReportingDestination
 from agent_artifacts.reporting.projection import usage_report_from_consumer
@@ -417,8 +418,97 @@ class TuiConsumerTextTest(unittest.TestCase):
             rendered = "\n".join(writes)
             self.assertIn("explicit permission", rendered)
             self.assertIn("Review setup queue", rendered)
+            self.assertIn("Setup review:", rendered)
+            self.assertNotIn(" -> ", rendered)
             self.assertIn("Setup outcome: configured=1, incomplete=0", rendered)
             self.assertTrue((fixture.project / ".setup-config").exists())
+
+    def test_canonical_decline_repeats_v2_manual_route_after_the_payload_is_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = SetupFixture(Path(raw), setup_version=2)
+            (fixture.project / ".agent-artifacts/manifest.json").unlink()
+            service = ConsumerApplicationService(
+                ConsumerContext(
+                    fixture.catalog,
+                    fixture.effective,
+                    builtin(),
+                    fixture.location,
+                    fixture.paths,
+                ),
+                LocalConsumerAdapter(),
+            )
+            reviewed = service.prepare(
+                ConsumerActionRequest(
+                    "install",
+                    (fixture.catalog.items[0].coordinate,),
+                    ("claude",),
+                )
+            )
+            assert isinstance(reviewed, Ok), reviewed
+            payload = service.finalize(reviewed.value, reviewed.value.review_digest)
+            assert isinstance(payload, Ok), payload
+            writes: list[str] = []
+
+            code = tui._run_canonical_setup_queue(
+                service,
+                reviewed.value,
+                payload.value,
+                read=_scripted(["y", "n"]),
+                write=writes.append,
+            )
+
+        self.assertEqual(code, 1)
+        rendered = "\n".join(writes)
+        self.assertIn(
+            "Payload outcome: installed; installed payloads were not rolled back.", rendered
+        )
+        self.assertIn("Setup remains pending.", rendered)
+        self.assertIn("Manual alternative", rendered)
+        self.assertIn("SETUP.md", rendered)
+        self.assertIn("No setup effect has run.", rendered)
+
+    def test_canonical_planning_failure_keeps_a_verified_v2_manual_route(self) -> None:
+        policy = OrganizationPolicy(1, allowed_setup_capabilities=(Capability("keychain"),))
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = SetupFixture(Path(raw), policy=policy, setup_version=2)
+            (fixture.project / ".agent-artifacts/manifest.json").unlink()
+            service = ConsumerApplicationService(
+                ConsumerContext(
+                    fixture.catalog,
+                    fixture.effective,
+                    builtin(),
+                    fixture.location,
+                    fixture.paths,
+                ),
+                LocalConsumerAdapter(),
+            )
+            reviewed = service.prepare(
+                ConsumerActionRequest(
+                    "install",
+                    (fixture.catalog.items[0].coordinate,),
+                    ("claude",),
+                )
+            )
+            assert isinstance(reviewed, Ok), reviewed
+            payload = service.finalize(reviewed.value, reviewed.value.review_digest)
+            assert isinstance(payload, Ok), payload
+            writes: list[str] = []
+
+            code = tui._run_canonical_setup_queue(
+                service,
+                reviewed.value,
+                payload.value,
+                read=_scripted([]),
+                write=writes.append,
+            )
+
+        self.assertEqual(code, 1)
+        rendered = "\n".join(writes)
+        self.assertIn("Payload outcome: installed", rendered)
+        self.assertIn("Setup outcome", rendered)
+        self.assertIn("Manual alternative", rendered)
+        self.assertIn("SETUP.md", rendered)
+        self.assertIn("No setup effect has run.", rendered)
 
     def test_canonical_setup_reporting_reuses_versioned_consumer_identity(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

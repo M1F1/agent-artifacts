@@ -10,6 +10,7 @@ from agent_artifacts.setup import (
     parse_installer,
     plan_setup,
     project_setup_review,
+    render_setup_outcome,
     render_setup_review,
 )
 from agent_artifacts.tui_layout import CONTENT_MEASURE
@@ -137,6 +138,72 @@ class SetupReviewProjectionTests(unittest.TestCase):
         self.assertEqual(review.effects[0].capability, "none")
         self.assertEqual(review.effects[0].recovery, "manual recovery is required")
         self.assertIn("capabilities    none", "\n".join(render_setup_review(plan)))
+
+    def test_incomplete_outcome_is_a_bounded_redacted_record_with_the_manual_route(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "pin:abc",
+            "/source",
+            installer(),
+            "https://github.com/acme/catalog/blob/" + "a" * 40,
+        )
+        reference = manual_reference(item)
+
+        for width in (40, 80, 120, 200):
+            rendered = render_setup_outcome(
+                artifact="mcp/atlassian",
+                profile="tabnine",
+                scope="project",
+                status="cancelled",
+                detail="setup api_token=do-not-render was cancelled",
+                retry_command="aart setup retry mcp/atlassian --profile tabnine --scope project",
+                recovery=("Remove only a file created by this run.",),
+                manual=reference,
+                width=width,
+            )
+
+            self.assertTrue(all(len(line) <= min(width, CONTENT_MEASURE) for line in rendered))
+            text = "\n".join(rendered)
+            self.assertIn("Setup outcome", text)
+            self.assertIn("Manual alternative", text)
+            self.assertIn("mcp/atlassian/SETUP.md", text)
+            self.assertNotIn("do-not-render", text)
+
+    def test_outcome_manual_status_separates_an_unstarted_setup_from_a_partial_one(self):
+        item = SetupQueueItem(
+            "mcp",
+            "atlassian",
+            "tabnine",
+            "project",
+            "pin:abc",
+            "/source",
+            installer(),
+            "https://github.com/acme/catalog/blob/" + "a" * 40,
+        )
+        reference = manual_reference(item)
+
+        def rendered(status: str) -> str:
+            return "\n".join(
+                render_setup_outcome(
+                    artifact="mcp/atlassian",
+                    profile="tabnine",
+                    scope="project",
+                    status=status,
+                    detail="setup did not complete",
+                    manual=reference,
+                )
+            )
+
+        for status in ("declined", "planning-failed", "unsupported"):
+            self.assertIn("No setup effect has run.", rendered(status))
+            self.assertNotIn("Automated setup is incomplete", rendered(status))
+        # A completed rollback also reports ``skipped``, so it may never claim nothing ran.
+        for status in ("cancelled", "apply_failed_rolled_back", "rollback-incomplete", "skipped"):
+            self.assertIn("Automated setup is incomplete", rendered(status))
+            self.assertNotIn("No setup effect has run.", rendered(status))
 
     def test_custom_review_withholds_script_body_and_keeps_its_recovery_record(self):
         script = b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\n# api_token=do-not-render\n"

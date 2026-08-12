@@ -146,6 +146,26 @@ class SetupQueueCommandTests(unittest.TestCase):
             ["apply_failed_rolled_back", "skipped"],
         )
 
+    def test_safe_effect_consent_never_repeats_the_raw_effect_summary(self):
+        output: list[str] = []
+        answers = iter(("n", "n"))
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as home:
+            results = setup_command.run_queue(
+                self.queue()[:1],
+                scope_root=root,
+                target_root=home,
+                request=Request(command="setup", setup_action="run"),
+                runtime=SetupRuntime(process=_FailsFirstAdd(), platform="darwin", environ={}),
+                read=lambda _prompt: next(answers),
+                write=output.append,
+            )
+
+        self.assertEqual(results[0].status, "cancelled")
+        rendered = "\n".join(output)
+        self.assertIn("Approve 1. Store a secret in macOS Keychain", rendered)
+        self.assertNotIn("macos-keychain.store@1:", rendered)
+        self.assertNotIn(" -> ", rendered)
+
     def test_retry_preserves_sparse_artifact_profile_pairs(self):
         with tempfile.TemporaryDirectory() as source, tempfile.TemporaryDirectory() as project:
             for name in ("alpha", "beta"):

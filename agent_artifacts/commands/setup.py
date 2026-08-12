@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from dataclasses import replace
-from typing import Callable, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from ..io import fs
 from ..model import (
@@ -14,18 +14,23 @@ from ..model import (
     Err,
     Ok,
     Request,
+    SetupEffect,
+    SetupManualReference,
     SetupQueueItem,
     SetupState,
     SetupStateRecord,
 )
 from ..setup import (
+    SetupEffectReview,
     dump_setup_state,
     incomplete_records,
     mark_unstarted_skipped,
     parse_setup_state,
     plan_setup,
+    project_setup_review,
     receipt_matches_plan,
     recovery_messages,
+    render_setup_outcome,
     render_setup_review,
     setup_state_path,
     upsert_setup_record,
@@ -113,6 +118,7 @@ def _record_payload(record: SetupStateRecord) -> dict:
 
 
 def _plan_payload(plan) -> dict:
+    review = project_setup_review(plan)
     return {
         "artifact": f"{plan.item.artifact_type}/{plan.item.artifact_name}",
         "profile": plan.item.profile,
@@ -123,36 +129,52 @@ def _plan_payload(plan) -> dict:
         "custom_hash": plan.item.installer.custom_hash,
         "plan_hash": plan.plan_hash,
         "preflight_status": plan.preflight_status,
+        "manual": {
+            "relative_path": review.manual.relative_path,
+            "source": review.manual.source,
+            "legacy": review.manual.legacy,
+        },
         "effects": [
             {
-                "step": effect.step_id,
-                "module": effect.module,
-                "capability": effect.capability,
-                "summary": effect.summary,
+                "index": effect.index,
+                "identity": effect.identity,
                 "target": effect.target,
-                "argv": list(effect.argv),
-                "reversible": effect.reversible,
+                "capability": effect.capability,
+                "recovery": effect.recovery,
+                "details": effect.details,
             }
-            for effect in plan.effects
+            for effect in review.effects
         ],
     }
 
 
-def _render_records(records: Sequence[SetupStateRecord], write: WriteFn) -> None:
+def _record_key(record: SetupStateRecord) -> tuple[str, str, str, str]:
+    return (str(record.artifact_type), record.artifact_name, record.profile, str(record.scope))
+
+
+def _render_records(
+    records: Sequence[SetupStateRecord],
+    write: WriteFn,
+    *,
+    manuals: Mapping[tuple[str, str, str, str], SetupManualReference] | None = None,
+) -> None:
     if not records:
         write("No setup records.")
         return
     for record in records:
-        write(
-            f"{record.artifact_type}/{record.artifact_name}@{record.profile}: "
-            f"{record.status} — {record.detail}"
-        )
-        if record.retry_command:
-            write(f"  Retry: {record.retry_command}")
-        if record.rollback_command:
-            write(f"  Rollback: {record.rollback_command}")
-        for message in recovery_messages(record):
-            write(f"  Recovery: {message}")
+        manual = None if manuals is None else manuals.get(_record_key(record))
+        for line in render_setup_outcome(
+            artifact=f"{record.artifact_type}/{record.artifact_name}",
+            profile=record.profile,
+            scope=record.scope,
+            status=record.status,
+            detail=record.detail,
+            retry_command=record.retry_command,
+            rollback_command=record.rollback_command,
+            recovery=recovery_messages(record),
+            manual=manual,
+        ):
+            write(line)
 
 
 def _matches_name(record: SetupStateRecord, names: Sequence[str]) -> bool:
@@ -313,16 +335,26 @@ def _queue_from_installed(
     return tuple(queue)
 
 
-def _confirm_effect(effect, read: ReadFn, write: WriteFn) -> bool:
-    write(
-        f"Apply {effect.module}: {effect.summary} "
-        f"[{'reversible' if effect.reversible else 'not automatically reversible'}]"
-    )
+def _confirm_effect(
+    effect: SetupEffect,
+    safe_effects: Mapping[str, SetupEffectReview],
+    read: ReadFn,
+    write: WriteFn,
+) -> bool:
+    reviewed = safe_effects.get(effect.step_id)
+    if reviewed is None:
+        write("Approve this reviewed setup effect.")
+    else:
+        write(f"Approve {reviewed.index}. {reviewed.identity}. {reviewed.recovery}.")
     try:
         answer = read("Approve this exact effect? [y/N]: ").strip().lower()
     except EOFError:
         return False
     return answer in ("y", "yes")
+
+
+def _approve_effect(_effect: SetupEffect) -> bool:
+    return True
 
 
 def _validate_rollback_records(
@@ -392,11 +424,19 @@ def run_queue(
         )
         for line in render_setup_review(plan):
             write(line)
-        consent = (
-            (lambda _effect: True)
-            if request.yes
-            else (lambda effect: _confirm_effect(effect, read, write))
-        )
+        review = project_setup_review(plan)
+        safe_effects: dict[str, SetupEffectReview] = {
+            effect.step_id: rendered
+            for effect, rendered in zip(plan.effects, review.effects, strict=True)
+        }
+        consent: Callable[[SetupEffect], bool] = _approve_effect
+        if not request.yes:
+
+            def reviewed_consent(effect: SetupEffect, safe_effects=safe_effects) -> bool:
+                return _confirm_effect(effect, safe_effects, read, write)
+
+            consent = reviewed_consent
+
         applied_record = apply_setup_plan(plan, adapter, consent=consent)
         record = applied_record
         if record.status == "already_configured":
@@ -622,7 +662,16 @@ def execute(
             )
         )
     else:
-        _render_records(results, write)
+        manuals = {
+            (
+                str(plan.item.artifact_type),
+                plan.item.artifact_name,
+                plan.item.profile,
+                str(plan.item.scope),
+            ): (project_setup_review(plan).manual)
+            for plan in plans
+        }
+        _render_records(results, write, manuals=manuals)
     return (
         0 if all(record.status in ("configured", "already_configured") for record in results) else 1
     )

@@ -50,7 +50,7 @@ from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKin
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.registry_models import IndexArtifact, IndexSetup, ReviewRecord
 from agent_artifacts.protocol.semver import SemVer
-from agent_artifacts.setup import dump_setup_state
+from agent_artifacts.setup import dump_setup_state, project_setup_review
 from agent_artifacts.setup_engine import (
     LocalSetupAdapter,
     PayloadStatus,
@@ -59,6 +59,7 @@ from agent_artifacts.setup_engine import (
     execute_setup_queue,
     finalize_setup,
     prepare_setup,
+    prepare_setup_attempt,
     retryable_plans,
     rollback_setup,
     setup_outcome_event,
@@ -78,7 +79,7 @@ def _path(raw: str) -> SafeRelativePath:
     return SafeRelativePath(tuple(raw.split("/")))
 
 
-def _recipe(*, custom: bool = False, secret_failure: bool = False) -> bytes:
+def _recipe(*, custom: bool = False, secret_failure: bool = False, version: int = 1) -> bytes:
     capabilities = ["process"] if secret_failure else ["filesystem"]
     steps: list[dict[str, object]] = (
         [
@@ -100,8 +101,8 @@ def _recipe(*, custom: bool = False, secret_failure: bool = False) -> bytes:
     if custom:
         capabilities.extend(("custom-code", "process"))
     value: dict[str, object] = {
-        "schema_version": 1,
-        "protocol_version": 1,
+        "schema_version": version,
+        "protocol_version": version,
         "artifact": "skill/review",
         "purpose": "Configure the reviewed skill.",
         "platforms": ["darwin"],
@@ -136,6 +137,7 @@ class Fixture:
         policy: OrganizationPolicy | None = None,
         custom: bool = False,
         secret_failure: bool = False,
+        setup_version: int = 1,
         profiles: tuple[str, ...] = ("claude",),
         setup_platforms: tuple[str, ...] = ("darwin",),
     ) -> None:
@@ -149,8 +151,12 @@ class Fixture:
         self.source = configured_source("registry", source_kind)
         self.policy = policy or OrganizationPolicy(1)
         self.effective = _effective(self.source, self.policy)
-        recipe = _recipe(custom=custom, secret_failure=secret_failure)
-        script = b"#!/bin/sh\nexit 0\n"
+        recipe = _recipe(custom=custom, secret_failure=secret_failure, version=setup_version)
+        script = (
+            b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\nexit 0\n"
+            if setup_version == 2
+            else b"#!/bin/sh\nexit 0\n"
+        )
         manifest = ArtifactManifest(
             1,
             ArtifactIdentity("skill", "review"),
@@ -170,6 +176,14 @@ class Fixture:
             SnapshotEntry(_path("payload/SKILL.md"), SnapshotEntryKind.FILE, b"# Review\n"),
             SnapshotEntry(_path("setup/installer.json"), SnapshotEntryKind.FILE, recipe),
         ]
+        if setup_version == 2:
+            entries.append(
+                SnapshotEntry(
+                    _path("SETUP.md"),
+                    SnapshotEntryKind.FILE,
+                    b"Configure the reviewed skill manually.\n",
+                )
+            )
         if custom:
             entries.append(
                 SnapshotEntry(_path("setup/install.sh"), SnapshotEntryKind.FILE, script, True)
@@ -292,6 +306,16 @@ class Fixture:
             self.adapter,
         )
 
+    def attempt(self, profile: str = "claude", **changes: bool):
+        return prepare_setup_attempt(
+            self.request(profile, **changes),
+            self.catalog,
+            self.effective,
+            self.location,
+            self.paths,
+            self.adapter,
+        )
+
 
 class RecordingProcess:
     def __init__(self, *, failure: bool = False) -> None:
@@ -338,6 +362,60 @@ class MissingObjectAdapter(LocalSetupAdapter):
 
 
 class CanonicalSetupApplicationTest(unittest.TestCase):
+    def test_v2_setup_binds_the_object_root_manual_document_and_pinned_source(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw), setup_version=2)
+
+            planned = fixture.plan(authorize_untrusted_source=True)
+
+            self.assertIsInstance(planned, Ok)
+            assert isinstance(planned, Ok)
+            projected = project_setup_review(planned.value.legacy_plan)
+            self.assertEqual(projected.manual.relative_path, "SETUP.md")
+            self.assertEqual(
+                projected.manual.source,
+                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+            )
+            self.assertFalse(projected.manual.legacy)
+
+    def test_v2_planning_denial_after_recipe_validation_keeps_the_verified_manual_route(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw), setup_version=2)
+
+            attempt = fixture.attempt()
+
+            self.assertIsInstance(attempt.result, Err)
+            assert attempt.manual is not None
+            self.assertEqual(attempt.manual.relative_path, "SETUP.md")
+            self.assertEqual(
+                attempt.manual.source,
+                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+            )
+            self.assertFalse(attempt.manual.legacy)
+
+    def test_planning_failure_before_recipe_validation_claims_no_manual_route(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw), setup_version=2)
+            fixture.adapter = MissingObjectAdapter()
+
+            attempt = fixture.attempt(authorize_untrusted_source=True)
+
+            self.assertIsInstance(attempt.result, Err)
+            self.assertIsNone(attempt.manual)
+
+    def test_v1_planning_denial_reports_the_explicit_legacy_manual_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw))
+
+            attempt = fixture.attempt()
+
+            self.assertIsInstance(attempt.result, Err)
+            assert attempt.manual is not None
+            self.assertTrue(attempt.manual.legacy)
+            self.assertIsNone(attempt.manual.relative_path)
+
     def test_direct_source_requires_explicit_authorization_and_plan_binds_every_identity(
         self,
     ) -> None:

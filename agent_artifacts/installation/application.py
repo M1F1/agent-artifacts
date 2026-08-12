@@ -216,7 +216,7 @@ def _validate_object_evidence(stored: StoredObject, indexed) -> Result[None]:
         path
         for path in by_path
         if path.split("/", 1)[0]
-        not in {"artifact.json", "README.md", "provenance.json", "payload", "setup"}
+        not in {"artifact.json", "README.md", "provenance.json", "SETUP.md", "payload", "setup"}
     )
     manifest_entry = by_path.get("artifact.json")
     if unexpected or manifest_entry is None or manifest_entry.kind is not SnapshotEntryKind.FILE:

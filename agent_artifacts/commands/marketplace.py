@@ -49,11 +49,12 @@ from agent_artifacts.consumer.runtime_requirements import (
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_to_data
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
-from agent_artifacts.model import Request
+from agent_artifacts.model import Request, SetupManualReference
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
+from agent_artifacts.setup import project_setup_review, render_setup_review
 from agent_artifacts.store.model import ObjectReadRequest
 
 from . import _common
@@ -332,27 +333,48 @@ def _action_request(
     )
 
 
+def _manual_payload(reference: SetupManualReference | None) -> dict | None:
+    if reference is None:
+        return None
+    return {
+        "relative_path": reference.relative_path,
+        "source": reference.source,
+        "legacy": reference.legacy,
+    }
+
+
+def _setup_plan_payload(plan) -> dict:
+    projected = project_setup_review(plan.legacy_plan)
+    return {
+        "key": f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}",
+        "trust": plan.trust,
+        "recipe": str(plan.recipe_path),
+        "review_digest": str(plan.review_digest),
+        "manual": _manual_payload(projected.manual),
+        "effects": [
+            {
+                "index": effect.index,
+                "identity": effect.identity,
+                "target": effect.target,
+                "capability": effect.capability,
+                "recovery": effect.recovery,
+                "details": effect.details,
+            }
+            for effect in projected.effects
+        ],
+    }
+
+
 def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
     payload: dict = {
-        "planned": [
-            {
-                "key": (f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}"),
-                "trust": plan.trust,
-                "recipe": str(plan.recipe_path),
-                "review_digest": str(plan.review_digest),
-                "effects": [
-                    {
-                        "module": effect.module,
-                        "summary": effect.summary,
-                        "reversible": effect.reversible,
-                    }
-                    for effect in plan.legacy_plan.effects
-                ],
-            }
-            for plan in queue.plans
-        ],
+        "planned": [_setup_plan_payload(plan) for plan in queue.plans],
         "planning_failures": [
-            {"key": failure.key, "detail": failure.detail} for failure in queue.failures
+            {
+                "key": failure.key,
+                "detail": failure.detail,
+                "manual": _manual_payload(failure.manual),
+            }
+            for failure in queue.failures
         ],
     }
     if outcome is not None:
@@ -461,20 +483,24 @@ def _lifecycle(request: Request, action: str) -> int:
             "review_digest": str(review.review_digest),
             "review": review_data,
         }
+        setup_lines: tuple[str, ...] = ()
         if action == "setup":
-            payload["setup"] = _setup_payload(
-                service.value.setup_queue(
-                    review,
-                    _setup_review_outcome(review),
-                    authorize_untrusted_source=request.authorize_untrusted_source,
-                    authorize_custom_entrypoint=request.authorize_custom_entrypoint,
-                )
+            setup_queue = service.value.setup_queue(
+                review,
+                _setup_review_outcome(review),
+                authorize_untrusted_source=request.authorize_untrusted_source,
+                authorize_custom_entrypoint=request.authorize_custom_entrypoint,
+            )
+            payload["setup"] = _setup_payload(setup_queue)
+            setup_lines = tuple(
+                line for plan in setup_queue.plans for line in render_setup_review(plan.legacy_plan)
             )
         _emit(
             request,
             operation,
             payload,
             render_consumer_review(review)
+            + setup_lines
             + ("Reviewed only; re-run with --yes to apply this exact plan.",),
         )
         return _common.OK
