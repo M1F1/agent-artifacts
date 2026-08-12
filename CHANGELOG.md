@@ -3,10 +3,15 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
-## Unreleased
+## 1.4.0 — 2026-08-12
 
-Typed wizard errors, a transparent setup review, and a manual route out of every installer. The
-release task assigns the version; this entry deliberately carries none.
+Typed wizard errors, a transparent setup review, and a manual route out of every installer.
+
+Minor for the executable: no command, subcommand, or flag was removed or renamed, and every
+artifact declaring the conventional `requires_aart` ceiling of `2.0.0` keeps working. The one
+breaking change belongs to the independently versioned setup-recipe protocol, which now supports a
+single revision — a registry publishing a `1`/`1` recipe must be rebuilt before its setup-capable
+artifacts install again. See Compatibility below.
 
 ### Changed
 
@@ -39,16 +44,22 @@ release task assigns the version; this entry deliberately carries none.
 
 ### Compatibility
 
+- **Breaking — setup recipes support exactly one revision.** `schema_version` and
+  `protocol_version` must both be `2`, which is what makes the package-root `SETUP.md` mandatory. A
+  recipe declaring the superseded `1`/`1` pair is refused when the catalog is read, and the error
+  names the migration: raise both fields to `2` and add the document. A registry that still
+  publishes a `1`/`1` recipe will have those artifacts rejected at discovery until it is rebuilt.
+  Artifacts without a setup recipe are unaffected.
 - **No installation state is migrated, rewritten, or deleted automatically.** Recognized 0.1 state
   is reported with the explicit `aart migrate state --from 0.1 … --dry-run` preview that a person
   chooses to run; `--apply` and `--rollback` remain separate explicit steps. State written by an
-  earlier version stays readable exactly as written.
-- Setup recipes support exactly one revision: `schema_version` and `protocol_version` must both be
-  `2`, which is what makes the package-root `SETUP.md` mandatory. A recipe declaring the superseded
-  `1`/`1` pair is refused when the catalog is read, and the error names the migration — raise both
-  fields to `2` and add the document. Nothing is validated retroactively.
-- `--yes`, `--approve-setup-effects`, trust authorization, and per-effect consent are unchanged.
-- No registry compatibility or per-artifact `requires_aart` floor changes here.
+  earlier version stays readable exactly as written, and an already-recorded setup receipt keeps
+  its stored version fields — rejecting an old *input* is not rewriting existing *state*.
+- The CLI surface is backward compatible: no command, subcommand, or flag was removed or renamed,
+  and `--yes`, `--approve-setup-effects`, trust authorization, and per-effect consent behave
+  exactly as before.
+- Installation state stays at v2, the native source/registry protocol at v1, and reporting at v1.
+  No per-artifact `requires_aart` floor is raised by this release.
 
 ## 1.3.1 — 2026-08-11
 
