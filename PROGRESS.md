@@ -4,9 +4,10 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.0.0`
-- **Execution status:** `v2.0.0` is released and both registries are published on the `2.0.0`
-  contract; the consumer project exists and reconciles against them in CI
+- **Current code version:** `2.1.0`
+- **Execution status:** `2.1.0` closes the source subscription lifecycle on top of the released
+  `2.0.0` contract; both registries are published on that contract and need no re-authoring, and the
+  consumer project reconciles against them in CI
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-13
@@ -1748,3 +1749,33 @@ None.
   installation that is not `current` or any file the run changed.
 - Not yet done: WP-7's full agent-driven acceptance matrix, and the human-gated curses, real-home,
   and MCP credential passes.
+
+### 2026-08-13 — source subscription lifecycle; 2.1.0 release contract
+
+- **`aart source remove` and `aart source resubscribe`**
+  ([#78](https://github.com/M1F1/agent-artifacts/pull/78), `ca6c1bb`) close the dead end live
+  acceptance recorded as `LAF-28`: a registry that changed its declared `source_id` at an unchanged
+  origin and ref could not be left, refreshed, re-added, or adopted. Design and plan in
+  `docs/design/DESIGN-source-subscription-lifecycle.md` and
+  `docs/plan/PLAN-source-subscription-lifecycle.md`; SL-1..SL-7 all landed.
+- The second trap was the one that mattered: editing `config.json` alone was never enough, because
+  the identity check reads the managed snapshot store, which is keyed by origin rather than by
+  alias. `remove` therefore owns both, and discards the store *before* writing the configuration, so
+  an interrupted removal leaves a subscription `sync` repairs rather than an unsubscribed origin
+  whose store still binds an unreachable identity.
+- Adoption authorizes a **transition**, not a destination. `SourceIdentityTransition` carries both
+  identities, both revisions, and both digests; finalize re-reads the origin and applies that exact
+  move or refuses. Resubscribing writes no configuration at all, which is why alias, kind, location,
+  ref, and the default-registry flag survive by construction.
+- Nothing was loosened. `sync` still refuses a changed identity; what changed is that the refusal
+  now names a command that exists. `tests/source_remediation_test.py` feeds every ``aart …`` string
+  found in real production refusals to `cli.build_parser()`, with a negative control, so the text
+  cannot drift back.
+- **Version decision: 2.1.0, not 2.0.1.** Two public subcommands are added, which is a SemVer minor
+  by the same criterion `compatibility-v7.md` stated and `2.0.0` deliberately failed. Contract v9:
+  `schema-freeze-v9.json` is byte-identical to v8 in every declared input and in every protocol
+  version — only `release_version` differs, which is the machine-checked statement that no boundary
+  moved.
+- **No registry precondition.** Unlike `2.0.0`, nothing needs re-authoring first: a registry on
+  `>= 2.0.0, < 3.0.0` passes `registry test --compatibility all --latest-version 2.1.0` unchanged,
+  so executable and registries can be released in either order.
