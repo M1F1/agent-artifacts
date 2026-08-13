@@ -8,6 +8,7 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
 
+from .capabilities import Capability
 from .codes import REGISTRY_GRAPH_INVALID, REGISTRY_INDEX_INVALID
 from .native_models import CollectionManifest
 from .native_tree import NativeArtifactPackage
@@ -37,9 +38,21 @@ def index_artifact_from_package(
 
     setup = None
     if package.manifest.setup is not None:
+        # The recipe is the authority on which capabilities its steps need; the manifest only
+        # points at it.  Publishing an empty capability set would make the consumer-side gate
+        # inert — every artifact would look like it needs nothing to run its setup.
+        capabilities: tuple[Capability, ...] = ()
+        if package.setup_installer is not None:
+            capabilities = tuple(
+                sorted(
+                    {Capability(item) for item in package.setup_installer.capabilities},
+                    key=str,
+                )
+            )
         setup = IndexSetup(
             package.manifest.setup.recipe,
             package.manifest.setup.platforms,
+            capabilities,
         )
     provenance = None
     if package.provenance is not None:

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok
+from agent_artifacts.model import SetupCapability, SetupInstaller
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_models import CollectionManifest
@@ -109,6 +111,26 @@ def _configured_package() -> NativeArtifactPackage:
     return NativeArtifactPackage(manifest.value, provenance.value, _digest("1"), _digest("2"))
 
 
+def _installer(capabilities: tuple[SetupCapability, ...]) -> SetupInstaller:
+    """The compiled recipe reduced to the one field the index has to carry across."""
+
+    return SetupInstaller(
+        schema_version=2,
+        protocol_version=2,
+        artifact="atlassian",
+        purpose="Connect reviewed Atlassian tools.",
+        platforms=("darwin",),
+        help_urls=(),
+        required_tools=(),
+        capabilities=capabilities,
+        inputs=(),
+        steps=(),
+        descriptor_path="setup/installer.json",
+        descriptor_hash="b" * 64,
+        manual_path="SETUP.md",
+    )
+
+
 def _collection(name: str, artifacts: list[str], collections: list[str]) -> CollectionManifest:
     selectors = ",".join(f'{{"type":"skill","name":"{artifact}"}}' for artifact in artifacts)
     nested = ",".join(f'"{collection}"' for collection in collections)
@@ -154,6 +176,28 @@ class RegistryIndexTest(unittest.TestCase):
         assert record.provenance is not None
         self.assertEqual(str(record.setup.recipe), "setup/installer.json")
         self.assertEqual(record.provenance.resolved_commit, "a" * 40)
+
+    def test_setup_capabilities_are_published_from_the_compiled_recipe(self) -> None:
+        # The recipe declares what its steps need; the manifest only points at it.  An empty
+        # published set would make the consumer-side capability gate inert, so every artifact
+        # would look installable-and-runnable regardless of what its setup actually requires.
+        package = _configured_package()
+        compiled = replace(
+            package,
+            setup_installer=_installer(("docker", "keychain", "process")),
+        )
+
+        record = index_artifact_from_package(
+            compiled,
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("3"),
+        )
+
+        assert record.setup is not None
+        self.assertEqual(
+            tuple(str(item) for item in record.setup.capabilities),
+            ("docker", "keychain", "process"),
+        )
 
     def test_index_output_is_byte_identical_across_input_order(self) -> None:
         first = index_artifact_from_package(
