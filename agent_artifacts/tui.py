@@ -33,7 +33,6 @@ from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from . import __version__
-from .compatibility import check_profile_compatibility
 from .configuration.model import (
     OrganizationPolicy,
     SourceKind,
@@ -61,22 +60,17 @@ from .domain.identifiers import ArtifactCoordinate, SourceAlias
 from .domain.result import Err as DomainErr
 from .domain.result import Ok as DomainOk
 from .domain.result import Result as DomainResult
-from .install_modes import supports_symlink
 from .marketplace.model import MarketplaceCatalog
 from .model import (
-    Artifact,
     ArtifactType,
-    Catalog,
     Err,
     InstallMode,
     InstallScope,
-    Manifest,
     Request,
     Result,
     SetupQueueItem,
 )
 from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
-from .planners import install_target_paths
 from .profiles.loader import load_profiles
 from .profiles.model import Profile
 from .profiles.scope import profile_for_scope
@@ -89,11 +83,8 @@ from .reporting.projection import (
     usage_reports_by_registry_from_consumer,
 )
 from .setup import (
-    build_queue,
-    manual_reference,
     project_setup_review,
     recovery_messages,
-    render_manual_alternative,
     render_setup_outcome,
     render_setup_review,
 )
@@ -288,33 +279,6 @@ INSTALL_SCOPE_CHOICES: Tuple[InstallScopeChoice, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
-class InstallModeCounts:
-    """Projected artifact/profile targets by actual installation mode."""
-
-    linked: int = 0
-    copied: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class InstallConfirmation:
-    """Immutable facts rendered by both Install confirmation frontends."""
-
-    source_label: str
-    source_root: str
-    destination_root: str
-    profiles: Tuple[str, ...]
-    requested_mode: InstallMode
-    selected: Tuple[str, ...]
-    modes: InstallModeCounts
-    scope: InstallScope = "project"
-    destinations: Tuple[str, ...] = ()
-    setup_queue: Tuple[SetupQueueItem, ...] = ()
-
-
-# --------------------------------------------------------------------------- #
-# Choice model — a flat, ordered menu derived from the catalog (pure).         #
-# --------------------------------------------------------------------------- #
-@dataclass(frozen=True, slots=True)
 class _Choice:
     """One selectable catalog row: either a single artifact or a whole bundle.
 
@@ -348,12 +312,6 @@ def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
     return getattr(profile, _TYPE_ATTR[art_type], None) is not None
 
 
-def _linkable(artifact: Artifact) -> bool:
-    """Whether the existing install core can live-link this artifact's payload."""
-
-    return supports_symlink(artifact.type)
-
-
 def _choice_label(
     kind: Literal["artifact", "bundle", "profile"],
     name: str,
@@ -373,326 +331,6 @@ def _choice_label(
     if status:
         label += f" ({status})"
     return label
-
-
-def artifact_visible_for_profiles(
-    artifact: Artifact,
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-) -> bool:
-    """Whether ``artifact`` is installable for every selected profile.
-
-    This is intentionally an intersection check: selecting ``claude,vibe`` hides MCP/hooks
-    because ``vibe`` cannot install them.
-    """
-    if not profile_names:
-        return False
-    for profile_name in profile_names:
-        profile = profiles.get(profile_name)
-        if profile is None:
-            return False
-        if not _profile_supports(profile, artifact.type):
-            return False
-        if not check_profile_compatibility(artifact, profile_name).ok:
-            return False
-    return True
-
-
-def build_install_choices(
-    catalog: Catalog,
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-    *,
-    install_mode: InstallMode = "copy",
-    scope: InstallScope = "project",
-) -> Tuple[_Choice, ...]:
-    """Build installable artifact/bundle choices for selected profiles."""
-    out: List[_Choice] = []
-    arts: List[Artifact] = list(catalog.artifacts.values())
-    arts.sort(key=lambda a: (_type_rank(a.type), a.name))
-    for artifact in arts:
-        visible = artifact_visible_for_profiles(artifact, profile_names, profiles)
-        if visible:
-            linkable = _linkable(artifact)
-            enabled = install_mode == "copy" or linkable
-            reason = (
-                "copy-only; choose Copy or select a mixed bundle"
-                if install_mode == "symlink" and not linkable
-                else ""
-            )
-            status = ""
-            if install_mode == "symlink":
-                status = "will symlink" if linkable else reason
-            out.append(
-                _Choice(
-                    "artifact",
-                    artifact.name,
-                    artifact.type,
-                    _choice_label(
-                        "artifact",
-                        artifact.name,
-                        artifact.type,
-                        artifact.description,
-                        status,
-                    ),
-                    description=artifact.description,
-                    enabled=enabled,
-                    reason=reason,
-                    linked_count=(
-                        len(profile_names) if install_mode == "symlink" and linkable else 0
-                    ),
-                    copied_count=(
-                        len(profile_names) if install_mode == "copy" or not linkable else 0
-                    ),
-                )
-            )
-        elif scope == "user":
-            reasons = []
-            for profile_name in profile_names:
-                profile = profiles.get(profile_name)
-                if profile is None:
-                    continue
-                if not _profile_supports(profile, artifact.type):
-                    reasons.append(
-                        profile.unsupported.get(
-                            artifact.type,
-                            f"{profile_name} does not support {artifact.type} in user scope",
-                        )
-                    )
-                elif not check_profile_compatibility(artifact, profile_name).ok:
-                    reasons.append(f"not compatible with {profile_name}")
-            reason = "; ".join(dict.fromkeys(reasons)) or "unavailable in user scope"
-            out.append(
-                _Choice(
-                    "artifact",
-                    artifact.name,
-                    artifact.type,
-                    _choice_label(
-                        "artifact",
-                        artifact.name,
-                        artifact.type,
-                        artifact.description,
-                        reason,
-                    ),
-                    description=artifact.description,
-                    enabled=False,
-                    reason=reason,
-                )
-            )
-
-    return tuple(out)
-
-
-def _selected_install_artifacts(
-    catalog: Catalog,
-    choices: Sequence[_Choice],
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-) -> Tuple[Artifact, ...]:
-    """Resolve and de-duplicate eligible artifacts represented by selected rows."""
-
-    keys: List[Tuple[ArtifactType, str]] = []
-    seen = set()
-    for choice in choices:
-        choice_keys: Sequence[Tuple[ArtifactType, str]] = ()
-        if choice.kind == "artifact" and choice.type is not None:
-            choice_keys = ((choice.type, choice.name),)
-        for key in choice_keys:
-            if key not in seen:
-                seen.add(key)
-                keys.append(key)
-
-    return tuple(
-        artifact
-        for key in keys
-        if (artifact := catalog.artifacts.get(key)) is not None
-        and artifact_visible_for_profiles(artifact, profile_names, profiles)
-    )
-
-
-def install_selection_mode_counts(
-    catalog: Catalog,
-    choices: Sequence[_Choice],
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-    install_mode: InstallMode,
-) -> InstallModeCounts:
-    """Count projected actual modes over de-duplicated artifact/profile targets."""
-
-    artifacts = _selected_install_artifacts(catalog, choices, profile_names, profiles)
-    target_multiplier = len(profile_names)
-    if install_mode == "copy":
-        return InstallModeCounts(copied=len(artifacts) * target_multiplier)
-    linked = sum(1 for artifact in artifacts if _linkable(artifact)) * target_multiplier
-    return InstallModeCounts(
-        linked=linked,
-        copied=len(artifacts) * target_multiplier - linked,
-    )
-
-
-def build_install_confirmation(
-    *,
-    source_label: str,
-    source_root: str,
-    project: Optional[str],
-    profiles: Sequence[str],
-    requested_mode: InstallMode,
-    catalog: Catalog,
-    choices: Sequence[_Choice],
-    profiles_map: Mapping[str, Profile],
-    scope: InstallScope = "project",
-    user_home: Optional[str] = None,
-    source_url: str = "",
-) -> InstallConfirmation:
-    """Build the shared immutable confirmation model for an Install selection."""
-
-    destination_root = (
-        os.path.abspath(user_home or os.path.expanduser("~"))
-        if scope == "user"
-        else os.path.abspath(project or ".")
-    )
-    destinations: List[str] = []
-    seen_destinations = set()
-    artifacts = _selected_install_artifacts(catalog, choices, profiles, profiles_map)
-    for artifact in artifacts:
-        for profile_name in profiles:
-            profile = profiles_map.get(profile_name)
-            if profile is None:
-                continue
-            for target in install_target_paths(artifact, profile):
-                absolute = (
-                    target if os.path.isabs(target) else os.path.join(destination_root, target)
-                )
-                absolute = os.path.normpath(absolute)
-                if absolute not in seen_destinations:
-                    seen_destinations.add(absolute)
-                    destinations.append(absolute)
-    return InstallConfirmation(
-        source_label=source_label,
-        source_root=os.path.abspath(source_root),
-        destination_root=destination_root,
-        profiles=tuple(profiles),
-        requested_mode=requested_mode,
-        selected=tuple(choice.name for choice in choices),
-        modes=install_selection_mode_counts(
-            catalog,
-            choices,
-            profiles,
-            profiles_map,
-            requested_mode,
-        ),
-        scope=scope,
-        destinations=tuple(destinations),
-        setup_queue=build_queue(
-            artifacts,
-            profiles,
-            scope=scope,
-            source_label=source_label,
-            source_root=os.path.abspath(source_root),
-            source_url=source_url,
-        ),
-    )
-
-
-def render_install_confirmation(
-    confirmation: InstallConfirmation,
-    *,
-    width: int = CONTENT_MEASURE,
-) -> Tuple[str, ...]:
-    """Pure text projection shared by text and curses Install confirmation."""
-
-    mode_label = "Symlink" if confirmation.requested_mode == "symlink" else "Copy"
-    scope_label = "User" if confirmation.scope == "user" else "Project"
-    lines: Tuple[str, ...] = (
-        "Review installation",
-        "  Role: User",
-        "  Action: Install",
-        f"  Source: {confirmation.source_label} ({confirmation.source_root})",
-        f"  Destination: {scope_label} — {confirmation.destination_root}",
-        f"  Harnesses: {', '.join(confirmation.profiles)}",
-        f"  Requested mode: {mode_label}",
-        (
-            f"  Projected modes: {confirmation.modes.linked} linked, "
-            f"{confirmation.modes.copied} copied"
-        ),
-        f"  Selected count: {len(confirmation.selected)}",
-        f"  Selected: {', '.join(confirmation.selected)}",
-        "  Expected mutation: install managed artifacts and record their manifest state.",
-    )
-    if confirmation.modes.linked and confirmation.modes.copied:
-        lines += ("  Warning: mixed-mode fallback copies targets that cannot be safely symlinked.",)
-    if confirmation.scope == "user" and confirmation.destinations:
-        lines += ("  Resolved destinations:",) + tuple(
-            f"    - {path}" for path in confirmation.destinations
-        )
-    if confirmation.setup_queue:
-        lines += ("  Setup queue (runs after artifact installation):",) + tuple(
-            (
-                f"    - {item.artifact_type}/{item.artifact_name}@{item.profile}: "
-                f"{item.installer.purpose}"
-            )
-            for item in confirmation.setup_queue
-        )
-        for item in confirmation.setup_queue:
-            lines += render_manual_alternative(manual_reference(item), width=width)
-    return lines
-
-
-def _build_manifest_choices(
-    action: str,
-    catalog: Catalog,
-    manifest: Manifest,
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-) -> Tuple[_Choice, ...]:
-    """Build update/uninstall choices from installed manifest entries."""
-    profile_set = set(profile_names)
-    entries = [entry for entry in manifest.installed if entry.profile in profile_set]
-    out: List[_Choice] = []
-    seen_names = set()
-    bundle_names = set()
-
-    for entry in entries:
-        artifact = catalog.artifacts.get((entry.type, entry.artifact))
-        if action == "update":
-            if artifact is not None and not artifact_visible_for_profiles(
-                artifact, (entry.profile,), profiles
-            ):
-                continue
-
-        if entry.artifact not in seen_names:
-            seen_names.add(entry.artifact)
-            description = artifact.description if artifact is not None else ""
-            out.append(
-                _Choice(
-                    "artifact",
-                    entry.artifact,
-                    entry.type,
-                    _choice_label("artifact", entry.artifact, entry.type, description),
-                    description=description,
-                )
-            )
-        if entry.bundle:
-            bundle_names.add(entry.bundle)
-
-    for bundle_name in sorted(bundle_names):
-        bundle = catalog.bundles.get(bundle_name)
-        description = bundle.description if bundle is not None else ""
-        out.append(
-            _Choice(
-                "bundle",
-                bundle_name,
-                None,
-                _choice_label("bundle", bundle_name, None, description, "installed"),
-                description=description,
-            )
-        )
-    return tuple(out)
-
-
-# --------------------------------------------------------------------------- #
-# Request assembly + dispatch (the single bridge into the command core).        #
-# --------------------------------------------------------------------------- #
 
 
 def _dispatch(request: Request) -> int:
@@ -1627,8 +1265,6 @@ def _finalize_source_selection(
 
 @dataclass(frozen=True, slots=True)
 class _UserWizardReadModel:
-    catalog: Catalog
-    manifest: Optional[Manifest]
     choices: Tuple[_Choice, ...]
     profiles_map: Mapping[str, Profile]
     source_label: str = ""
@@ -1876,8 +1512,6 @@ def _load_user_wizard_read_model(
         )
     return DomainOk(
         _UserWizardReadModel(
-            Catalog(artifacts={}, bundles={}),
-            None,
             choices,
             profiles_map,
             "federated configured marketplace",

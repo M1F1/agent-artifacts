@@ -676,8 +676,6 @@ class CursesWizardFlowTests(unittest.TestCase):
         )
         loaded = Ok(
             tui._UserWizardReadModel(
-                tui.Catalog({}, {}),
-                None,
                 (tui._Choice("artifact", "review", "skill", "review"),),
                 {},
             )
@@ -825,8 +823,6 @@ class CursesWizardFlowTests(unittest.TestCase):
         )
         recovered = Ok(
             tui._UserWizardReadModel(
-                tui.Catalog({}, {}),
-                None,
                 (tui._Choice("artifact", "review", "skill", "review"),),
                 {},
             )
