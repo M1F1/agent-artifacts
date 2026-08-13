@@ -3,6 +3,60 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.0.0 — 2026-08-13
+
+The canonical remediation: one product, one interface, one compiler before every boundary.
+
+Major for the executable, and deliberately so. Nine top-level commands were removed, which is
+exactly the criterion `1.4.0` cited when it argued for a minor. Every registry and artifact
+declaring the conventional `requires_aart` ceiling of `2.0.0` must raise its window to
+`>= 2.0.0, < 3.0.0` before this release will read it. See Compatibility below.
+
+### Removed
+
+- The legacy catalog product: `list`, `install`, `status`, `check`, `update`, `uninstall`, `setup`,
+  `migrate`, and `upstream` at the top level, `registry migrate`, the legacy catalog readers and
+  writers, the legacy plan/merge/execute engine, the legacy install confirmation in the TUI, and
+  the legacy `--source`/`--repo` inputs. The canonical `aart marketplace` family replaces the
+  lifecycle verbs; `migrate` and `upstream` have no replacement.
+- The 0.1 state conversion path. A recognized 0.1 state file is now refused at the boundary with
+  one typed diagnostic naming remove-and-reinstall. `docs/release/migration-v1.md` is retained as
+  released `1.0.0` evidence and marked historical.
+
+### Added
+
+- `SETUP.md` is a valid canonical package-root file, which is what makes the setup v2 migration
+  documented in `1.4.0` actually performable — see Compatibility.
+- Artifact dependencies: a manifest may declare `requires`, the transitive closure is resolved
+  before review, and an unsatisfied dependency fails without mutation.
+- `--memory-mode` on the canonical install verb. The modes were implemented and recorded in state,
+  but the only flag that set them lived on a removed command.
+
+### Changed
+
+- Status, check, update, prune, uninstall, review, and outcome rendering are projections of one
+  snapshot-bound reconciliation plan, so finalization is never reported independently of durable
+  state. A bare `update` reconciles every installation in the requested scope.
+- The published index carries the setup capabilities the recipe declares, so a host missing a
+  required capability is refused before a credential is requested.
+- `registry test --latest-version` and `registry init --minimum-version` default to the running
+  release instead of a literal `1.0.0`.
+
+### Fixed
+
+- A forced memory replace preserves the displaced content as a managed sidecar and restores it on
+  uninstall; a missing sidecar is a typed conflict rather than a silent delete.
+- The semantic digest of an artifact declaring dependencies hashed its last requirement instead of
+  itself.
+- An empty Git checkout is no longer classified as a registry, so a consumer is not routed into
+  maintainer curation.
+
+### Compatibility
+
+`1.4.0` required a package-root `SETUP.md` for setup v2 while its own package validation refused
+any such file, so its documented migration produced a registry `1.4.0` itself rejected. `2.0.0`
+resolves the contradiction; a registry that migrated its recipes requires `2.0.0` or later.
+
 ## 1.4.0 — 2026-08-12
 
 Typed wizard errors, a transparent setup review, and a manual route out of every installer.

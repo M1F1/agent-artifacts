@@ -11,12 +11,20 @@ from typing import Literal
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.json import JsonArray, JsonObject
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _SCOPES = frozenset({"project", "user"})
 _MODES = frozenset({"copy", "symlink"})
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+# A registry initialised today is written in the current dialect, so its floor is the AART
+# that wrote it and its ceiling is the next major.  Literals here go stale on every release
+# and, once the floor reaches the old literal ceiling, make the pair unsatisfiable.
+_DEFAULT_MINIMUM_AART = str(EXECUTABLE_VERSION)
+_DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 
 
 class CurationAction(str, Enum):
@@ -66,8 +74,8 @@ class CurationRequest:
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
-    minimum_version: str = "1.0.0"
-    maximum_version: str = "2.0.0"
+    minimum_version: str = _DEFAULT_MINIMUM_AART
+    maximum_version: str = _DEFAULT_MAXIMUM_AART
 
     def __post_init__(self) -> None:
         if (

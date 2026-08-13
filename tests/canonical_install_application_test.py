@@ -30,6 +30,7 @@ from agent_artifacts.protocol.native_schema import artifact_manifest_to_json
 from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.semver import SemVer, VersionBounds
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.store.model import (
     ObjectPublishCommand,
     ReferenceKind,
@@ -162,7 +163,9 @@ class CanonicalInstallApplicationTest(unittest.TestCase):
             project, paths, location, request, catalog, effective = _fixture(
                 Path(raw),
                 "skill",
-                requires_aart=VersionBounds(min_inclusive=SemVer(2, 0, 0)),
+                requires_aart=VersionBounds(
+                    min_inclusive=SemVer(EXECUTABLE_VERSION.major + 1, 0, 0)
+                ),
             )
 
             planned = prepare_install(
@@ -178,7 +181,10 @@ class CanonicalInstallApplicationTest(unittest.TestCase):
             self.assertIsInstance(planned, Err)
             assert isinstance(planned, Err)
             self.assertEqual(planned.diagnostics[0].code.value, "artifact-incompatible")
-            self.assertIn("requires AART >=2.0.0", planned.diagnostics[0].message)
+            self.assertIn(
+                f"requires AART >={EXECUTABLE_VERSION.major + 1}.0.0",
+                planned.diagnostics[0].message,
+            )
             self.assertIn("may not support behavior", planned.diagnostics[0].message)
             self.assertIn("installation is disabled", planned.diagnostics[0].message)
             self.assertFalse((project / ".claude/skills/review").exists())

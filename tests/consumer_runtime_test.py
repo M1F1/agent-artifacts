@@ -34,12 +34,12 @@ from agent_artifacts.protocol.json import JsonObject
 from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.registry_schema import parse_registry_index
-from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.attestation_schema import attestation_bytes, security_index_bytes
 from agent_artifacts.security.attestations import (
     AssessmentCacheKey,
@@ -114,7 +114,7 @@ def _promoted_registry_snapshot(*, include_owned: bool = True):
             "a" * 40,
             native_snapshot(),
         ),
-        executable_version=SemVer(1, 0, 0),
+        executable_version=EXECUTABLE_VERSION,
         available_capabilities=(Capability("artifact-manifest-v1"),),
     )
     assert isinstance(planned, Ok), planned

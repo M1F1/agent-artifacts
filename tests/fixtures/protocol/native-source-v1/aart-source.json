@@ -5,7 +5,7 @@
   "display_name": "Reference Native Source",
   "requires_aart": {
     "min_inclusive": "1.0.0",
-    "max_exclusive": "2.0.0"
+    "max_exclusive": "3.0.0"
   },
   "required_capabilities": ["artifact-manifest-v1"],
   "artifact_roots": ["artifacts"],

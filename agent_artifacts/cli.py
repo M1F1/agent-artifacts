@@ -24,6 +24,12 @@ from .command_outcome import OK
 from .commands import upgrade
 from .model import Request
 from .outcomes import CommandOutcome
+from .runtime_contract import EXECUTABLE_VERSION
+
+# The conventional ceiling one major above the running release.  Registries and artifacts
+# declare their window against a real executable, so a literal here goes stale on every
+# major and silently produces an unsatisfiable pair.
+_DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 
 
 def _run_registry(request: Request) -> int:
@@ -458,10 +464,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"minimum supported AART version (default: {__version__})",
     )
     p_init.add_argument(
+        # The ceiling is the next major after the running release, not a literal.  A default of
+        # "2.0.0" was correct only while AART was 1.x; on 2.0.0 it collides with the floor above
+        # and every `registry init` is refused as an invalid window.
         "--maximum-version",
-        default="2.0.0",
+        default=_DEFAULT_MAXIMUM_AART,
         metavar="VERSION",
-        help="exclusive maximum AART version (default: 2.0.0)",
+        help=f"exclusive maximum AART version (default: {_DEFAULT_MAXIMUM_AART})",
     )
     _add_registry_finalize(p_init)
     _add_json(p_init)

@@ -36,7 +36,7 @@ from agent_artifacts.io.source_store import (
     release_source_lock,
 )
 from agent_artifacts.protocol.capabilities import parse_capability
-from agent_artifacts.protocol.semver import parse_semver
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.local import read_local_snapshot
 from agent_artifacts.sources.model import SyncFallback
@@ -107,7 +107,7 @@ class _Environment:
             SourceSyncRequest(
                 self.source,
                 self.paths.data_root,
-                _unwrap(parse_semver("1.0.0")),
+                EXECUTABLE_VERSION,
                 (_unwrap(parse_capability("artifact-manifest-v1")),),
                 observed_at_epoch_seconds=100,
                 fallback=SyncFallback.REQUIRE_FRESH,
