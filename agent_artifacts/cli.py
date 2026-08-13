@@ -449,10 +449,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--display-name", required=True, metavar="TEXT", help="human-readable registry name"
     )
     p_init.add_argument(
+        # A registry initialised today cannot honestly claim an older AART can read it: the
+        # scaffolded markers, manifests, and setup recipes are the current dialect.  The floor is
+        # therefore the AART that wrote them, and an author who really supports more says so.
         "--minimum-version",
-        default="1.0.0",
+        default=__version__,
         metavar="VERSION",
-        help="minimum supported AART version (default: 1.0.0)",
+        help=f"minimum supported AART version (default: {__version__})",
     )
     p_init.add_argument(
         "--maximum-version",
@@ -591,10 +594,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="compatibility point to validate (default: all)",
     )
     p_test.add_argument(
+        # The upper compatibility point is the AART doing the publishing, not a version frozen in
+        # the parser: a default that never moves tests a phantom release, so a registry whose floor
+        # sits above it fails as "incompatible" while one below it proves nothing about today.
         "--latest-version",
-        default="1.0.0",
+        default=__version__,
         metavar="VERSION",
-        help="latest compatible AART version under test (default: 1.0.0)",
+        help=f"latest compatible AART version under test (default: {__version__})",
     )
     _add_json(p_test)
 
