@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import time
 
-from agent_artifacts.application.sources import SourceSyncPorts, SourceSyncRequest, sync_source
+from agent_artifacts.application.sources import (
+    SourceDiscardOutcome,
+    SourceDiscardPorts,
+    SourceDiscardRequest,
+    SourceSyncPorts,
+    SourceSyncRequest,
+    discard_source,
+    sync_source,
+)
 from agent_artifacts.configuration.model import ConfiguredSource
 from agent_artifacts.domain.result import Result
 from agent_artifacts.io.source_store import (
     acquire_source_lock,
+    discard_source_store,
+    prune_source_store_root,
     publish_source_snapshot,
     read_current_source,
     release_source_lock,
@@ -45,6 +55,27 @@ def source_sync_ports(source: ConfiguredSource) -> SourceSyncPorts:
         acquire_git_snapshot,
         validate,
         publish_source_snapshot,
+    )
+
+
+def discard_configured_source(
+    source: ConfiguredSource,
+    *,
+    data_root: str,
+    lock_timeout_seconds: float = 30.0,
+    lock_stale_after_seconds: int = 300,
+) -> Result[SourceDiscardOutcome]:
+    """Remove one managed source instance from the local store; touches no configuration."""
+
+    return discard_source(
+        SourceDiscardRequest(source, data_root, lock_timeout_seconds, lock_stale_after_seconds),
+        SourceDiscardPorts(
+            acquire_source_lock,
+            release_source_lock,
+            read_current_source,
+            discard_source_store,
+            prune_source_store_root,
+        ),
     )
 
 
@@ -88,6 +119,7 @@ def sync_configured_source(
 
 __all__ = [
     "DEFAULT_SOURCE_SYNC_TIMEOUT_SECONDS",
+    "discard_configured_source",
     "source_sync_ports",
     "sync_configured_source",
 ]

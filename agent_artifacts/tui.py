@@ -88,6 +88,7 @@ from .setup import (
     render_setup_outcome,
     render_setup_review,
 )
+from .sources.model import SourceSyncOutcome
 from .tui_failures import (
     WizardOperation,
     WizardStageFailure,
@@ -119,13 +120,19 @@ from .tui_marketplace import (
 from .tui_sources import (
     SourceAdditionRequest,
     SourceManagementRequest,
+    SourceRemovalRequest,
     SourceSelection,
+    SourceStageRow,
     SourceStageView,
     build_source_stage,
     plan_source_addition,
     plan_source_management,
+    plan_source_removal,
     render_source_addition_review,
+    render_source_removal_review,
     render_source_row,
+    render_source_sync_outcome,
+    render_source_sync_review,
 )
 from .wizard import (
     BasketItem,
@@ -212,6 +219,8 @@ def _unsupported_source_factory(_request: Request) -> Result:
 
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 SourceAdditionFinalizeFn = Callable[[SourceAdditionRequest], DomainResult[object]]
+SourceRemovalFinalizeFn = Callable[[SourceRemovalRequest], DomainResult[object]]
+SourceSyncRunFn = Callable[[SourceAlias], DomainResult[SourceSyncOutcome]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
 ReportingServiceFactory = Callable[[UserConfiguration], DomainResult[ReportingApplicationService]]
 CurationServiceFactory = Callable[[str], DomainResult[CurationService]]
@@ -224,6 +233,8 @@ class _RuntimeSourceStage:
     view: SourceStageView
     source_finalizer: SourceFinalizeFn | None
     source_addition_finalizer: SourceAdditionFinalizeFn | None
+    source_removal_finalizer: SourceRemovalFinalizeFn | None = None
+    source_sync_runner: SourceSyncRunFn | None = None
 
 
 SourceStageLoader = Callable[[], DomainResult[_RuntimeSourceStage]]
@@ -864,6 +875,7 @@ def _runtime_source_stage_context(
     from .application.source_management import (
         finalize_source_addition,
         finalize_source_management,
+        finalize_source_removal,
     )
     from .application.sources import SourceStatusRequest, source_status
     from .configuration.paths import Platform, resolve_config_paths
@@ -1000,7 +1012,61 @@ def _runtime_source_stage_context(
             ),
         )
 
-    return DomainOk(_RuntimeSourceStage(projected.value, finalize, finalize_addition))
+    def finalize_removal(request: SourceRemovalRequest) -> DomainResult[object]:
+        """Discard the managed snapshot first, then write the shortened configuration once."""
+
+        current = refreshed_configuration(request.before, request.policy)
+        if isinstance(current, DomainErr):
+            return current
+        from .sources.runtime import discard_configured_source
+
+        discarded = discard_configured_source(request.source, data_root=paths.data_root)
+        if isinstance(discarded, DomainErr):
+            return discarded
+        # Discarding takes a lock and touches the disk; refuse a stale write the same way the
+        # addition path does rather than overwriting whatever landed meanwhile.
+        after_discard = refreshed_configuration(request.before, request.policy)
+        if isinstance(after_discard, DomainErr):
+            return after_discard
+        return finalize_source_removal(
+            request,
+            lambda desired, active_policy: save_user_configuration_checked(
+                desired,
+                active_policy,
+                paths,
+                ports,
+                expected_digest=after_discard.value.observed_digest,
+            ),
+        )
+
+    def run_sync(alias: SourceAlias) -> DomainResult[SourceSyncOutcome]:
+        """Refresh one configured origin's snapshot; this never writes user configuration."""
+
+        from .sources.runtime import sync_configured_source
+
+        selected = tuple(source for source in configuration.sources if source.alias == alias)
+        if not selected:
+            return DomainErr(
+                (
+                    Diagnostic(
+                        DiagnosticCode("source-selection-invalid"),
+                        Severity.ERROR,
+                        f"no configured source has alias {alias}",
+                        remediation=("return to Sources and choose a configured source",),
+                    ),
+                )
+            )
+        return sync_configured_source(selected[0], data_root=paths.data_root)
+
+    return DomainOk(
+        _RuntimeSourceStage(
+            projected.value,
+            finalize,
+            finalize_addition,
+            finalize_removal,
+            run_sync,
+        )
+    )
 
 
 def _source_choice_rows(view: SourceStageView) -> Tuple[_Choice, ...]:
@@ -1045,6 +1111,18 @@ def _source_selection_from_indices(
     return planned if isinstance(planned, DomainErr) else planned.value
 
 
+def _selected_source_row(
+    view: SourceStageView,
+    indices: Sequence[int],
+) -> SourceStageRow | None:
+    """Map a Sources cursor position back to a configured row, ignoring the no-source row."""
+
+    for index in indices:
+        if 0 <= index < len(view.rows):
+            return view.rows[index]
+    return None
+
+
 def _domain_feedback(result: DomainErr) -> str:
     """Summarize a recoverable list-local diagnostic in the list's fixed feedback slot."""
 
@@ -1073,6 +1151,11 @@ def _prompt_source_stage_text(
         write("No sources are configured. Enter 'a' to add a registry or compatible source.")
     else:
         write("Enter 'a' to add another registry or compatible source.")
+        write(
+            "Enter 's' to synchronize a configured source, or 'r' to remove one. Synchronizing "
+            "refreshes what is available to install or update; removing forgets the source and "
+            "its downloaded snapshot."
+        )
     if view.unconfigured_recommended:
         write(
             "Organization-recommended aliases needing configuration: "
@@ -1098,10 +1181,15 @@ def _prompt_source_stage_text(
         event = _prompt_wizard_indices(
             read,
             write,
-            "Source(s) (a=add, b=back, q=quit): ",
+            (
+                "Source(s) (a=add, s=sync, r=remove, b=back, q=quit): "
+                if view.rows
+                else "Source(s) (a=add, b=back, q=quit): "
+            ),
             choices,
             selected=selected,
             allow_add=True,
+            allow_source_maintenance=bool(view.rows),
         )
         if event.kind != "confirm":
             return event
@@ -1231,6 +1319,95 @@ def _prompt_source_addition_text(
         if choice in ("y", "yes", "f", "finalize"):
             return planned.value
         write("Source setup was not finalized; no source was synchronized or saved.")
+        return WizardInput("back")
+
+
+def _prompt_source_confirmation(read: ReadFn, prompt: str) -> bool | WizardInput:
+    """Read one reviewed yes/no decision, keeping navigation distinct from a plain refusal."""
+
+    answer = _read_line(read, prompt)
+    choice = "q" if answer is None else answer.strip().lower()
+    if choice in ("b", "back"):
+        return WizardInput("back")
+    if choice in ("q", "quit"):
+        return WizardInput("quit")
+    return choice in ("y", "yes", "f", "finalize")
+
+
+def _prompt_source_row_text(
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    action: str,
+) -> WizardInput | SourceStageRow:
+    """Pick one configured source by the number shown in the Sources list, or by its alias."""
+
+    write(f"Which source do you want to {action}?")
+    for index, row in enumerate(view.rows, start=1):
+        write(f"  {index:>2}. {render_source_row(row)}")
+    while True:
+        answer = _prompt_source_value(read, f"Source to {action} (b=back, q=quit): ")
+        if isinstance(answer, WizardInput):
+            return answer
+        if answer.isdigit() and 1 <= int(answer) <= len(view.rows):
+            return view.rows[int(answer) - 1]
+        matched = tuple(row for row in view.rows if row.source.alias.value == answer)
+        if matched:
+            return matched[0]
+        write(f"Please enter a number between 1 and {len(view.rows)}, an alias, 'b', or 'q'.")
+
+
+def _prompt_source_sync_text(
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardInput | SourceStageRow:
+    """Review one configured origin before its snapshot is fetched again."""
+
+    picked = _prompt_source_row_text(view, read, write, action="synchronize")
+    if isinstance(picked, WizardInput):
+        return picked
+    for line in render_source_sync_review(picked):
+        write(line)
+    confirmed = _prompt_source_confirmation(
+        read,
+        "Synchronize this source now? [y/N] (b=back, q=quit): ",
+    )
+    if isinstance(confirmed, WizardInput):
+        return confirmed
+    if confirmed:
+        return picked
+    write("Source was not synchronized; its snapshot is unchanged.")
+    return WizardInput("back")
+
+
+def _prompt_source_removal_text(
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+) -> WizardInput | SourceRemovalRequest:
+    """Review one unsubscribe before the configuration entry and its snapshot are dropped."""
+
+    while True:
+        picked = _prompt_source_row_text(view, read, write, action="remove")
+        if isinstance(picked, WizardInput):
+            return picked
+        planned = plan_source_removal(view, picked.source.alias)
+        if isinstance(planned, DomainErr):
+            _write_domain_diagnostics(planned, write)
+            continue
+        for line in render_source_removal_review(planned.value):
+            write(line)
+        confirmed = _prompt_source_confirmation(
+            read,
+            "Remove this source and delete its snapshot? [y/N] (b=back, q=quit): ",
+        )
+        if isinstance(confirmed, WizardInput):
+            return confirmed
+        if confirmed:
+            return planned.value
+        write("Source was not removed; nothing was deleted.")
         return WizardInput("back")
 
 
@@ -1376,6 +1553,7 @@ def _prompt_wizard_indices(
     *,
     selected: Sequence[int] = (),
     allow_add: bool = False,
+    allow_source_maintenance: bool = False,
 ) -> WizardInput:
     selected_tuple = tuple(dict.fromkeys(selected))
     while True:
@@ -1390,6 +1568,10 @@ def _prompt_wizard_indices(
             return WizardInput("back")
         if allow_add and low in ("a", "add"):
             return WizardInput("add")
+        if allow_source_maintenance and low in ("s", "sync"):
+            return WizardInput("sync")
+        if allow_source_maintenance and low in ("r", "remove"):
+            return WizardInput("remove")
         if not answer:
             if selected_tuple:
                 return WizardInput("confirm", selected_tuple)
@@ -1902,6 +2084,8 @@ def _run_text(
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
     source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
+    source_removal_finalizer: Optional[SourceRemovalFinalizeFn] = None,
+    source_sync_runner: Optional[SourceSyncRunFn] = None,
     source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
@@ -1920,6 +2104,24 @@ def _run_text(
     session = initial_session()
     buffered_role: Optional[str] = None
     stage_view = source_stage_view or _empty_source_stage_view()
+
+    def reload_stage_view() -> DomainErr | None:
+        """Re-read the source stage after a mutation so later screens never show stale facts."""
+
+        nonlocal stage_view, source_finalizer, source_addition_finalizer
+        nonlocal source_removal_finalizer, source_sync_runner
+        if source_stage_loader is None:
+            return None
+        refreshed = source_stage_loader()
+        if isinstance(refreshed, DomainErr):
+            return refreshed
+        stage_view = refreshed.value.view
+        source_finalizer = refreshed.value.source_finalizer
+        source_addition_finalizer = refreshed.value.source_addition_finalizer
+        source_removal_finalizer = refreshed.value.source_removal_finalizer
+        source_sync_runner = refreshed.value.source_sync_runner
+        return None
+
     while True:
         if session.current == "onboarding":
             for line in onboarding_lines("text"):
@@ -1972,14 +2174,11 @@ def _run_text(
                         _write_domain_diagnostics(finalized_addition, write)
                         write("Source was not saved; choose another source or retry setup.")
                         continue
-                    refreshed = source_stage_loader()
-                    if isinstance(refreshed, DomainErr):
-                        _write_domain_diagnostics(refreshed, write)
+                    stale = reload_stage_view()
+                    if stale is not None:
+                        _write_domain_diagnostics(stale, write)
                         write("Source was saved but the Sources screen could not be refreshed.")
                         continue
-                    stage_view = refreshed.value.view
-                    source_finalizer = refreshed.value.source_finalizer
-                    source_addition_finalizer = refreshed.value.source_addition_finalizer
                     session = replace(
                         session,
                         source_selection=None,
@@ -1988,6 +2187,73 @@ def _run_text(
                     write(
                         f"Sources: synchronized and saved {addition.source.alias}. "
                         "Choose enabled source(s) to continue."
+                    )
+                elif selected_source.kind == "sync":
+                    if source_sync_runner is None or source_stage_loader is None:
+                        write("error: source synchronization is unavailable in this TUI runtime")
+                        continue
+                    picked = _prompt_source_sync_text(stage_view, read, write)
+                    if isinstance(picked, WizardInput):
+                        if picked.kind == "quit" and _confirm_wizard_quit(session, read, write):
+                            return _cancel(write)
+                        continue
+                    synchronized = source_sync_runner(picked.source.alias)
+                    if isinstance(synchronized, DomainErr):
+                        _write_domain_diagnostics(synchronized, write)
+                        write(
+                            f"{picked.source.alias} was not synchronized; "
+                            "its snapshot is unchanged."
+                        )
+                        write("In Sources: s retries, r removes this source, a adds one.")
+                        continue
+                    for line in render_source_sync_outcome(picked.source.alias, synchronized.value):
+                        write(line)
+                    stale = reload_stage_view()
+                    if stale is not None:
+                        _write_domain_diagnostics(stale, write)
+                        write(
+                            "The source was synchronized but the Sources screen could not be "
+                            "refreshed."
+                        )
+                        continue
+                    session = replace(
+                        session,
+                        source_selection=None,
+                        revision=session.revision + 1,
+                    )
+                elif selected_source.kind == "remove":
+                    if source_removal_finalizer is None or source_stage_loader is None:
+                        write("error: source removal is unavailable in this TUI runtime")
+                        continue
+                    removal = _prompt_source_removal_text(stage_view, read, write)
+                    if isinstance(removal, WizardInput):
+                        if removal.kind == "quit" and _confirm_wizard_quit(session, read, write):
+                            return _cancel(write)
+                        continue
+                    finalized_removal = source_removal_finalizer(removal)
+                    if isinstance(finalized_removal, DomainErr):
+                        _write_domain_diagnostics(finalized_removal, write)
+                        write(f"{removal.source.alias} was not removed.")
+                        write("In Sources: r retries the removal, s synchronizes instead.")
+                        continue
+                    cleared = (
+                        "; the default registry was cleared" if removal.cleared_default else ""
+                    )
+                    write(
+                        f"Sources: removed {removal.source.alias} and deleted its "
+                        f"snapshot{cleared}."
+                    )
+                    stale = reload_stage_view()
+                    if stale is not None:
+                        _write_domain_diagnostics(stale, write)
+                        write(
+                            "The source was removed but the Sources screen could not be refreshed."
+                        )
+                        continue
+                    session = replace(
+                        session,
+                        source_selection=None,
+                        revision=session.revision + 1,
                     )
                 elif _confirm_wizard_quit(session, read, write):
                     return _cancel(write)
@@ -2838,6 +3104,7 @@ def _curses_multi_event(
     details: Optional[Sequence[str]] = None,
     disabled: Optional[Sequence[bool]] = None,
     allow_add: bool = False,
+    allow_source_maintenance: bool = False,
     cells: Optional[Sequence[Sequence[str]]] = None,
     pane_for: Optional[Callable[[int, int], Sequence[str]]] = None,
     reasons: Optional[Sequence[str]] = None,
@@ -2855,6 +3122,7 @@ def _curses_multi_event(
             disabled=disabled,
             wizard=True,
             allow_add=allow_add,
+            allow_source_maintenance=allow_source_maintenance,
             initial_checked=selected,
             initial_cursor=cursor,
             initial_scroll=scroll,
@@ -2944,6 +3212,7 @@ def _curses_source_event(
             disabled=tuple(not choice.enabled for choice in choices),
             reasons=tuple(choice.reason for choice in choices),
             allow_add=True,
+            allow_source_maintenance=bool(view.rows),
             notice=notice,
         )
         if event.kind != "confirm":
@@ -3040,25 +3309,44 @@ def _curses_notice(
     stdscr.getch()
 
 
-def _source_addition_diagnostics(result: DomainErr) -> tuple[str, ...]:
-    return tuple(
-        f"{diagnostic.severity.value} [{diagnostic.code.value}]: {diagnostic.message}"
-        for diagnostic in result.diagnostics
-    )
+def _source_flow_diagnostics(result: DomainErr) -> tuple[str, ...]:
+    """Render a refused source operation, remediation included.
+
+    Curses has no scrollback, so a notice that drops remediation leaves the user looking at a
+    refusal with no stated way out — which is the whole failure this stage exists to end. Lines
+    are wrapped rather than ellipsized, because the way out is usually the longest line.
+    """
+
+    lines: tuple[str, ...] = ()
+    for diagnostic in result.diagnostics:
+        lines += tuple(
+            wrap(
+                f"{diagnostic.severity.value} [{diagnostic.code.value}]: {diagnostic.message}",
+                width=CONTENT_MEASURE,
+            )
+        )
+        for remediation in diagnostic.remediation:
+            prefix = "  next: "
+            wrapped = wrap(remediation, width=CONTENT_MEASURE - len(prefix))
+            lines += (prefix + wrapped[0],)
+            lines += tuple(" " * len(prefix) + line for line in wrapped[1:])
+    return lines
 
 
-def _curses_source_addition_review(
+def _curses_source_review(
     curses,
     stdscr,
     session: WizardSession,
-    request: SourceAdditionRequest,
+    review: Sequence[str],
+    *,
+    confirm_label: str,
 ) -> bool | WizardInput:
-    """Confirm the exact source-only effect before network acquisition and config persistence."""
+    """Show one bounded source review and collect the single yes/no decision it asks for."""
 
     required = ("clear", "addstr", "refresh", "getch")
     if not all(hasattr(stdscr, name) for name in required):
         return WizardInput("quit")
-    lines = _curses_header(stdscr, session) + render_source_addition_review(request)
+    lines = _curses_header(stdscr, session) + tuple(review)
     available = max(_width(stdscr) - 1, 1)
     backspace = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
     enter = {getattr(curses, "KEY_ENTER", -1), 10, 13}
@@ -3071,7 +3359,7 @@ def _curses_source_addition_review(
                 _height(stdscr) - 1,
                 0,
                 status_bar(
-                    (("enter", "save"), ("b", "back"), ("q", "quit")),
+                    (("enter", confirm_label), ("b", "back"), ("q", "quit")),
                     width=available,
                 ),
             )
@@ -3083,6 +3371,73 @@ def _curses_source_addition_review(
             return WizardInput("back")
         if key in (ord("q"), 27):
             return WizardInput("quit")
+
+
+def _curses_source_addition_review(
+    curses,
+    stdscr,
+    session: WizardSession,
+    request: SourceAdditionRequest,
+) -> bool | WizardInput:
+    """Confirm the exact source-only effect before network acquisition and config persistence."""
+
+    return _curses_source_review(
+        curses,
+        stdscr,
+        session,
+        render_source_addition_review(request),
+        confirm_label="save",
+    )
+
+
+def _curses_source_sync(
+    curses,
+    stdscr,
+    session: WizardSession,
+    row: SourceStageRow,
+) -> WizardInput | SourceStageRow:
+    """Review one configured origin in curses before its snapshot is fetched again."""
+
+    reviewed = _curses_source_review(
+        curses,
+        stdscr,
+        session,
+        render_source_sync_review(row),
+        confirm_label="sync",
+    )
+    if isinstance(reviewed, WizardInput):
+        return reviewed
+    return row if reviewed else WizardInput("back")
+
+
+def _curses_source_removal(
+    curses,
+    stdscr,
+    session: WizardSession,
+    view: SourceStageView,
+    row: SourceStageRow,
+) -> WizardInput | SourceRemovalRequest:
+    """Plan and review one unsubscribe in curses through the planner the CLI also uses."""
+
+    planned = plan_source_removal(view, row.source.alias)
+    if isinstance(planned, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            "Source removal error",
+            (*_source_flow_diagnostics(planned), "Choose another source or press b."),
+        )
+        return WizardInput("back")
+    reviewed = _curses_source_review(
+        curses,
+        stdscr,
+        session,
+        render_source_removal_review(planned.value),
+        confirm_label="remove",
+    )
+    if isinstance(reviewed, WizardInput):
+        return reviewed
+    return planned.value if reviewed else WizardInput("back")
 
 
 def _curses_source_addition(
@@ -3152,7 +3507,7 @@ def _curses_source_addition(
             stdscr,
             session,
             "Source setup error",
-            (*_source_addition_diagnostics(parsed), "Choose Add to retry."),
+            (*_source_flow_diagnostics(parsed), "Choose Add to retry."),
         )
         return WizardInput("back")
     planned = plan_source_addition(
@@ -3165,7 +3520,7 @@ def _curses_source_addition(
             stdscr,
             session,
             "Source setup error",
-            (*_source_addition_diagnostics(planned), "Choose Add to retry."),
+            (*_source_flow_diagnostics(planned), "Choose Add to retry."),
         )
         return WizardInput("back")
     reviewed = _curses_source_addition_review(curses, stdscr, session, planned.value)
@@ -3652,6 +4007,8 @@ def _run_curses(
     source_stage_view: Optional[SourceStageView] = None,
     source_finalizer: Optional[SourceFinalizeFn] = None,
     source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
+    source_removal_finalizer: Optional[SourceRemovalFinalizeFn] = None,
+    source_sync_runner: Optional[SourceSyncRunFn] = None,
     source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
@@ -3682,7 +4039,32 @@ def _run_curses(
 
     def _ui(stdscr) -> None:
         nonlocal stage_view, source_stage_view, source_finalizer, source_addition_finalizer
+        nonlocal source_removal_finalizer, source_sync_runner
         nonlocal interacted
+
+        def reload_stage() -> DomainErr | None:
+            """Re-read the Sources stage after a mutation, keeping the fallback view in step.
+
+            The text fallback below receives ``source_stage_view``.  Keeping it identical to the
+            live curses value means a later terminal exception cannot make a source that was
+            really added, synchronized, or removed look untouched.
+            """
+
+            nonlocal stage_view, source_stage_view, source_finalizer
+            nonlocal source_addition_finalizer, source_removal_finalizer, source_sync_runner
+            if source_stage_loader is None:
+                return None
+            refreshed = source_stage_loader()
+            if isinstance(refreshed, DomainErr):
+                return refreshed
+            stage_view = refreshed.value.view
+            source_stage_view = stage_view
+            source_finalizer = refreshed.value.source_finalizer
+            source_addition_finalizer = refreshed.value.source_addition_finalizer
+            source_removal_finalizer = refreshed.value.source_removal_finalizer
+            source_sync_runner = refreshed.value.source_sync_runner
+            return None
+
         curses.curs_set(0)
         # Past this point curses is initialised and the screen is ours: any later failure is a
         # defect in the wizard, not a terminal that cannot host it.
@@ -3853,31 +4235,24 @@ def _run_curses(
                         session,
                         "Source setup failed",
                         (
-                            *_source_addition_diagnostics(finalized_addition),
+                            *_source_flow_diagnostics(finalized_addition),
                             "The source was not saved. Choose Add to retry.",
                         ),
                     )
                     continue
                 context.capture(session)
-                refreshed = source_stage_loader()
-                if isinstance(refreshed, DomainErr):
+                stale = reload_stage()
+                if stale is not None:
                     _curses_notice(
                         stdscr,
                         session,
                         "Source setup incomplete",
                         (
-                            *_source_addition_diagnostics(refreshed),
+                            *_source_flow_diagnostics(stale),
                             "The source was saved, but restart aart to reload Sources.",
                         ),
                     )
                     continue
-                stage_view = refreshed.value.view
-                # The text fallback below receives ``source_stage_view``.  Keep it in sync
-                # with the live curses value so a later terminal exception does not make a
-                # successfully saved source look absent (and provoke a duplicate add).
-                source_stage_view = stage_view
-                source_finalizer = refreshed.value.source_finalizer
-                source_addition_finalizer = refreshed.value.source_addition_finalizer
                 session = replace(
                     session,
                     source_selection=None,
@@ -3889,6 +4264,142 @@ def _run_curses(
                     "Source setup complete",
                     (
                         f"Sources: synchronized and saved {addition.source.alias}.",
+                        "Choose enabled source(s) to continue.",
+                    ),
+                )
+                continue
+            if event.kind == "sync":
+                if source_sync_runner is None or source_stage_loader is None:
+                    selection["error"] = (
+                        "source synchronization is unavailable in this TUI runtime",
+                        2,
+                    )
+                    return
+                row = _selected_source_row(stage_view, event.selected)
+                if row is None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Synchronize source",
+                        ("Move the cursor onto a configured source, then press s.",),
+                    )
+                    continue
+                reviewed = _curses_source_sync(curses, stdscr, session, row)
+                if isinstance(reviewed, WizardInput):
+                    if reviewed.kind == "quit":
+                        selection["cancelled"] = True
+                        return
+                    continue
+                if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "Synchronizing and validating the source…")
+                    stdscr.refresh()
+                context.capture(session, "finalize")
+                synchronized = source_sync_runner(row.source.alias)
+                if isinstance(synchronized, DomainErr):
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source sync failed",
+                        (
+                            *_source_flow_diagnostics(synchronized),
+                            f"{row.source.alias} was not synchronized; its snapshot is unchanged.",
+                            "In Sources: s retries, r removes this source, a adds one.",
+                        ),
+                    )
+                    continue
+                context.capture(session)
+                outcome_lines = render_source_sync_outcome(row.source.alias, synchronized.value)
+                stale = reload_stage()
+                if stale is not None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source sync incomplete",
+                        (
+                            *outcome_lines,
+                            *_source_flow_diagnostics(stale),
+                            "Restart aart to reload Sources.",
+                        ),
+                    )
+                    continue
+                session = replace(
+                    session,
+                    source_selection=None,
+                    revision=session.revision + 1,
+                )
+                _curses_notice(
+                    stdscr,
+                    session,
+                    "Source sync complete",
+                    (*outcome_lines, "Choose enabled source(s) to continue."),
+                )
+                continue
+            if event.kind == "remove":
+                if source_removal_finalizer is None or source_stage_loader is None:
+                    selection["error"] = ("source removal is unavailable in this TUI runtime", 2)
+                    return
+                row = _selected_source_row(stage_view, event.selected)
+                if row is None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Remove source",
+                        ("Move the cursor onto a configured source, then press r.",),
+                    )
+                    continue
+                removal = _curses_source_removal(curses, stdscr, session, stage_view, row)
+                if isinstance(removal, WizardInput):
+                    if removal.kind == "quit":
+                        selection["cancelled"] = True
+                        return
+                    continue
+                if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "Removing the source and deleting its snapshot…")
+                    stdscr.refresh()
+                context.capture(session, "finalize")
+                finalized_removal = source_removal_finalizer(removal)
+                if isinstance(finalized_removal, DomainErr):
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source removal failed",
+                        (
+                            *_source_flow_diagnostics(finalized_removal),
+                            f"{removal.source.alias} was not removed.",
+                            "In Sources: r retries the removal, s synchronizes instead.",
+                        ),
+                    )
+                    continue
+                context.capture(session)
+                cleared = ("The default registry was cleared.",) if removal.cleared_default else ()
+                stale = reload_stage()
+                if stale is not None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source removal incomplete",
+                        (
+                            f"Sources: removed {removal.source.alias}.",
+                            *cleared,
+                            *_source_flow_diagnostics(stale),
+                            "Restart aart to reload Sources.",
+                        ),
+                    )
+                    continue
+                session = replace(
+                    session,
+                    source_selection=None,
+                    revision=session.revision + 1,
+                )
+                _curses_notice(
+                    stdscr,
+                    session,
+                    "Source removed",
+                    (
+                        f"Sources: removed {removal.source.alias} and deleted its snapshot.",
+                        *cleared,
                         "Choose enabled source(s) to continue.",
                     ),
                 )
@@ -4176,6 +4687,7 @@ def _curses_multiselect(
     *,
     wizard: bool = False,
     allow_add: bool = False,
+    allow_source_maintenance: bool = False,
     initial_checked: Sequence[int] = (),
     initial_cursor: int = 0,
     initial_scroll: int = 0,
@@ -4203,7 +4715,11 @@ def _curses_multiselect(
             checked[index] = True
     back_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")}
     hints = _list_hints(
-        toggle=True, back=wizard, details=details is not None, add=wizard and allow_add
+        toggle=True,
+        back=wizard,
+        details=details is not None,
+        add=wizard and allow_add,
+        maintain=wizard and allow_source_maintenance,
     )
     selectable = disabled is None or not all(disabled)
     while True:
@@ -4230,6 +4746,11 @@ def _curses_multiselect(
             return WizardInput("back", cursor=cursor, scroll=scroll)
         elif wizard and allow_add and ch in (ord("a"), ord("A")):
             return WizardInput("add", cursor=cursor, scroll=scroll)
+        elif wizard and allow_source_maintenance and ch in (ord("s"), ord("S")):
+            # The cursor row, not the ticked rows: maintenance acts on exactly one source.
+            return WizardInput("sync", (cursor,), cursor=cursor, scroll=scroll)
+        elif wizard and allow_source_maintenance and ch in (ord("r"), ord("R")):
+            return WizardInput("remove", (cursor,), cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(labels)
         elif ch in (curses.KEY_DOWN, ord("j")):
@@ -4359,11 +4880,20 @@ def _refusal(reasons: Optional[Sequence[str]], cursor: int) -> str:
 
 
 def _list_hints(
-    *, toggle: bool, back: bool, details: bool, add: bool
+    *, toggle: bool, back: bool, details: bool, add: bool, maintain: bool = False
 ) -> Tuple[Tuple[str, str], ...]:
     """The canonical hint table filtered down to the keys this screen actually accepts (D2)."""
 
-    enabled = {"space": toggle, "enter": True, "b": back, "?": details, "a": add, "q": True}
+    enabled = {
+        "space": toggle,
+        "enter": True,
+        "b": back,
+        "?": details,
+        "a": add,
+        "s": maintain,
+        "r": maintain,
+        "q": True,
+    }
     return tuple(hint for hint in HINT_ORDER if enabled[hint[0]])
 
 
@@ -4781,6 +5311,8 @@ def run(
     source_stage_view = source_runtime.view
     source_finalizer = source_runtime.source_finalizer
     source_addition_finalizer = source_runtime.source_addition_finalizer
+    source_removal_finalizer = source_runtime.source_removal_finalizer
+    source_sync_runner = source_runtime.source_sync_runner
 
     def reload_source_stage() -> DomainResult[_RuntimeSourceStage]:
         return _runtime_source_stage_context(
@@ -4831,6 +5363,8 @@ def run(
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
             source_addition_finalizer=source_addition_finalizer,
+            source_removal_finalizer=source_removal_finalizer,
+            source_sync_runner=source_sync_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
@@ -4847,6 +5381,8 @@ def run(
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
             source_addition_finalizer=source_addition_finalizer,
+            source_removal_finalizer=source_removal_finalizer,
+            source_sync_runner=source_sync_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
@@ -4863,6 +5399,8 @@ def run(
             source_stage_view=source_stage_view,
             source_finalizer=source_finalizer,
             source_addition_finalizer=source_addition_finalizer,
+            source_removal_finalizer=source_removal_finalizer,
+            source_sync_runner=source_sync_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,

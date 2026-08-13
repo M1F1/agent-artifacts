@@ -235,6 +235,30 @@ def build_parser() -> argparse.ArgumentParser:
     _add_alias(p_source_sync, "synchronize only this alias (default: every enabled source)")
     _add_json(p_source_sync)
 
+    p_source_remove = source_sub.add_parser(
+        "remove",
+        formatter_class=_HELP_FORMATTER,
+        help="forget one configured source and delete its managed snapshot",
+        description=(
+            "End one subscription: drop the configuration entry, clear the default registry if it "
+            "named this alias, and delete the managed snapshot so the origin is free to be added "
+            "again. No installed artifact and no file in any project is touched."
+        ),
+    )
+    p_source_remove.add_argument(
+        "--alias",
+        dest="source_alias",
+        required=True,
+        metavar="ALIAS",
+        help="configured source alias to remove",
+    )
+    p_source_remove.add_argument(
+        "--yes",
+        action="store_true",
+        help="finalize the reviewed removal (without this the command only reviews)",
+    )
+    _add_json(p_source_remove)
+
     p_source_health = source_sub.add_parser(
         "health",
         formatter_class=_HELP_FORMATTER,

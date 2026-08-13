@@ -28,6 +28,7 @@ from agent_artifacts.sources.model import (
     SourceLockRequest,
     SourcePublishCommand,
     SourcePublishReceipt,
+    SourceStorePaths,
     make_source_candidate,
 )
 from agent_artifacts.sources.pointer import (
@@ -245,6 +246,48 @@ def publish_source_snapshot(command: SourcePublishCommand) -> Result[SourcePubli
     finally:
         if stage is not None:
             shutil.rmtree(stage, ignore_errors=True)
+
+
+def discard_source_store(paths: SourceStorePaths) -> Result[bool]:
+    """Delete one managed source instance, leaving no pointer, snapshot, or mirror behind.
+
+    The caller holds this instance's lease, which lives inside the instance root, so the lock
+    directory itself is left for ``release_source_lock``.  Everything that binds an origin to a
+    declared identity is removed first and the pointer goes first of all: a reader that races this
+    call sees "no current snapshot", never a pointer into a deleted tree.
+    """
+
+    root = Path(paths.root)
+    if not _is_real_directory(root):
+        return Ok(False)
+    lock_name = Path(paths.lock_directory).name
+    pointer = Path(paths.current_file)
+    try:
+        existed = pointer.exists()
+        pointer.unlink(missing_ok=True)
+        for entry in sorted(root.iterdir()):
+            if entry.name == lock_name:
+                continue
+            existed = True
+            if entry.is_dir() and not entry.is_symlink():
+                discarded = entry.with_name(f".discarded-{entry.name}-{secrets.token_hex(8)}")
+                os.rename(entry, discarded)
+                shutil.rmtree(discarded)
+            else:
+                entry.unlink()
+        _fsync_directory(root)
+    except OSError as error:
+        return _error(SOURCE_UNAVAILABLE, f"cannot discard managed source snapshot: {error}")
+    return Ok(existed)
+
+
+def prune_source_store_root(paths: SourceStorePaths) -> None:
+    """Remove the emptied instance directory after its lease is released; never fails a command."""
+
+    try:
+        os.rmdir(paths.root)
+    except OSError:
+        return
 
 
 def _owner_alive(hostname: str, pid: int) -> bool:

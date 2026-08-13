@@ -24,6 +24,7 @@ from agent_artifacts.sources.model import (
     SourceLockRequest,
     SourcePublishCommand,
     SourcePublishReceipt,
+    SourceStorePaths,
     SourceSyncOutcome,
     SourceValidationRequest,
     SyncDisposition,
@@ -41,6 +42,8 @@ AcquireLocalPort = Callable[[LocalSnapshotRequest], Result[SourceCandidate]]
 AcquireGitPort = Callable[[GitSnapshotRequest], Result[SourceCandidate]]
 ValidateSourcePort = Callable[[SourceValidationRequest], Result[ValidatedSourceCandidate]]
 PublishSourcePort = Callable[[SourcePublishCommand], Result[SourcePublishReceipt]]
+DiscardSourcePort = Callable[[SourceStorePaths], Result[bool]]
+PruneSourceRootPort = Callable[[SourceStorePaths], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +85,39 @@ class SourceSyncRequest:
             or self.timeout_seconds <= 0
         ):
             raise ValueError("source sync request is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardPorts:
+    acquire_lock: AcquireLockPort
+    release_lock: ReleaseLockPort
+    read_current: ReadCurrentPort
+    discard: DiscardSourcePort
+    prune_root: PruneSourceRootPort
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardRequest:
+    """One managed source instance to remove; carries no configuration decision of its own."""
+
+    source: ConfiguredSource
+    data_root: str
+    lock_timeout_seconds: float = 30.0
+    lock_stale_after_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if not posixpath.isabs(self.data_root) or posixpath.normpath(self.data_root) != (
+            self.data_root
+        ):
+            raise ValueError("source discard request is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardOutcome:
+    """What the discard actually removed, for the command receipt."""
+
+    existed: bool
+    discarded: CurrentSource | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +238,8 @@ def _sync_locked(
         changed_identity = _failure(
             "source-invalid",
             "resolved source changed its declared source identity",
-            "review the configured origin before replacing this source",
+            f"review the origin, then run `aart source remove --alias "
+            f"{request.source.alias.value}` and add it again to subscribe to the new identity",
         )
         return _retained(changed_identity, current, request.fallback)
     published = ports.publish(
@@ -254,6 +291,45 @@ def sync_source(
             return Err((*outcome.diagnostics, *released.diagnostics))
         return released
     return outcome
+
+
+def discard_source(
+    request: SourceDiscardRequest,
+    ports: SourceDiscardPorts,
+) -> Result[SourceDiscardOutcome]:
+    """Serialize discard against synchronization and report what was actually removed.
+
+    Ending a subscription owns the managed store as well as the configuration.  Leaving the store
+    behind would keep the origin bound to its old declared identity, so a later subscription to the
+    same origin would be refused by the identity check with nothing left to name in remediation.
+    """
+
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    lease = ports.acquire_lock(
+        SourceLockRequest(
+            paths.lock_directory,
+            request.lock_timeout_seconds,
+            request.lock_stale_after_seconds,
+        )
+    )
+    if isinstance(lease, Err):
+        return lease
+    current = ports.read_current(CurrentSourceRequest(paths, request.source.alias))
+    discarded = ports.discard(paths)
+    released = ports.release_lock(lease.value)
+    if isinstance(discarded, Err):
+        if isinstance(released, Err):
+            return Err((*discarded.diagnostics, *released.diagnostics))
+        return discarded
+    if isinstance(released, Err):
+        return released
+    ports.prune_root(paths)
+    return Ok(
+        SourceDiscardOutcome(
+            discarded.value,
+            None if isinstance(current, Err) else current.value,
+        )
+    )
 
 
 def source_status(

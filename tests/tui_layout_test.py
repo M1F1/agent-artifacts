@@ -149,7 +149,16 @@ class StatusBarTests(unittest.TestCase):
         self.assertLessEqual(len(bar), 120)
 
     def test_the_row_range_is_the_first_thing_dropped(self):
-        bar = layout.status_bar(self.HINTS, counters=("2 selected", "5-12 of 48"), width=74)
+        counters = ("2 selected", "5-12 of 48")
+        # One column narrower than the narrowest bar that fits both counters, derived rather than
+        # hard-coded so the property survives any change to the hint table.
+        narrowest = min(
+            width
+            for width in range(1, 201)
+            if counters[1] in layout.status_bar(self.HINTS, counters=counters, width=width)
+        )
+
+        bar = layout.status_bar(self.HINTS, counters=counters, width=narrowest - 1)
 
         self.assertNotIn("5-12 of 48", bar)
         self.assertIn("2 selected", bar)

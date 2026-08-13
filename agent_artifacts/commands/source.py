@@ -13,7 +13,10 @@ import time
 
 from agent_artifacts import command_outcome as _common
 from agent_artifacts.application.configuration import save_user_configuration_checked
-from agent_artifacts.application.source_management import finalize_source_addition
+from agent_artifacts.application.source_management import (
+    finalize_source_addition,
+    finalize_source_removal,
+)
 from agent_artifacts.application.sources import SourceStatusRequest, source_status
 from agent_artifacts.configuration.model import (
     ConfiguredSource,
@@ -40,12 +43,18 @@ from agent_artifacts.sources.model import (
     source_instance_id,
     source_store_paths,
 )
-from agent_artifacts.sources.runtime import sync_configured_source
-from agent_artifacts.tui_sources import build_source_stage, plan_source_addition
+from agent_artifacts.sources.runtime import discard_configured_source, sync_configured_source
+from agent_artifacts.tui_sources import (
+    build_source_stage,
+    plan_source_addition,
+    plan_source_removal,
+    render_source_removal_review,
+)
 
 from ._configured_runtime import ConfiguredRuntime, load_runtime_configuration
 
 _SOURCE_OPERATION = "source.add"
+_REMOVE_OPERATION = "source.remove"
 _LIST_OPERATION = "source.list"
 _SYNC_OPERATION = "source.sync"
 _HEALTH_OPERATION = "source.health"
@@ -277,6 +286,105 @@ def _add(request: Request) -> int:
     return _common.OK
 
 
+def _remove(request: Request) -> int:
+    if request.source_alias is None:
+        return _emit_error(
+            request,
+            _REMOVE_OPERATION,
+            _failure("config-invalid", "source remove requires --alias"),
+        )
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, _REMOVE_OPERATION, runtime)
+    if runtime.value.loaded.recovery is not None:
+        return _emit_error(request, _REMOVE_OPERATION, _recovery_error())
+    now = int(time.time())
+    view = build_source_stage(
+        runtime.value.loaded.user_configuration,
+        runtime.value.loaded.effective.policy,
+        _health_by_alias(runtime.value, now=now),
+        first_run=runtime.value.loaded.first_run is not None,
+    )
+    if isinstance(view, Err):
+        return _emit_error(request, _REMOVE_OPERATION, view)
+    try:
+        alias = SourceAlias(request.source_alias)
+    except ValueError:
+        return _emit_error(
+            request,
+            _REMOVE_OPERATION,
+            _failure("config-invalid", "source alias is not a valid slug"),
+        )
+    planned = plan_source_removal(view.value, alias)
+    if isinstance(planned, Err):
+        return _emit_error(request, _REMOVE_OPERATION, planned)
+
+    review = render_source_removal_review(planned.value)
+    if not request.yes:
+        payload = {
+            "schema_version": 1,
+            "ok": True,
+            "operation": _REMOVE_OPERATION,
+            "finalized": False,
+            "review": list(review),
+            "source": {
+                "alias": planned.value.source.alias.value,
+                "kind": planned.value.source.kind.value,
+                "location": redact_text(planned.value.source.location),
+                "ref": planned.value.source.ref,
+                "cleared_default": planned.value.cleared_default,
+            },
+        }
+        if request.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            for line in review:
+                print(line)
+            print("Reviewed only; re-run with --yes to apply this exact removal.")
+        return _common.OK
+
+    # The store goes first: a half-applied removal must leave a repairable subscription, never an
+    # origin that is unsubscribed while its managed snapshot still binds the old identity.
+    discarded = discard_configured_source(
+        planned.value.source, data_root=runtime.value.paths.data_root
+    )
+    if isinstance(discarded, Err):
+        return _emit_error(request, _REMOVE_OPERATION, discarded)
+    finalized = finalize_source_removal(
+        planned.value,
+        lambda desired, policy: save_user_configuration_checked(
+            desired,
+            policy,
+            runtime.value.paths,
+            runtime.value.ports,
+            expected_digest=runtime.value.loaded.observed_digest,
+        ),
+    )
+    if isinstance(finalized, Err):
+        return _emit_error(request, _REMOVE_OPERATION, finalized)
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "operation": _REMOVE_OPERATION,
+        "finalized": True,
+        "source": {
+            "alias": planned.value.source.alias.value,
+            "kind": planned.value.source.kind.value,
+            "location": redact_text(planned.value.source.location),
+            "ref": planned.value.source.ref,
+            "cleared_default": planned.value.cleared_default,
+        },
+        "snapshot_discarded": discarded.value.existed,
+    }
+    if request.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        snapshot = "discarded" if discarded.value.existed else "none stored"
+        default = "; default registry cleared" if planned.value.cleared_default else ""
+        print(f"source removed: {planned.value.source.alias.value}; snapshot {snapshot}{default}")
+    return _common.OK
+
+
 def _list(request: Request) -> int:
     runtime = load_runtime_configuration(request, content_required=False)
     if isinstance(runtime, Err):
@@ -459,6 +567,8 @@ def run(request: Request) -> int:
 
     if request.source_action == "add":
         return _add(request)
+    if request.source_action == "remove":
+        return _remove(request)
     if request.source_action == "list":
         return _list(request)
     if request.source_action == "sync":

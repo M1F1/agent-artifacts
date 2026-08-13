@@ -9,7 +9,12 @@ from unittest.mock import patch
 
 from agent_artifacts.domain.identifiers import SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.io.source_store import publish_source_snapshot, read_current_source
+from agent_artifacts.io.source_store import (
+    discard_source_store,
+    prune_source_store_root,
+    publish_source_snapshot,
+    read_current_source,
+)
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
@@ -273,6 +278,70 @@ class SourceStoreAdapterTest(unittest.TestCase):
             self.assertIsInstance(unreadable, Err)
             assert isinstance(unreadable, Err)
             self.assertNotIn("secret", repr(unreadable.diagnostics))
+
+
+class SourceStoreDiscardTest(unittest.TestCase):
+    """Ending a subscription must leave nothing behind that could bind the origin again."""
+
+    def _published(self, root: str):
+        paths = source_store_paths(root, SourceInstanceId("local-" + "a" * 32))
+        command = SourcePublishCommand(
+            paths,
+            ValidatedSourceCandidate(_candidate(), SourceId("fixture-source")),
+            100,
+        )
+        published = publish_source_snapshot(command)
+        assert isinstance(published, Ok), published
+        return paths
+
+    def test_discard_removes_pointer_and_snapshots_and_reports_that_it_existed(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            paths = self._published(root)
+
+            discarded = discard_source_store(paths)
+
+            self.assertIsInstance(discarded, Ok)
+            assert isinstance(discarded, Ok)
+            self.assertTrue(discarded.value)
+            self.assertFalse(Path(paths.current_file).exists())
+            self.assertFalse(Path(paths.snapshots).exists())
+            loaded = read_current_source(CurrentSourceRequest(paths, SourceAlias("local")))
+            self.assertIsInstance(loaded, Ok)
+            assert isinstance(loaded, Ok)
+            self.assertIsNone(loaded.value)
+
+    def test_discarding_an_absent_store_is_a_success_that_removed_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            paths = source_store_paths(root, SourceInstanceId("local-" + "c" * 32))
+
+            discarded = discard_source_store(paths)
+
+            self.assertIsInstance(discarded, Ok)
+            assert isinstance(discarded, Ok)
+            self.assertFalse(discarded.value)
+
+    def test_discard_keeps_the_lock_directory_it_is_running_under(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            paths = self._published(root)
+            lock = Path(paths.lock_directory)
+            lock.mkdir(parents=True, exist_ok=True)
+
+            discarded = discard_source_store(paths)
+
+            self.assertIsInstance(discarded, Ok)
+            self.assertTrue(lock.is_dir())
+            # The root is still occupied by the live lock, so pruning must decline silently.
+            prune_source_store_root(paths)
+            self.assertTrue(Path(paths.root).is_dir())
+
+    def test_pruning_removes_the_instance_root_once_nothing_is_left(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            paths = self._published(root)
+            self.assertIsInstance(discard_source_store(paths), Ok)
+
+            prune_source_store_root(paths)
+
+            self.assertFalse(Path(paths.root).exists())
 
 
 if __name__ == "__main__":

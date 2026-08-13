@@ -1,7 +1,14 @@
 # Plan: source subscription lifecycle
 
-Status: proposed — implements
+Status: in progress — implements
 [the design](../design/DESIGN-source-subscription-lifecycle.md).
+
+The unsubscribe half has landed: SL-1, SL-2, SL-3, SL-5, and SL-6 are complete for `source remove`,
+and SL-4 is complete for the whole `source` family. Everything still open belongs to
+`source resubscribe` — the adoption values in SL-1, the atomic rebind in SL-2, the subcommand in
+SL-3, the TUI action in SL-6, and SL-7, which cannot close until adoption exists. SL-5 currently
+routes the identity refusal through `remove` plus a fresh `add` rather than through the
+`resubscribe` named in design §6; that text changes when the command exists.
 
 Sequenced by boundary, not by front-end. Every work package ends with stdlib/`unittest` coverage and
 a clean `git diff --check`. Run tests with
