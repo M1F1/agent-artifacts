@@ -6,6 +6,7 @@ import os
 import stat
 import sys
 
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.io.security_analyzers import resolve_executable
@@ -39,8 +40,6 @@ from agent_artifacts.security.tool_adapters import (
     discover_tool_adapters,
 )
 from agent_artifacts.store.model import parse_object_candidate
-
-from agent_artifacts import command_outcome as _common
 
 _MAX_OBJECT_BYTES = 150 * 1024 * 1024
 _MAX_EVIDENCE_BYTES = 16 * 1024 * 1024

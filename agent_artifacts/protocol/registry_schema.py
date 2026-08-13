@@ -21,6 +21,7 @@ from .json import JsonArray, JsonObject, JsonValue, canonical_json_bytes, parse_
 from .native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
+    ArtifactSelector,
     CanonicalArtifactType,
     CollectionManifest,
     CompatibilitySpec,
@@ -28,7 +29,6 @@ from .native_models import (
     InstallMode,
     InstallScope,
     InstallSpec,
-    ArtifactSelector,
 )
 from .native_schema import parse_collection_manifest
 from .paths import parse_relative_path
@@ -896,7 +896,9 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
                 return _error(REGISTRY_INDEX_INVALID, "artifact must not require itself", path=path)
             parsed_requires.append(ArtifactSelector(requirement_identity.value, bounds))
         if len({item.identity for item in parsed_requires}) != len(parsed_requires):
-            return _error(REGISTRY_INDEX_INVALID, "requires contains duplicate selectors", path=path)
+            return _error(
+                REGISTRY_INDEX_INVALID, "requires contains duplicate selectors", path=path
+            )
         requires = tuple(sorted(parsed_requires, key=lambda item: str(item.identity)))
     compatibility_object = _object(
         _field(item, "compatibility"), REGISTRY_INDEX_INVALID, "compatibility", path=path

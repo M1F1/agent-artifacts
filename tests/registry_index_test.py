@@ -61,7 +61,9 @@ def _registry():
     return result.value
 
 
-def _package(name: str, *, requires: list[dict[str, object]] | None = None) -> NativeArtifactPackage:
+def _package(
+    name: str, *, requires: list[dict[str, object]] | None = None
+) -> NativeArtifactPackage:
     document = json.loads(_manifest_json(name))
     if requires is not None:
         document["requires"] = requires

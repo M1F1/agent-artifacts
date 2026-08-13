@@ -19,7 +19,13 @@ from agent_artifacts.model import (
     WriteFile,
     WriteManifest,
 )
-from agent_artifacts.profiles.model import CopyTarget, GuidelineTarget, HookTarget, MergeSpec, Profile
+from agent_artifacts.profiles.model import (
+    CopyTarget,
+    GuidelineTarget,
+    HookTarget,
+    MergeSpec,
+    Profile,
+)
 
 
 # --------------------------------------------------------------------------- #

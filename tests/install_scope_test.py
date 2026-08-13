@@ -7,16 +7,11 @@ verbs; canonical user-scope lifecycle lives in ``canonical_install_planning_test
 
 from __future__ import annotations
 
-import io
 import json
-import os
 import pathlib
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
-from unittest import mock
 
-from agent_artifacts import cli
 from agent_artifacts.model import Request
 from agent_artifacts.profiles.builtin import builtin
 from agent_artifacts.profiles.loader import load_profiles

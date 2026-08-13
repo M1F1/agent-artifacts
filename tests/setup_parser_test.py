@@ -11,7 +11,6 @@ from dataclasses import FrozenInstanceError
 
 from agent_artifacts.model import Err, Ok
 from agent_artifacts.setup import parse_installer
-
 from tests.setup_fixtures import recipe
 
 

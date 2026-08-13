@@ -10,7 +10,6 @@ from agent_artifacts.domain.diagnostics import Diagnostic, Severity, sort_diagno
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
-from agent_artifacts.protocol.native_tree import SourceSnapshot
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.semver import SemVer
 

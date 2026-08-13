@@ -249,6 +249,7 @@ class ResolvedBundle:
 # Profile/harness mapping types live in ``agent_artifacts.profiles.model``; that module is
 # the single definition of the canonical profile data. Nothing may re-declare them here.
 
+
 # --------------------------------------------------------------------------- #
 # Version resolution                                                           #
 # --------------------------------------------------------------------------- #

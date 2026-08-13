@@ -95,9 +95,7 @@ def _dependency_closure(
     turn a direct artifact selection into a partial runtime installation.
     """
 
-    records = {
-        (item.coordinate.source, item.coordinate.artifact): item for item in catalog.items
-    }
+    records = {(item.coordinate.source, item.coordinate.artifact): item for item in catalog.items}
     closure: dict[tuple[object, object], ArtifactCoordinate] = {}
     diagnostics: list[Diagnostic] = []
 
@@ -125,7 +123,9 @@ def _dependency_closure(
                 )
             )
             return
-        if coordinate.version is not None and coordinate.version != str(item.artifact.artifact.version):
+        if coordinate.version is not None and coordinate.version != str(
+            item.artifact.artifact.version
+        ):
             diagnostics.append(
                 Diagnostic(
                     DEPENDENCY_UNAVAILABLE,

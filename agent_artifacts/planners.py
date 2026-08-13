@@ -15,7 +15,6 @@ import os
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
 from . import fp, merge
-from .profiles.model import GuidelineTarget, HookTarget, MemoryTarget, MergeSpec, Profile
 from .hashing import sha256_bytes
 from .model import (
     Action,
@@ -38,6 +37,7 @@ from .model import (
     WriteFile,
     WriteManifest,
 )
+from .profiles.model import GuidelineTarget, HookTarget, MemoryTarget, MergeSpec, Profile
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #

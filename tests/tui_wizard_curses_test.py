@@ -22,7 +22,6 @@ from agent_artifacts.consumer import (
 )
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.outcomes import ActionSummary, CommandOutcome, OutcomeItem
 from agent_artifacts.profiles.builtin import builtin
 from agent_artifacts.tui_failures import WizardStageFailure
 from agent_artifacts.tui_layout import CONTENT_MEASURE, READABLE_MEASURE
@@ -990,6 +989,7 @@ class CursesWizardFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 0)
             self.assertEqual(setup_ran_inside, [False])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -154,7 +154,9 @@ class RegistryInitScaffoldTest(unittest.TestCase):
             ),
         )
         assert isinstance(initialized, Ok)
-        registry = project_registry_workspace_plan(SourceSnapshot(SnapshotOrigin.LOCAL, ()), initialized.value)
+        registry = project_registry_workspace_plan(
+            SourceSnapshot(SnapshotOrigin.LOCAL, ()), initialized.value
+        )
         assert isinstance(registry, Ok)
         planned = plan_artifact_scaffold(
             registry.value,

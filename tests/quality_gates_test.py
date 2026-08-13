@@ -16,7 +16,6 @@ EXPECTED_GATES = (
     "typecheck",
     "unit",
     "integration",
-    "e2e",
     "validate",
     "coverage",
     "packaging-check",

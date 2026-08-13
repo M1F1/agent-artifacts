@@ -255,5 +255,6 @@ class RegistryCliIntegrationTest(unittest.TestCase):
                 self.assertEqual(result["review"]["operation"], "registry.promote-native")
                 self.assertTrue(entry.is_file())
 
+
 if __name__ == "__main__":
     unittest.main()

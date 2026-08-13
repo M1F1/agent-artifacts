@@ -597,5 +597,6 @@ class CurationRuntimeTest(unittest.TestCase):
             self.assertIsInstance(promoted, Err)
             self.assertFalse((root / "entries" / "skill" / "code-review.json").exists())
 
+
 if __name__ == "__main__":
     unittest.main()

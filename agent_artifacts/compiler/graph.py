@@ -392,12 +392,12 @@ def _semantic_json(artifact: IndexArtifact) -> JsonObject:
     if artifact.requires:
         requirements: list[JsonObject] = []
         for selector in artifact.requires:
-            entries: list[tuple[str, JsonValue]] = [
+            selector_entries: list[tuple[str, JsonValue]] = [
                 ("type", selector.identity.kind),
                 ("name", selector.identity.name),
             ]
             if selector.version is not None:
-                entries.append(
+                selector_entries.append(
                     (
                         "version",
                         JsonObject(
@@ -422,7 +422,7 @@ def _semantic_json(artifact: IndexArtifact) -> JsonObject:
                         ),
                     )
                 )
-            requirements.append(JsonObject(tuple(entries)))
+            requirements.append(JsonObject(tuple(selector_entries)))
         entries.append(("requires", JsonArray(tuple(requirements))))
     return JsonObject(tuple(entries))
 

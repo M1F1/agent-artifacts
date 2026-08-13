@@ -7,6 +7,7 @@ import os
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, cast
 
+from .builtin import builtin
 from .model import (
     ArtifactKind,
     CopyTarget,
@@ -17,7 +18,6 @@ from .model import (
     Profile,
     ProfileTargets,
 )
-from .builtin import builtin
 
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
 

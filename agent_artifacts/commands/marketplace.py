@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.consumer.application import ConsumerApplicationService
 from agent_artifacts.consumer.coordinates import CONSUMER_INVALID, parse_artifact_selectors
 from agent_artifacts.consumer.model import (
@@ -55,7 +56,6 @@ from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
 from agent_artifacts.store.model import ObjectReadRequest
 
-from agent_artifacts import command_outcome as _common
 from ._configured_runtime import load_runtime_configuration
 
 _LIST_OPERATION = "marketplace.list"

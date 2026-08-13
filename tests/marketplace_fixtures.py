@@ -24,6 +24,7 @@ from agent_artifacts.domain.identifiers import (
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.marketplace.model import MarketplaceSourceState
 from agent_artifacts.protocol.native_models import (
+    ArtifactSelector,
     CollectionManifest,
     CompatibilitySpec,
     InstallSpec,

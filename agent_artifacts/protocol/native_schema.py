@@ -484,9 +484,7 @@ def parse_artifact_manifest(
             "install",
         }
     )
-    optional = frozenset(
-        {"setup", "authors", "license", "homepage", "requires_aart", "requires"}
-    )
+    optional = frozenset({"setup", "authors", "license", "homepage", "requires_aart", "requires"})
     validated = validate_object_fields(
         document.value,
         required=required,
@@ -562,7 +560,9 @@ def parse_artifact_manifest(
             parsed_requires.append(parsed_selector.value)
         identities = tuple(item.identity for item in parsed_requires)
         if len(set(identities)) != len(identities):
-            return _error(ARTIFACT_INVALID, "requires contains duplicate artifact selectors", path=path)
+            return _error(
+                ARTIFACT_INVALID, "requires contains duplicate artifact selectors", path=path
+            )
         requires = tuple(sorted(parsed_requires, key=lambda item: str(item.identity)))
     setup: SetupReference | None = None
     if "setup" in value.keys():

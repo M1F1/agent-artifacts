@@ -20,8 +20,8 @@ import sys
 from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
-from .commands import upgrade
 from .command_outcome import OK
+from .commands import upgrade
 from .model import Request
 from .outcomes import CommandOutcome
 
@@ -338,8 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
                 choices=("replace", "prepend", "append", "skip"),
                 default=None,
                 help=(
-                    "how a memory artifact meets an existing instruction file "
-                    "(default: prepend)"
+                    "how a memory artifact meets an existing instruction file (default: prepend)"
                 ),
             )
         lifecycle.add_argument(
@@ -532,7 +531,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref", default="main", metavar="REF", help="Git ref to resolve (default: main)"
     )
     p_promote.add_argument(
-        "--path", dest="native_path", required=True, metavar="DIR", help="package path inside the Git snapshot"
+        "--path",
+        dest="native_path",
+        required=True,
+        metavar="DIR",
+        help="package path inside the Git snapshot",
     )
     p_promote.add_argument(
         "--review-policy",

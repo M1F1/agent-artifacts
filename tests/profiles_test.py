@@ -7,6 +7,8 @@ import os
 import tempfile
 import unittest
 
+from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 from agent_artifacts.profiles.model import (
     CopyTarget,
     GuidelineTarget,
@@ -14,8 +16,6 @@ from agent_artifacts.profiles.model import (
     MergeSpec,
     Profile,
 )
-from agent_artifacts.profiles.builtin import builtin
-from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 
 
 class TestBuiltinProfiles(unittest.TestCase):

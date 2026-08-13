@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import Iterable, Mapping
 
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity, SourceLocation
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ArtifactKind, ObjectDigest
+from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.model import Err as SetupErr
 from agent_artifacts.model import Ok as SetupOk
 from agent_artifacts.model import SetupInstaller
 from agent_artifacts.setup import custom_entrypoint_name, has_manual_setup_header, parse_installer
-
-from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity, SourceLocation
-from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest
-from agent_artifacts.domain.result import Err, Ok, Result
 
 from .capabilities import Capability, negotiate_capabilities
 from .codes import (
@@ -154,11 +153,23 @@ def _under(path: str, root: SafeRelativePath) -> tuple[str, ...] | None:
     return tuple(parsed[len(root_parts) :])
 
 
+# A package directory names its kind, and only these five are packageable — ``collection`` is a
+# manifest concept, not a package.  The mapping keeps that closed set in one place and hands the
+# validated literal straight to ``ArtifactIdentity`` instead of re-asserting it downstream.
+_PACKAGE_KINDS: Mapping[str, ArtifactKind] = {
+    "skill": "skill",
+    "guideline": "guideline",
+    "mcp": "mcp",
+    "hook": "hook",
+    "memory": "memory",
+}
+
+
 def _package_candidates(
     entries: dict[str, SnapshotEntry],
     manifest: SourceManifest,
-) -> Result[tuple[tuple[SafeRelativePath, str, str], ...]]:
-    candidates: set[tuple[SafeRelativePath, str, str]] = set()
+) -> Result[tuple[tuple[SafeRelativePath, ArtifactKind, str], ...]]:
+    candidates: set[tuple[SafeRelativePath, ArtifactKind, str]] = set()
     for root in manifest.artifact_roots:
         for path, entry in entries.items():
             relative = _under(path, root)
@@ -173,13 +184,14 @@ def _package_candidates(
                     path,
                 )
             artifact_type, name = relative[:2]
-            if artifact_type not in {"skill", "guideline", "mcp", "hook", "memory"}:
+            kind = _PACKAGE_KINDS.get(artifact_type)
+            if kind is None:
                 return _error(
                     SOURCE_TREE_INVALID,
                     f"unsupported artifact type directory {artifact_type!r}",
                     path,
                 )
-            candidates.add((root, artifact_type, name))
+            candidates.add((root, kind, name))
     if not candidates:
         return _error(SOURCE_TREE_INVALID, "native source contains no canonical artifact packages")
     return Ok(tuple(sorted(candidates, key=lambda item: (str(item[0]), item[1], item[2]))))
@@ -314,7 +326,9 @@ def _validate_setup_package(
     recipe_path = str(manifest.setup.recipe)
     recipe = package_entries.get(recipe_path)
     if recipe is None or recipe.kind is not SnapshotEntryKind.FILE:
-        return _error(ARTIFACT_INVALID, f"declared setup recipe is missing: {recipe_path}", manifest_path)
+        return _error(
+            ARTIFACT_INVALID, f"declared setup recipe is missing: {recipe_path}", manifest_path
+        )
     custom_name = custom_entrypoint_name(recipe.content)
     if isinstance(custom_name, SetupErr):
         return _error(ARTIFACT_INVALID, custom_name.reason, recipe_path)
@@ -403,9 +417,7 @@ def _compile_package_entries(
     package_root = manifest_path.removesuffix("/artifact.json")
     for relative_path in package_entries:
         if relative_path.split("/", 1)[0] not in allowed_roots:
-            location = (
-                relative_path if not package_root else f"{package_root}/{relative_path}"
-            )
+            location = relative_path if not package_root else f"{package_root}/{relative_path}"
             return _error(
                 ARTIFACT_INVALID,
                 f"unexpected canonical package path: {relative_path}",
@@ -471,7 +483,9 @@ def compile_native_package(
         raw_path = str(entry.path)
         parsed_path = parse_relative_path(raw_path)
         if isinstance(parsed_path, Err) or parsed_path.value != entry.path:
-            return _error(ARTIFACT_INVALID, f"package path is not canonical: {raw_path!r}", raw_path)
+            return _error(
+                ARTIFACT_INVALID, f"package path is not canonical: {raw_path!r}", raw_path
+            )
         if raw_path in package_entries:
             return _error(ARTIFACT_INVALID, f"duplicate package path: {raw_path}", raw_path)
         if not isinstance(entry.kind, SnapshotEntryKind):
@@ -497,7 +511,7 @@ def compile_native_package(
 def _load_package(
     entries: dict[str, SnapshotEntry],
     root: SafeRelativePath,
-    expected_type: str,
+    expected_type: ArtifactKind,
     expected_name: str,
 ) -> Result[NativeArtifactPackage]:
     base = f"{root}/{expected_type}/{expected_name}"

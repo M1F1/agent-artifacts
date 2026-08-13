@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-
 from agent_artifacts import tui
-from agent_artifacts.model import Artifact, Catalog, Err, Request, SetupStateRecord
+from agent_artifacts.model import Artifact, Catalog
 from agent_artifacts.profiles.loader import load_profiles
 from agent_artifacts.setup import parse_installer
-from agent_artifacts.tui_layout import CONTENT_MEASURE
 from tests.setup_fixtures import recipe
 
 

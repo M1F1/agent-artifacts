@@ -57,10 +57,10 @@ from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 from .model import (
     NativeReferenceAcquisition,
     NativeReferenceCheck,
+    NativeReferenceDisposition,
     RegistryChangeKind,
     RegistryFileChange,
     RegistryMutationPlan,
-    NativeReferenceDisposition,
     registry_mutation_review_digest,
 )
 

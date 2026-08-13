@@ -10,7 +10,12 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import sha256_bytes
-from agent_artifacts.protocol.json import canonical_json_bytes, parse_json
+from agent_artifacts.protocol.json import (
+    JsonArray,
+    JsonObject,
+    canonical_json_bytes,
+    parse_json,
+)
 from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
@@ -358,15 +363,28 @@ def _payload(
             (
                 f"{base}/mcp.json",
                 canonical_json_bytes(
-                    {
-                        "name": options.name,
-                        "server": {
-                            "command": "echo",
-                            "args": [
-                                f"{options.name} is a scaffold; review its MCP command before use."
-                            ],
-                        },
-                    }
+                    JsonObject(
+                        (
+                            ("name", options.name),
+                            (
+                                "server",
+                                JsonObject(
+                                    (
+                                        ("command", "echo"),
+                                        (
+                                            "args",
+                                            JsonArray(
+                                                (
+                                                    f"{options.name} is a scaffold; review its "
+                                                    "MCP command before use.",
+                                                )
+                                            ),
+                                        ),
+                                    )
+                                ),
+                            ),
+                        )
+                    )
                 ),
                 False,
             ),
@@ -375,18 +393,19 @@ def _payload(
         (
             f"{base}/hook.json",
             canonical_json_bytes(
-                {
-                    "name": options.name,
-                    "command": f"${{SCRIPT_DIR}}/{options.name}.sh",
-                }
+                JsonObject(
+                    (
+                        ("name", options.name),
+                        ("command", f"${{SCRIPT_DIR}}/{options.name}.sh"),
+                    )
+                )
             ),
             False,
         ),
         (
             f"{base}/{options.name}.sh",
             (
-                "#!/bin/sh\n"
-                f"printf '%s\\n' '{options.name} hook scaffold requires author review'\n"
+                f"#!/bin/sh\nprintf '%s\\n' '{options.name} hook scaffold requires author review'\n"
             ).encode(),
             True,
         ),

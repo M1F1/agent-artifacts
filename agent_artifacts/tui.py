@@ -35,12 +35,10 @@ from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 from . import __version__
 from .compatibility import check_profile_compatibility
 from .configuration.model import (
-    ConfiguredSource,
     OrganizationPolicy,
     SourceKind,
     UserConfiguration,
     default_user_configuration,
-    git_location_parts,
 )
 from .configuration.schema import configured_source_from_input
 from .consumer import (
@@ -73,7 +71,6 @@ from .model import (
     InstallMode,
     InstallScope,
     Manifest,
-    ManifestEntry,
     Request,
     Result,
     SetupQueueItem,
@@ -100,7 +97,6 @@ from .setup import (
     render_setup_outcome,
     render_setup_review,
 )
-from .sources.model import HealthStatus, SourceHealth
 from .tui_failures import (
     WizardOperation,
     WizardStageFailure,
@@ -221,6 +217,8 @@ def _unsupported_source_factory(_request: Request) -> Result:
     """Defend the removed direct-catalog seam for private legacy test callers."""
 
     raise RuntimeError("direct catalog sources have been removed")
+
+
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 SourceAdditionFinalizeFn = Callable[[SourceAdditionRequest], DomainResult[object]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
@@ -482,82 +480,7 @@ def build_install_choices(
                 )
             )
 
-    for bundle_name in sorted(catalog.bundles):
-        resolved = resolve_bundle(catalog, bundle_name)
-        if isinstance(resolved, Err):
-            continue
-
-        visible_artifacts: List[Artifact] = []
-        hidden_count = 0
-        for artifact_type, artifact_name in resolved.value.artifacts:
-            bundle_artifact = catalog.artifacts.get((artifact_type, artifact_name))
-            if bundle_artifact is None:
-                continue
-            if artifact_visible_for_profiles(bundle_artifact, profile_names, profiles):
-                visible_artifacts.append(bundle_artifact)
-            else:
-                hidden_count += 1
-
-        visible_count = len(visible_artifacts)
-        if visible_count == 0:
-            continue
-
-        bundle = catalog.bundles[bundle_name]
-        linked_count = 0
-        copied_count = visible_count * len(profile_names)
-        status_parts = []
-        if install_mode == "symlink":
-            linked_count = sum(1 for artifact in visible_artifacts if _linkable(artifact)) * len(
-                profile_names
-            )
-            copied_count = visible_count * len(profile_names) - linked_count
-            status_parts.append(f"{linked_count} linked, {copied_count} copied")
-        if hidden_count:
-            status_parts.append(
-                f"{visible_count} installable, {hidden_count} hidden for selected profile(s)"
-            )
-        status = "; ".join(status_parts)
-        out.append(
-            _Choice(
-                "bundle",
-                bundle_name,
-                None,
-                _choice_label("bundle", bundle_name, None, bundle.description, status),
-                description=bundle.description,
-                hidden_count=hidden_count,
-                complete=hidden_count == 0,
-                linked_count=linked_count,
-                copied_count=copied_count,
-            )
-        )
-
     return tuple(out)
-
-
-def build_action_choices(
-    action: str,
-    catalog: Catalog,
-    manifest: Optional[Manifest],
-    profile_names: Sequence[str],
-    profiles: Mapping[str, Profile],
-    *,
-    install_mode: InstallMode = "copy",
-    scope: InstallScope = "project",
-) -> Tuple[_Choice, ...]:
-    """Build the selectable rows for an action after profile selection."""
-    if action == "install":
-        return build_install_choices(
-            catalog,
-            profile_names,
-            profiles,
-            install_mode=install_mode,
-            scope=scope,
-        )
-    if action in ("update", "uninstall"):
-        if manifest is None:
-            return ()
-        return _build_manifest_choices(action, catalog, manifest, profile_names, profiles)
-    return ()
 
 
 def _selected_install_artifacts(
@@ -574,10 +497,6 @@ def _selected_install_artifacts(
         choice_keys: Sequence[Tuple[ArtifactType, str]] = ()
         if choice.kind == "artifact" and choice.type is not None:
             choice_keys = ((choice.type, choice.name),)
-        elif choice.kind == "bundle":
-            resolved = resolve_bundle(catalog, choice.name)
-            if not isinstance(resolved, Err):
-                choice_keys = resolved.value.artifacts
         for key in choice_keys:
             if key not in seen:
                 seen.add(key)
@@ -774,40 +693,6 @@ def _build_manifest_choices(
 # --------------------------------------------------------------------------- #
 # Request assembly + dispatch (the single bridge into the command core).        #
 # --------------------------------------------------------------------------- #
-def _build_request(
-    action: str,
-    chosen: Sequence[_Choice],
-    profiles: Sequence[str],
-    *,
-    source_dir: Optional[str],
-    repo: Optional[str],
-    project: Optional[str],
-    install_mode: InstallMode = "copy",
-    scope: InstallScope = "project",
-    user_home: Optional[str] = None,
-) -> Request:
-    """Assemble the `Request` for *action* from the picked rows + profiles.
-
-    Bundle rows populate ``Request.bundles``; artifact rows populate ``Request.names``. The
-    selection is left untyped (no ``type_filter``) so a bare name resolves across types via
-    ``_common.resolve_artifacts`` exactly as flag-mode does. ``yes=True`` because the user
-    already confirmed interactively; we never re-prompt at the command layer.
-    """
-    names = tuple(c.name for c in chosen if c.kind == "artifact")
-    bundles = tuple(c.name for c in chosen if c.kind == "bundle")
-    return Request(
-        command=action,
-        names=names,
-        bundles=bundles,
-        profiles=tuple(profiles),
-        source_dir=source_dir,
-        repo=repo,
-        project=project if scope == "project" else None,
-        scope=scope,
-        user_home=user_home,
-        yes=True,
-        install_mode=install_mode,
-    )
 
 
 def _dispatch(request: Request) -> int:
@@ -911,26 +796,6 @@ def _legacy_setup_stage_failure(request: Request, result: Err) -> WizardStageFai
         recoverable=False,
         choices=("quit",),
     )
-
-
-def _write_setup_stage_failure(
-    result: Err,
-    request: Request,
-    write: WriteFn,
-    *,
-    manual: Sequence[SetupQueueItem] = (),
-) -> int:
-    """Report a blocking setup run as one bounded record instead of a loose error line."""
-
-    failure = _legacy_setup_stage_failure(request, result)
-    for line in render_wizard_stage_failure(failure):
-        write(line)
-    for item in manual:
-        # The retained runner discards the records it already completed, so the route is offered
-        # as possibly incomplete work; never claim no effect ran without proof.
-        for line in render_manual_alternative(manual_reference(item), incomplete=True):
-            write(line)
-    return _stage_failure_exit_code(failure)
 
 
 def _run_post_install_setup(
@@ -1315,223 +1180,6 @@ def _cancel(write: WriteFn, message: str = "Cancelled; no changes were made.") -
 # --------------------------------------------------------------------------- #
 # Text / fallback flow — fully injectable, headless-testable.                   #
 # --------------------------------------------------------------------------- #
-def _run_user_text(
-    read: ReadFn = input,
-    write: WriteFn = print,
-    *,
-    source_factory: SourceFactory = _unsupported_source_factory,
-    source_dir: Optional[str] = None,
-    repo: Optional[str] = None,
-    project: Optional[str] = None,
-    user_home: Optional[str] = None,
-) -> int:
-    """Plain prompt-driven selector. Returns a process exit code.
-
-    Drives profile -> action -> filtered artifact/bundle prompts, assembles a `Request`, and
-    dispatches it through the command core. Blank input or ``q`` at any prompt is a clean quit
-    (returns 0 without dispatching). Bad numbers re-prompt rather than crash; EOF on the input
-    stream is treated as a quit.
-
-    Injection points (so the flow is testable with no real terminal):
-
-    * ``read`` / ``write`` — the I/O channels (default ``input`` / ``print``).
-    * ``source_factory`` — retained only for private legacy callers; canonical browsing ignores it.
-      test points this at a fixture-backed source.
-    * ``source_dir`` / ``repo`` / ``project`` — threaded into every `Request` so the catalog
-      shown and the command dispatched resolve against the **same** source (offline-friendly).
-    """
-    base_profiles = load_profiles(project)
-    profile_names = sorted(base_profiles)
-    if not profile_names:  # pragma: no cover - built-ins always present
-        write("No profiles available.")
-        return _cancel(write, "No profiles available; no changes were made.")
-
-    write("Select profile(s):")
-    for i, pname in enumerate(profile_names, start=1):
-        write(f"  {i:>2}. {pname}")
-    prof_choices = tuple(_Choice("profile", p, None, p) for p in profile_names)
-    picked_profiles = _prompt_indices(read, write, "Profile (e.g. 1): ", prof_choices)
-    if not picked_profiles:
-        return _cancel(write)
-    profiles = [profile_names[idx] for idx in picked_profiles]
-
-    install_mode: InstallMode = "copy"
-    scope: InstallScope = "project"
-    profiles_map: Mapping[str, Profile] = base_profiles
-    install_source = None
-    while True:
-        write("Action:")
-        for i, act in enumerate(ACTIONS, start=1):
-            write(f"  {i:>2}. {act}")
-        action = _prompt_action(read, write)
-        if action is None:
-            return _cancel(write)
-
-        selected_scope = _prompt_install_scope(read, write)
-        if selected_scope is None:
-            return _cancel(write)
-        scope = selected_scope
-        resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
-        profiles_map = (
-            base_profiles
-            if scope == "project"
-            else {
-                name: profile_for_scope(profile, scope, resolved_home)
-                for name, profile in base_profiles.items()
-            }
-        )
-        request_project = project if scope == "project" else None
-
-        if action == "status":
-            request = Request(
-                command="status",
-                project=request_project,
-                scope=scope,
-                user_home=user_home,
-            )
-            return _render_result(_dispatch_result(request), write)
-
-        catalog = Catalog(artifacts={}, bundles={})
-        if action in ("install", "update"):
-            base = Request(
-                command=action,
-                source_dir=source_dir,
-                repo=repo,
-                project=request_project,
-                scope=scope,
-                user_home=user_home,
-            )
-            src_res = source_factory(base)
-            if isinstance(src_res, Err):
-                write(f"error: {src_res.reason}")
-                return getattr(src_res, "code", 1)
-            source = src_res.value
-
-            cat_res = source.catalog()
-            if isinstance(cat_res, Err):
-                write(f"error: {cat_res.reason}")
-                return getattr(cat_res, "code", 1)
-            catalog = cat_res.value
-            if action == "update" and source_dir is None and repo is None:
-                write("Source: recorded catalog subscription(s) from the consumer manifest")
-            else:
-                write(f"Source: {source.label()}")
-            if action == "install":
-                selected_mode = _prompt_install_mode(read, write)
-                if selected_mode is None:
-                    return _cancel(write)
-                if selected_mode == "back":
-                    continue
-                install_mode = selected_mode
-                if install_mode == "symlink" and not source.label().startswith("local:"):
-                    write(
-                        "Symlink requires a durable local catalog; the selected source is remote."
-                    )
-                    write(
-                        "Choose a local catalog with flag mode: "
-                        "aart install ... --source DIR --link"
-                    )
-                    return 2
-                install_source = source
-        elif action == "uninstall":
-            # Descriptions improve the manifest-driven uninstall menu when its source is available,
-            # but source/network failure must never make removal unavailable.
-            base = Request(
-                command=action,
-                source_dir=source_dir,
-                repo=repo,
-                project=request_project,
-                scope=scope,
-                user_home=user_home,
-            )
-            src_res = source_factory(base)
-            if not isinstance(src_res, Err):
-                cat_res = src_res.value.catalog()
-                if not isinstance(cat_res, Err):
-                    catalog = cat_res.value
-        break
-
-    manifest: Optional[Manifest] = None
-    if action in ("update", "uninstall"):
-        manifest_res = _load_manifest_for_action(
-            action,
-            source_dir=source_dir,
-            repo=repo,
-            project=project if scope == "project" else None,
-            scope=scope,
-            user_home=user_home,
-        )
-        if isinstance(manifest_res, Err):
-            write(f"error: {manifest_res.reason}")
-            return getattr(manifest_res, "code", 1)
-        manifest = manifest_res.value
-
-    choices = build_action_choices(
-        action,
-        catalog,
-        manifest,
-        profiles,
-        profiles_map,
-        install_mode=install_mode,
-        scope=scope,
-    )
-    if not choices:
-        write(_empty_choices_message(action, profiles))
-        return _render_result(CommandOutcome(0, ActionSummary(action=action)), write)
-
-    write(f"Select artifact(s)/bundle(s) for {_profiles_label(profiles)}:")
-    terminal_width = shutil.get_terminal_size(fallback=(200, 24)).columns
-    for i, c in enumerate(choices, start=1):
-        write(_text_choice_line(i, c, terminal_width))
-    write("Enter ?N to view the full description for item N.")
-
-    picked = _prompt_indices(read, write, "Selection (e.g. 1,3): ", choices)
-    if not picked:
-        return _cancel(write, "No artifacts selected; no changes were made.")
-
-    chosen = [choices[i] for i in picked]
-    request = _build_request(
-        action,
-        chosen,
-        profiles,
-        source_dir=source_dir,
-        repo=repo,
-        project=project,
-        install_mode=install_mode,
-        scope=scope,
-        user_home=user_home,
-    )
-    confirmation: Optional[InstallConfirmation] = None
-    if action == "install":
-        assert install_source is not None
-        confirmation = build_install_confirmation(
-            source_label=install_source.label(),
-            source_root=install_source.root,
-            project=project,
-            profiles=profiles,
-            requested_mode=install_mode,
-            catalog=catalog,
-            choices=chosen,
-            profiles_map=profiles_map,
-            scope=scope,
-            user_home=user_home,
-            source_url=install_source.manual_source_url(),
-        )
-        for line in render_install_confirmation(confirmation):
-            write(line)
-        if not _prompt_install_confirmation(read):
-            return _cancel(write)
-    outcome = _dispatch_result(request)
-    code = _render_result(outcome, write)
-    if code != 0 or confirmation is None:
-        return code
-    return _run_post_install_setup(
-        confirmation.setup_queue,
-        request,
-        scope_root=confirmation.destination_root,
-        read=read,
-        write=write,
-    )
 
 
 def _empty_source_stage_view() -> SourceStageView:
@@ -1715,13 +1363,6 @@ def _runtime_source_stage_context(
         )
 
     return DomainOk(_RuntimeSourceStage(projected.value, finalize, finalize_addition))
-
-
-def _automatic_source_selection(view: SourceStageView) -> SourceSelection:
-    aliases = tuple(row.source.alias for row in view.rows if row.source.enabled)
-    planned = plan_source_management(view, aliases, no_source=not aliases)
-    assert isinstance(planned, DomainOk)
-    return planned.value
 
 
 def _source_choice_rows(view: SourceStageView) -> Tuple[_Choice, ...]:
@@ -2078,83 +1719,6 @@ def _canonical_collection_choices(
             )
         )
     return tuple(choices)
-
-
-def _user_review_lines(
-    session: WizardSession,
-    read_model: Optional[_UserWizardReadModel],
-    *,
-    project: Optional[str],
-    user_home: Optional[str],
-) -> Tuple[str, ...]:
-    """Project complete non-Install Review facts without performing effects."""
-    scope_root = os.path.abspath(
-        user_home or os.path.expanduser("~") if session.scope == "user" else project or "."
-    )
-    lines: Tuple[str, ...] = (
-        "Review action",
-        "  Role: User",
-        f"  Action: {(session.action or 'status').title()}",
-        f"  Harnesses: {_profiles_label(session.profiles)}",
-        f"  Scope: {session.scope.title()} — {scope_root}",
-    )
-    if read_model is not None and read_model.source_label:
-        lines += (f"  Catalog source: {read_model.source_label}",)
-
-    entries: Tuple[ManifestEntry, ...] = ()
-    if read_model is not None and read_model.manifest is not None:
-        selected_artifacts = {
-            item.key.split("/", 1)[1]
-            for item in session.basket
-            if item.kind == "artifact" and "/" in item.key
-        }
-        selected_bundles = {
-            item.key.split("/", 1)[1]
-            for item in session.basket
-            if item.kind == "bundle" and "/" in item.key
-        }
-        entries = tuple(
-            entry
-            for entry in read_model.manifest.installed
-            if entry.profile in session.profiles
-            and (entry.artifact in selected_artifacts or entry.bundle in selected_bundles)
-        )
-        subscriptions = tuple(
-            dict.fromkeys(
-                (
-                    f"{entry.subscription.kind}:{entry.subscription.location}"
-                    + (f"@{entry.subscription.ref}" if entry.subscription.ref else "")
-                )
-                for entry in entries
-                if entry.subscription is not None
-            )
-        )
-        for subscription in subscriptions:
-            lines += (f"  Recorded subscription: {subscription}",)
-
-    lines += (f"  Selected count: {len(session.basket)}",)
-    for item in session.basket:
-        description = f" — {item.description}" if item.description else ""
-        lines += (f"  Selected: {item.label}{description}",)
-
-    destinations: List[str] = []
-    for entry in entries:
-        destinations.extend(entry.files)
-        if entry.merge is not None:
-            destinations.append(entry.merge.file)
-        destinations.extend(link.path for link in entry.install.links)
-    for destination in dict.fromkeys(destinations):
-        resolved = (
-            destination
-            if os.path.isabs(destination)
-            else os.path.abspath(os.path.join(scope_root, destination))
-        )
-        lines += (f"  Resolved destination: {resolved}",)
-    if session.action == "status":
-        lines += ("  Expected mutation: none; Status is read-only.",)
-    else:
-        lines += (f"  Expected mutation: {session.action} only the selected managed artifacts.",)
-    return lines
 
 
 def _write_wizard_header(session: WizardSession, write: WriteFn) -> None:
@@ -2743,8 +2307,13 @@ def _run_text(
                 session = wizard_back(session)
                 continue
             session = wizard_select(session, "role", role)
-            if role == "maintainer" and repo is None and (
-                source_dir is None or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+            if (
+                role == "maintainer"
+                and repo is None
+                and (
+                    source_dir is None
+                    or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+                )
             ):
                 session = use_current_checkout(session)
             session = wizard_advance(session)
@@ -4515,9 +4084,13 @@ def _run_curses(
                     return
                 role = ROLES[event.selected[0]].name
                 session = wizard_select(session, "role", role)
-                if role == "maintainer" and repo is None and (
-                    source_dir is None
-                    or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+                if (
+                    role == "maintainer"
+                    and repo is None
+                    and (
+                        source_dir is None
+                        or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+                    )
                 ):
                     session = use_current_checkout(session)
                 session = wizard_advance(session)
@@ -4619,82 +4192,82 @@ def _run_curses(
             )
             session = remember_position(session, "source", cursor=event.cursor, scroll=event.scroll)
             if event.kind == "back":
-                    session = wizard_back(session)
-                    continue
+                session = wizard_back(session)
+                continue
             if event.kind == "quit":
-                    selection["cancelled"] = True
-                    return
+                selection["cancelled"] = True
+                return
             if event.kind == "add":
-                    if source_addition_finalizer is None or source_stage_loader is None:
-                        selection["error"] = ("source setup is unavailable in this TUI runtime", 2)
-                        return
-                    addition = _curses_source_addition(curses, stdscr, session, stage_view)
-                    if isinstance(addition, WizardInput):
-                        if addition.kind == "quit":
-                            selection["cancelled"] = True
-                            return
-                        continue
-                    if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
-                        stdscr.clear()
-                        stdscr.addstr(0, 0, "Synchronizing and validating the source…")
-                        stdscr.refresh()
-                    context.capture(session, "finalize")
-                    finalized_addition = source_addition_finalizer(addition)
-                    if isinstance(finalized_addition, DomainErr):
-                        _curses_notice(
-                            stdscr,
-                            session,
-                            "Source setup failed",
-                            (
-                                *_source_addition_diagnostics(finalized_addition),
-                                "The source was not saved. Choose Add to retry.",
-                            ),
-                        )
-                        continue
-                    context.capture(session)
-                    refreshed = source_stage_loader()
-                    if isinstance(refreshed, DomainErr):
-                        _curses_notice(
-                            stdscr,
-                            session,
-                            "Source setup incomplete",
-                            (
-                                *_source_addition_diagnostics(refreshed),
-                                "The source was saved, but restart aart to reload Sources.",
-                            ),
-                        )
-                        continue
-                    stage_view = refreshed.value.view
-                    # The text fallback below receives ``source_stage_view``.  Keep it in sync
-                    # with the live curses value so a later terminal exception does not make a
-                    # successfully saved source look absent (and provoke a duplicate add).
-                    source_stage_view = stage_view
-                    source_finalizer = refreshed.value.source_finalizer
-                    source_addition_finalizer = refreshed.value.source_addition_finalizer
-                    session = replace(
-                        session,
-                        source_selection=None,
-                        revision=session.revision + 1,
-                    )
-                    _curses_notice(
-                        stdscr,
-                        session,
-                        "Source setup complete",
-                        (
-                            f"Sources: synchronized and saved {addition.source.alias}.",
-                            "Choose enabled source(s) to continue.",
-                        ),
-                    )
-                    continue
-            if source_error is not None:
-                    failure = _source_stage_failure(session, source_error)
-                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
-                    if recovery.kind == "back":
-                        continue
-                    if _curses_confirm_discard(curses, stdscr, session):
+                if source_addition_finalizer is None or source_stage_loader is None:
+                    selection["error"] = ("source setup is unavailable in this TUI runtime", 2)
+                    return
+                addition = _curses_source_addition(curses, stdscr, session, stage_view)
+                if isinstance(addition, WizardInput):
+                    if addition.kind == "quit":
                         selection["cancelled"] = True
                         return
                     continue
+                if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "Synchronizing and validating the source…")
+                    stdscr.refresh()
+                context.capture(session, "finalize")
+                finalized_addition = source_addition_finalizer(addition)
+                if isinstance(finalized_addition, DomainErr):
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source setup failed",
+                        (
+                            *_source_addition_diagnostics(finalized_addition),
+                            "The source was not saved. Choose Add to retry.",
+                        ),
+                    )
+                    continue
+                context.capture(session)
+                refreshed = source_stage_loader()
+                if isinstance(refreshed, DomainErr):
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source setup incomplete",
+                        (
+                            *_source_addition_diagnostics(refreshed),
+                            "The source was saved, but restart aart to reload Sources.",
+                        ),
+                    )
+                    continue
+                stage_view = refreshed.value.view
+                # The text fallback below receives ``source_stage_view``.  Keep it in sync
+                # with the live curses value so a later terminal exception does not make a
+                # successfully saved source look absent (and provoke a duplicate add).
+                source_stage_view = stage_view
+                source_finalizer = refreshed.value.source_finalizer
+                source_addition_finalizer = refreshed.value.source_addition_finalizer
+                session = replace(
+                    session,
+                    source_selection=None,
+                    revision=session.revision + 1,
+                )
+                _curses_notice(
+                    stdscr,
+                    session,
+                    "Source setup complete",
+                    (
+                        f"Sources: synchronized and saved {addition.source.alias}.",
+                        "Choose enabled source(s) to continue.",
+                    ),
+                )
+                continue
+            if source_error is not None:
+                failure = _source_stage_failure(session, source_error)
+                recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                if recovery.kind == "back":
+                    continue
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return
+                continue
             assert maybe_selected_source is not None
             selected_source_value = maybe_selected_source
             session = wizard_select(session, "source", selected_source_value)
@@ -5405,54 +4978,6 @@ def _curses_install_mode(
                 if wizard
                 else INSTALL_MODE_CHOICES[cursor].mode
             )
-
-
-def _curses_confirm_install(
-    curses,
-    stdscr,
-    confirmation: InstallConfirmation,
-    *,
-    header: Sequence[str] = (),
-):
-    """Render shared confirmation facts and return true only on explicit confirmation."""
-
-    available = max(_width(stdscr) - 1, 0)
-    lines = tuple(header) + render_install_confirmation(confirmation, width=available)
-    height = _height(stdscr)
-    body_height = max(height - 1, 1)
-    max_offset = max(len(lines) - body_height, 0)
-    offset = 0
-    while True:
-        stdscr.clear()
-        for row, line in enumerate(lines[offset : offset + body_height]):
-            stdscr.addstr(row, 0, _ellipsize(line, available))
-        if height > 0:
-            stdscr.addstr(
-                height - 1,
-                0,
-                status_bar(
-                    (("enter", "finalize"), ("b", "back"), ("q", "cancel")),
-                    width=available,
-                ),
-            )
-        stdscr.refresh()
-        ch = stdscr.getch()
-        if ch in (curses.KEY_ENTER, 10, 13, ord("y"), ord("Y")):
-            return True
-        if ch in (getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")):
-            return "back"
-        if ch in (ord("q"), 27):
-            return "quit"
-        if ch in (ord("n"), ord("N")):
-            return False
-        if ch in (curses.KEY_DOWN, ord("j")) and offset < max_offset:
-            offset += 1
-        elif ch in (curses.KEY_UP, ord("k")) and offset > 0:
-            offset -= 1
-        elif ch == getattr(curses, "KEY_NPAGE", -1) and offset < max_offset:
-            offset = min(offset + body_height, max_offset)
-        elif ch == getattr(curses, "KEY_PPAGE", -1) and offset > 0:
-            offset = max(offset - body_height, 0)
 
 
 def _ellipsize(text: str, width: int) -> str:

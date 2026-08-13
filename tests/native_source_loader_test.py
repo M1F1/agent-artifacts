@@ -248,7 +248,9 @@ class NativeSourceLoaderTest(unittest.TestCase):
         )
         entries = _replaced(entries, review_path, _json_entry(review_path, review))
         source = _unwrap(_load(entries))
-        review_package = next(item for item in source.artifacts if item.manifest.identity.name == "review")
+        review_package = next(
+            item for item in source.artifacts if item.manifest.identity.name == "review"
+        )
         self.assertEqual(str(review_package.manifest.requires[0].identity), "guideline/python")
 
         missing = _artifact_document(
@@ -409,9 +411,7 @@ class NativeSourceLoaderTest(unittest.TestCase):
                 _setup_recipe("mcp/postgres"),
             ),
         )
-        setup_entries.append(
-            _entry("artifacts/mcp/postgres/SETUP.md", b"Manual fixture setup.\n")
-        )
+        setup_entries.append(_entry("artifacts/mcp/postgres/SETUP.md", b"Manual fixture setup.\n"))
         self.assertEqual(len(_unwrap(_load(setup_entries)).artifacts), 5)
 
         root_manual_without_setup = _five_package_entries() + [

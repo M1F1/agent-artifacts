@@ -354,7 +354,9 @@ class ArtifactManifestTest(unittest.TestCase):
         manifest = _unwrap(parse_artifact_manifest(json.dumps(document)))
         self.assertEqual(str(manifest.requires[0].identity), "skill/using-residues")
         self.assertEqual(
-            _unwrap(parse_artifact_manifest(canonical_json_bytes(artifact_manifest_to_json(manifest)))),
+            _unwrap(
+                parse_artifact_manifest(canonical_json_bytes(artifact_manifest_to_json(manifest)))
+            ),
             manifest,
         )
 

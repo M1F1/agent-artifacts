@@ -3,12 +3,12 @@
 from .model import (
     NativeReferenceAcquisition,
     NativeReferenceCheck,
+    NativeReferenceDisposition,
     RegistryApplyCommand,
     RegistryApplyReceipt,
     RegistryChangeKind,
     RegistryFileChange,
     RegistryMutationPlan,
-    NativeReferenceDisposition,
 )
 from .planning import (
     check_native_reference,

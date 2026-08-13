@@ -13,7 +13,7 @@ from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import EffectiveConfiguration
 from agent_artifacts.configuration.schema import organization_policy_bytes
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ArtifactCoordinate, ObjectDigest
+from agent_artifacts.domain.identifiers import ArtifactCoordinate
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.install_state.model import (
     ArtifactEvidence,
@@ -199,7 +199,9 @@ def _validate_object_evidence(stored: StoredObject, indexed) -> Result[None]:
     )
     if isinstance(compiled, Err):
         detail = compiled.diagnostics[0].message if compiled.diagnostics else "invalid package"
-        return _error(INSTALL_OBJECT_EVIDENCE_INVALID, f"canonical object package is invalid: {detail}")
+        return _error(
+            INSTALL_OBJECT_EVIDENCE_INVALID, f"canonical object package is invalid: {detail}"
+        )
     package = compiled.value
     manifest = package.manifest
     setup_matches = (manifest.setup is None) == (indexed.setup is None)
@@ -377,8 +379,8 @@ def _native_actions(
         descriptor = _strict_mapping(primary.value[1], path=primary.value[0])
         if isinstance(descriptor, Err):
             return descriptor
-        target = snapshots[profile.mcp.file]
-        existing = _existing_mapping(target)
+        destination_snapshot = snapshots[profile.mcp.file]
+        existing = _existing_mapping(destination_snapshot)
         if isinstance(existing, Err):
             return existing
         name = descriptor.value.get("name", request.identity.name)
@@ -404,8 +406,8 @@ def _native_actions(
         descriptor = _strict_mapping(primary.value[1], path=primary.value[0])
         if isinstance(descriptor, Err):
             return descriptor
-        target = snapshots[profile.hooks.merge.file]
-        existing = _existing_mapping(target)
+        destination_snapshot = snapshots[profile.hooks.merge.file]
+        existing = _existing_mapping(destination_snapshot)
         if isinstance(existing, Err):
             return existing
         values = dict(descriptor.value)
@@ -455,11 +457,15 @@ def _native_actions(
             return _error(INSTALL_CONFLICT, "existing memory destination is not UTF-8")
         if profile.memory.kind == "dir":
             if request.memory_mode == "skip" and snapshot.kind != "absent":
-                return _error(INSTALL_INVALID, "memory install was skipped and has no managed effect")
+                return _error(
+                    INSTALL_INVALID, "memory install was skipped and has no managed effect"
+                )
             return Ok((_WritePayload(target_path, text.encode("utf-8")),))
         if request.memory_mode == "skip":
             if snapshot.kind != "absent":
-                return _error(INSTALL_INVALID, "memory install was skipped and has no managed effect")
+                return _error(
+                    INSTALL_INVALID, "memory install was skipped and has no managed effect"
+                )
             return Ok((_WritePayload(target_path, text.encode("utf-8")),))
         if request.memory_mode == "replace":
             if bool((existing_text or "").strip()) and not request.force:

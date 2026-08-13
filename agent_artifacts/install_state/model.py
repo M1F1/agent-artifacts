@@ -17,7 +17,7 @@ from agent_artifacts.domain.identifiers import (
 )
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.model import MemoryMode
-from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
+from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.json import JsonValue
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.semver import SemVer

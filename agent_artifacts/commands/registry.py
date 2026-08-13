@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.curation.model import (
     CurationAction,
     CurationOutcome,
@@ -33,8 +35,6 @@ from agent_artifacts.registry_commands.planning import (
     validate_registry_workspace,
 )
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
-
-from agent_artifacts import command_outcome as _common
 
 _VERSION = EXECUTABLE_VERSION
 _CAPABILITIES = EXECUTABLE_CAPABILITIES
@@ -89,9 +89,7 @@ def _curation_review_data(review: CurationReview) -> dict[str, object]:
         "mutating": review.mutating,
         "review_digest": str(review.review_digest),
         "snapshot_digest": str(review.snapshot_digest),
-        "changes": [
-            {"path": item.path, "status": item.status} for item in review.changes
-        ],
+        "changes": [{"path": item.path, "status": item.status} for item in review.changes],
         "checks": [
             {"name": item.name, "passed": item.passed, "details": list(item.details)}
             for item in review.checks
@@ -246,6 +244,8 @@ def _emit_report(request: Request, action: str, report: RegistryQualityReport) -
 
 def _snapshot(workspace: FilesystemRegistryWorkspace) -> Result[SourceSnapshot]:
     return workspace.snapshot()
+
+
 def _run_validate(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
     current = _snapshot(workspace)
     if isinstance(current, Err):

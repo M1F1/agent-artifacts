@@ -19,7 +19,6 @@ QUALITY_GATES = (
     "typecheck",
     "unit",
     "integration",
-    "e2e",
     "validate",
     "coverage",
     "packaging-check",
@@ -77,11 +76,13 @@ def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ..
             "unit",
             ((python, "-m", "unittest", "discover", "-s", "tests", "-p", "*_test.py"),),
         ),
+        # The end-to-end gate: every ``*e2e_test.py`` drives the real CLI over real trees.  It
+        # replaced a shell script that drove the retired legacy commands and had no canonical
+        # subject left once those were removed.
         Gate(
             "integration",
             ((python, "-m", "unittest", "discover", "-s", "tests", "-p", "*e2e_test.py"),),
         ),
-        Gate("e2e", (("bash", "tests/e2e_test.sh"),)),
         Gate(
             "validate",
             ((python, "scripts/validate.py"), (python, "scripts/version.py", "check")),

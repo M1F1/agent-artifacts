@@ -53,7 +53,12 @@ from agent_artifacts.protocol.native_tree import (
     compile_native_package,
 )
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
-from agent_artifacts.setup import manual_reference, parse_setup_state, plan_setup, receipt_matches_plan
+from agent_artifacts.setup import (
+    manual_reference,
+    parse_setup_state,
+    plan_setup,
+    receipt_matches_plan,
+)
 from agent_artifacts.setup import (
     redact_text as redact_setup,
 )

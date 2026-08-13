@@ -451,9 +451,7 @@ def reconcile_installations(
     for item in local.value.items:
         remote = remote_by_key[item.key]
         if item.status is LifecycleStatus.CURRENT:
-            items.append(
-                LifecycleItem(item.key, remote.status, item.effects, detail=remote.detail)
-            )
+            items.append(LifecycleItem(item.key, remote.status, item.effects, detail=remote.detail))
         else:
             detail = item.detail
             if remote.status is not LifecycleStatus.CURRENT:

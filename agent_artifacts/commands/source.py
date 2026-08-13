@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.application.configuration import save_user_configuration_checked
 from agent_artifacts.application.source_management import finalize_source_addition
 from agent_artifacts.application.sources import SourceStatusRequest, source_status
@@ -42,7 +43,6 @@ from agent_artifacts.sources.model import (
 from agent_artifacts.sources.runtime import sync_configured_source
 from agent_artifacts.tui_sources import build_source_stage, plan_source_addition
 
-from agent_artifacts import command_outcome as _common
 from ._configured_runtime import ConfiguredRuntime, load_runtime_configuration
 
 _SOURCE_OPERATION = "source.add"
