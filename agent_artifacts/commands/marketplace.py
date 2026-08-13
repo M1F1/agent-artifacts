@@ -1,8 +1,6 @@
 """Agent CLI surface for the configured canonical marketplace.
 
-The legacy ``list``/``install``/``update`` commands remain bounded 0.1 compatibility commands.
-This module exposes the configured-source marketplace and its canonical lifecycle without
-silently changing that legacy contract.
+This module exposes the configured-source marketplace and its canonical lifecycle.
 
 Two properties are load-bearing for automation safety and are asserted by the tests:
 
@@ -255,6 +253,8 @@ def _health(request: Request) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
+        refresh_sources=True,
+        offline=request.offline,
     )
     if isinstance(service, Err):
         return _emit_error(request, service, _HEALTH_OPERATION)

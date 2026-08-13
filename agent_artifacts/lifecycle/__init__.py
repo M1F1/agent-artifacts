@@ -6,6 +6,7 @@ from .application import (
     finalize_update,
     prepare_uninstall,
     prepare_update,
+    reconcile_installations,
     status_installations,
 )
 from .io import LocalLifecycleAdapter
@@ -37,5 +38,6 @@ __all__ = [
     "finalize_update",
     "prepare_uninstall",
     "prepare_update",
+    "reconcile_installations",
     "status_installations",
 ]

@@ -426,6 +426,43 @@ def check_installations(
     return LifecycleOutcome("check", len(items), tuple(items))
 
 
+def reconcile_installations(
+    state: InstallState,
+    selection: LifecycleSelection,
+    catalog: MarketplaceCatalog,
+    effective: EffectiveConfiguration,
+    location: InstallLocation,
+    ports: LifecycleReadPorts,
+) -> Result[LifecycleOutcome]:
+    """Report one current answer for both installed bytes and their recorded origin.
+
+    A local installation can be byte-for-byte current while its subscribed source has moved or
+    withdrawn the artifact.  ``status`` therefore combines the local inspection with the
+    already-refreshed marketplace snapshot; local damage remains the primary status because it
+    needs intervention even when no update exists.
+    """
+
+    local = status_installations(state, selection, location, ports)
+    if isinstance(local, Err):
+        return local
+    upstream = check_installations(state, selection, catalog, effective)
+    remote_by_key = {item.key: item for item in upstream.items}
+    items = []
+    for item in local.value.items:
+        remote = remote_by_key[item.key]
+        if item.status is LifecycleStatus.CURRENT:
+            items.append(
+                LifecycleItem(item.key, remote.status, item.effects, detail=remote.detail)
+            )
+        else:
+            detail = item.detail
+            if remote.status is not LifecycleStatus.CURRENT:
+                suffix = remote.detail or remote.status.value
+                detail = f"{detail}; upstream {suffix}" if detail else f"upstream {suffix}"
+            items.append(LifecycleItem(item.key, item.status, item.effects, detail=detail))
+    return Ok(LifecycleOutcome("status", len(items), tuple(items)))
+
+
 def _strip_managed_block(record: InstallationRecord, content: bytes) -> bytes | None:
     try:
         text = content.decode("utf-8", errors="strict")

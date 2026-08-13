@@ -73,7 +73,7 @@ class ConsumerActionRequest:
             or not isinstance(self.offline, bool)
             or not isinstance(self.prune, bool)
             or (self.action == "install" and any(item.version is None for item in coordinates))
-            or (self.action in {"install", "update", "uninstall"} and not coordinates)
+            or (self.action in {"install", "uninstall"} and not coordinates)
         ):
             raise ValueError("consumer action request is invalid")
 
