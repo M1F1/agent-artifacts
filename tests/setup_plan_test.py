@@ -12,7 +12,7 @@ from agent_artifacts.setup import (
     plan_setup,
     render_setup_review,
 )
-from tests.setup_catalog_test import recipe
+from tests.setup_fixtures import recipe
 
 
 def installer():

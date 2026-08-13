@@ -16,7 +16,7 @@ from agent_artifacts.setup import (
     render_setup_review,
 )
 from agent_artifacts.tui_layout import CONTENT_MEASURE
-from tests.setup_catalog_test import recipe
+from tests.setup_fixtures import recipe
 
 
 def installer(**changes: object):

@@ -15,7 +15,7 @@ from agent_artifacts.setup_runtime import (
     apply_setup_plan,
     rollback_record,
 )
-from tests.setup_catalog_test import recipe
+from tests.setup_fixtures import recipe
 
 
 def plan_for(raw: bytes, home: str):

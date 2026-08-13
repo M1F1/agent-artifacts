@@ -10,7 +10,7 @@ import unittest
 from agent_artifacts.model import SetupQueueItem
 from agent_artifacts.setup import parse_installer, plan_setup
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
-from tests.setup_catalog_test import recipe
+from tests.setup_fixtures import recipe
 
 
 class FakeCustomProcess:
