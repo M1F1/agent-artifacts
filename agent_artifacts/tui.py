@@ -33,6 +33,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from . import __version__
+from .application.sources import SourceAdoptionOutcome
 from .configuration.model import (
     OrganizationPolicy,
     SourceKind,
@@ -88,7 +89,7 @@ from .setup import (
     render_setup_outcome,
     render_setup_review,
 )
-from .sources.model import SourceSyncOutcome
+from .sources.model import SourceIdentityTransition, SourceSyncOutcome
 from .tui_failures import (
     WizardOperation,
     WizardStageFailure,
@@ -121,6 +122,7 @@ from .tui_sources import (
     SourceAdditionRequest,
     SourceManagementRequest,
     SourceRemovalRequest,
+    SourceResubscriptionRequest,
     SourceSelection,
     SourceStageRow,
     SourceStageView,
@@ -128,8 +130,10 @@ from .tui_sources import (
     plan_source_addition,
     plan_source_management,
     plan_source_removal,
+    plan_source_resubscription,
     render_source_addition_review,
     render_source_removal_review,
+    render_source_resubscription_review,
     render_source_row,
     render_source_sync_outcome,
     render_source_sync_review,
@@ -221,6 +225,11 @@ SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 SourceAdditionFinalizeFn = Callable[[SourceAdditionRequest], DomainResult[object]]
 SourceRemovalFinalizeFn = Callable[[SourceRemovalRequest], DomainResult[object]]
 SourceSyncRunFn = Callable[[SourceAlias], DomainResult[SourceSyncOutcome]]
+# Review and finalize are one function with one optional argument: passing the reviewed transition
+# is what turns a review into an adoption, so a front-end cannot finalize something it never showed.
+SourceResubscribeRunFn = Callable[
+    [SourceAlias, SourceIdentityTransition | None], DomainResult[SourceAdoptionOutcome]
+]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
 ReportingServiceFactory = Callable[[UserConfiguration], DomainResult[ReportingApplicationService]]
 CurationServiceFactory = Callable[[str], DomainResult[CurationService]]
@@ -235,6 +244,7 @@ class _RuntimeSourceStage:
     source_addition_finalizer: SourceAdditionFinalizeFn | None
     source_removal_finalizer: SourceRemovalFinalizeFn | None = None
     source_sync_runner: SourceSyncRunFn | None = None
+    source_resubscribe_runner: SourceResubscribeRunFn | None = None
 
 
 SourceStageLoader = Callable[[], DomainResult[_RuntimeSourceStage]]
@@ -1058,6 +1068,30 @@ def _runtime_source_stage_context(
             )
         return sync_configured_source(selected[0], data_root=paths.data_root)
 
+    def run_resubscribe(
+        alias: SourceAlias,
+        expected: SourceIdentityTransition | None,
+    ) -> DomainResult[SourceAdoptionOutcome]:
+        """Review or adopt one identity change; this never writes user configuration."""
+
+        from .sources.runtime import resubscribe_configured_source
+
+        selected = tuple(source for source in configuration.sources if source.alias == alias)
+        if not selected:
+            return DomainErr(
+                (
+                    Diagnostic(
+                        DiagnosticCode("source-selection-invalid"),
+                        Severity.ERROR,
+                        f"no configured source has alias {alias}",
+                        remediation=("return to Sources and choose a configured source",),
+                    ),
+                )
+            )
+        return resubscribe_configured_source(
+            selected[0], data_root=paths.data_root, expected=expected
+        )
+
     return DomainOk(
         _RuntimeSourceStage(
             projected.value,
@@ -1065,6 +1099,7 @@ def _runtime_source_stage_context(
             finalize_addition,
             finalize_removal,
             run_sync,
+            run_resubscribe,
         )
     )
 
@@ -1152,9 +1187,10 @@ def _prompt_source_stage_text(
     else:
         write("Enter 'a' to add another registry or compatible source.")
         write(
-            "Enter 's' to synchronize a configured source, or 'r' to remove one. Synchronizing "
-            "refreshes what is available to install or update; removing forgets the source and "
-            "its downloaded snapshot."
+            "Enter 's' to synchronize a configured source, 'i' to resubscribe one, or 'r' to "
+            "remove one. Synchronizing refreshes what is available to install or update; "
+            "resubscribing adopts a new identity at the same origin; removing forgets the source "
+            "and its downloaded snapshot."
         )
     if view.unconfigured_recommended:
         write(
@@ -1182,7 +1218,7 @@ def _prompt_source_stage_text(
             read,
             write,
             (
-                "Source(s) (a=add, s=sync, r=remove, b=back, q=quit): "
+                "Source(s) (a=add, s=sync, i=resubscribe, r=remove, b=back, q=quit): "
                 if view.rows
                 else "Source(s) (a=add, b=back, q=quit): "
             ),
@@ -1382,6 +1418,41 @@ def _prompt_source_sync_text(
     return WizardInput("back")
 
 
+def _prompt_source_resubscription_text(
+    view: SourceStageView,
+    read: ReadFn,
+    write: WriteFn,
+    run: SourceResubscribeRunFn,
+) -> WizardInput | SourceResubscriptionRequest:
+    """Resolve the origin, show both identities, and return only what the user approved."""
+
+    while True:
+        picked = _prompt_source_row_text(view, read, write, action="resubscribe")
+        if isinstance(picked, WizardInput):
+            return picked
+        planned = plan_source_resubscription(view, picked.source.alias)
+        if isinstance(planned, DomainErr):
+            _write_domain_diagnostics(planned, write)
+            continue
+        reviewed = run(picked.source.alias, None)
+        if isinstance(reviewed, DomainErr):
+            _write_domain_diagnostics(reviewed, write)
+            continue
+        request = SourceResubscriptionRequest(planned.value, reviewed.value.transition)
+        for line in render_source_resubscription_review(request):
+            write(line)
+        confirmed = _prompt_source_confirmation(
+            read,
+            "Adopt this identity change? [y/N] (b=back, q=quit): ",
+        )
+        if isinstance(confirmed, WizardInput):
+            return confirmed
+        if confirmed:
+            return request
+        write("Identity was not adopted; the source stays bound to its current snapshot.")
+        return WizardInput("back")
+
+
 def _prompt_source_removal_text(
     view: SourceStageView,
     read: ReadFn,
@@ -1572,6 +1643,8 @@ def _prompt_wizard_indices(
             return WizardInput("sync")
         if allow_source_maintenance and low in ("r", "remove"):
             return WizardInput("remove")
+        if allow_source_maintenance and low in ("i", "resubscribe"):
+            return WizardInput("resubscribe")
         if not answer:
             if selected_tuple:
                 return WizardInput("confirm", selected_tuple)
@@ -2086,6 +2159,7 @@ def _run_text(
     source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
     source_removal_finalizer: Optional[SourceRemovalFinalizeFn] = None,
     source_sync_runner: Optional[SourceSyncRunFn] = None,
+    source_resubscribe_runner: Optional[SourceResubscribeRunFn] = None,
     source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
@@ -2109,7 +2183,7 @@ def _run_text(
         """Re-read the source stage after a mutation so later screens never show stale facts."""
 
         nonlocal stage_view, source_finalizer, source_addition_finalizer
-        nonlocal source_removal_finalizer, source_sync_runner
+        nonlocal source_removal_finalizer, source_sync_runner, source_resubscribe_runner
         if source_stage_loader is None:
             return None
         refreshed = source_stage_loader()
@@ -2120,6 +2194,7 @@ def _run_text(
         source_addition_finalizer = refreshed.value.source_addition_finalizer
         source_removal_finalizer = refreshed.value.source_removal_finalizer
         source_sync_runner = refreshed.value.source_sync_runner
+        source_resubscribe_runner = refreshed.value.source_resubscribe_runner
         return None
 
     while True:
@@ -2213,6 +2288,40 @@ def _run_text(
                         _write_domain_diagnostics(stale, write)
                         write(
                             "The source was synchronized but the Sources screen could not be "
+                            "refreshed."
+                        )
+                        continue
+                    session = replace(
+                        session,
+                        source_selection=None,
+                        revision=session.revision + 1,
+                    )
+                elif selected_source.kind == "resubscribe":
+                    if source_resubscribe_runner is None or source_stage_loader is None:
+                        write("error: source resubscription is unavailable in this TUI runtime")
+                        continue
+                    adoption = _prompt_source_resubscription_text(
+                        stage_view, read, write, source_resubscribe_runner
+                    )
+                    if isinstance(adoption, WizardInput):
+                        if adoption.kind == "quit" and _confirm_wizard_quit(session, read, write):
+                            return _cancel(write)
+                        continue
+                    adopted = source_resubscribe_runner(adoption.source.alias, adoption.transition)
+                    if isinstance(adopted, DomainErr):
+                        _write_domain_diagnostics(adopted, write)
+                        write(f"{adoption.source.alias} still declares its previous identity here.")
+                        write("In Sources: i reviews the current transition, s synchronizes.")
+                        continue
+                    write(
+                        f"Sources: {adoption.source.alias} now follows "
+                        f"{adoption.transition.to_source_id.value}."
+                    )
+                    stale = reload_stage_view()
+                    if stale is not None:
+                        _write_domain_diagnostics(stale, write)
+                        write(
+                            "The identity was adopted but the Sources screen could not be "
                             "refreshed."
                         )
                         continue
@@ -3440,6 +3549,51 @@ def _curses_source_removal(
     return planned.value if reviewed else WizardInput("back")
 
 
+def _curses_source_resubscription(
+    curses,
+    stdscr,
+    session: WizardSession,
+    view: SourceStageView,
+    row: SourceStageRow,
+    run: SourceResubscribeRunFn,
+) -> WizardInput | SourceResubscriptionRequest:
+    """Resolve the origin and review both identities before anything is published."""
+
+    planned = plan_source_resubscription(view, row.source.alias)
+    if isinstance(planned, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            "Source resubscription error",
+            (*_source_flow_diagnostics(planned), "Choose another source or press b."),
+        )
+        return WizardInput("back")
+    if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+        stdscr.clear()
+        stdscr.addstr(0, 0, "Resolving the origin to see what it declares now…")
+        stdscr.refresh()
+    reviewed = run(row.source.alias, None)
+    if isinstance(reviewed, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            "Source resubscription error",
+            (*_source_flow_diagnostics(reviewed), "Choose another source or press b."),
+        )
+        return WizardInput("back")
+    request = SourceResubscriptionRequest(planned.value, reviewed.value.transition)
+    confirmed = _curses_source_review(
+        curses,
+        stdscr,
+        session,
+        render_source_resubscription_review(request),
+        confirm_label="resubscribe",
+    )
+    if isinstance(confirmed, WizardInput):
+        return confirmed
+    return request if confirmed else WizardInput("back")
+
+
 def _curses_source_addition(
     curses,
     stdscr,
@@ -4009,6 +4163,7 @@ def _run_curses(
     source_addition_finalizer: Optional[SourceAdditionFinalizeFn] = None,
     source_removal_finalizer: Optional[SourceRemovalFinalizeFn] = None,
     source_sync_runner: Optional[SourceSyncRunFn] = None,
+    source_resubscribe_runner: Optional[SourceResubscribeRunFn] = None,
     source_stage_loader: Optional[SourceStageLoader] = None,
     consumer_service: Optional[ConsumerApplicationService] = None,
     consumer_service_factory: Optional[ConsumerServiceFactory] = None,
@@ -4039,7 +4194,7 @@ def _run_curses(
 
     def _ui(stdscr) -> None:
         nonlocal stage_view, source_stage_view, source_finalizer, source_addition_finalizer
-        nonlocal source_removal_finalizer, source_sync_runner
+        nonlocal source_removal_finalizer, source_sync_runner, source_resubscribe_runner
         nonlocal interacted
 
         def reload_stage() -> DomainErr | None:
@@ -4052,6 +4207,7 @@ def _run_curses(
 
             nonlocal stage_view, source_stage_view, source_finalizer
             nonlocal source_addition_finalizer, source_removal_finalizer, source_sync_runner
+            nonlocal source_resubscribe_runner
             if source_stage_loader is None:
                 return None
             refreshed = source_stage_loader()
@@ -4063,6 +4219,7 @@ def _run_curses(
             source_addition_finalizer = refreshed.value.source_addition_finalizer
             source_removal_finalizer = refreshed.value.source_removal_finalizer
             source_sync_runner = refreshed.value.source_sync_runner
+            source_resubscribe_runner = refreshed.value.source_resubscribe_runner
             return None
 
         curses.curs_set(0)
@@ -4333,6 +4490,80 @@ def _run_curses(
                     session,
                     "Source sync complete",
                     (*outcome_lines, "Choose enabled source(s) to continue."),
+                )
+                continue
+            if event.kind == "resubscribe":
+                if source_resubscribe_runner is None or source_stage_loader is None:
+                    selection["error"] = (
+                        "source resubscription is unavailable in this TUI runtime",
+                        2,
+                    )
+                    return
+                row = _selected_source_row(stage_view, event.selected)
+                if row is None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Resubscribe source",
+                        ("Move the cursor onto a configured source, then press i.",),
+                    )
+                    continue
+                adoption = _curses_source_resubscription(
+                    curses, stdscr, session, stage_view, row, source_resubscribe_runner
+                )
+                if isinstance(adoption, WizardInput):
+                    if adoption.kind == "quit":
+                        selection["cancelled"] = True
+                        return
+                    continue
+                if all(hasattr(stdscr, name) for name in ("clear", "addstr", "refresh")):
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "Publishing the new snapshot and rebinding the alias…")
+                    stdscr.refresh()
+                context.capture(session, "finalize")
+                adopted = source_resubscribe_runner(adoption.source.alias, adoption.transition)
+                if isinstance(adopted, DomainErr):
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source resubscription failed",
+                        (
+                            *_source_flow_diagnostics(adopted),
+                            f"{adoption.source.alias} still declares its previous identity here.",
+                            "In Sources: i reviews the current transition, s synchronizes.",
+                        ),
+                    )
+                    continue
+                context.capture(session)
+                stale = reload_stage()
+                if stale is not None:
+                    _curses_notice(
+                        stdscr,
+                        session,
+                        "Source resubscription incomplete",
+                        (
+                            f"Sources: {adoption.source.alias} now follows "
+                            f"{adoption.transition.to_source_id.value}.",
+                            *_source_flow_diagnostics(stale),
+                            "Restart aart to reload Sources.",
+                        ),
+                    )
+                    continue
+                session = replace(
+                    session,
+                    source_selection=None,
+                    revision=session.revision + 1,
+                )
+                _curses_notice(
+                    stdscr,
+                    session,
+                    "Source resubscribed",
+                    (
+                        f"Sources: {adoption.source.alias} now follows "
+                        f"{adoption.transition.to_source_id.value}.",
+                        "Installed artifacts are unchanged; reconciliation reports what moved.",
+                        "Choose enabled source(s) to continue.",
+                    ),
                 )
                 continue
             if event.kind == "remove":
@@ -4749,6 +4980,8 @@ def _curses_multiselect(
         elif wizard and allow_source_maintenance and ch in (ord("s"), ord("S")):
             # The cursor row, not the ticked rows: maintenance acts on exactly one source.
             return WizardInput("sync", (cursor,), cursor=cursor, scroll=scroll)
+        elif wizard and allow_source_maintenance and ch in (ord("i"), ord("I")):
+            return WizardInput("resubscribe", (cursor,), cursor=cursor, scroll=scroll)
         elif wizard and allow_source_maintenance and ch in (ord("r"), ord("R")):
             return WizardInput("remove", (cursor,), cursor=cursor, scroll=scroll)
         elif ch in (curses.KEY_UP, ord("k")):
@@ -4891,6 +5124,7 @@ def _list_hints(
         "?": details,
         "a": add,
         "s": maintain,
+        "i": maintain,
         "r": maintain,
         "q": True,
     }
@@ -5313,6 +5547,7 @@ def run(
     source_addition_finalizer = source_runtime.source_addition_finalizer
     source_removal_finalizer = source_runtime.source_removal_finalizer
     source_sync_runner = source_runtime.source_sync_runner
+    source_resubscribe_runner = source_runtime.source_resubscribe_runner
 
     def reload_source_stage() -> DomainResult[_RuntimeSourceStage]:
         return _runtime_source_stage_context(
@@ -5365,6 +5600,7 @@ def run(
             source_addition_finalizer=source_addition_finalizer,
             source_removal_finalizer=source_removal_finalizer,
             source_sync_runner=source_sync_runner,
+            source_resubscribe_runner=source_resubscribe_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
@@ -5383,6 +5619,7 @@ def run(
             source_addition_finalizer=source_addition_finalizer,
             source_removal_finalizer=source_removal_finalizer,
             source_sync_runner=source_sync_runner,
+            source_resubscribe_runner=source_resubscribe_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,
@@ -5401,6 +5638,7 @@ def run(
             source_addition_finalizer=source_addition_finalizer,
             source_removal_finalizer=source_removal_finalizer,
             source_sync_runner=source_sync_runner,
+            source_resubscribe_runner=source_resubscribe_runner,
             source_stage_loader=reload_source_stage,
             consumer_service=consumer_service,
             consumer_service_factory=consumer_service_factory,

@@ -43,6 +43,7 @@ HINT_ORDER: Tuple[Tuple[str, str], ...] = (
     ("?", "details"),
     ("a", "add"),
     ("s", "sync"),
+    ("i", "resubscribe"),
     ("r", "remove"),
     ("q", "quit"),
 )

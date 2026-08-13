@@ -168,6 +168,7 @@ capability broken or absent) · `minor` (works but misleads) · `question` (defe
 
 | ID | Sev | Scenario | Stressor | Component | Symptom | Reproduction | Blocks |
 |---|---|---|---|---|---|---|---|
+| `LAF-28` | critical | `LA-U-*` | `LAS-10` | `application.sources` ↔ `cli.build_parser` | **Resolved 2026-08-13.** A registry that changed its declared `source_id` at an unchanged origin and ref made a consumer's subscription terminal: `sync` refused the identity change, `add` refused the alias, `add` under a new alias refused the origin, and neither `remove` nor any adoption command existed. The only exit was hand-editing `config.json` **and** deleting `sources/<origin-key>/` from AART's own data root — and editing configuration alone was not enough, because the identity check reads the managed snapshot store, which is keyed by origin rather than by alias | rebuild Registry B with a new `source_id`, then `aart source sync` on a consumer holding the older snapshot | blocked every read path for that alias until fixed |
 | `LAF-06` | major | `LA-R-11` | `LAS-30` | `commands.upstream.import` | `upstream import` writes a **legacy** `skills/<name>/` tree and `upstreams.json` into a **canonical registry**, reports `Imported 1 artifact`, exits `0` — and the artifact is invisible to the registry: `registry validate --strict --frozen` still passes and `registry build --check` reports `0 changed paths` | `registry init` a checkout, then `aart upstream import --source <that checkout> --select skill/using-residues https://github.com/M1F1/residues-architecture-framework` | silently corrupts a registry; blocks nothing |
 | `LAF-04` | major | `LA-R-11` | `LAS-30` | `curation.model.CurationAction` ↔ `cli.build_parser` | `PROMOTE_NATIVE`, `IMPORT_FOREIGN`, `UPDATE_UPSTREAM` are referenced only from `tui.py`; no `aart registry` subcommand reaches them, so **flag mode cannot author a canonical registry's external content** | `grep -rn "PROMOTE_NATIVE\|UPDATE_UPSTREAM" agent_artifacts/` → only `tui.py` and `curation/` | forced the LA-R2 method change |
 | `LAF-07` | major | `LA-R-22` | `LAS-10` | `tui` recovery/discard prompt | On a failed review the Recovery screen advertises `Quit = q`, but `q` opens `Discard N selected basket item(s)? [y/N]` — and any non-`y` answer (including `q`) returns to the same failure screen. Pressing `q` repeatedly never exits | script the `promote-native` flow to a failing path, then answer `q` at every prompt: 4 `q`s produced 3 failure screens and 2 discard prompts, then hung | nothing — but no scenario can rely on `q` alone to abort |
@@ -438,6 +439,20 @@ Newest entry last. One line per session, stating what advanced and what stopped 
   rules and failure is an acceptable outcome. This inverts how the legacy branch is scored —
   rejection is now the pass condition and silent absorption is the `major` finding — and fixes the
   remedy direction: re-author the artifacts, never loosen AART.
+- **2026-08-13, `LAF-28` closed** — the source-identity dead end is retired by the subscription
+  lifecycle work (design/plan in `docs/design/DESIGN-source-subscription-lifecycle.md` and
+  `docs/plan/PLAN-source-subscription-lifecycle.md`). `aart source remove` ends a subscription and
+  owns the managed snapshot as well as the configuration entry; `aart source resubscribe` adopts a
+  changed declared identity at an unchanged origin and ref, keeping alias, kind, location, ref, and
+  the default-registry flag, and refuses any transition other than the one just reviewed. Both
+  operations exist in flag mode and on the curses Sources stage (`i` and `r`) through the same
+  application request values. **No refusal was loosened** — the identity check still refuses; what
+  changed is that it now names an operation that exists. The reproduction is a test
+  (`tests/source_acquisition_e2e_test.py::SourceIdentityChangeRecoveryTest`) that recovers using
+  shipped commands only, with no hand-edited configuration and no directory deleted from the data
+  root, which is design §9 criterion 6. Project isolation (criterion 3) is proved separately in
+  `tests/source_project_isolation_test.py`, and every refusal in this area is now held against the
+  real CLI parser by `tests/source_remediation_test.py`.
 - **2026-08-13, execution session 2** — LA-M review-only work advanced without credentials. Bare
   `marketplace setup` requires an explicit coordinate; `LA-M-02` passes with no setup records. The
   reviewed `github-docker` fixture is v1 and produces no plan (`LAF-24`). Attempting the prescribed

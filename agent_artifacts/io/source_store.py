@@ -16,6 +16,7 @@ from typing import Callable
 
 from agent_artifacts.configuration.policy import redact_text
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
 from agent_artifacts.sources.local import read_local_snapshot
@@ -279,6 +280,36 @@ def discard_source_store(paths: SourceStorePaths) -> Result[bool]:
     except OSError as error:
         return _error(SOURCE_UNAVAILABLE, f"cannot discard managed source snapshot: {error}")
     return Ok(existed)
+
+
+def prune_superseded_snapshots(paths: SourceStorePaths, keep: ObjectDigest) -> None:
+    """Drop published snapshot trees this instance no longer points at; never fails a command.
+
+    Called after the pointer already names ``keep``, so anything else under ``snapshots`` is
+    unreachable.  Failure here costs disk, not correctness, which is why it cannot refuse: a
+    partially cleaned store still resolves every read through the pointer.
+    """
+
+    snapshots = Path(paths.snapshots)
+    if not _is_real_directory(snapshots):
+        return
+    try:
+        entries = sorted(snapshots.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if entry.name == keep.value or not entry.is_dir() or entry.is_symlink():
+            continue
+        try:
+            superseded = entry.with_name(f".superseded-{entry.name}-{secrets.token_hex(8)}")
+            os.rename(entry, superseded)
+            shutil.rmtree(superseded)
+        except OSError:
+            continue
+    try:
+        _fsync_directory(snapshots)
+    except OSError:
+        return
 
 
 def prune_source_store_root(paths: SourceStorePaths) -> None:

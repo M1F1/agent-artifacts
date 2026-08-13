@@ -259,6 +259,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(p_source_remove)
 
+    p_source_resubscribe = source_sub.add_parser(
+        "resubscribe",
+        formatter_class=_HELP_FORMATTER,
+        help="adopt a changed declared identity at an unchanged origin and ref",
+        description=(
+            "Adopt the identity an already-configured origin now declares, keeping the alias, "
+            "kind, location, ref, and default-registry flag. Without --yes it prints both "
+            "identities and changes nothing; --yes adopts exactly the reviewed transition and "
+            "refuses if the origin moved again in between. Use `source sync` when the identity "
+            "did not change."
+        ),
+    )
+    p_source_resubscribe.add_argument(
+        "--alias",
+        dest="source_alias",
+        required=True,
+        metavar="ALIAS",
+        help="configured source alias whose declared identity changed",
+    )
+    p_source_resubscribe.add_argument(
+        "--yes",
+        action="store_true",
+        help="adopt the reviewed identity change (without this the command only reviews)",
+    )
+    _add_json(p_source_resubscribe)
+
     p_source_health = source_sub.add_parser(
         "health",
         formatter_class=_HELP_FORMATTER,

@@ -303,6 +303,35 @@ class SourceSyncOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceIdentityTransition:
+    """One reviewed move from a subscribed identity to the identity an origin now declares.
+
+    Both sides are carried, not just the destination, because this value is what an operator
+    approves.  "Adopt whatever is upstream now" and "adopt this specific change" are different
+    authorizations, and only the second one can be checked again at finalize time.
+    """
+
+    from_source_id: SourceId
+    to_source_id: SourceId
+    from_revision: str
+    to_revision: str
+    from_digest: ObjectDigest
+    to_digest: ObjectDigest
+
+    def __post_init__(self) -> None:
+        if not self.from_source_id.value or not self.to_source_id.value:
+            raise ValueError("identity transition requires both declared source IDs")
+        if self.from_source_id == self.to_source_id:
+            raise ValueError("identity transition requires two different declared source IDs")
+        for revision in (self.from_revision, self.to_revision):
+            if not revision or any(character in revision for character in "\r\n"):
+                raise ValueError("identity transition revisions must be one non-empty line")
+        for digest in (self.from_digest, self.to_digest):
+            if digest.algorithm != "sha256" or _HEX_64_RE.fullmatch(digest.value) is None:
+                raise ValueError("identity transition digests must be canonical SHA-256")
+
+
+@dataclass(frozen=True, slots=True)
 class LocalSnapshotRequest:
     instance_id: SourceInstanceId
     alias: SourceAlias

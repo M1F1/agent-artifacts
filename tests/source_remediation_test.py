@@ -108,7 +108,7 @@ class SourceRemediationNamesRealCommandsTest(unittest.TestCase):
         refused = sync_source(_request(source), ports.ports())
 
         commands = self.assert_runnable(_refusal(refused))
-        self.assertIn("aart source remove --alias registry", commands)
+        self.assertIn("aart source resubscribe --alias registry", commands)
 
     def test_an_already_configured_alias_points_at_commands_that_exist(self) -> None:
         held = _registry("registry", "https://git.example.test/team/registry.git")

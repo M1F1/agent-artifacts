@@ -1,14 +1,18 @@
 # Plan: source subscription lifecycle
 
-Status: in progress — implements
+Status: complete — implements
 [the design](../design/DESIGN-source-subscription-lifecycle.md).
 
-The unsubscribe half has landed: SL-1, SL-2, SL-3, SL-5, and SL-6 are complete for `source remove`,
-and SL-4 is complete for the whole `source` family. Everything still open belongs to
-`source resubscribe` — the adoption values in SL-1, the atomic rebind in SL-2, the subcommand in
-SL-3, the TUI action in SL-6, and SL-7, which cannot close until adoption exists. SL-5 currently
-routes the identity refusal through `remove` plus a fresh `add` rather than through the
-`resubscribe` named in design §6; that text changes when the command exists.
+SL-1 through SL-7 have landed. `aart source remove` ends a subscription and owns the managed
+snapshot as well as the configuration entry; `aart source resubscribe` adopts a changed declared
+identity at an unchanged origin and ref, keeping alias, kind, location, ref, and the
+default-registry flag. Both reach the curses Sources stage on `r` and `i` through the same
+application request values the CLI dispatches. The `LAF-28` residue is closed in
+[the live-acceptance ledger](../testing/PROGRESS-live-acceptance.md).
+
+One deviation from design §6, deliberate: the alias-already-configured and
+origin-already-configured refusals name `sync`, `resubscribe`, **and** `remove` rather than only
+the latter two, because refreshing is the likelier intent and naming it first costs nothing.
 
 Sequenced by boundary, not by front-end. Every work package ends with stdlib/`unittest` coverage and
 a clean `git diff --check`. Run tests with

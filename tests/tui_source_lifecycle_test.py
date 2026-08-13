@@ -13,6 +13,7 @@ import curses
 import unittest
 
 from agent_artifacts import tui
+from agent_artifacts.application.sources import SourceAdoptionOutcome
 from agent_artifacts.configuration.model import (
     ConfiguredSource,
     OrganizationPolicy,
@@ -20,7 +21,7 @@ from agent_artifacts.configuration.model import (
     UserConfiguration,
     default_user_configuration,
 )
-from agent_artifacts.domain.identifiers import SourceAlias, SourceId
+from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
@@ -31,6 +32,7 @@ from agent_artifacts.protocol.native_tree import (
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.sources.model import (
     CurrentSource,
+    SourceIdentityTransition,
     SourceSyncOutcome,
     SyncDisposition,
     make_source_candidate,
@@ -110,6 +112,26 @@ def _outcome(
         disposition,
         CurrentSource(candidate, SourceId("team-registry"), 100, "/managed/snapshot"),
     )
+
+
+_TRANSITION = SourceIdentityTransition(
+    SourceId("team-registry"),
+    SourceId("renamed-registry"),
+    "a" * 40,
+    "b" * 40,
+    ObjectDigest("sha256", "c" * 64),
+    ObjectDigest("sha256", "d" * 64),
+)
+
+
+def _adoption(
+    source: ConfiguredSource,
+    *,
+    finalized: bool = False,
+) -> SourceAdoptionOutcome:
+    """What the runtime reports for a review (nothing published) or a finalize."""
+
+    return SourceAdoptionOutcome(_TRANSITION, finalized, _outcome(source).current)
 
 
 def _scripted(answers):
@@ -205,17 +227,24 @@ class SourceLifecyclePlanningTests(unittest.TestCase):
 class _Runtime:
     """The imperative source boundary, recorded so both front-ends can be held to it."""
 
-    def __init__(self, view, *, sync=None, removal=None):
+    def __init__(self, view, *, sync=None, removal=None, review=None, adoption=None):
         self.view = view
         self.sync_result = sync
         self.removal_result = removal if removal is not None else Ok(object())
+        self.review_result = review
+        self.adoption_result = adoption if adoption is not None else review
         self.synced: list[SourceAlias] = []
         self.removed: list[str] = []
+        self.resubscribed: list[tuple] = []
         self.reloads = 0
 
     def run_sync(self, alias):
         self.synced.append(alias)
         return self.sync_result
+
+    def run_resubscribe(self, alias, expected):
+        self.resubscribed.append((alias, expected))
+        return self.review_result if expected is None else self.adoption_result
 
     def finalize_removal(self, request):
         self.removed.append(request.source.alias.value)
@@ -232,6 +261,7 @@ class _Runtime:
                 lambda _request: Ok(object()),
                 self.finalize_removal,
                 self.run_sync,
+                self.run_resubscribe,
             )
         )
 
@@ -247,17 +277,20 @@ class SourceLifecycleTextTests(unittest.TestCase):
             source_stage_view=runtime.view,
             source_removal_finalizer=runtime.finalize_removal,
             source_sync_runner=runtime.run_sync,
+            source_resubscribe_runner=runtime.run_resubscribe,
             source_stage_loader=runtime.load,
         )
         return code, "\n".join(writes)
 
-    def test_the_sources_prompt_offers_sync_and_remove_when_a_source_exists(self) -> None:
+    def test_the_sources_prompt_offers_every_maintenance_action_when_a_source_exists(self) -> None:
         runtime = _Runtime(_view(_configuration(_registry())))
 
         _code, rendered = self._run(runtime, ["", "1", "q"])
 
         self.assertIn(
-            "Enter 's' to synchronize a configured source, or 'r' to remove one", rendered
+            "Enter 's' to synchronize a configured source, 'i' to resubscribe one, "
+            "or 'r' to remove one",
+            rendered,
         )
 
     def test_an_empty_sources_stage_offers_only_add(self) -> None:
@@ -309,6 +342,55 @@ class SourceLifecycleTextTests(unittest.TestCase):
         self.assertIn("its snapshot is unchanged", rendered)
         self.assertIn("r removes this source", rendered)
         self.assertEqual(runtime.reloads, 0)
+
+    def test_resubscribe_reviews_the_transition_then_adopts_exactly_it(self) -> None:
+        source = _registry()
+        runtime = _Runtime(
+            _view(_configuration(source)),
+            review=Ok(_adoption(source)),
+            adoption=Ok(_adoption(source, finalized=True)),
+        )
+
+        code, rendered = self._run(runtime, ["", "1", "i", "1", "y", "q"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Source resubscription review:", rendered)
+        self.assertIn("team-registry -> renamed-registry", rendered)
+        self.assertIn("registry now follows renamed-registry", rendered)
+        # Review with no expectation, then finalize with exactly the reviewed transition — never
+        # "whatever is upstream now", which is the authorization the review did not ask for.
+        self.assertEqual(
+            runtime.resubscribed,
+            [(source.alias, None), (source.alias, _TRANSITION)],
+        )
+
+    def test_declining_the_resubscription_review_adopts_nothing(self) -> None:
+        source = _registry()
+        runtime = _Runtime(_view(_configuration(source)), review=Ok(_adoption(source)))
+
+        _code, rendered = self._run(runtime, ["", "1", "i", "1", "n", "q"])
+
+        self.assertEqual([expected for _alias, expected in runtime.resubscribed], [None])
+        self.assertIn("Identity was not adopted", rendered)
+
+    def test_an_unchanged_identity_is_refused_with_the_refresh_command_named(self) -> None:
+        source = _registry()
+        refusal = Err(
+            (
+                tui.Diagnostic(
+                    tui.DiagnosticCode("source-invalid"),
+                    tui.Severity.ERROR,
+                    "source still declares the identity this alias is already subscribed to",
+                    remediation=("run `aart source sync --alias registry` instead",),
+                ),
+            )
+        )
+        runtime = _Runtime(_view(_configuration(source)), review=refusal)
+
+        _code, rendered = self._run(runtime, ["", "1", "i", "1", "q"])
+
+        self.assertIn("source still declares the identity this alias is already", rendered)
+        self.assertIn("aart source sync --alias registry", rendered)
 
     def test_remove_reviews_then_finalizes_and_the_row_is_gone_afterwards(self) -> None:
         source = _registry()
@@ -418,10 +500,10 @@ class SourceRefusalWayOutTests(unittest.TestCase):
 
 
 class SourceLifecycleCursesTests(unittest.TestCase):
-    """The curses front-end binds the same two operations to s and r on the Sources list."""
+    """The curses front-end binds the same three operations to s, i, and r on the Sources list."""
 
-    def test_the_sources_list_advertises_and_returns_sync_and_remove(self) -> None:
-        for key, kind in ((ord("s"), "sync"), (ord("r"), "remove")):
+    def test_the_sources_list_advertises_and_returns_every_maintenance_action(self) -> None:
+        for key, kind in ((ord("s"), "sync"), (ord("i"), "resubscribe"), (ord("r"), "remove")):
             with self.subTest(kind=kind):
                 screen = Screen((key,), height=16, width=110)
 
@@ -440,6 +522,7 @@ class SourceLifecycleCursesTests(unittest.TestCase):
                 self.assertEqual(event.selected, (0,))
                 bar = [value for row, _column, value in screen.lines if row == screen.height - 1][0]
                 self.assertIn("s=sync", bar)
+                self.assertIn("i=resubscribe", bar)
                 self.assertIn("r=remove", bar)
 
     def test_a_list_without_source_maintenance_never_binds_those_keys(self) -> None:
@@ -503,6 +586,51 @@ class SourceLifecycleCursesTests(unittest.TestCase):
         self.assertIsInstance(request, tui.WizardInput)
         assert isinstance(request, tui.WizardInput)
         self.assertEqual(request.kind, "back")
+
+    def test_the_curses_resubscribe_screen_resolves_the_origin_then_reviews(self) -> None:
+        source = _registry()
+        view = _view(_configuration(source))
+        runtime = _Runtime(view, review=Ok(_adoption(source)))
+        screen = Screen((10,), height=24, width=110)
+
+        request = tui._curses_source_resubscription(
+            curses,
+            screen,
+            tui.WizardSession(current="source"),
+            view,
+            view.rows[0],
+            runtime.run_resubscribe,
+        )
+
+        assert not isinstance(request, tui.WizardInput)
+        # Review resolves the origin exactly once, and never with an expected transition: a curses
+        # screen cannot finalize something it has not yet drawn.
+        self.assertEqual(runtime.resubscribed, [(SourceAlias("registry"), None)])
+        self.assertEqual(request.transition, _TRANSITION)
+        rendered = "\n".join(value for _row, _column, value in screen.history)
+        self.assertIn("Source resubscription review:", rendered)
+        self.assertIn("team-registry -> renamed-registry", rendered)
+        self.assertIn("enter=resubscribe", rendered)
+
+    def test_the_curses_resubscribe_screen_can_be_declined(self) -> None:
+        source = _registry()
+        view = _view(_configuration(source))
+        runtime = _Runtime(view, review=Ok(_adoption(source)))
+        screen = Screen((ord("n"),), height=24, width=110)
+
+        request = tui._curses_source_resubscription(
+            curses,
+            screen,
+            tui.WizardSession(current="source"),
+            view,
+            view.rows[0],
+            runtime.run_resubscribe,
+        )
+
+        self.assertIsInstance(request, tui.WizardInput)
+        assert isinstance(request, tui.WizardInput)
+        self.assertEqual(request.kind, "back")
+        self.assertEqual([expected for _alias, expected in runtime.resubscribed], [None])
 
     def test_the_curses_sync_screen_reviews_before_returning_the_row(self) -> None:
         view = _view(_configuration(_registry()))

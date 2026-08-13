@@ -33,7 +33,9 @@ WizardDecision = Literal["quit", "confirm_quit"]
 # ``add`` is a navigation event owned by the Sources screen.  It does not mutate the
 # persistent wizard session by itself; the frontend collects a separately reviewed
 # source-addition request before returning to the same Sources stage.
-WizardInputKind = Literal["confirm", "back", "quit", "add", "sync", "remove", "retry"]
+WizardInputKind = Literal[
+    "confirm", "back", "quit", "add", "sync", "resubscribe", "remove", "retry"
+]
 
 _STAGE_LABELS: Mapping[WizardStage, str] = {
     "onboarding": "How it works",

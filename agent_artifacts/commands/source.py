@@ -40,21 +40,30 @@ from agent_artifacts.sources.model import (
     CurrentSourceRequest,
     HealthStatus,
     SourceHealth,
+    SourceIdentityTransition,
     source_instance_id,
     source_store_paths,
 )
-from agent_artifacts.sources.runtime import discard_configured_source, sync_configured_source
+from agent_artifacts.sources.runtime import (
+    discard_configured_source,
+    resubscribe_configured_source,
+    sync_configured_source,
+)
 from agent_artifacts.tui_sources import (
+    SourceResubscriptionRequest,
     build_source_stage,
     plan_source_addition,
     plan_source_removal,
+    plan_source_resubscription,
     render_source_removal_review,
+    render_source_resubscription_review,
 )
 
 from ._configured_runtime import ConfiguredRuntime, load_runtime_configuration
 
 _SOURCE_OPERATION = "source.add"
 _REMOVE_OPERATION = "source.remove"
+_RESUBSCRIBE_OPERATION = "source.resubscribe"
 _LIST_OPERATION = "source.list"
 _SYNC_OPERATION = "source.sync"
 _HEALTH_OPERATION = "source.health"
@@ -385,6 +394,123 @@ def _remove(request: Request) -> int:
     return _common.OK
 
 
+def _transition_data(transition: SourceIdentityTransition) -> dict:
+    return {
+        "from": {
+            "source_id": transition.from_source_id.value,
+            "resolved_revision": transition.from_revision,
+            "snapshot_digest": str(transition.from_digest),
+        },
+        "to": {
+            "source_id": transition.to_source_id.value,
+            "resolved_revision": transition.to_revision,
+            "snapshot_digest": str(transition.to_digest),
+        },
+    }
+
+
+def _resubscribe(request: Request) -> int:
+    if request.source_alias is None:
+        return _emit_error(
+            request,
+            _RESUBSCRIBE_OPERATION,
+            _failure("config-invalid", "source resubscribe requires --alias"),
+        )
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, runtime)
+    if runtime.value.loaded.recovery is not None:
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, _recovery_error())
+    now = int(time.time())
+    view = build_source_stage(
+        runtime.value.loaded.user_configuration,
+        runtime.value.loaded.effective.policy,
+        _health_by_alias(runtime.value, now=now),
+        first_run=runtime.value.loaded.first_run is not None,
+    )
+    if isinstance(view, Err):
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, view)
+    try:
+        alias = SourceAlias(request.source_alias)
+    except ValueError:
+        return _emit_error(
+            request,
+            _RESUBSCRIBE_OPERATION,
+            _failure("config-invalid", "source alias is not a valid slug"),
+        )
+    planned = plan_source_resubscription(view.value, alias)
+    if isinstance(planned, Err):
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, planned)
+
+    # Review and finalize both resolve the origin, in this process.  The reviewed transition is
+    # then the only one `--yes` may apply, so an upstream that moves in between is a refusal.
+    reviewed = resubscribe_configured_source(
+        planned.value, data_root=runtime.value.paths.data_root, observed_at_epoch_seconds=now
+    )
+    if isinstance(reviewed, Err):
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, reviewed)
+    resubscription = SourceResubscriptionRequest(planned.value, reviewed.value.transition)
+    review = render_source_resubscription_review(resubscription)
+    if not request.yes:
+        payload = {
+            "schema_version": 1,
+            "ok": True,
+            "operation": _RESUBSCRIBE_OPERATION,
+            "finalized": False,
+            "review": list(review),
+            "source": {
+                "alias": planned.value.alias.value,
+                "kind": planned.value.kind.value,
+                "location": redact_text(planned.value.location),
+                "ref": planned.value.ref,
+            },
+            "transition": _transition_data(reviewed.value.transition),
+        }
+        if request.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            for line in review:
+                print(line)
+            print("Reviewed only; re-run with --yes to adopt this exact identity change.")
+        return _common.OK
+
+    adopted = resubscribe_configured_source(
+        planned.value,
+        data_root=runtime.value.paths.data_root,
+        expected=reviewed.value.transition,
+        observed_at_epoch_seconds=now,
+    )
+    if isinstance(adopted, Err):
+        return _emit_error(request, _RESUBSCRIBE_OPERATION, adopted)
+    current = adopted.value.current
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "operation": _RESUBSCRIBE_OPERATION,
+        "finalized": True,
+        "source": {
+            "alias": planned.value.alias.value,
+            "kind": planned.value.kind.value,
+            "location": redact_text(planned.value.location),
+            "ref": planned.value.ref,
+        },
+        "transition": _transition_data(adopted.value.transition),
+        "source_id": current.declared_source_id.value,
+        "resolved_revision": current.candidate.resolved_revision,
+        "snapshot_digest": str(current.candidate.snapshot_digest),
+    }
+    if request.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"source resubscribed: {planned.value.alias.value}; "
+            f"{adopted.value.transition.from_source_id.value} -> "
+            f"{adopted.value.transition.to_source_id.value} "
+            f"({current.candidate.resolved_revision})"
+        )
+    return _common.OK
+
+
 def _list(request: Request) -> int:
     runtime = load_runtime_configuration(request, content_required=False)
     if isinstance(runtime, Err):
@@ -569,6 +695,8 @@ def run(request: Request) -> int:
         return _add(request)
     if request.source_action == "remove":
         return _remove(request)
+    if request.source_action == "resubscribe":
+        return _resubscribe(request)
     if request.source_action == "list":
         return _list(request)
     if request.source_action == "sync":

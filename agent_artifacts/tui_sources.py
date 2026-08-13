@@ -27,11 +27,12 @@ from agent_artifacts.configuration.policy import (
 )
 from agent_artifacts.configuration.schema import validate_configured_source
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.sources.model import (
     HealthStatus,
     SourceHealth,
+    SourceIdentityTransition,
     SourceSyncOutcome,
     SyncDisposition,
 )
@@ -541,8 +542,9 @@ def plan_source_addition(
     if any(existing.alias == source.alias for existing in view.configuration.sources):
         return _error(
             f"source alias is already configured: {source.alias}",
-            f"run `aart source sync --alias {source.alias}` to refresh it, or "
-            f"`aart source remove --alias {source.alias}` to subscribe to a different origin",
+            f"run `aart source sync --alias {source.alias}` to refresh it, "
+            f"`aart source resubscribe --alias {source.alias}` if its declared identity changed, "
+            f"or `aart source remove --alias {source.alias}` to subscribe to a different origin",
         )
     # SRC02: the store is keyed by (origin, ref), so a second ref of a configured origin is a
     # legitimate new source.  The same origin at the same ref would still resolve to one mirror
@@ -561,8 +563,9 @@ def plan_source_addition(
         return _error(
             "source origin and ref are already configured as " + held,
             f"run `aart source sync --alias {same_origin_and_ref[0].value}` to refresh it, "
-            f"`aart source remove --alias {same_origin_and_ref[0].value}` to free the origin, "
-            "or add this origin at a different ref",
+            f"`aart source resubscribe --alias {same_origin_and_ref[0].value}` if its declared "
+            f"identity changed, `aart source remove --alias {same_origin_and_ref[0].value}` to "
+            "free the origin, or add this origin at a different ref",
         )
     if source.kind is not SourceKind.REGISTRY_GIT and not view.allow_direct_sources:
         return _error("direct sources are disabled by organization policy")
@@ -756,6 +759,80 @@ def render_source_sync_outcome(alias: SourceAlias, outcome: SourceSyncOutcome) -
         f"  {diagnostic.severity.value}: {diagnostic.message}" for diagnostic in outcome.diagnostics
     )
     return (headline, *warnings)
+
+
+def plan_source_resubscription(
+    view: SourceStageView, alias: SourceAlias
+) -> Result[ConfiguredSource]:
+    """Select the subscription whose identity may be adopted, changing nothing.
+
+    Resubscription writes no configuration at all, so there is no desired configuration to plan —
+    only the question of whether this alias is one AART may act on.  The transition itself comes
+    from the runtime, which is the only layer that can see what the origin declares today.
+    """
+
+    if not isinstance(alias, SourceAlias):
+        return _error("source resubscription requires a configured source alias")
+    selected = tuple(source for source in view.configuration.sources if source.alias == alias)
+    if not selected:
+        return _error(
+            f"no configured source has alias {alias}",
+            "run `aart source list` to see configured aliases",
+        )
+    source = selected[0]
+    if not source.enabled:
+        return _error(
+            f"source {alias} is disabled",
+            f"enable {alias} in the TUI Sources stage before adopting a new identity",
+        )
+    return Ok(source)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceResubscriptionRequest:
+    """One reviewed identity adoption, dispatched identically by both front-ends.
+
+    It carries no configuration at all — that is the operation's whole point.  Alias, kind,
+    location, ref, and the default-registry flag survive because nothing here can express a change
+    to them, which is the difference between adopting an identity and re-subscribing by hand.
+    """
+
+    source: ConfiguredSource
+    transition: SourceIdentityTransition
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, ConfiguredSource) or not isinstance(
+            self.transition, SourceIdentityTransition
+        ):
+            raise ValueError("source resubscription request is invalid")
+        if not self.source.enabled:
+            raise ValueError("a disabled source cannot be resubscribed")
+
+
+def _short(digest: ObjectDigest) -> str:
+    return digest.value[:12]
+
+
+def render_source_resubscription_review(request: SourceResubscriptionRequest) -> tuple[str, ...]:
+    """Render both identities, so the operator approves a transition rather than a destination."""
+
+    source = request.source
+    ref = "" if source.ref is None else f"; ref: {source.ref}"
+    transition = request.transition
+    return (
+        "Source resubscription review:",
+        f"  alias: {source.alias}",
+        f"  kind: {_source_kind(source)}",
+        f"  origin: {_origin(source)}{ref}",
+        f"  identity: {transition.from_source_id.value} -> {transition.to_source_id.value}",
+        f"  revision: {transition.from_revision} -> {transition.to_revision}",
+        f"  snapshot: {_short(transition.from_digest)} -> {_short(transition.to_digest)}",
+        f"  preserves: alias, kind, origin{ref and ', ref'}, and the default-registry flag",
+        "  effect: publish the new snapshot and bind this alias to it",
+        "  keeps: every installed artifact and every file in every project",
+        "  note: installed artifacts are not re-installed; they surface as update-available or "
+        "removed-upstream through the normal reconciliation",
+    )
 
 
 def render_source_removal_review(request: SourceRemovalRequest) -> tuple[str, ...]:
