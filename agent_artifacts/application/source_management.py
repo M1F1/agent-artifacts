@@ -63,6 +63,27 @@ def finalize_source_management(
     return Ok(SourceManagementReceipt(True, len(request.operations)))
 
 
+def finalize_source_removal(
+    request: ReviewedSourceAddition,
+    save: SaveSourceConfigurationPort,
+) -> Result[SourceManagementReceipt]:
+    """Persist one reviewed unsubscribe after its managed snapshot has already been discarded.
+
+    Store discard belongs to the runtime boundary before this function is called, and in that
+    order deliberately: a failure here leaves a configured source whose snapshot is gone, which
+    ``source sync`` repairs, rather than an unsubscribed origin whose store still binds the old
+    declared identity — the state that has no command to name.
+    """
+
+    checked = apply_configuration_for_source_management(request.after, request.policy)
+    if isinstance(checked, Err):
+        return checked
+    saved = save(request.after, request.policy)
+    if isinstance(saved, Err):
+        return saved
+    return Ok(SourceManagementReceipt(True, 1))
+
+
 def finalize_source_addition(
     request: ReviewedSourceAddition,
     save: SaveSourceConfigurationPort,

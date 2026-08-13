@@ -4,9 +4,12 @@ import unittest
 from dataclasses import replace
 
 from agent_artifacts.application.sources import (
+    SourceDiscardPorts,
+    SourceDiscardRequest,
     SourceStatusRequest,
     SourceSyncPorts,
     SourceSyncRequest,
+    discard_source,
     sync_source,
 )
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
@@ -361,6 +364,120 @@ class SourceSyncApplicationTest(unittest.TestCase):
                 now_epoch_seconds=-1,
                 max_age_seconds=10,
             )
+
+
+class _FakeDiscardPorts:
+    """The discard side of the store, recorded in order so the serialization is observable."""
+
+    def __init__(self, current=None, *, discarded=None):
+        self.current_result = Ok(current)
+        self.discard_result = Ok(True) if discarded is None else discarded
+        self.release_result = Ok(None)
+        self.events: list[str] = []
+        self.pruned: list[str] = []
+
+    def acquire_lock(self, request):
+        self.events.append("lock")
+        return Ok(SourceLockLease(request.lock_directory, "lease-token"))
+
+    def release_lock(self, _lease):
+        self.events.append("release")
+        return self.release_result
+
+    def read_current(self, _request):
+        self.events.append("current")
+        return self.current_result
+
+    def discard(self, _paths):
+        self.events.append("discard")
+        return self.discard_result
+
+    def prune_root(self, paths):
+        self.events.append("prune")
+        self.pruned.append(paths.root)
+
+    def ports(self):
+        return SourceDiscardPorts(
+            self.acquire_lock,
+            self.release_lock,
+            self.read_current,
+            self.discard,
+            self.prune_root,
+        )
+
+
+class SourceDiscardApplicationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.git = ConfiguredSource(
+            SourceAlias("git"),
+            SourceKind.SOURCE_GIT,
+            "https://example.test/team/repo.git",
+            "main",
+            True,
+        )
+
+    def _request(self, source: ConfiguredSource) -> SourceDiscardRequest:
+        return SourceDiscardRequest(source=source, data_root="/managed/data")
+
+    def test_discard_is_serialized_against_sync_and_reports_what_it_removed(self) -> None:
+        current = _current(_candidate(self.git))
+        fake = _FakeDiscardPorts(current)
+
+        result = discard_source(self._request(self.git), fake.ports())
+
+        self.assertIsInstance(result, Ok)
+        assert isinstance(result, Ok)
+        self.assertTrue(result.value.existed)
+        self.assertEqual(result.value.discarded, current)
+        self.assertEqual(fake.events, ["lock", "current", "discard", "release", "prune"])
+        self.assertEqual(
+            fake.pruned,
+            [source_store_paths("/managed/data", source_instance_id(self.git)).root],
+        )
+
+    def test_a_disabled_source_can_still_be_discarded(self) -> None:
+        """Unsubscribing must work from every state a stuck subscription can be left in."""
+
+        fake = _FakeDiscardPorts()
+
+        result = discard_source(self._request(replace(self.git, enabled=False)), fake.ports())
+
+        self.assertIsInstance(result, Ok)
+        self.assertIn("discard", fake.events)
+
+    def test_an_unreadable_pointer_never_blocks_the_discard(self) -> None:
+        fake = _FakeDiscardPorts()
+        fake.current_result = _failure("source-invalid")
+
+        result = discard_source(self._request(self.git), fake.ports())
+
+        self.assertIsInstance(result, Ok)
+        assert isinstance(result, Ok)
+        self.assertIsNone(result.value.discarded)
+        self.assertIn("discard", fake.events)
+
+    def test_a_failed_discard_releases_the_lock_and_never_prunes(self) -> None:
+        fake = _FakeDiscardPorts(discarded=_failure())
+
+        result = discard_source(self._request(self.git), fake.ports())
+
+        self.assertIsInstance(result, Err)
+        self.assertEqual(fake.events, ["lock", "current", "discard", "release"])
+        self.assertEqual(fake.pruned, [])
+
+    def test_a_lock_that_cannot_be_taken_leaves_the_store_untouched(self) -> None:
+        fake = _FakeDiscardPorts()
+        fake.acquire_lock = lambda _request: _failure("source-locked")  # type: ignore[assignment]
+
+        result = discard_source(self._request(self.git), fake.ports())
+
+        self.assertIsInstance(result, Err)
+        self.assertEqual(fake.events, [])
+
+    def test_discard_requests_validate_their_data_root(self) -> None:
+        for data_root in ("relative", "/managed/data/"):
+            with self.subTest(data_root=data_root), self.assertRaises(ValueError):
+                SourceDiscardRequest(source=self.git, data_root=data_root)
 
 
 if __name__ == "__main__":

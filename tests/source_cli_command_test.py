@@ -31,7 +31,21 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.hashing import sha256_bytes
-from agent_artifacts.sources.model import HealthStatus, SourceHealth, SyncDisposition
+from agent_artifacts.sources.model import (
+    HealthStatus,
+    SourceHealth,
+    SourceIdentityTransition,
+    SyncDisposition,
+)
+
+_TRANSITION = SourceIdentityTransition(
+    SourceId("team-registry"),
+    SourceId("renamed-registry"),
+    "a" * 40,
+    "b" * 40,
+    ObjectDigest("sha256", "c" * 64),
+    ObjectDigest("sha256", "d" * 64),
+)
 
 
 def _runtime(
@@ -403,6 +417,283 @@ class SourceCliCommandTests(unittest.TestCase):
         self.assertEqual(events, ["sync"])
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["diagnostics"][0]["code"], "config-invalid")
+
+    def test_remove_flags_map_to_a_distinct_request_contract(self) -> None:
+        request = cli._to_request(
+            cli.build_parser().parse_args(
+                ["source", "remove", "--alias", "company", "--yes", "--json"]
+            )
+        )
+
+        self.assertEqual(request.command, "source")
+        self.assertEqual(request.source_action, "remove")
+        self.assertEqual(request.source_alias, "company")
+        self.assertTrue(request.yes)
+        self.assertTrue(request.json)
+
+    def _configured(self, *, default: bool = True):
+        source = ConfiguredSource(
+            SourceAlias("company"),
+            SourceKind.REGISTRY_GIT,
+            "https://git.example.test/company/registry.git",
+            "main",
+            True,
+        )
+        baseline = default_user_configuration()
+        return source, type(baseline)(
+            baseline.schema_version,
+            (source,),
+            source.alias if default else None,
+            baseline.sync,
+            baseline.reporting,
+        )
+
+    def test_resubscribe_flags_map_to_a_distinct_request_contract(self) -> None:
+        request = cli._to_request(
+            cli.build_parser().parse_args(
+                ["source", "resubscribe", "--alias", "company", "--yes", "--json"]
+            )
+        )
+
+        self.assertEqual(request.source_action, "resubscribe")
+        self.assertEqual(request.source_alias, "company")
+        self.assertTrue(request.yes)
+
+    def test_resubscribe_without_yes_reviews_both_identities_and_publishes_nothing(self) -> None:
+        events: list[str] = []
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+        calls: list[object] = []
+
+        def resubscribe(_source, *, data_root, expected=None, **_kwargs):
+            calls.append(expected)
+            return Ok(SimpleNamespace(transition=_TRANSITION, finalized=False, current=None))
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.resubscribe_configured_source",
+                side_effect=resubscribe,
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "resubscribe", "--alias", "company", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(events, [])
+        self.assertEqual(calls, [None], "review must never carry an expected transition")
+        payload = json.loads(stdout.getvalue())
+        self.assertFalse(payload["finalized"])
+        self.assertEqual(payload["transition"]["from"]["source_id"], "team-registry")
+        self.assertEqual(payload["transition"]["to"]["source_id"], "renamed-registry")
+        self.assertIn("Source resubscription review:", payload["review"][0])
+
+    def test_resubscribe_with_yes_adopts_the_reviewed_transition_and_writes_no_configuration(
+        self,
+    ) -> None:
+        events: list[str] = []
+        source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+        calls: list[object] = []
+        current = SimpleNamespace(
+            declared_source_id=SourceId("renamed-registry"),
+            candidate=SimpleNamespace(
+                resolved_revision="b" * 40,
+                snapshot_digest=ObjectDigest("sha256", "d" * 64),
+            ),
+        )
+
+        def resubscribe(_source, *, data_root, expected=None, **_kwargs):
+            calls.append(expected)
+            return Ok(
+                SimpleNamespace(
+                    transition=_TRANSITION, finalized=expected is not None, current=current
+                )
+            )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.resubscribe_configured_source",
+                side_effect=resubscribe,
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "resubscribe", "--alias", "company", "--yes", "--json"])
+
+        self.assertEqual(result, 0)
+        # Adoption keeps the subscription: no configuration write, so alias, kind, origin, ref and
+        # the default-registry flag survive by construction rather than by being rewritten.
+        self.assertEqual(events, [])
+        self.assertEqual(calls, [None, _TRANSITION])
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["finalized"])
+        self.assertEqual(payload["source_id"], "renamed-registry")
+        self.assertEqual(payload["source"]["alias"], source.alias.value)
+
+    def test_resubscribing_an_unconfigured_alias_names_the_command_that_lists_them(self) -> None:
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=[])
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.resubscribe_configured_source",
+                side_effect=AssertionError("an unknown alias must never reach the origin"),
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "resubscribe", "--alias", "typo", "--json"])
+
+        self.assertEqual(result, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertIn("aart source list", payload["diagnostics"][0]["remediation"][0])
+
+    def test_remove_without_yes_reviews_and_touches_neither_store_nor_configuration(self) -> None:
+        events: list[str] = []
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.discard_configured_source",
+                side_effect=AssertionError("review must not touch the managed store"),
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "remove", "--alias", "company", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(events, [])
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["operation"], "source.remove")
+        self.assertFalse(payload["finalized"])
+        self.assertTrue(payload["source"]["cleared_default"])
+        self.assertIn("Source removal review:", payload["review"][0])
+
+    def test_remove_with_yes_discards_the_snapshot_before_writing_the_configuration(self) -> None:
+        events: list[str] = []
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+
+        def discard(*_args, **_kwargs):
+            events.append("discard")
+            return Ok(SimpleNamespace(existed=True, discarded=None))
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.discard_configured_source",
+                side_effect=discard,
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "remove", "--alias", "company", "--yes", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(events, ["discard", "save"])
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["finalized"])
+        self.assertTrue(payload["snapshot_discarded"])
+        self.assertEqual(payload["source"]["alias"], "company")
+
+    def test_remove_never_writes_configuration_when_the_snapshot_cannot_be_discarded(self) -> None:
+        events: list[str] = []
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+        failed = Err(
+            (
+                Diagnostic(
+                    DiagnosticCode("source-locked"),
+                    Severity.ERROR,
+                    "another aart process holds the source lock",
+                ),
+            )
+        )
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.discard_configured_source",
+                return_value=failed,
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "remove", "--alias", "company", "--yes", "--json"])
+
+        self.assertEqual(result, 1)
+        self.assertEqual(events, [])
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["diagnostics"][0]["code"], "source-locked")
+
+    def test_remove_of_an_unconfigured_alias_names_the_command_that_lists_them(self) -> None:
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration)
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(["source", "remove", "--alias", "absent", "--yes", "--json"])
+
+        self.assertEqual(result, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["diagnostics"][0]["code"], "source-selection-invalid")
+        self.assertIn("aart source list", payload["diagnostics"][0]["remediation"][0])
 
     def test_list_reports_managed_health_without_mutating_configuration(self) -> None:
         source = ConfiguredSource(

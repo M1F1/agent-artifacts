@@ -27,9 +27,15 @@ from agent_artifacts.configuration.policy import (
 )
 from agent_artifacts.configuration.schema import validate_configured_source
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import SourceAlias
+from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.sources.model import HealthStatus, SourceHealth
+from agent_artifacts.sources.model import (
+    HealthStatus,
+    SourceHealth,
+    SourceIdentityTransition,
+    SourceSyncOutcome,
+    SyncDisposition,
+)
 
 SOURCE_SELECTION_INVALID = DiagnosticCode("source-selection-invalid")
 
@@ -242,6 +248,45 @@ class SourceAdditionRequest:
             raise ValueError("only a new registry may become the default registry")
         if not self.source.enabled:
             raise ValueError("a newly added source must be enabled")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRemovalRequest:
+    """One reviewed unsubscribe, kept separate from toggle-only management.
+
+    Removal ends a subscription: it deletes the configuration entry and, at the runtime boundary,
+    the managed snapshot for that origin.  Disabling a source is a different thing entirely — it
+    stops reads while keeping both — so the two never share a request value.
+    """
+
+    before: UserConfiguration
+    after: UserConfiguration
+    policy: OrganizationPolicy
+    source: ConfiguredSource
+    cleared_default: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.before, UserConfiguration) or not isinstance(
+            self.after, UserConfiguration
+        ):
+            raise ValueError("source removal request configuration is invalid")
+        if not isinstance(self.policy, OrganizationPolicy) or not isinstance(
+            self.source, ConfiguredSource
+        ):
+            raise ValueError("source removal request is invalid")
+        remaining = tuple(
+            source for source in self.before.sources if source.alias != self.source.alias
+        )
+        if self.after.sources != remaining:
+            raise ValueError("source removal must drop exactly the reviewed alias")
+        if len(remaining) == len(self.before.sources):
+            raise ValueError("source removal request names an unconfigured alias")
+        cleared = self.before.default_registry == self.source.alias
+        if cleared != self.cleared_default:
+            raise ValueError("source removal default-registry effect is inconsistent")
+        expected_default = None if cleared else self.before.default_registry
+        if self.after.default_registry != expected_default:
+            raise ValueError("source removal may only clear a default registry it owned")
 
 
 @dataclass(frozen=True, slots=True)
@@ -495,7 +540,12 @@ def plan_source_addition(
     if not source.enabled:
         return _error("new source must be enabled")
     if any(existing.alias == source.alias for existing in view.configuration.sources):
-        return _error(f"source alias is already configured: {source.alias}")
+        return _error(
+            f"source alias is already configured: {source.alias}",
+            f"run `aart source sync --alias {source.alias}` to refresh it, "
+            f"`aart source resubscribe --alias {source.alias}` if its declared identity changed, "
+            f"or `aart source remove --alias {source.alias}` to subscribe to a different origin",
+        )
     # SRC02: the store is keyed by (origin, ref), so a second ref of a configured origin is a
     # legitimate new source.  The same origin at the same ref would still resolve to one mirror
     # and one pointer, so it stays refused.
@@ -509,10 +559,13 @@ def plan_source_addition(
         == git_origin_key(source.kind, source.location)
     )
     if same_origin_and_ref:
+        held = ", ".join(alias.value for alias in same_origin_and_ref)
         return _error(
-            "source origin and ref are already configured as "
-            + ", ".join(alias.value for alias in same_origin_and_ref),
-            "reuse that source alias, or add this origin at a different ref",
+            "source origin and ref are already configured as " + held,
+            f"run `aart source sync --alias {same_origin_and_ref[0].value}` to refresh it, "
+            f"`aart source resubscribe --alias {same_origin_and_ref[0].value}` if its declared "
+            f"identity changed, `aart source remove --alias {same_origin_and_ref[0].value}` to "
+            "free the origin, or add this origin at a different ref",
         )
     if source.kind is not SourceKind.REGISTRY_GIT and not view.allow_direct_sources:
         return _error("direct sources are disabled by organization policy")
@@ -541,6 +594,52 @@ def plan_source_addition(
                 view.policy,
                 source,
                 chosen_default,
+            )
+        )
+    except ValueError as error:
+        return _error(str(error))
+
+
+def plan_source_removal(view: SourceStageView, alias: SourceAlias) -> Result[SourceRemovalRequest]:
+    """Plan one explicit unsubscribe without touching the store or saving anything.
+
+    Organization policy owns whether an alias may leave: a required source is not removable, and a
+    configuration that policy would reject after the removal is refused here rather than written.
+    """
+
+    if not isinstance(alias, SourceAlias):
+        return _error("source removal requires a configured source alias")
+    selected = tuple(source for source in view.configuration.sources if source.alias == alias)
+    if not selected:
+        return _error(
+            f"no configured source has alias {alias}",
+            "run `aart source list` to see configured aliases",
+        )
+    if alias in view.policy.required_sources:
+        return _error(
+            f"organization policy requires source {alias}",
+            "ask the policy owner to drop the requirement before removing this source",
+        )
+    source = selected[0]
+    cleared_default = view.configuration.default_registry == alias
+    desired = replace(
+        view.configuration,
+        sources=tuple(
+            existing for existing in view.configuration.sources if existing.alias != alias
+        ),
+        default_registry=None if cleared_default else view.configuration.default_registry,
+    )
+    allowed = apply_configuration_for_source_management(desired, view.policy)
+    if isinstance(allowed, Err):
+        return allowed
+    try:
+        return Ok(
+            SourceRemovalRequest(
+                view.configuration,
+                desired,
+                view.policy,
+                source,
+                cleared_default,
             )
         )
     except ValueError as error:
@@ -621,4 +720,140 @@ def render_source_addition_review(request: SourceAdditionRequest) -> tuple[str, 
         f"  origin: {origin}{ref}",
         "  next: download and validate one immutable source snapshot, then save this source",
         f"  effect: enable {source.alias}{default}",
+    )
+
+
+def render_source_sync_review(row: SourceStageRow) -> tuple[str, ...]:
+    """Render the bounded review before one already-configured origin is fetched again.
+
+    Synchronizing changes what the marketplace offers, never what a project already installed, so
+    the review says both: the effect is on availability, and installed files stay untouched.
+    """
+
+    source = row.source
+    ref = "" if source.ref is None else f"; ref: {source.ref}"
+    return (
+        "Source sync review:",
+        f"  alias: {source.alias}",
+        f"  kind: {_source_kind(source)}",
+        f"  origin: {row.origin}{ref}",
+        f"  health now: {row.health.value}",
+        "  next: download and validate one immutable snapshot, then replace the managed snapshot",
+        "  effect: artifacts added upstream become installable, and artifacts dropped upstream "
+        "stop being offered",
+        "  keeps: every installed artifact, until you install or update it from the new snapshot",
+    )
+
+
+def render_source_sync_outcome(alias: SourceAlias, outcome: SourceSyncOutcome) -> tuple[str, ...]:
+    """Say which of the three synchronization results happened, in the user's own terms."""
+
+    revision = outcome.current.candidate.resolved_revision
+    if outcome.disposition is SyncDisposition.PUBLISHED:
+        headline = f"{alias}: snapshot updated to {revision}; its artifacts are available now"
+    elif outcome.disposition is SyncDisposition.UNCHANGED:
+        headline = f"{alias}: already current at {revision}; nothing changed"
+    else:
+        headline = f"{alias}: could not refresh; keeping the last good snapshot at {revision}"
+    warnings = tuple(
+        f"  {diagnostic.severity.value}: {diagnostic.message}" for diagnostic in outcome.diagnostics
+    )
+    return (headline, *warnings)
+
+
+def plan_source_resubscription(
+    view: SourceStageView, alias: SourceAlias
+) -> Result[ConfiguredSource]:
+    """Select the subscription whose identity may be adopted, changing nothing.
+
+    Resubscription writes no configuration at all, so there is no desired configuration to plan —
+    only the question of whether this alias is one AART may act on.  The transition itself comes
+    from the runtime, which is the only layer that can see what the origin declares today.
+    """
+
+    if not isinstance(alias, SourceAlias):
+        return _error("source resubscription requires a configured source alias")
+    selected = tuple(source for source in view.configuration.sources if source.alias == alias)
+    if not selected:
+        return _error(
+            f"no configured source has alias {alias}",
+            "run `aart source list` to see configured aliases",
+        )
+    source = selected[0]
+    if not source.enabled:
+        return _error(
+            f"source {alias} is disabled",
+            f"enable {alias} in the TUI Sources stage before adopting a new identity",
+        )
+    return Ok(source)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceResubscriptionRequest:
+    """One reviewed identity adoption, dispatched identically by both front-ends.
+
+    It carries no configuration at all — that is the operation's whole point.  Alias, kind,
+    location, ref, and the default-registry flag survive because nothing here can express a change
+    to them, which is the difference between adopting an identity and re-subscribing by hand.
+    """
+
+    source: ConfiguredSource
+    transition: SourceIdentityTransition
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, ConfiguredSource) or not isinstance(
+            self.transition, SourceIdentityTransition
+        ):
+            raise ValueError("source resubscription request is invalid")
+        if not self.source.enabled:
+            raise ValueError("a disabled source cannot be resubscribed")
+
+
+def _short(digest: ObjectDigest) -> str:
+    return digest.value[:12]
+
+
+def render_source_resubscription_review(request: SourceResubscriptionRequest) -> tuple[str, ...]:
+    """Render both identities, so the operator approves a transition rather than a destination."""
+
+    source = request.source
+    ref = "" if source.ref is None else f"; ref: {source.ref}"
+    transition = request.transition
+    return (
+        "Source resubscription review:",
+        f"  alias: {source.alias}",
+        f"  kind: {_source_kind(source)}",
+        f"  origin: {_origin(source)}{ref}",
+        f"  identity: {transition.from_source_id.value} -> {transition.to_source_id.value}",
+        f"  revision: {transition.from_revision} -> {transition.to_revision}",
+        f"  snapshot: {_short(transition.from_digest)} -> {_short(transition.to_digest)}",
+        f"  preserves: alias, kind, origin{ref and ', ref'}, and the default-registry flag",
+        "  effect: publish the new snapshot and bind this alias to it",
+        "  keeps: every installed artifact and every file in every project",
+        "  note: installed artifacts are not re-installed; they surface as update-available or "
+        "removed-upstream through the normal reconciliation",
+    )
+
+
+def render_source_removal_review(request: SourceRemovalRequest) -> tuple[str, ...]:
+    """Render the bounded review before a subscription and its managed snapshot are dropped."""
+
+    source = request.source
+    ref = "" if source.ref is None else f"; ref: {source.ref}"
+    default = (
+        ("  effect: clear the default registry; no source becomes default in its place",)
+        if request.cleared_default
+        else ()
+    )
+    return (
+        "Source removal review:",
+        f"  alias: {source.alias}",
+        f"  kind: {_source_kind(source)}",
+        f"  origin: {_origin(source)}{ref}",
+        f"  effect: forget {source.alias} and delete its managed snapshot",
+        *default,
+        "  keeps: every installed artifact and every file in every project",
+        "  note: AART cannot see installation records in other project directories; a project "
+        "still naming this alias reports an unconfigured source until it is re-added or "
+        "uninstalled",
     )

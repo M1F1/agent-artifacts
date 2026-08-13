@@ -42,6 +42,9 @@ HINT_ORDER: Tuple[Tuple[str, str], ...] = (
     ("b", "back"),
     ("?", "details"),
     ("a", "add"),
+    ("s", "sync"),
+    ("i", "resubscribe"),
+    ("r", "remove"),
     ("q", "quit"),
 )
 """The canonical hint table. Rendering drops from the right, so later entries are cheaper."""

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import posixpath
 from dataclasses import dataclass, field, replace
-from typing import Callable
+from typing import Callable, Protocol
 
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
 from agent_artifacts.configuration.policy import redact_text
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
+from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.semver import SemVer
@@ -20,10 +21,12 @@ from agent_artifacts.sources.model import (
     SnapshotLimits,
     SourceCandidate,
     SourceHealth,
+    SourceIdentityTransition,
     SourceLockLease,
     SourceLockRequest,
     SourcePublishCommand,
     SourcePublishReceipt,
+    SourceStorePaths,
     SourceSyncOutcome,
     SourceValidationRequest,
     SyncDisposition,
@@ -41,6 +44,22 @@ AcquireLocalPort = Callable[[LocalSnapshotRequest], Result[SourceCandidate]]
 AcquireGitPort = Callable[[GitSnapshotRequest], Result[SourceCandidate]]
 ValidateSourcePort = Callable[[SourceValidationRequest], Result[ValidatedSourceCandidate]]
 PublishSourcePort = Callable[[SourcePublishCommand], Result[SourcePublishReceipt]]
+DiscardSourcePort = Callable[[SourceStorePaths], Result[bool]]
+PruneSourceRootPort = Callable[[SourceStorePaths], None]
+PruneSupersededSnapshotsPort = Callable[[SourceStorePaths, ObjectDigest], None]
+
+
+class _AcquisitionInputs(Protocol):
+    """What acquiring a candidate needs, shared by synchronization and adoption."""
+
+    @property
+    def source(self) -> ConfiguredSource: ...
+
+    @property
+    def limits(self) -> SnapshotLimits: ...
+
+    @property
+    def timeout_seconds(self) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +101,90 @@ class SourceSyncRequest:
             or self.timeout_seconds <= 0
         ):
             raise ValueError("source sync request is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardPorts:
+    acquire_lock: AcquireLockPort
+    release_lock: ReleaseLockPort
+    read_current: ReadCurrentPort
+    discard: DiscardSourcePort
+    prune_root: PruneSourceRootPort
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardRequest:
+    """One managed source instance to remove; carries no configuration decision of its own."""
+
+    source: ConfiguredSource
+    data_root: str
+    lock_timeout_seconds: float = 30.0
+    lock_stale_after_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if not posixpath.isabs(self.data_root) or posixpath.normpath(self.data_root) != (
+            self.data_root
+        ):
+            raise ValueError("source discard request is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscardOutcome:
+    """What the discard actually removed, for the command receipt."""
+
+    existed: bool
+    discarded: CurrentSource | None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAdoptionPorts:
+    """Adoption acquires and publishes exactly as synchronization does, and then tidies up."""
+
+    sync: SourceSyncPorts
+    prune_snapshots: PruneSupersededSnapshotsPort
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAdoptionRequest:
+    """Adopt the identity an unchanged origin now declares, under an unchanged alias.
+
+    ``expected`` is the whole review contract.  Left unset, this plans and publishes nothing, so
+    the caller can render the transition; set, it is the only transition that may be applied, and
+    an upstream that moved again between review and finalize is refused rather than absorbed.
+    """
+
+    source: ConfiguredSource
+    data_root: str
+    executable_version: SemVer
+    available_capabilities: tuple[Capability, ...]
+    observed_at_epoch_seconds: int
+    expected: SourceIdentityTransition | None = None
+    timeout_seconds: int = 60
+    limits: SnapshotLimits = field(default_factory=SnapshotLimits)
+    lock_timeout_seconds: float = 30.0
+    lock_stale_after_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if (
+            not posixpath.isabs(self.data_root)
+            or posixpath.normpath(self.data_root) != self.data_root
+            or not isinstance(self.observed_at_epoch_seconds, int)
+            or isinstance(self.observed_at_epoch_seconds, bool)
+            or self.observed_at_epoch_seconds < 0
+            or not isinstance(self.timeout_seconds, int)
+            or isinstance(self.timeout_seconds, bool)
+            or self.timeout_seconds <= 0
+        ):
+            raise ValueError("source adoption request is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAdoptionOutcome:
+    """The reviewed or applied transition, and the snapshot the alias is bound to afterwards."""
+
+    transition: SourceIdentityTransition
+    finalized: bool
+    current: CurrentSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +237,7 @@ def _retained(
 
 
 def _candidate(
-    request: SourceSyncRequest,
+    request: _AcquisitionInputs,
     paths,
     ports: SourceSyncPorts,
 ) -> Result[SourceCandidate]:
@@ -202,7 +305,8 @@ def _sync_locked(
         changed_identity = _failure(
             "source-invalid",
             "resolved source changed its declared source identity",
-            "review the configured origin before replacing this source",
+            f"review both identities with `aart source resubscribe --alias "
+            f"{request.source.alias.value}`, then re-run it with --yes to adopt the change",
         )
         return _retained(changed_identity, current, request.fallback)
     published = ports.publish(
@@ -249,6 +353,159 @@ def sync_source(
         return lease
     outcome = _sync_locked(request, ports)
     released = ports.release_lock(lease.value)
+    if isinstance(released, Err):
+        if isinstance(outcome, Err):
+            return Err((*outcome.diagnostics, *released.diagnostics))
+        return released
+    return outcome
+
+
+def discard_source(
+    request: SourceDiscardRequest,
+    ports: SourceDiscardPorts,
+) -> Result[SourceDiscardOutcome]:
+    """Serialize discard against synchronization and report what was actually removed.
+
+    Ending a subscription owns the managed store as well as the configuration.  Leaving the store
+    behind would keep the origin bound to its old declared identity, so a later subscription to the
+    same origin would be refused by the identity check with nothing left to name in remediation.
+    """
+
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    lease = ports.acquire_lock(
+        SourceLockRequest(
+            paths.lock_directory,
+            request.lock_timeout_seconds,
+            request.lock_stale_after_seconds,
+        )
+    )
+    if isinstance(lease, Err):
+        return lease
+    current = ports.read_current(CurrentSourceRequest(paths, request.source.alias))
+    discarded = ports.discard(paths)
+    released = ports.release_lock(lease.value)
+    if isinstance(discarded, Err):
+        if isinstance(released, Err):
+            return Err((*discarded.diagnostics, *released.diagnostics))
+        return discarded
+    if isinstance(released, Err):
+        return released
+    ports.prune_root(paths)
+    return Ok(
+        SourceDiscardOutcome(
+            discarded.value,
+            None if isinstance(current, Err) else current.value,
+        )
+    )
+
+
+def _adopt_locked(
+    request: SourceAdoptionRequest,
+    ports: SourceAdoptionPorts,
+) -> Result[SourceAdoptionOutcome]:
+    alias = request.source.alias.value
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    current_result = ports.sync.read_current(CurrentSourceRequest(paths, request.source.alias))
+    if isinstance(current_result, Err):
+        return current_result
+    current = current_result.value
+    if current is None:
+        return _failure(
+            "source-invalid",
+            "no managed snapshot is subscribed at this origin",
+            f"run `aart source sync --alias {alias}` to publish one first",
+        )
+    acquired = _candidate(request, paths, ports.sync)
+    if isinstance(acquired, Err):
+        return acquired
+    validated = ports.sync.validate(
+        SourceValidationRequest(
+            acquired.value,
+            request.executable_version,
+            request.available_capabilities,
+        )
+    )
+    if isinstance(validated, Err):
+        return validated
+    if validated.value.candidate != acquired.value:
+        return _failure(
+            "source-invalid",
+            "source validator returned a candidate different from its request",
+        )
+    if current.declared_source_id == validated.value.declared_source_id:
+        # Adoption is never a quiet alias for refresh.  One operation, one meaning: if there is no
+        # identity to adopt, the operator wanted the operation that republishes a snapshot.
+        return _failure(
+            "source-invalid",
+            "source still declares the identity this alias is already subscribed to",
+            f"run `aart source sync --alias {alias}` to refresh the snapshot instead",
+        )
+    try:
+        observed = SourceIdentityTransition(
+            current.declared_source_id,
+            validated.value.declared_source_id,
+            current.candidate.resolved_revision,
+            validated.value.candidate.resolved_revision,
+            current.candidate.snapshot_digest,
+            validated.value.candidate.snapshot_digest,
+        )
+    except ValueError as error:
+        return _failure("source-invalid", str(error))
+    if request.expected is None:
+        return Ok(SourceAdoptionOutcome(observed, False, current))
+    if request.expected != observed:
+        return _failure(
+            "source-invalid",
+            "source no longer declares the identity that was reviewed",
+            f"run `aart source resubscribe --alias {alias}` again to review the current transition",
+        )
+    published = ports.sync.publish(
+        SourcePublishCommand(paths, validated.value, request.observed_at_epoch_seconds)
+    )
+    if isinstance(published, Err):
+        return published
+    expected_candidate = validated.value.candidate
+    if (
+        published.value.current.candidate.snapshot_digest != expected_candidate.snapshot_digest
+        or published.value.current.candidate.resolved_revision
+        != expected_candidate.resolved_revision
+        or published.value.current.declared_source_id != validated.value.declared_source_id
+    ):
+        return _failure(
+            "source-invalid",
+            "source publication receipt does not match the validated candidate",
+        )
+    # The pointer swap above is the rebinding; this drops the tree the old identity left behind, so
+    # the store holds one snapshot per subscription rather than one per identity ever adopted.
+    ports.prune_snapshots(paths, expected_candidate.snapshot_digest)
+    return Ok(SourceAdoptionOutcome(observed, True, published.value.current))
+
+
+def adopt_source_identity(
+    request: SourceAdoptionRequest,
+    ports: SourceAdoptionPorts,
+) -> Result[SourceAdoptionOutcome]:
+    """Review or apply one identity change at an origin and ref that did not move.
+
+    Serialized against synchronization by the same lease, because the two operations disagree
+    about exactly one thing — whether a changed declared identity is a refusal or the point — and
+    interleaving them would let a plain `sync` republish between review and finalize.
+    """
+
+    if not request.source.enabled:
+        return _failure("source-invalid", "disabled source cannot be resubscribed")
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    lease = ports.sync.acquire_lock(
+        SourceLockRequest(
+            paths.lock_directory,
+            request.lock_timeout_seconds,
+            request.lock_stale_after_seconds,
+        )
+    )
+    if isinstance(lease, Err):
+        return lease
+    outcome = _adopt_locked(request, ports)
+    released = ports.sync.release_lock(lease.value)
     if isinstance(released, Err):
         if isinstance(outcome, Err):
             return Err((*outcome.diagnostics, *released.diagnostics))

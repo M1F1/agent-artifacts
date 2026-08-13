@@ -6,13 +6,27 @@ __pycache__/
 build/
 /dist/*.whl
 
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
 # Local env
 .venv/
 venv/
 .python-version
 
-# Agent harness worktrees / local state
-.claude/
+# Agent harness targets. AART installs into these paths, so a live-acceptance run inside this
+# checkout leaves real artifacts here; they are one user's local state, never repository content.
+# Anchored to the root: the same names under tests/ are fixtures and must stay tracked.
+/.agent-artifacts/
+/.claude/
+/.agents/
+/.tabnine/
+/.opencode/
+/.vibe/
+/.mcp.json
+/TABNINE.md
 
 # OS
 .DS_Store
