@@ -46,10 +46,10 @@ The relevant current paths are:
   `Request`.
 - `agent_artifacts/commands/install.py` resolves
   source, catalog, profiles, and manifest, then calls `planners.plan_install`.
-- [`agent_artifacts/planners.py`](../../agent_artifacts/planners.py) emits `CopyTree` for
+- `agent_artifacts/planners.py` emits `CopyTree` for
   skills and hook payloads, `WriteFile` for guidelines and memory, and `MergeJson` for MCP and
   hook registrations.
-- [`agent_artifacts/executor.py`](../../agent_artifacts/executor.py) executes `CopyTree`,
+- `agent_artifacts/executor.py` executes `CopyTree`,
   `WriteFile`, `MergeJson`, `RemovePath`, `Warn`, and manifest writes.
 - `agent_artifacts/manifest.py` serializes
   `ManifestEntry`. Existing entries do not have an install-mode field.
