@@ -2,16 +2,16 @@
 
 from .model import (
     NativeReferenceAcquisition,
-    NativeUpstreamCheck,
+    NativeReferenceCheck,
     RegistryApplyCommand,
     RegistryApplyReceipt,
     RegistryChangeKind,
     RegistryFileChange,
     RegistryMutationPlan,
-    UpstreamDisposition,
+    NativeReferenceDisposition,
 )
 from .planning import (
-    check_native_upstream,
+    check_native_reference,
     plan_native_promotion,
     plan_registry_entry_add,
     project_registry_mutation,
@@ -21,14 +21,14 @@ from .planning import (
 
 __all__ = [
     "NativeReferenceAcquisition",
-    "NativeUpstreamCheck",
+    "NativeReferenceCheck",
     "RegistryApplyCommand",
     "RegistryApplyReceipt",
     "RegistryChangeKind",
     "RegistryFileChange",
     "RegistryMutationPlan",
-    "UpstreamDisposition",
-    "check_native_upstream",
+    "NativeReferenceDisposition",
+    "check_native_reference",
     "plan_native_promotion",
     "plan_registry_entry_add",
     "project_registry_mutation",

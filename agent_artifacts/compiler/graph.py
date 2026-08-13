@@ -389,6 +389,41 @@ def _semantic_json(artifact: IndexArtifact) -> JsonObject:
                 ),
             )
         )
+    if artifact.requires:
+        requirements: list[JsonObject] = []
+        for selector in artifact.requires:
+            entries: list[tuple[str, JsonValue]] = [
+                ("type", selector.identity.kind),
+                ("name", selector.identity.name),
+            ]
+            if selector.version is not None:
+                entries.append(
+                    (
+                        "version",
+                        JsonObject(
+                            tuple(
+                                item
+                                for item in (
+                                    (
+                                        "min_inclusive",
+                                        None
+                                        if selector.version.min_inclusive is None
+                                        else str(selector.version.min_inclusive),
+                                    ),
+                                    (
+                                        "max_exclusive",
+                                        None
+                                        if selector.version.max_exclusive is None
+                                        else str(selector.version.max_exclusive),
+                                    ),
+                                )
+                                if item[1] is not None
+                            )
+                        ),
+                    )
+                )
+            requirements.append(JsonObject(tuple(entries)))
+        entries.append(("requires", JsonArray(tuple(requirements))))
     return JsonObject(tuple(entries))
 
 
@@ -413,6 +448,7 @@ def _normalize_artifact(artifact: IndexArtifact) -> IndexArtifact:
         ),
         setup=setup,
         collections=tuple(sorted(set(artifact.collections))),
+        requires=tuple(sorted(set(artifact.requires), key=lambda item: str(item.identity))),
     )
 
 
@@ -940,6 +976,9 @@ def _artifact_json(item: MarketplaceArtifact) -> JsonObject:
     requires_aart = semantic.get("requires_aart")
     if requires_aart is not None:
         entries.append(("requires_aart", requires_aart))
+    requires = semantic.get("requires")
+    if requires is not None:
+        entries.append(("requires", requires))
     return JsonObject(tuple(entries))
 
 

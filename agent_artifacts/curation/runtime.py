@@ -55,7 +55,7 @@ from agent_artifacts.registry_maintenance.model import (
     RegistryApplyReceipt as MutationApplyReceipt,
 )
 from agent_artifacts.registry_maintenance.planning import (
-    check_native_upstream,
+    check_native_reference,
     plan_native_promotion,
     project_registry_mutation,
 )
@@ -522,7 +522,7 @@ class LocalCurationService:
         acquired = self.native_acquirer(entry.source.url, entry.source.ref)
         if isinstance(acquired, Err):
             return acquired
-        checked = check_native_upstream(
+        checked = check_native_reference(
             current.value,
             entry,
             acquired.value,

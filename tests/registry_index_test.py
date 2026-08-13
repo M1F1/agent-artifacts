@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceId
@@ -60,8 +61,11 @@ def _registry():
     return result.value
 
 
-def _package(name: str) -> NativeArtifactPackage:
-    manifest = parse_artifact_manifest(_manifest_json(name))
+def _package(name: str, *, requires: list[dict[str, object]] | None = None) -> NativeArtifactPackage:
+    document = json.loads(_manifest_json(name))
+    if requires is not None:
+        document["requires"] = requires
+    manifest = parse_artifact_manifest(json.dumps(document))
     assert isinstance(manifest, Ok)
     return NativeArtifactPackage(manifest.value, None, _digest("1"), _digest("2"))
 
@@ -260,6 +264,65 @@ class RegistryIndexTest(unittest.TestCase):
         self.assertIsInstance(
             build_registry_index(_registry(), _digest("0"), (artifact,), (excluded.value,)),
             Err,
+        )
+
+    def test_declared_dependencies_must_resolve_match_version_and_remain_acyclic(self) -> None:
+        kernel = index_artifact_from_package(
+            _package("using-residues"),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("3"),
+        )
+        stage = index_artifact_from_package(
+            _package(
+                "residual-stage",
+                requires=[
+                    {
+                        "type": "skill",
+                        "name": "using-residues",
+                        "version": {"min_inclusive": "1.2.0", "max_exclusive": "2.0.0"},
+                    }
+                ],
+            ),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("4"),
+        )
+        indexed = build_registry_index(_registry(), _digest("0"), (kernel, stage), ())
+        self.assertIsInstance(indexed, Ok)
+        assert isinstance(indexed, Ok)
+        indexed_stage = next(
+            item for item in indexed.value.artifacts if item.identity.name == "residual-stage"
+        )
+        self.assertEqual(str(indexed_stage.requires[0].identity), "skill/using-residues")
+        self.assertEqual(
+            parse_registry_index(canonical_json_bytes(registry_index_to_json(indexed.value))),
+            indexed,
+        )
+
+        self.assertIsInstance(build_registry_index(_registry(), _digest("0"), (stage,), ()), Err)
+        incompatible = index_artifact_from_package(
+            _package(
+                "residual-stage",
+                requires=[
+                    {
+                        "type": "skill",
+                        "name": "using-residues",
+                        "version": {"max_exclusive": "1.0.0"},
+                    }
+                ],
+            ),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("5"),
+        )
+        self.assertIsInstance(
+            build_registry_index(_registry(), _digest("0"), (kernel, incompatible), ()), Err
+        )
+        cyclic_kernel = index_artifact_from_package(
+            _package("using-residues", requires=[{"type": "skill", "name": "residual-stage"}]),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("6"),
+        )
+        self.assertIsInstance(
+            build_registry_index(_registry(), _digest("0"), (cyclic_kernel, stage), ()), Err
         )
 
 

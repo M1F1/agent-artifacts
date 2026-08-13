@@ -198,7 +198,6 @@ CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("build", "Build the payload-free marketplace index"),
     ("audit", "Audit review, provenance, setup, license, and security evidence"),
     ("diff", "Preview deterministic canonical-format diff without writing"),
-    ("init", "Initialize an empty registry checkout"),
     ("user", "Enter User workflows; AART never commits or pushes Maintainer changes"),
 )
 
@@ -2920,23 +2919,9 @@ def _prompt_role(
 
 
 def _is_canonical_maintainer_workspace(root: str) -> bool:
-    """Recognize a registry or an empty Git checkout without reclassifying legacy catalogs."""
+    """Classify only an explicit current registry marker as a maintainer workspace."""
 
-    if os.path.isfile(os.path.join(root, "aart-registry.json")):
-        return True
-    git = os.path.join(root, ".git")
-    if not (os.path.isdir(git) or os.path.isfile(git)):
-        return False
-    legacy_markers = (
-        "bundles.json",
-        "upstreams.json",
-        "skills",
-        "guidelines",
-        "mcp",
-        "hooks",
-        "memory",
-    )
-    return not any(os.path.exists(os.path.join(root, marker)) for marker in legacy_markers)
+    return os.path.isfile(os.path.join(root, "aart-registry.json"))
 
 
 def _default_curation_service_factory(root: str) -> DomainResult[CurationService]:

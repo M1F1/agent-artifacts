@@ -63,6 +63,7 @@ def index_artifact_from_package(
         provenance,
         tuple(sorted(set(collections))),
         package.manifest.requires_aart,
+        package.manifest.requires,
     )
 
 
@@ -132,6 +133,46 @@ def validate_registry_graph(
             )
         qualified.add(key)
         artifact_map[artifact.identity] = artifact
+    dependency_edges: dict[ArtifactIdentity, tuple[ArtifactIdentity, ...]] = {}
+    for artifact in artifacts:
+        dependencies: list[ArtifactIdentity] = []
+        for selector in artifact.requires:
+            dependency = artifact_map.get(selector.identity)
+            if dependency is None:
+                return _error(
+                    REGISTRY_GRAPH_INVALID,
+                    f"artifact {artifact.identity} requires missing {selector.identity}",
+                )
+            if selector.version is not None and not selector.version.allows(dependency.version):
+                return _error(
+                    REGISTRY_GRAPH_INVALID,
+                    f"artifact {artifact.identity} excludes available dependency {selector.identity}",
+                )
+            dependencies.append(selector.identity)
+        dependency_edges[artifact.identity] = tuple(sorted(dependencies, key=str))
+    visited_dependencies: set[ArtifactIdentity] = set()
+
+    def visit_dependency(
+        identity: ArtifactIdentity,
+        trail: tuple[ArtifactIdentity, ...],
+    ) -> Result[None]:
+        if identity in trail:
+            cycle = " -> ".join(str(item) for item in (*trail, identity))
+            return _error(REGISTRY_GRAPH_INVALID, f"artifact dependency cycle: {cycle}")
+        if identity in visited_dependencies:
+            return Ok(None)
+        next_trail = (*trail, identity)
+        for dependency in dependency_edges[identity]:
+            checked = visit_dependency(dependency, next_trail)
+            if isinstance(checked, Err):
+                return checked
+        visited_dependencies.add(identity)
+        return Ok(None)
+
+    for identity in sorted(dependency_edges, key=str):
+        checked = visit_dependency(identity, ())
+        if isinstance(checked, Err):
+            return checked
     collection_map: dict[str, CollectionManifest] = {}
     for collection in collections:
         if collection.name in collection_map:

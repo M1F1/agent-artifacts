@@ -580,6 +580,55 @@ def _compatibility_diagnostics(
     return tuple(diagnostics)
 
 
+def _validate_declared_dependencies(
+    packages: tuple[NativeArtifactPackage, ...],
+) -> Result[None]:
+    """Require a complete, acyclic local package graph before a source is consumable."""
+
+    by_identity = {item.manifest.identity: item for item in packages}
+    dependencies: dict[ArtifactIdentity, tuple[ArtifactIdentity, ...]] = {}
+    for package in packages:
+        resolved: list[ArtifactIdentity] = []
+        for selector in package.manifest.requires:
+            dependency = by_identity.get(selector.identity)
+            if dependency is None:
+                return _error(
+                    ARTIFACT_INVALID,
+                    f"{package.manifest.identity} requires missing {selector.identity}",
+                )
+            if selector.version is not None and not selector.version.allows(
+                dependency.manifest.version
+            ):
+                return _error(
+                    ARTIFACT_INVALID,
+                    f"{package.manifest.identity} excludes available dependency {selector.identity}",
+                )
+            resolved.append(selector.identity)
+        dependencies[package.manifest.identity] = tuple(sorted(resolved, key=str))
+
+    visited: set[ArtifactIdentity] = set()
+
+    def visit(identity: ArtifactIdentity, trail: tuple[ArtifactIdentity, ...]) -> Result[None]:
+        if identity in trail:
+            cycle = " -> ".join(str(item) for item in (*trail, identity))
+            return _error(ARTIFACT_INVALID, f"artifact dependency cycle: {cycle}")
+        if identity in visited:
+            return Ok(None)
+        next_trail = (*trail, identity)
+        for dependency in dependencies[identity]:
+            checked = visit(dependency, next_trail)
+            if isinstance(checked, Err):
+                return checked
+        visited.add(identity)
+        return Ok(None)
+
+    for identity in sorted(dependencies, key=str):
+        checked = visit(identity, ())
+        if isinstance(checked, Err):
+            return checked
+    return Ok(None)
+
+
 def load_native_source(
     snapshot: SourceSnapshot,
     *,
@@ -628,6 +677,9 @@ def load_native_source(
             )
         identities.add(package.value.manifest.identity)
         packages.append(package.value)
+    dependency_graph = _validate_declared_dependencies(tuple(packages))
+    if isinstance(dependency_graph, Err):
+        return dependency_graph
     collections = _load_collections(entries, manifest)
     if isinstance(collections, Err):
         return collections

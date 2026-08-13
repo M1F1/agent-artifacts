@@ -1,4 +1,4 @@
-"""Pure registry entry, native promotion, and recorded-importer update planning."""
+"""Pure registry entry, native promotion, and exact native-reference refresh planning."""
 
 from __future__ import annotations
 
@@ -56,11 +56,11 @@ from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
 from .model import (
     NativeReferenceAcquisition,
-    NativeUpstreamCheck,
+    NativeReferenceCheck,
     RegistryChangeKind,
     RegistryFileChange,
     RegistryMutationPlan,
-    UpstreamDisposition,
+    NativeReferenceDisposition,
     registry_mutation_review_digest,
 )
 
@@ -683,7 +683,7 @@ def plan_native_promotion(
     locked, indexed = state.value
     previous_index = next((item for item in indexed if item.identity == entry.identity), None)
     if previous_index is not None and previous_index.source_id != acquired_source_id:
-        return _error(f"native upstream source identity changed for {entry.identity}")
+        return _error(f"native reference source identity changed for {entry.identity}")
     prospective = project_registry_mutation(snapshot, added.value)
     if isinstance(prospective, Err):
         return prospective
@@ -736,14 +736,14 @@ def plan_native_promotion(
     )
 
 
-def check_native_upstream(
+def check_native_reference(
     snapshot: SourceSnapshot,
     entry: RegistryEntry,
     acquisition: NativeReferenceAcquisition,
     *,
     executable_version: SemVer,
     available_capabilities: tuple[Capability, ...],
-) -> Result[NativeUpstreamCheck]:
+) -> Result[NativeReferenceCheck]:
     plan = plan_native_promotion(
         snapshot,
         entry,
@@ -754,8 +754,8 @@ def check_native_upstream(
     if isinstance(plan, Err):
         return plan
     disposition = (
-        UpstreamDisposition.UP_TO_DATE
+        NativeReferenceDisposition.UP_TO_DATE
         if plan.value.changed_paths == 0
-        else UpstreamDisposition.CHANGED
+        else NativeReferenceDisposition.CHANGED
     )
-    return Ok(NativeUpstreamCheck(disposition, plan.value))
+    return Ok(NativeReferenceCheck(disposition, plan.value))

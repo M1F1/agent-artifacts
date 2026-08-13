@@ -237,6 +237,50 @@ class NativeSourceLoaderTest(unittest.TestCase):
         ]
         self.assertEqual(_unwrap(_load(with_directories)), local)
 
+    def test_declared_dependencies_are_resolved_before_the_source_crosses_its_boundary(self):
+        entries = _five_package_entries()
+        review_path = "artifacts/skill/review/artifact.json"
+        review = _artifact_document(
+            "skill",
+            "review",
+            "aart-skill-v1",
+            requires=[{"type": "guideline", "name": "python"}],
+        )
+        entries = _replaced(entries, review_path, _json_entry(review_path, review))
+        source = _unwrap(_load(entries))
+        review_package = next(item for item in source.artifacts if item.manifest.identity.name == "review")
+        self.assertEqual(str(review_package.manifest.requires[0].identity), "guideline/python")
+
+        missing = _artifact_document(
+            "skill",
+            "review",
+            "aart-skill-v1",
+            requires=[{"type": "skill", "name": "absent"}],
+        )
+        self.assertEqual(
+            _codes(_load(_replaced(entries, review_path, _json_entry(review_path, missing)))),
+            ("artifact-invalid",),
+        )
+        python_path = "artifacts/guideline/python/artifact.json"
+        cyclic_python = _artifact_document(
+            "guideline",
+            "python",
+            "aart-guideline-v1",
+            requires=[{"type": "skill", "name": "review"}],
+        )
+        self.assertEqual(
+            _codes(
+                _load(
+                    _replaced(
+                        entries,
+                        python_path,
+                        _json_entry(python_path, cyclic_python),
+                    )
+                )
+            ),
+            ("artifact-invalid",),
+        )
+
     def test_discovery_requires_the_root_marker_and_uses_only_explicit_artifact_roots(self):
         from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 

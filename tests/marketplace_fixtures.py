@@ -144,6 +144,7 @@ def artifact(
     object_character: str = "3",
     provenance: IndexProvenance | None = None,
     requires_aart: VersionBounds | None = None,
+    requires: tuple[ArtifactSelector, ...] = (),
 ) -> IndexArtifact:
     return IndexArtifact(
         SourceId(source_id),
@@ -158,6 +159,7 @@ def artifact(
         review=review,
         provenance=provenance,
         requires_aart=VersionBounds() if requires_aart is None else requires_aart,
+        requires=requires,
     )
 
 
