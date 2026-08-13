@@ -4,10 +4,11 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `1.3.0`
-- **Execution status:** `v1.3.0` release contract ready after merged analytics-routing PR #71
-- **Next task:** merge this release PR, publish `v1.3.0`, then finish registry analytics PR #3
-- **Last updated:** 2026-08-11
+- **Current code version:** `2.0.0`
+- **Execution status:** canonical remediation WP-1..WP-6 implemented on `codex/canonical-remediation`;
+  the `2.0.0` release contract (v8) is written and every local gate is green
+- **Next task:** merge and publish `v2.0.0`, then publish both re-authored registries, then run WP-7
+- **Last updated:** 2026-08-13
 
 ## Live acceptance run
 
@@ -1662,3 +1663,48 @@ None.
 - This ledger-only update records the remote evidence and triggers the final protected-merge
   matrix. The release becomes authoritative only after that matrix is green and the reviewed PR is
   squash-merged into `main`.
+
+### 2026-08-13 — canonical remediation WP-1..WP-6; 2.0.0 release contract
+
+- Retired the legacy plan/merge/execute engine (`planners.py`, `merge.py`, `executor.py`) and their
+  tests. Nothing imported them after the legacy CLI/TUI branch went; only their own tests kept them
+  alive. The two pure helpers whose edges they were the last cover of — `_render_template` and
+  `_descend` — gained direct tests against the canonical implementations.
+- **Version decision: 2.0.0, not 1.5.0.** The remediation removes nine top-level commands, which is
+  exactly the criterion `compatibility-v7.md` cited when it argued `1.4.0` was minor. A minor would
+  have told a `1.4.0` user the upgrade was safe and then taken half their CLI. The v7 note warned
+  that an executable major invalidates every artifact declaring the conventional `max_exclusive:
+  "2.0.0"`; that disruption is accepted here rather than deferred, and both registries re-author
+  their windows as part of the same change.
+- Restored two pieces of released evidence the branch had damaged. `schema-freeze-v7.json` had been
+  rewritten in place while still naming `"release_version":"1.4.0"`, silently replacing a shipped
+  release's frozen contract; it is back to its `v1.4.0` bytes and `2.0.0` has its own v8 freeze.
+  `migration-v1.md`, which the release check requires and which the `migrate` removal deleted, is
+  restored and marked historical.
+- **`1.4.0` shipped an unsatisfiable migration**, and this is the finding that connects the rest.
+  It required a package-root `SETUP.md` for setup v2 while its own package validation refused any
+  file at that path, so following its documented migration produced a registry `1.4.0` itself
+  rejected with `unexpected canonical package path: SETUP.md`. Verified directly against the
+  released tag. `2.0.0` allows the file, so publication and consumption agree on one rule — which
+  also means no released `1.x` can validate either migrated registry.
+- Two version literals went stale the moment the major landed, both the same defect this branch had
+  already fixed once for the version flags: `registry init` floored its window at the running
+  release but kept a literal `2.0.0` ceiling, so on `2.0.0` floor met ceiling and every init was
+  refused; and the test suite hardcoded `1.0.0` as the executable version with "needs a newer AART"
+  spelled `2.0.0`. Both now derive from the running release.
+- WP-6, `M1F1/agent-artifacts-registry-2`: window raised to `>= 2.0.0, < 3.0.0`, CI repinned from
+  `v1.3.1` to `v2.0.0`, and the `mcp/github-docker` manual route replaced by the full end-to-end
+  guide written during live acceptance, which had been sitting uncommitted in a working tree since
+  the run. Format, strict frozen validate, lock, build, audit, and both compatibility points pass.
+- WP-6, `M1F1/agent-artifacts-registry`: same window and CI move. `skill/author-aart-installer` was
+  still teaching the retired setup revision — its authoring schema and template pinned `const: 1`,
+  its reference documented protocol v1, and its workflow never said where `SETUP.md` goes — so an
+  author following it produced a recipe AART has refused since `1.4.0`. All four migrated to v2.
+  Stale `--latest-version 1.1.1` pins dropped rather than renumbered. All gates pass.
+- Cleared the acceptance run's probe residue from the `agent-artifacts-registry-2` main checkout: a
+  consumer installation (`.agent-artifacts/manifest.json`, `.mcp.json`, `.tabnine/`) performed into
+  the registry checkout itself, plus the uncommitted index/lock drift.
+- Local gates: `make quality` green — format, lint, mypy, 1136 unit tests, integration, validate,
+  83.00% branch coverage (threshold 82), `2.0.0` packaging, docs. `make release-check` fails only on
+  the expected publication-ordering controls: the registry checkouts are on unpublished branches and
+  the release source is not yet merged into `origin/main`. Nothing is pushed.
