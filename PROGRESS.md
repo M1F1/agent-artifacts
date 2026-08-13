@@ -9,6 +9,14 @@
 - **Next task:** merge this release PR, publish `v1.3.0`, then finish registry analytics PR #3
 - **Last updated:** 2026-08-11
 
+## Live acceptance run
+
+Live (non-hermetic) acceptance testing against real GitHub registries and a real consumer repo is
+tracked in its own ledger so it does not mix with this release record:
+[docs/testing/PROGRESS-live-acceptance.md](docs/testing/PROGRESS-live-acceptance.md)
+(design · plan · scenario map alongside it in `docs/testing/`). Status: design and plan written,
+not started.
+
 ## Post-v1.0.0 catalog-boundary follow-up
 
 - **Plan:** [docs/plan/PLAN-post-v1-catalog-boundary.md](docs/plan/PLAN-post-v1-catalog-boundary.md)
