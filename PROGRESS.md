@@ -17,8 +17,11 @@
 Live (non-hermetic) acceptance testing against real GitHub registries and a real consumer repo is
 tracked in its own ledger so it does not mix with this release record:
 [docs/testing/PROGRESS-live-acceptance.md](docs/testing/PROGRESS-live-acceptance.md)
-(design · plan · scenario map alongside it in `docs/testing/`). Status: design and plan written,
-not started.
+(design · plan · scenario map alongside it in `docs/testing/`). The second run, against released
+`2.1.0`, is [docs/testing/PROGRESS-live-acceptance-v2.md](docs/testing/PROGRESS-live-acceptance-v2.md);
+its composed response is
+[DESIGN-subscription-identity-binding.md](docs/design/DESIGN-subscription-identity-binding.md) and
+[PLAN-subscription-identity-binding.md](docs/plan/PLAN-subscription-identity-binding.md).
 
 ## Post-v1.0.0 catalog-boundary follow-up
 
@@ -1779,3 +1782,33 @@ None.
 - **No registry precondition.** Unlike `2.0.0`, nothing needs re-authoring first: a registry on
   `>= 2.0.0, < 3.0.0` passes `registry test --compatibility all --latest-version 2.1.0` unchanged,
   so executable and registries can be released in either order.
+
+### 2026-08-13 — live acceptance v2 against released 2.1.0
+
+- **`v2.1.0` is released.** Tag `3aff63d`, GitHub release *AART 2.1.0*, wheel attached by the release
+  workflow. `make release-check` passed from merged `main` against a clean `origin/HEAD` checkout of
+  Registry A — including `registry-compatibility`, which is the machine-checked form of "no registry
+  precondition".
+- **Second live acceptance run executed** against the released wheel (downloaded release asset, not a
+  local build): [docs/testing/PROGRESS-live-acceptance-v2.md](docs/testing/PROGRESS-live-acceptance-v2.md).
+  Ten new stressors (`LAS-31`..`LAS-40`), 26 scenarios, 13 findings, agent scope complete.
+- **Three of v1's four consumer majors are fixed**, verified by re-applying the original stressors:
+  the bare-`update` crash (`LAF-20`), `status` never reporting an available update (`LAF-25`), and
+  `update --prune` removing nothing (`LAF-26`). `LAF-17` teardown litter persists. `LAF-16` is now
+  root-caused: `_plan_review_value` includes `source_age_seconds`, so the consent digest is a clock.
+- **The criticality finding is `LAF-33`**, and it lands on the feature this release shipped: after
+  `source resubscribe` adopts a new identity, every artifact installed under the old one reports
+  `source-unavailable` permanently, because the installation record pins `declared_id` and nothing
+  rebinds it. The resubscription review promises the opposite.
+- **Four attractors** organise the set: a missing subscription reported as a missing artifact;
+  identity pinned in four places of which two are maintained; remediation that exists in the envelope
+  but not on the operator's path; and review-first binding a process rather than a decision.
+- **Composed response written**, four changes for eleven residues:
+  [DESIGN-subscription-identity-binding.md](docs/design/DESIGN-subscription-identity-binding.md) and
+  [PLAN-subscription-identity-binding.md](docs/plan/PLAN-subscription-identity-binding.md) (SI-1..SI-7,
+  shaped as a `2.2.0` minor). Three `question` findings are deliberately left to a maintainer
+  decision rather than folded into the plan.
+- Positive results kept in the record: the removal ordering invariant survives a deleted store,
+  `2.0.0` ↔ `2.1.0` data roots interoperate in both directions with no migration, concurrent source
+  operations are safe, and both new Sources actions drive correctly through the text front-end.
+- Still human-gated, unchanged: the curses passes and the MCP credential pass.
