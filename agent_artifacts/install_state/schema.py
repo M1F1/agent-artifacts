@@ -261,6 +261,7 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
             "link_semantics",
             "created_destination",
             "overwrote",
+            "restores_from",
         }
     )
     fields = _object(
@@ -287,7 +288,14 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
     if isinstance(installed, Err):
         return installed
     optional_strings: dict[str, str | None] = {}
-    for name in ("source_path", "json_path", "merge_mode", "link_target", "link_semantics"):
+    for name in (
+        "source_path",
+        "json_path",
+        "merge_mode",
+        "link_target",
+        "link_semantics",
+        "restores_from",
+    ):
         if name not in fields.value:
             optional_strings[name] = None
             continue
@@ -331,6 +339,7 @@ def _effect(value: JsonValue, *, path: str, pointer: str) -> Result[EffectProof]
                 link_semantics=optional_strings["link_semantics"],  # type: ignore[arg-type]
                 created_destination=flags["created_destination"],
                 overwrote=flags["overwrote"],
+                restores_from=optional_strings["restores_from"],
             )
         )
     except ValueError as error:
@@ -517,6 +526,8 @@ def _effect_json(effect: EffectProof) -> JsonObject:
         fields.append(("link_target", effect.link_target))
     if effect.link_semantics is not None:
         fields.append(("link_semantics", effect.link_semantics))
+    if effect.restores_from is not None:
+        fields.append(("restores_from", effect.restores_from))
     fields.extend(
         (
             ("created_destination", effect.created_destination),

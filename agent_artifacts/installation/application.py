@@ -74,6 +74,9 @@ _TRUST_RANK = {
     TrustClass.COMPANY_REVIEWED.value: 4,
 }
 _PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
+# The sidecar a memory ``replace`` parks displaced content in, sitting beside the destination so
+# the operator finds it without consulting install state (docs/design/DESIGN-memory.md §8.3).
+_BACKUP_SUFFIX = ".agent-artifacts-bak"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +88,8 @@ class _CopyPayload:
 class _WritePayload:
     destination: str
     content: bytes
+    # Names the sibling write this one must be restored from when the installation is removed.
+    restores_from: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,7 +297,10 @@ def _target_paths(kind: str, name: str, profile: Profile) -> Result[tuple[str, .
             if profile.memory.kind == "file"
             else posixpath.join(profile.memory.dest, f"{name}.md")
         )
-        return Ok((target,))
+        # The replace sidecar is snapshotted alongside the destination whichever mode runs: the
+        # mode is resolved later, and a path the planner may write must be observed before review
+        # so its precondition is part of what the operator approves.
+        return Ok((target, target + _BACKUP_SUFFIX))
     return _error(
         INSTALL_INVALID,
         f"profile {profile.name!r} does not support canonical {kind} installs in this scope",
@@ -468,12 +476,24 @@ def _native_actions(
                 )
             return Ok((_WritePayload(target_path, text.encode("utf-8")),))
         if request.memory_mode == "replace":
-            if bool((existing_text or "").strip()) and not request.force:
+            displaced = bool((existing_text or "").strip())
+            if displaced and not request.force:
                 return _error(
                     INSTALL_CONFLICT,
                     f"memory {request.identity.name!r}: {target_path} exists; use force to replace",
                 )
-            return Ok((_WritePayload(target_path, text.encode("utf-8")),))
+            if not displaced:
+                return Ok((_WritePayload(target_path, text.encode("utf-8")),))
+            # ``replace`` is the one mode that destroys content the operator wrote, and forcing it
+            # says "put yours here", not "lose mine forever".  The displaced bytes go to a sidecar
+            # that uninstall reads back, so the destructive mode stays reversible.
+            backup_path = target_path + _BACKUP_SUFFIX
+            return Ok(
+                (
+                    _WritePayload(backup_path, (existing_text or "").encode("utf-8")),
+                    _WritePayload(target_path, text.encode("utf-8"), restores_from=backup_path),
+                )
+            )
         if request.memory_mode in {"prepend", "append"}:
             merged = _memory_block(
                 existing_text,
@@ -745,6 +765,7 @@ def _convert_actions(
                         else "write-file"
                     ),
                     overwrote=snapshot.kind != "absent" and snapshot.digest != desired,
+                    restores_from=action.restores_from,
                 )
         elif isinstance(action, _MergePayload):
             identity_evidence = _merge_identity_evidence(action)
@@ -862,6 +883,7 @@ def _proof(operation: InstallOperation) -> EffectProof:
             source_path=(operation.source_path if operation.effect_kind == "write-file" else None),
             created_destination=created,
             overwrote=operation.overwrote,
+            restores_from=operation.restores_from,
         )
     if isinstance(operation, LinkOperation):
         return EffectProof(

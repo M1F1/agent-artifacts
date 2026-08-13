@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import posixpath
+from dataclasses import replace
 from typing import Protocol
 
 from agent_artifacts.configuration.model import SourceKind, git_location_parts
@@ -493,6 +494,7 @@ def _plan_removal(
     snapshot: PathSnapshot,
     *,
     force: bool,
+    restore: PathSnapshot | None = None,
 ) -> tuple[UninstallOperation | None, str | None]:
     if snapshot.kind == "special":
         return None, f"unsafe special destination: {effect.destination}"
@@ -561,6 +563,13 @@ def _plan_removal(
     owned = snapshot.kind == expected_kind and snapshot.digest == effect.installed_digest
     if not owned and not force:
         return None, f"managed Copy destination drifted: {effect.destination}"
+    if effect.restores_from is not None:
+        # The install displaced content the operator wrote and parked it in a sidecar.  Removing
+        # this destination without putting those bytes back would finish the data loss the sidecar
+        # exists to prevent, so a missing or unreadable sidecar is a conflict, not a silent delete.
+        if restore is None or restore.kind != "file":
+            return None, f"replaced memory backup is missing: {effect.restores_from}"
+        return UninstallOperation(effect, absolute, snapshot, "write", restore.content), None
     return UninstallOperation(effect, absolute, snapshot, "remove"), None
 
 
@@ -614,7 +623,21 @@ def prepare_uninstall(
         observed = ports.inspect_path(absolute)
         if isinstance(observed, Err):
             return observed
-        operation, conflict = _plan_removal(record, effect, absolute, observed.value, force=force)
+        restore: PathSnapshot | None = None
+        if effect.restores_from is not None:
+            sidecar = ports.inspect_path(
+                absolute_effect_path(
+                    replace(effect, destination=effect.restores_from, restores_from=None),
+                    record.scope,
+                    location,
+                )
+            )
+            if isinstance(sidecar, Err):
+                return sidecar
+            restore = sidecar.value
+        operation, conflict = _plan_removal(
+            record, effect, absolute, observed.value, force=force, restore=restore
+        )
         if conflict is not None:
             conflicts.append(conflict)
         elif operation is not None:

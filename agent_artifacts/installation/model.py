@@ -344,6 +344,9 @@ class WriteFileOperation:
     precondition: PathSnapshot
     effect_kind: Literal["write-file", "managed-block"] = "write-file"
     overwrote: bool = False
+    # Set only on a memory ``replace`` that displaced foreign content: names the sibling write
+    # holding the displaced bytes, so uninstall restores rather than deletes.
+    restores_from: str | None = None
 
     def __post_init__(self) -> None:
         _safe_relative(self.source_path, "file source path")
@@ -353,6 +356,7 @@ class WriteFileOperation:
             or self.desired_digest != file_snapshot_digest(self.content, self.executable)
             or self.effect_kind not in {"write-file", "managed-block"}
             or not isinstance(self.overwrote, bool)
+            or (self.restores_from is not None and self.restores_from == self.destination)
         ):
             raise ValueError("write-file operation is not exactly bound")
 
@@ -464,6 +468,7 @@ def _operation_json(operation: InstallOperation) -> JsonObject:
             (
                 ("kind", operation.effect_kind),
                 ("source_path", operation.source_path),
+                ("restores_from", operation.restores_from),
                 *common,
             )
         )
@@ -635,6 +640,17 @@ def _operations_match_artifact(plan: InstallPlan) -> bool:
                 )
             )
             and isinstance(operations[1], MergeJsonOperation)
+        )
+    # memory: one write, or the backup sidecar followed by the destination that restores from it.
+    # Nothing else — the pair is the only shape in which a replace may displace foreign content,
+    # and requiring the link here keeps an unattached sidecar out of a reviewed plan.
+    if len(operations) == 2:
+        sidecar, destination = operations
+        return (
+            isinstance(sidecar, WriteFileOperation)
+            and isinstance(destination, WriteFileOperation)
+            and sidecar.restores_from is None
+            and destination.restores_from == sidecar.destination
         )
     return len(operations) == 1 and isinstance(operations[0], WriteFileOperation)
 

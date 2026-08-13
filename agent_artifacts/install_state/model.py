@@ -179,6 +179,10 @@ class EffectProof:
     link_semantics: Literal["immutable-object", "mutable-local"] | None = None
     created_destination: bool = False
     overwrote: bool = False
+    # The sibling effect holding the content this write displaced.  Only a memory ``replace`` over
+    # foreign content sets it: uninstall must put those bytes back rather than leave the operator
+    # with a deleted file, and the destination alone cannot say what was there before.
+    restores_from: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -190,6 +194,12 @@ class EffectProof:
             or not isinstance(self.overwrote, bool)
         ):
             raise ValueError("installation effect proof is invalid")
+        if self.restores_from is not None and (
+            self.kind != "write-file"
+            or not _one_line(self.restores_from)
+            or self.restores_from == self.destination
+        ):
+            raise ValueError("effect restore source must be a distinct write-file sibling")
         if self.source_path is not None:
             parsed_source = parse_relative_path(self.source_path)
             if not isinstance(parsed_source, Ok):
