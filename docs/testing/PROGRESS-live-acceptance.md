@@ -7,6 +7,10 @@ Running record for the live acceptance run. Design:
 
 **Status: in progress.** Phase LA-0 complete; phase LA-R starting.
 
+**A second run exists.** [PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md) re-applies
+these stressors to released `2.1.0` and adds `LAS-31`..`LAS-40`. It records which of the findings
+below are fixed, which persist, and which are now root-caused. This file is not rewritten by it.
+
 ---
 
 ## Run header
