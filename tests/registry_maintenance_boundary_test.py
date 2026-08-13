@@ -7,9 +7,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PURE_ROOT = ROOT / "agent_artifacts" / "registry_maintenance"
 FORBIDDEN = {"os", "pathlib", "shutil", "socket", "subprocess", "tempfile", "importlib"}
+# The canonical consumer path: nothing here may reach into maintainer-only planning.
 CONSUMERS = (
-    ROOT / "agent_artifacts" / "commands" / "install.py",
-    ROOT / "agent_artifacts" / "commands" / "update.py",
+    ROOT / "agent_artifacts" / "commands" / "marketplace.py",
+    ROOT / "agent_artifacts" / "consumer" / "application.py",
+    ROOT / "agent_artifacts" / "lifecycle" / "application.py",
     ROOT / "agent_artifacts" / "marketplace" / "catalog.py",
 )
 

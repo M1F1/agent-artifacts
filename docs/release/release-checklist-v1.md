@@ -27,7 +27,7 @@ without captured subprocess output.
 - Installation state: schema v2.
 - Frozen input digests: [`schema-freeze-v1.json`](schema-freeze-v1.json).
 - Compatibility: [`compatibility-v1.md`](compatibility-v1.md).
-- Migration and rollback: [`migration-v1.md`](migration-v1.md).
+- Migration and rollback: `migration-v1.md`.
 
 ## Acceptance evidence
 

@@ -57,4 +57,4 @@ could belong to either of two configured refs.
 **Downgrading** to `1.0.0` is safe only if you have not added a second ref for an origin: `1.0.0`
 rejects such a configuration. See [`compatibility-v2.md`](compatibility-v2.md).
 
-Migration from 0.1.x is unchanged: [`migration-v1.md`](migration-v1.md).
+Migration from 0.1.x is unchanged: `migration-v1.md`.

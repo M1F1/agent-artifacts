@@ -241,5 +241,5 @@ for agent artifacts.
   is not required by any runtime, registry, state, Copy, or Symlink contract.
 
 See the [compatibility matrix](docs/release/compatibility-v1.md),
-[migration guide](docs/release/migration-v1.md), and
+`migration guide`, and
 [release evidence](docs/release/release-checklist-v1.md).

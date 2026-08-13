@@ -44,19 +44,19 @@ The relevant current paths are:
 
 - [`agent_artifacts/cli.py`](../../agent_artifacts/cli.py) parses install flags into
   `Request`.
-- [`agent_artifacts/commands/install.py`](../../agent_artifacts/commands/install.py) resolves
+- `agent_artifacts/commands/install.py` resolves
   source, catalog, profiles, and manifest, then calls `planners.plan_install`.
 - [`agent_artifacts/planners.py`](../../agent_artifacts/planners.py) emits `CopyTree` for
   skills and hook payloads, `WriteFile` for guidelines and memory, and `MergeJson` for MCP and
   hook registrations.
 - [`agent_artifacts/executor.py`](../../agent_artifacts/executor.py) executes `CopyTree`,
   `WriteFile`, `MergeJson`, `RemovePath`, `Warn`, and manifest writes.
-- [`agent_artifacts/manifest.py`](../../agent_artifacts/manifest.py) serializes
+- `agent_artifacts/manifest.py` serializes
   `ManifestEntry`. Existing entries do not have an install-mode field.
-- [`agent_artifacts/commands/status.py`](../../agent_artifacts/commands/status.py) is the
+- `agent_artifacts/commands/status.py` is the
   local installed-artifact listing. It reads only `.agent-artifacts/manifest.json` and local
   disk, which makes it the right agent-facing surface for "what is installed here?"
-- [`agent_artifacts/commands/list.py`](../../agent_artifacts/commands/list.py) is a catalog
+- `agent_artifacts/commands/list.py` is a catalog
   browser. It does not read a consumer project today, so it should not be the primary place
   for installed-mode metadata.
 

@@ -37,7 +37,7 @@ without captured subprocess output.
   from the v1 freeze: `agent_artifacts/configuration/schema.py`, from the relaxed origin-and-ref
   uniqueness rule.
 - Compatibility: [`compatibility-v2.md`](compatibility-v2.md).
-- Migration from 0.1.x: unchanged, [`migration-v1.md`](migration-v1.md).
+- Migration from 0.1.x: unchanged, `migration-v1.md`.
 
 ## Acceptance evidence
 
