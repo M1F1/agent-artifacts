@@ -106,18 +106,27 @@ def registry_entry(
 
 
 def renamed_native_snapshot(name: str) -> SourceSnapshot:
+    """The reference snapshot with only the ``code-review`` package renamed.
+
+    The rename must follow the path, never every manifest in the snapshot: a package whose
+    directory was not renamed keeps its own identity, and rewriting its ``name`` would produce a
+    manifest that disagrees with its package path — which the loader correctly rejects.
+    """
+
     entries: list[SnapshotEntry] = []
     for entry in native_snapshot().entries:
-        raw = str(entry.path).replace("/code-review", f"/{name}")
+        original = str(entry.path)
+        raw = original.replace("/code-review", f"/{name}")
         parsed = parse_relative_path(raw)
         assert isinstance(parsed, Ok)
         content = entry.content
-        if raw.endswith("/artifact.json"):
-            value = json.loads(content)
-            value["name"] = name
-            content = json.dumps(value).encode()
-        elif raw.endswith("/payload/SKILL.md"):
-            content = content.replace(b"name: code-review", f"name: {name}".encode())
+        if raw != original:
+            if raw.endswith("/artifact.json"):
+                value = json.loads(content)
+                value["name"] = name
+                content = json.dumps(value).encode()
+            elif raw.endswith("/payload/SKILL.md"):
+                content = content.replace(b"name: code-review", f"name: {name}".encode())
         entries.append(SnapshotEntry(parsed.value, entry.kind, content, entry.executable))
     return SourceSnapshot(SnapshotOrigin.IMMUTABLE_GIT, tuple(entries))
 

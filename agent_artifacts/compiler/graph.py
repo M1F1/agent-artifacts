@@ -752,6 +752,18 @@ def compile_marketplace_graph_phase(
     )
 
 
+def _supported(values: Iterable[object]) -> str:
+    """Render the set an operator may choose from, sorted so the message is reproducible.
+
+    A refusal that names only the rejected value leaves the caller guessing which value would
+    work.  Every dimension below is a closed set declared by the artifact, so the message can
+    always name it — that is what makes the refusal actionable rather than merely correct.
+    """
+
+    labels = sorted(str(value) for value in values)
+    return ", ".join(labels) if labels else "none"
+
+
 def evaluate_compatibility(
     artifact: MarketplaceArtifact,
     target: CompatibilityTarget,
@@ -776,28 +788,32 @@ def evaluate_compatibility(
         payload.append(
             CompatibilityReason(
                 "profile-unsupported",
-                f"profile {target.profile!r} is not supported",
+                f"profile {target.profile!r} is not supported; supported profiles: "
+                f"{_supported(manifest.compatibility.profiles)}",
             )
         )
     if target.platform not in manifest.compatibility.platforms:
         payload.append(
             CompatibilityReason(
                 "platform-unsupported",
-                f"platform {target.platform!r} is not supported",
+                f"platform {target.platform!r} is not supported; supported platforms: "
+                f"{_supported(manifest.compatibility.platforms)}",
             )
         )
     if target.scope not in manifest.install.scopes:
         payload.append(
             CompatibilityReason(
                 "scope-unsupported",
-                f"scope {target.scope!r} is not supported",
+                f"scope {target.scope!r} is not supported; supported scopes: "
+                f"{_supported(manifest.install.scopes)}",
             )
         )
     if target.mode not in manifest.install.modes:
         payload.append(
             CompatibilityReason(
                 "mode-unsupported",
-                f"mode {target.mode!r} is not supported",
+                f"mode {target.mode!r} is not supported; supported modes: "
+                f"{_supported(manifest.install.modes)}",
             )
         )
     available_effects = frozenset(target.effects)
@@ -814,7 +830,8 @@ def evaluate_compatibility(
             setup.append(
                 CompatibilityReason(
                     "setup-platform-unsupported",
-                    f"setup does not support platform {target.platform!r}",
+                    f"setup does not support platform {target.platform!r}; supported platforms: "
+                    f"{_supported(manifest.setup.platforms)}",
                 )
             )
         available_setup = frozenset(target.setup_capabilities)

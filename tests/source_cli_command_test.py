@@ -185,7 +185,7 @@ class SourceCliCommandTests(unittest.TestCase):
             self.assertEqual(json.loads(list_stdout.getvalue())["sources"][0]["health"], "healthy")
             marketplace = json.loads(marketplace_stdout.getvalue())
             self.assertTrue(marketplace["ok"])
-            self.assertEqual(len(marketplace["artifacts"]), 1)
+            self.assertEqual(len(marketplace["artifacts"]), 2)
             self.assertFalse((root / "data" / "objects").exists())
 
     def test_add_synchronizes_before_saving_and_emits_json(self) -> None:

@@ -202,7 +202,7 @@ class ConsumerRuntimeTest(unittest.TestCase):
 
             self.assertIsInstance(listed, Ok)
             assert isinstance(listed, Ok)
-            self.assertEqual(len(listed.value.items), 1)
+            self.assertEqual(len(listed.value.items), 2)
             digest = listed.value.items[0].artifact.artifact.object_digest.value
             self.assertFalse(
                 (
@@ -238,7 +238,7 @@ class ConsumerRuntimeTest(unittest.TestCase):
 
             self.assertIsInstance(listed, Ok)
             assert isinstance(listed, Ok)
-            self.assertEqual(len(listed.value.items), 2)
+            self.assertEqual(len(listed.value.items), 3)
             store = Path(object_store_paths(str(data_root)).objects)
             for item in listed.value.items:
                 digest = item.artifact.artifact.object_digest.value
@@ -340,7 +340,7 @@ class ConsumerRuntimeTest(unittest.TestCase):
                 self.assertEqual(acquired_requests, [])
                 self.assertEqual(
                     len(loaded.value.context.catalog.items),
-                    2,
+                    3,
                     loaded.value.context.catalog,
                 )
                 coordinate = next(
@@ -546,7 +546,7 @@ class ConsumerRuntimeTest(unittest.TestCase):
                 assert isinstance(rows, Ok), rows
                 self.assertEqual(
                     tuple(row.key for row in rows.value),
-                    ("team/skill/code-review@1.0.0",),
+                    ("team/memory/house@1.0.0", "team/skill/code-review@1.0.0"),
                 )
                 digest = loaded.context.catalog.items[0].artifact.artifact.object_digest.value
                 self.assertTrue(
@@ -713,7 +713,7 @@ class ConsumerRuntimeTest(unittest.TestCase):
 
             assert isinstance(projected, Ok), projected
             self.assertEqual(projected.value.alias, source.alias)
-            self.assertEqual(len(projected.value.artifacts), 1)
+            self.assertEqual(len(projected.value.artifacts), 2)
             self.assertTrue(
                 all(
                     (

@@ -238,7 +238,7 @@ class NativePromotionTest(unittest.TestCase):
         assert isinstance(index, Ok), index
         self.assertEqual(
             {str(item.identity) for item in index.value.artifacts},
-            {"skill/code-review", "skill/other"},
+            {"memory/house", "skill/code-review", "skill/other"},
         )
         self.assertFalse(
             any(str(change.path).startswith("artifacts/") for change in result.value.changes)
