@@ -113,10 +113,10 @@ class InstallStateSchemaTests(unittest.TestCase):
                             "column": None,
                         },
                         "remediation": [
-                            "Preview a project-scope migration: aart migrate state --from 0.1 "
-                            "--scope project --dry-run",
-                            "Preview a user-scope migration: aart migrate state --from 0.1 "
-                            "--scope user --dry-run",
+                            "Reinstall the artifacts you need with: aart marketplace install "
+                            "<coordinate> --profile <name>",
+                            "Remove the retired state file and reinstall: this revision is "
+                            "not converted at runtime",
                         ],
                         "details": {
                             "detected_schema": "install-state-v0.1",

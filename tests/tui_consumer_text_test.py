@@ -246,7 +246,13 @@ class TuiConsumerTextTest(unittest.TestCase):
         self.assertIs(loaded, expected)
         service.browse.assert_called_once()
 
-    def test_err03_legacy_loader_adapts_command_errors_at_one_named_boundary(self) -> None:
+    def test_err03_consumer_loader_reports_one_named_boundary_failure(self) -> None:
+        """Without a canonical consumer service the wizard fails at one named boundary.
+
+        The retired catalog source factory is never consulted as a fallback: a missing
+        canonical service is an error to report, not a reason to read a legacy catalog.
+        """
+
         source_factory = mock.Mock(return_value=tui.Err("legacy catalog could not open", code=7))
         session = WizardSession(
             current="artifacts",
@@ -270,16 +276,16 @@ class TuiConsumerTextTest(unittest.TestCase):
             loaded.diagnostics,
             (
                 Diagnostic(
-                    DiagnosticCode("legacy-wizard-read-failed"),
+                    DiagnosticCode("canonical-consumer-unavailable"),
                     Severity.ERROR,
-                    "legacy catalog could not open",
-                    details=(("legacy_exit_code", "7"),),
+                    "the canonical consumer service is unavailable",
+                    remediation=("configure and synchronize a canonical registry source",),
                 ),
             ),
         )
-        source_factory.assert_called_once()
+        source_factory.assert_not_called()
 
-    def test_err04_legacy_project_state_renders_a_record_and_back_allows_user_scope_without_writes(
+    def test_err04_retired_project_state_renders_a_record_and_back_allows_user_scope_without_writes(
         self,
     ) -> None:
         """A project-only legacy state cannot block a user-scoped Artifacts view."""
@@ -328,7 +334,7 @@ class TuiConsumerTextTest(unittest.TestCase):
             self.assertIn(str(project), rendered)
             self.assertIn(str(state_path), compact)
             self.assertIn(
-                "aartmigratestate--from0.1--scopeproject--dry-run",
+                "aartmarketplaceinstall<coordinate>--profile<name>",
                 compact,
             )
             self.assertIn("Select artifact(s)/bundle(s)", rendered)
