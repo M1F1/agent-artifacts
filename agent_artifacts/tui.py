@@ -74,7 +74,6 @@ from .model import (
     InstallScope,
     Manifest,
     ManifestEntry,
-    Profile,
     Request,
     Result,
     SetupQueueItem,
@@ -82,6 +81,7 @@ from .model import (
 from .outcomes import ActionSummary, CommandOutcome, OutcomeItem, render_outcome
 from .planners import install_target_paths
 from .profiles.loader import load_profiles
+from .profiles.model import Profile
 from .profiles.scope import profile_for_scope
 from .reporting.application import ReportingApplicationService
 from .reporting.model import ReportingPlan, UsageReport

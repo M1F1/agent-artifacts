@@ -11,19 +11,15 @@ import unittest
 from agent_artifacts import planners
 from agent_artifacts.model import (
     Artifact,
-    CopyTarget,
     CopyTree,
     Err,
-    GuidelineTarget,
-    HookTarget,
     MergeJson,
-    MergeSpec,
     Ok,
-    Profile,
     Request,
     WriteFile,
     WriteManifest,
 )
+from agent_artifacts.profiles.model import CopyTarget, GuidelineTarget, HookTarget, MergeSpec, Profile
 
 
 # --------------------------------------------------------------------------- #

@@ -15,6 +15,7 @@ import os
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
 from . import fp, merge
+from .profiles.model import GuidelineTarget, HookTarget, MemoryTarget, MergeSpec, Profile
 from .hashing import sha256_bytes
 from .model import (
     Action,
@@ -23,19 +24,14 @@ from .model import (
     CatalogSubscription,
     CopyTree,
     Err,
-    GuidelineTarget,
-    HookTarget,
     InstallLink,
     InstallMode,
     InstallProof,
     ManifestEntry,
-    MemoryTarget,
     MergeJson,
     MergeProof,
-    MergeSpec,
     Ok,
     Plan,
-    Profile,
     Result,
     SymlinkTree,
     Warn,

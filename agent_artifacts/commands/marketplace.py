@@ -330,6 +330,7 @@ def _action_request(
         force=request.force,
         offline=request.offline,
         prune=request.prune,
+        memory_mode=request.memory_mode or "prepend",
     )
 
 

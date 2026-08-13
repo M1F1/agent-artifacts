@@ -295,6 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
         coordinates: str,
         prune: bool = False,
         placement: bool = True,
+        memory_mode: bool = False,
     ) -> argparse.ArgumentParser:
         """Declare one canonical lifecycle action over configured sources.
 
@@ -330,6 +331,17 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="install placement mode (default: copy)",
             )
+        if memory_mode:
+            lifecycle.add_argument(
+                "--memory-mode",
+                dest="memory_mode",
+                choices=("replace", "prepend", "append", "skip"),
+                default=None,
+                help=(
+                    "how a memory artifact meets an existing instruction file "
+                    "(default: prepend)"
+                ),
+            )
         lifecycle.add_argument(
             "--offline",
             action="store_true",
@@ -358,6 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         "install configured-source artifacts for the selected harness profiles",
         coordinates="artifact or collection coordinate(s) to install",
+        memory_mode=True,
     )
     _add_lifecycle(
         "update",
@@ -749,6 +762,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
         install_mode=getattr(args, "install_mode", None) or "copy",
+        memory_mode=getattr(args, "memory_mode", None),
         ref=getattr(args, "ref", None),
         native_url=getattr(args, "native_url", None),
         native_path=getattr(args, "native_path", None),

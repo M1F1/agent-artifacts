@@ -448,6 +448,7 @@ def prepare_consumer_action(
                         mode=request.mode,
                         force=request.force,
                         offline=request.offline,
+                        memory_mode=request.memory_mode,
                     ),
                     context.catalog,
                     context.effective,

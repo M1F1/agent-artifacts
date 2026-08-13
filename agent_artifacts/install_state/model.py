@@ -16,6 +16,7 @@ from agent_artifacts.domain.identifiers import (
     SourceId,
 )
 from agent_artifacts.domain.result import Ok
+from agent_artifacts.model import MemoryMode
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonValue
 from agent_artifacts.protocol.paths import parse_relative_path
@@ -32,7 +33,6 @@ EffectKind = Literal[
     "symlink-tree",
 ]
 MergeMode = Literal["key", "list"]
-MemoryMode = Literal["replace", "prepend", "append", "skip"]
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
