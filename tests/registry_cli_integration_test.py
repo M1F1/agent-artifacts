@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_artifacts import cli
-from agent_artifacts.commands import registry as registry_command
-from agent_artifacts.domain.result import Err, Ok
+from agent_artifacts.curation.runtime import LocalCurationService
+from agent_artifacts.domain.result import Ok
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.protocol.registry_schema import parse_registry_index
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
@@ -79,9 +79,14 @@ class RegistryCliIntegrationTest(unittest.TestCase):
                 "company-registry",
                 "--display-name",
                 "Company Registry",
+                "--yes",
                 "--json",
             )
             self.assertEqual(code, 0, output)
+            finalized = json.loads(output)
+            self.assertEqual(finalized["phase"], "finalized")
+            self.assertEqual(finalized["review"]["phase"], "review")
+            self.assertEqual(finalized["outcome"]["status"], "succeeded")
             self.assertTrue((root / ".github/workflows/aart-registry.yml").is_file())
 
             before_reads = _tree_bytes(root)
@@ -100,12 +105,12 @@ class RegistryCliIntegrationTest(unittest.TestCase):
             code, output = _run("registry", "lock", "--source", str(root), "--check", "--json")
             self.assertEqual(code, 1, output)
             self.assertFalse((root / "aart.lock.json").exists())
-            self.assertEqual(_run("registry", "lock", "--source", str(root))[0], 0)
+            self.assertEqual(_run("registry", "lock", "--source", str(root), "--yes")[0], 0)
 
             code, output = _run("registry", "build", "--source", str(root), "--check", "--json")
             self.assertEqual(code, 1, output)
             self.assertFalse((root / "aart.index.json").exists())
-            self.assertEqual(_run("registry", "build", "--source", str(root))[0], 0)
+            self.assertEqual(_run("registry", "build", "--source", str(root), "--yes")[0], 0)
 
             self.assertEqual(
                 _run(
@@ -121,6 +126,7 @@ class RegistryCliIntegrationTest(unittest.TestCase):
                     "codex",
                     "--platform",
                     "darwin",
+                    "--yes",
                 )[0],
                 0,
             )
@@ -132,7 +138,7 @@ class RegistryCliIntegrationTest(unittest.TestCase):
             code, output = _run("registry", "format", "--source", str(root), "--check", "--json")
             self.assertEqual(code, 1, output)
             self.assertEqual(marker.read_bytes(), noncanonical)
-            self.assertEqual(_run("registry", "format", "--source", str(root))[0], 0)
+            self.assertEqual(_run("registry", "format", "--source", str(root), "--yes")[0], 0)
             self.assertNotEqual(marker.read_bytes(), noncanonical)
 
     def test_quality_commands_accept_a_read_only_registry_snapshot_without_git(self) -> None:
@@ -166,12 +172,15 @@ class RegistryCliIntegrationTest(unittest.TestCase):
                 native_snapshot(),
             )
 
+            service = LocalCurationService(
+                str(root), native_acquirer=lambda _url, _ref: Ok(acquisition)
+            )
             with patch(
-                "agent_artifacts.commands.registry._acquire_references",
-                return_value=Ok((acquisition,)),
+                "agent_artifacts.commands.registry.load_local_curation_service",
+                return_value=Ok(service),
             ):
-                self.assertEqual(_run("registry", "lock", "--source", str(root))[0], 0)
-                self.assertEqual(_run("registry", "build", "--source", str(root))[0], 0)
+                self.assertEqual(_run("registry", "lock", "--source", str(root), "--yes")[0], 0)
+                self.assertEqual(_run("registry", "build", "--source", str(root), "--yes")[0], 0)
                 before = _tree_bytes(root)
                 self.assertEqual(
                     _run("registry", "lock", "--source", str(root), "--check")[0],
@@ -187,63 +196,64 @@ class RegistryCliIntegrationTest(unittest.TestCase):
             assert isinstance(parsed, Ok)
             self.assertEqual(str(parsed.value.artifacts[0].source_id), "reference-native-source")
 
-    def test_unapproved_reference_is_rejected_before_any_network_acquisition(self) -> None:
-        entry = plan_registry_entry_add(
-            empty_registry_snapshot(),
-            registry_entry(review_status="pending"),
-        )
-        assert isinstance(entry, Ok)
-        authored = project_registry_mutation(empty_registry_snapshot(), entry.value)
-        assert isinstance(authored, Ok)
-
-        with patch("agent_artifacts.commands.registry.acquire_git_snapshot") as acquire:
-            result = registry_command._acquire_references(authored.value)
-
-        self.assertIsInstance(result, Err)
-        acquire.assert_not_called()
-
-    def test_migration_is_preview_first_and_apply_requires_explicit_flag(self) -> None:
+    def test_native_promotion_reviews_before_finalizing_an_immutable_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            legacy = Path(temporary) / "legacy"
-            destination = Path(temporary) / "registry"
-            shutil.copytree(ROOT / "tests/fixtures/importers/legacy_catalog", legacy)
-            destination.mkdir()
-            _git(legacy, "init", "-q", "-b", "main")
-            _git(legacy, "config", "user.name", "AART Test")
-            _git(legacy, "config", "user.email", "aart@example.invalid")
-            _git(legacy, "add", ".")
-            _git(legacy, "commit", "-q", "-m", "fixture")
-            _git(destination, "init", "-q")
-            base = (
-                "registry",
-                "migrate",
-                "--legacy-source",
-                str(legacy),
-                "--origin-url",
-                "https://github.com/example/legacy-catalog.git",
-                "--ref",
+            root = Path(temporary) / "registry"
+            root.mkdir()
+            _git(root, "init", "-q")
+            self.assertEqual(
+                _run(
+                    "registry",
+                    "init",
+                    "--source",
+                    str(root),
+                    "--source-id",
+                    "company-registry",
+                    "--display-name",
+                    "Company Registry",
+                    "--yes",
+                )[0],
+                0,
+            )
+            acquisition = NativeReferenceAcquisition(
+                "https://github.com/example/reference-skills.git",
                 "main",
+                "a" * 40,
+                native_snapshot(),
+            )
+            service = LocalCurationService(
+                str(root), native_acquirer=lambda _url, _ref: Ok(acquisition)
+            )
+            command = (
+                "registry",
+                "promote-native",
                 "--source",
-                str(destination),
-                "--source-id",
-                "company-registry",
-                "--display-name",
-                "Company Registry",
-                "--profile",
-                "codex",
+                str(root),
+                "skill",
+                "code-review",
+                "--url",
+                acquisition.url,
+                "--path",
+                "artifacts/skill/code-review",
                 "--json",
             )
+            entry = root / "entries/skill/code-review.json"
+            with patch(
+                "agent_artifacts.commands.registry.load_local_curation_service",
+                return_value=Ok(service),
+            ):
+                code, output = _run(*command)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(json.loads(output)["phase"], "review")
+                self.assertFalse(entry.exists())
 
-            code, output = _run(*base)
-            self.assertEqual(code, 0, output)
-            self.assertGreater(json.loads(output)["changed_paths"], 0)
-            self.assertEqual(_tree_bytes(destination), ())
-
-            code, output = _run(*base, "--apply")
-            self.assertEqual(code, 0, output)
-            self.assertTrue((destination / "aart-registry.json").is_file())
-            self.assertTrue((destination / "artifacts/skill/demo/artifact.json").is_file())
-
+                code, output = _run(*command[:-1], "--yes", "--json")
+                self.assertEqual(code, 0, output)
+                result = json.loads(output)
+                self.assertEqual(result["phase"], "finalized")
+                self.assertEqual(result["outcome"]["status"], "succeeded")
+                self.assertEqual(result["review"]["operation"], "registry.promote-native")
+                self.assertTrue(entry.is_file())
 
 if __name__ == "__main__":
     unittest.main()

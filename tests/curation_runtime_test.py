@@ -9,14 +9,12 @@ from unittest import mock
 
 from agent_artifacts.curation import runtime as curation_runtime
 from agent_artifacts.curation.model import CurationAction, CurationRequest
-from agent_artifacts.curation.runtime import LocalCurationService, PreparedCuration
+from agent_artifacts.curation.runtime import LocalCurationService
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.sources.model import SourceInstanceId, make_source_candidate
-from tests.importer_fixtures import importer_input
 from tests.registry_maintenance_fixtures import native_snapshot
 
 
@@ -30,42 +28,25 @@ def _failure(message: str = "injected failure") -> Err:
 
 
 class CurationRuntimeTest(unittest.TestCase):
-    def test_default_acquisition_adapters_bind_pinned_immutable_candidates(self) -> None:
+    def test_default_native_acquisition_binds_a_pinned_immutable_candidate(self) -> None:
         native_candidate = make_source_candidate(
             SourceInstanceId("git-" + "a" * 32),
             SourceAlias("curation-native"),
             "a" * 40,
             native_snapshot(),
         )
-        legacy_candidate = make_source_candidate(
-            SourceInstanceId("git-" + "b" * 32),
-            SourceAlias("curation-legacy"),
-            "a" * 40,
-            importer_input().snapshot,
-        )
         assert isinstance(native_candidate, Ok)
-        assert isinstance(legacy_candidate, Ok)
         with mock.patch.object(
             curation_runtime,
             "_candidate",
-            side_effect=(native_candidate, legacy_candidate),
+            return_value=native_candidate,
         ):
             native = curation_runtime._default_native_acquirer(
                 "https://github.com/example/reference-skills.git",
                 "main",
             )
-            legacy = curation_runtime._default_legacy_acquirer(
-                CurationRequest(
-                    CurationAction.IMPORT_FOREIGN,
-                    "/tmp/registry",
-                    legacy_source="https://github.com/example/legacy-catalog.git",
-                    ref="main",
-                )
-            )
         assert isinstance(native, Ok), native
-        assert isinstance(legacy, Ok), legacy
         self.assertEqual(native.value.resolved_commit, "a" * 40)
-        self.assertEqual(legacy.value.origin.resolved_commit, "a" * 40)
 
         with mock.patch.object(curation_runtime, "_candidate", return_value=_failure()):
             self.assertIsInstance(
@@ -75,27 +56,8 @@ class CurationRuntimeTest(unittest.TestCase):
                 ),
                 Err,
             )
-            self.assertIsInstance(
-                curation_runtime._default_legacy_acquirer(
-                    CurationRequest(
-                        CurationAction.IMPORT_FOREIGN,
-                        "/tmp/registry",
-                        legacy_source="https://github.com/example/legacy-catalog.git",
-                    )
-                ),
-                Err,
-            )
-        local_without_origin = curation_runtime._default_legacy_acquirer(
-            CurationRequest(
-                CurationAction.IMPORT_FOREIGN,
-                "/tmp/registry",
-                legacy_source="/tmp/local-legacy",
-            )
-        )
-        self.assertIsInstance(local_without_origin, Err)
-
         invalid_revision = make_source_candidate(
-            SourceInstanceId("git-" + "c" * 32),
+            SourceInstanceId("git-" + "b" * 32),
             SourceAlias("curation-native"),
             "not-a-commit",
             native_snapshot(),
@@ -174,7 +136,6 @@ class CurationRuntimeTest(unittest.TestCase):
             service = LocalCurationService(
                 str(root),
                 native_acquirer=lambda _url, _ref: _failure(),
-                legacy_acquirer=lambda _request: _failure(),
             )
             requests = (
                 CurationRequest(CurationAction.INIT, str(root)),
@@ -228,30 +189,12 @@ class CurationRuntimeTest(unittest.TestCase):
                     url="http://insecure.example/repo.git",
                     path="artifacts/skill/demo",
                 ),
-                CurationRequest(CurationAction.UPDATE_UPSTREAM, str(root)),
+                CurationRequest(CurationAction.REFRESH_NATIVE, str(root)),
                 CurationRequest(
-                    CurationAction.UPDATE_UPSTREAM,
+                    CurationAction.REFRESH_NATIVE,
                     str(root),
                     kind="skill",
                     name="missing",
-                ),
-                CurationRequest(CurationAction.IMPORT_FOREIGN, str(root)),
-                CurationRequest(
-                    CurationAction.IMPORT_FOREIGN,
-                    str(root),
-                    legacy_source="https://github.com/example/legacy.git",
-                    source_id="registry",
-                    display_name="Registry",
-                    artifact_version="not-semver",
-                    profiles=("codex",),
-                ),
-                CurationRequest(
-                    CurationAction.IMPORT_FOREIGN,
-                    str(root),
-                    legacy_source="https://github.com/example/legacy.git",
-                    source_id="registry",
-                    display_name="Registry",
-                    profiles=("codex",),
                 ),
                 CurationRequest(CurationAction.VALIDATE, str(other)),
             )
@@ -450,7 +393,7 @@ class CurationRuntimeTest(unittest.TestCase):
             missing = service.finalize(second.value, second.value.review.review_digest)
             self.assertIsInstance(missing, Err)
 
-    def test_promote_and_upstream_update_use_pinned_native_acquisition(self) -> None:
+    def test_promote_and_refresh_use_pinned_native_acquisition(self) -> None:
         acquisitions: list[tuple[str, str]] = []
 
         def acquire(url: str, ref: str):
@@ -506,7 +449,7 @@ class CurationRuntimeTest(unittest.TestCase):
             )
             failed_update = failing_update_service.prepare(
                 CurationRequest(
-                    CurationAction.UPDATE_UPSTREAM,
+                    CurationAction.REFRESH_NATIVE,
                     str(root),
                     kind="skill",
                     name="code-review",
@@ -516,7 +459,7 @@ class CurationRuntimeTest(unittest.TestCase):
 
             checked = service.prepare(
                 CurationRequest(
-                    CurationAction.UPDATE_UPSTREAM,
+                    CurationAction.REFRESH_NATIVE,
                     str(root),
                     kind="skill",
                     name="code-review",
@@ -554,7 +497,7 @@ class CurationRuntimeTest(unittest.TestCase):
 
             reviewed_update = service.prepare(
                 CurationRequest(
-                    CurationAction.UPDATE_UPSTREAM,
+                    CurationAction.REFRESH_NATIVE,
                     str(root),
                     kind="skill",
                     name="code-review",
@@ -573,7 +516,7 @@ class CurationRuntimeTest(unittest.TestCase):
 
             reviewed_update = service.prepare(
                 CurationRequest(
-                    CurationAction.UPDATE_UPSTREAM,
+                    CurationAction.REFRESH_NATIVE,
                     str(root),
                     kind="skill",
                     name="code-review",
@@ -592,57 +535,6 @@ class CurationRuntimeTest(unittest.TestCase):
             mismatched.write_bytes(entry.read_bytes())
             invalid_identity = service.prepare(CurationRequest(CurationAction.LOCK, str(root)))
             self.assertIsInstance(invalid_identity, Err)
-
-    def test_foreign_import_surfaces_conversion_warnings_and_applies_only_on_finalize(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "registry"
-            _git_checkout(root)
-            service = LocalCurationService(
-                str(root),
-                legacy_acquirer=lambda _request: Ok(importer_input()),
-            )
-            prepared = service.prepare(
-                CurationRequest(
-                    CurationAction.IMPORT_FOREIGN,
-                    str(root),
-                    legacy_source="https://github.com/example/legacy.git",
-                    ref="main",
-                    source_id="migrated-registry",
-                    display_name="Migrated Registry",
-                    profiles=("claude", "tabnine"),
-                    platforms=("darwin",),
-                )
-            )
-            assert isinstance(prepared, Ok), prepared
-            self.assertIn("legacy-catalog-v1", " ".join(prepared.value.review.warnings))
-            self.assertFalse((root / "aart-registry.json").exists())
-            applied = service.finalize(prepared.value, prepared.value.review.review_digest)
-            assert isinstance(applied, Ok), applied
-            self.assertTrue((root / "aart-registry.json").is_file())
-            self.assertTrue((root / "artifacts/skill/demo/artifact.json").is_file())
-            rerun = service.prepare(
-                CurationRequest(
-                    CurationAction.IMPORT_FOREIGN,
-                    str(root),
-                    legacy_source="https://github.com/example/legacy.git",
-                    ref="main",
-                    source_id="migrated-registry",
-                    display_name="Migrated Registry",
-                    profiles=("claude", "tabnine"),
-                    platforms=("darwin",),
-                )
-            )
-            self.assertIsInstance(rerun, Err)
-
-            unsupported = PreparedCuration(
-                prepared.value.review,
-                SourceSnapshot(SnapshotOrigin.LOCAL, ()),
-            )
-            self.assertIsInstance(
-                service.finalize(unsupported, unsupported.review.review_digest),
-                Err,
-            )
-
 
 if __name__ == "__main__":
     unittest.main()
