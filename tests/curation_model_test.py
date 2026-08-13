@@ -76,7 +76,7 @@ class CurationModelTest(unittest.TestCase):
         self.assertIn(
             "no changes were required",
             "\n".join(
-                render_curation_outcome(CurationOutcome(CurationAction.UPDATE_UPSTREAM, "no-op", 0))
+                render_curation_outcome(CurationOutcome(CurationAction.REFRESH_NATIVE, "no-op", 0))
             ),
         )
         self.assertIn(

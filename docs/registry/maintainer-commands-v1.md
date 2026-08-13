@@ -17,7 +17,6 @@ workflow after the command succeeds.
 | `audit` | reads | Check review, provenance, setup, license, and currently available risk evidence |
 | `test` | reads | Validate the registry at its minimum and/or a supplied latest compatible version |
 | `diff` | reads | Show deterministic canonical-format drift without changing the checkout |
-| `migrate` | preview by default; writes with `--apply` | Convert a pinned 0.1.x catalog into a canonical registry |
 
 Mutation requires a writable real directory containing `.git` (a directory or worktree gitfile).
 Managed symlinks and special files are rejected. Writes use exact snapshot and per-file digest
@@ -80,25 +79,8 @@ unknown risk remains an explicit review warning. The stdlib-only baseline is doc
 [`baseline-v1.md`](../security/baseline-v1.md), and the registry evidence layout is documented in
 [`attestations-v1.md`](../security/attestations-v1.md).
 
-## Migration
+## Retired inputs
 
-Migration always previews first. The input must be an immutable Git revision. A remote HTTPS Git
-URL records its own origin; a local checkout additionally requires `--origin-url` so generated
-provenance never invents or leaks a host path.
-
-```console
-aart registry migrate --legacy-source /path/to/legacy-checkout \
-  --origin-url https://github.example/company/legacy-artifacts.git --ref main \
-  --source /path/to/empty-registry --source-id company-registry \
-  --display-name "Company Agent Artifacts" --profile tabnine
-
-# After reviewing the paths and review digest:
-aart registry migrate --legacy-source /path/to/legacy-checkout \
-  --origin-url https://github.example/company/legacy-artifacts.git --ref main \
-  --source /path/to/empty-registry --source-id company-registry \
-  --display-name "Company Agent Artifacts" --profile tabnine --apply
-```
-
-The destination must contain no managed registry files. Migration emits canonical packages,
-collections, provenance, registry markers, CI, and inert reporting templates; it deliberately does
-not create a lock or index. Run `lock` and `build` after reviewing any authored external entries.
+Legacy catalogs and retired setup recipes are not accepted or translated by registry commands.
+Re-author the other repository to the native package contract first, then use
+`promote-native` to review and pin that canonical package.

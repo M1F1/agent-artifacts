@@ -12,7 +12,8 @@ from agent_artifacts.install_state.model import InstallScope
 from agent_artifacts.installation.model import InstallLocation, InstallMode, InstallPlan
 from agent_artifacts.lifecycle.model import LifecycleItem, UninstallPlan, UpdatePlan
 from agent_artifacts.marketplace.model import MarketplaceCatalog
-from agent_artifacts.model import Profile, SetupManualReference
+from agent_artifacts.model import MemoryMode, SetupManualReference
+from agent_artifacts.profiles.model import Profile
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
@@ -53,6 +54,7 @@ class ConsumerActionRequest:
     force: bool = False
     offline: bool = False
     prune: bool = False
+    memory_mode: MemoryMode = "prepend"
 
     def __post_init__(self) -> None:
         coordinates = tuple(sorted(set(self.coordinates), key=str))
@@ -65,6 +67,7 @@ class ConsumerActionRequest:
             or any(_PROFILE_RE.fullmatch(profile) is None for profile in profiles)
             or self.scope not in {"project", "user"}
             or self.mode not in {"copy", "symlink"}
+            or self.memory_mode not in {"replace", "prepend", "append", "skip"}
             or not self.platform
             or "\r" in self.platform
             or "\n" in self.platform
@@ -72,7 +75,7 @@ class ConsumerActionRequest:
             or not isinstance(self.offline, bool)
             or not isinstance(self.prune, bool)
             or (self.action == "install" and any(item.version is None for item in coordinates))
-            or (self.action in {"install", "update", "uninstall"} and not coordinates)
+            or (self.action in {"install", "uninstall"} and not coordinates)
         ):
             raise ValueError("consumer action request is invalid")
 
@@ -178,6 +181,7 @@ def _review_value(review: ConsumerReview) -> JsonObject:
             ("force", request.force),
             ("offline", request.offline),
             ("prune", request.prune),
+            ("memory_mode", request.memory_mode),
             (
                 "items",
                 JsonArray(

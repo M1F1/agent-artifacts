@@ -8,12 +8,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.domain.result import Err
 from agent_artifacts.model import Request
 from agent_artifacts.reporting.aggregation import aggregate_issue_export, dashboard_files
 from agent_artifacts.reporting.schema import parse_issue_body, parse_usage_report
-
-from . import _common
 
 _MAX_INPUT_BYTES = 10 * 1024 * 1024
 

@@ -1,7 +1,0 @@
-{
-  "name": "atlassian",
-  "description": "Use the reviewed Atlassian remote MCP server from a supported harness.",
-  "server": {
-    "url": "https://mcp.atlassian.test/v1/mcp"
-  }
-}

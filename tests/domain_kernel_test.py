@@ -262,29 +262,6 @@ class DomainPortsTest(unittest.TestCase):
         self.assertEqual(LengthCommand()("aart"), Ok(4))
 
 
-class LegacyDomainAdapterTest(unittest.TestCase):
-    def test_legacy_result_and_artifact_values_translate_at_the_adapter_boundary(self):
-        from agent_artifacts import model as legacy
-        from agent_artifacts.adapters.legacy_model import (
-            artifact_identity_from_legacy,
-            result_from_legacy,
-            result_to_legacy,
-        )
-        from agent_artifacts.domain.result import Err, Ok, Result
-
-        self.assertEqual(result_from_legacy(legacy.Ok("value")), Ok("value"))
-        self.assertEqual(result_to_legacy(Ok("value")), legacy.Ok("value"))
-        translated: Result[object] = result_from_legacy(legacy.Err("conflict", code=4))
-        self.assertIsInstance(translated, Err)
-        assert isinstance(translated, Err)
-        self.assertEqual(translated.diagnostics[0].code.value, "legacy-error")
-        self.assertEqual(result_to_legacy(translated), legacy.Err("conflict", code=4))
-        self.assertEqual(
-            str(artifact_identity_from_legacy(legacy.Artifact("skill", "review", "skills/review"))),
-            "skill/review",
-        )
-
-
 class DomainArchitectureTest(unittest.TestCase):
     def test_domain_modules_do_not_import_io_or_legacy_layers(self):
         domain = ROOT / "agent_artifacts" / "domain"

@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent_artifacts import cli
+from agent_artifacts import __version__, cli
 from agent_artifacts.application.configuration import (
     ConfigRecoveryPlan,
     ConfigurationPorts,
@@ -185,7 +185,7 @@ class SourceCliCommandTests(unittest.TestCase):
             self.assertEqual(json.loads(list_stdout.getvalue())["sources"][0]["health"], "healthy")
             marketplace = json.loads(marketplace_stdout.getvalue())
             self.assertTrue(marketplace["ok"])
-            self.assertEqual(len(marketplace["artifacts"]), 1)
+            self.assertEqual(len(marketplace["artifacts"]), 2)
             self.assertFalse((root / "data" / "objects").exists())
 
     def test_add_synchronizes_before_saving_and_emits_json(self) -> None:
@@ -510,7 +510,7 @@ class MarketplaceCliCommandTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["operation"], "marketplace.list")
-        self.assertEqual(payload["aart_version"], "1.4.0")
+        self.assertEqual(payload["aart_version"], __version__)
         self.assertEqual(payload["artifacts"], snapshot["artifacts"])
 
     def test_list_without_a_source_returns_the_canonical_json_diagnostic(self) -> None:

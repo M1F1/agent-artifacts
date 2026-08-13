@@ -310,7 +310,7 @@ class UninstallPlan:
             or not posixpath.isabs(self.state_lock_path)
             or self.state_precondition.path != self.state_path
             or self.state_lock_path
-            != posixpath.join(posixpath.dirname(self.state_path), "state-migration.lock")
+            != posixpath.join(posixpath.dirname(self.state_path), "state.lock")
             or sha256_bytes(install_state_bytes(self.replacement_state))
             != self.replacement_state_digest
             or expected_state is None

@@ -36,7 +36,7 @@ from agent_artifacts.io.source_store import (
     release_source_lock,
 )
 from agent_artifacts.protocol.capabilities import parse_capability
-from agent_artifacts.protocol.semver import parse_semver
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.local import read_local_snapshot
 from agent_artifacts.sources.model import SyncFallback
@@ -107,7 +107,7 @@ class _Environment:
             SourceSyncRequest(
                 self.source,
                 self.paths.data_root,
-                _unwrap(parse_semver("1.0.0")),
+                EXECUTABLE_VERSION,
                 (_unwrap(parse_capability("artifact-manifest-v1")),),
                 observed_at_epoch_seconds=100,
                 fallback=SyncFallback.REQUIRE_FRESH,
@@ -288,6 +288,42 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
             self.assertEqual(payload["operation"], "marketplace.status")
             self.assertEqual(installed.read_bytes(), before)
 
+    def test_forced_reinstall_upserts_the_record_instead_of_duplicating_it(self) -> None:
+        # ``--force`` authorizes overwriting an already-installed artifact.  The record it leaves
+        # must still be one record: a duplicate would make later status and uninstall ambiguous.
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+
+            code, payload = env.run(
+                "marketplace", "install", _COORDINATE, "--profile", "claude", "--force", "--yes"
+            )
+
+            self.assertEqual(code, 0, payload)
+            state = json.loads((env.project / ".agent-artifacts" / "manifest.json").read_text())
+            self.assertEqual(len(state["installations"]), 1, state)
+
+    def test_a_bare_update_selects_every_installation_in_the_scope(self) -> None:
+        # ``update`` without coordinates is the routine operator action.  It must reconcile the
+        # whole recorded scope, not silently do nothing because no coordinate was named.
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+
+            code, payload = env.run("marketplace", "update", "--profile", "claude", "--yes")
+
+            self.assertEqual(code, 0, payload)
+            self.assertEqual(len(payload["items"]), 1, payload)
+            self.assertEqual(payload["items"][0]["status"], "current")
+
+    def test_review_and_json_are_observations_that_change_no_effect(self) -> None:
+        # ``--json`` selects a rendering.  An agent reading the plan must be able to trust that
+        # asking for it never installs anything the human-readable path would not have.
+        with _environment() as env:
+            code, payload = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+
+            self.assertEqual(code, 0, payload)
+            self.assertFalse(payload["finalized"])
+            self.assertEqual(list(env.project.iterdir()), [], "review must not touch the project")
+
     def test_uninstall_removes_the_installed_payload(self) -> None:
         with _environment() as env:
             env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
@@ -322,6 +358,36 @@ class LifecycleDiagnosticsE2ETest(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertFalse(payload["ok"])
             self.assertEqual(list(env.project.iterdir()), [])
+
+    def test_a_profile_outside_the_declared_compatibility_is_refused(self) -> None:
+        # The fixture declares ``claude``/``tabnine``.  A known-but-undeclared profile must be
+        # refused with the allowed set named, so the operator can pick a profile that works
+        # instead of guessing why an install produced nothing.
+        with _environment() as env:
+            code, payload = env.run(
+                "marketplace", "install", _COORDINATE, "--profile", "opencode", "--yes"
+            )
+
+            self.assertEqual(code, 1)
+            diagnostic = payload["diagnostics"][0]
+            self.assertEqual(diagnostic["code"], "artifact-incompatible")
+            self.assertIn("claude", diagnostic["message"])
+            self.assertEqual(list(env.project.iterdir()), [])
+
+    def test_an_unreadable_install_state_is_a_typed_refusal_not_a_crash(self) -> None:
+        # Reading damaged state must fail closed with a diagnostic rather than tracebacking or,
+        # worse, treating the project as if nothing were installed and reinstalling over it.
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+            state = env.project / ".agent-artifacts" / "manifest.json"
+            self.assertTrue(state.exists(), sorted(map(str, env.project.rglob("*"))))
+            state.write_text("{ this is not valid json ]", encoding="utf-8")
+
+            code, payload = env.run("marketplace", "status", "--profile", "claude")
+
+            self.assertNotEqual(code, 0)
+            self.assertFalse(payload["ok"])
+            self.assertTrue(payload["diagnostics"])
 
     def test_a_malformed_coordinate_reports_the_accepted_grammar(self) -> None:
         with _environment() as env:

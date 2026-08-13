@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import unittest
+from dataclasses import replace
 
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok
+from agent_artifacts.model import SetupCapability, SetupInstaller
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_models import CollectionManifest
@@ -60,8 +63,13 @@ def _registry():
     return result.value
 
 
-def _package(name: str) -> NativeArtifactPackage:
-    manifest = parse_artifact_manifest(_manifest_json(name))
+def _package(
+    name: str, *, requires: list[dict[str, object]] | None = None
+) -> NativeArtifactPackage:
+    document = json.loads(_manifest_json(name))
+    if requires is not None:
+        document["requires"] = requires
+    manifest = parse_artifact_manifest(json.dumps(document))
     assert isinstance(manifest, Ok)
     return NativeArtifactPackage(manifest.value, None, _digest("1"), _digest("2"))
 
@@ -101,6 +109,26 @@ def _configured_package() -> NativeArtifactPackage:
     assert isinstance(manifest, Ok)
     assert isinstance(provenance, Ok)
     return NativeArtifactPackage(manifest.value, provenance.value, _digest("1"), _digest("2"))
+
+
+def _installer(capabilities: tuple[SetupCapability, ...]) -> SetupInstaller:
+    """The compiled recipe reduced to the one field the index has to carry across."""
+
+    return SetupInstaller(
+        schema_version=2,
+        protocol_version=2,
+        artifact="atlassian",
+        purpose="Connect reviewed Atlassian tools.",
+        platforms=("darwin",),
+        help_urls=(),
+        required_tools=(),
+        capabilities=capabilities,
+        inputs=(),
+        steps=(),
+        descriptor_path="setup/installer.json",
+        descriptor_hash="b" * 64,
+        manual_path="SETUP.md",
+    )
 
 
 def _collection(name: str, artifacts: list[str], collections: list[str]) -> CollectionManifest:
@@ -148,6 +176,28 @@ class RegistryIndexTest(unittest.TestCase):
         assert record.provenance is not None
         self.assertEqual(str(record.setup.recipe), "setup/installer.json")
         self.assertEqual(record.provenance.resolved_commit, "a" * 40)
+
+    def test_setup_capabilities_are_published_from_the_compiled_recipe(self) -> None:
+        # The recipe declares what its steps need; the manifest only points at it.  An empty
+        # published set would make the consumer-side capability gate inert, so every artifact
+        # would look installable-and-runnable regardless of what its setup actually requires.
+        package = _configured_package()
+        compiled = replace(
+            package,
+            setup_installer=_installer(("docker", "keychain", "process")),
+        )
+
+        record = index_artifact_from_package(
+            compiled,
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("3"),
+        )
+
+        assert record.setup is not None
+        self.assertEqual(
+            tuple(str(item) for item in record.setup.capabilities),
+            ("docker", "keychain", "process"),
+        )
 
     def test_index_output_is_byte_identical_across_input_order(self) -> None:
         first = index_artifact_from_package(
@@ -260,6 +310,65 @@ class RegistryIndexTest(unittest.TestCase):
         self.assertIsInstance(
             build_registry_index(_registry(), _digest("0"), (artifact,), (excluded.value,)),
             Err,
+        )
+
+    def test_declared_dependencies_must_resolve_match_version_and_remain_acyclic(self) -> None:
+        kernel = index_artifact_from_package(
+            _package("using-residues"),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("3"),
+        )
+        stage = index_artifact_from_package(
+            _package(
+                "residual-stage",
+                requires=[
+                    {
+                        "type": "skill",
+                        "name": "using-residues",
+                        "version": {"min_inclusive": "1.2.0", "max_exclusive": "2.0.0"},
+                    }
+                ],
+            ),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("4"),
+        )
+        indexed = build_registry_index(_registry(), _digest("0"), (kernel, stage), ())
+        self.assertIsInstance(indexed, Ok)
+        assert isinstance(indexed, Ok)
+        indexed_stage = next(
+            item for item in indexed.value.artifacts if item.identity.name == "residual-stage"
+        )
+        self.assertEqual(str(indexed_stage.requires[0].identity), "skill/using-residues")
+        self.assertEqual(
+            parse_registry_index(canonical_json_bytes(registry_index_to_json(indexed.value))),
+            indexed,
+        )
+
+        self.assertIsInstance(build_registry_index(_registry(), _digest("0"), (stage,), ()), Err)
+        incompatible = index_artifact_from_package(
+            _package(
+                "residual-stage",
+                requires=[
+                    {
+                        "type": "skill",
+                        "name": "using-residues",
+                        "version": {"max_exclusive": "1.0.0"},
+                    }
+                ],
+            ),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("5"),
+        )
+        self.assertIsInstance(
+            build_registry_index(_registry(), _digest("0"), (kernel, incompatible), ()), Err
+        )
+        cyclic_kernel = index_artifact_from_package(
+            _package("using-residues", requires=[{"type": "skill", "name": "residual-stage"}]),
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("6"),
+        )
+        self.assertIsInstance(
+            build_registry_index(_registry(), _digest("0"), (cyclic_kernel, stage), ()), Err
         )
 
 

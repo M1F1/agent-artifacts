@@ -6,19 +6,20 @@ import os
 from dataclasses import dataclass
 from typing import Mapping
 
-from ..model import (
-    ArtifactType,
+from agent_artifacts.install_state.model import InstallScope
+
+from .model import (
+    ArtifactKind,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
-    InstallScope,
     MemoryTarget,
     MergeSpec,
     Profile,
     ProfileTargets,
 )
 
-_TYPE_ATTR: Mapping[ArtifactType, str] = {
+_TYPE_ATTR: Mapping[ArtifactKind, str] = {
     "skill": "skills",
     "guideline": "guidelines",
     "mcp": "mcp",
@@ -107,7 +108,7 @@ def profile_for_scope(profile: Profile, scope: InstallScope, user_home: str) -> 
     )
 
 
-def support_for(profile: Profile, scope: InstallScope, artifact_type: ArtifactType) -> ScopeSupport:
+def support_for(profile: Profile, scope: InstallScope, artifact_type: ArtifactKind) -> ScopeSupport:
     """Return scope support without resolving a home path."""
 
     if scope == "project":

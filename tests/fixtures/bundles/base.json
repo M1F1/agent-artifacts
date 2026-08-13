@@ -1,9 +1,0 @@
-{
-  "name": "base",
-  "description": "Start with the team's essential review and safety tools.",
-  "includes": {
-    "skills": ["code-review"],
-    "guidelines": ["python-style"],
-    "hooks": ["block-secrets"]
-  }
-}

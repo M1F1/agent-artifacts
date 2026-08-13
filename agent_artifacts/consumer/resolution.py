@@ -18,6 +18,7 @@ from .coordinates import ArtifactSelector
 
 COLLECTION_NOT_FOUND = DiagnosticCode("collection-not-found")
 COLLECTION_AMBIGUOUS = DiagnosticCode("collection-ambiguous")
+DEPENDENCY_UNAVAILABLE = DiagnosticCode("dependency-unavailable")
 
 
 def _resolve_collection(
@@ -80,7 +81,82 @@ def resolve_selectors(
         coordinates.extend(resolved.value)
     if diagnostics:
         return Err(tuple(diagnostics))
-    return Ok(tuple(sorted(set(coordinates), key=str)))
+    return _dependency_closure(catalog, tuple(sorted(set(coordinates), key=str)))
+
+
+def _dependency_closure(
+    catalog: MarketplaceCatalog,
+    requested: tuple[ArtifactCoordinate, ...],
+) -> Result[tuple[ArtifactCoordinate, ...]]:
+    """Expand same-registry declared dependencies before any installation review.
+
+    Registry compilation normally proves every dependency.  The consumer nevertheless repeats
+    the lookup against its exact validated snapshot, so a corrupt or partial marketplace cannot
+    turn a direct artifact selection into a partial runtime installation.
+    """
+
+    records = {(item.coordinate.source, item.coordinate.artifact): item for item in catalog.items}
+    closure: dict[tuple[object, object], ArtifactCoordinate] = {}
+    diagnostics: list[Diagnostic] = []
+
+    def include(coordinate: ArtifactCoordinate, trail: tuple[ArtifactCoordinate, ...]) -> None:
+        key = (coordinate.source, coordinate.artifact)
+        if coordinate in trail:
+            diagnostics.append(
+                Diagnostic(
+                    DEPENDENCY_UNAVAILABLE,
+                    Severity.ERROR,
+                    "artifact dependency cycle: "
+                    + " -> ".join(str(item) for item in (*trail, coordinate)),
+                )
+            )
+            return
+        if key in closure:
+            return
+        item = records.get(key)
+        if item is None:
+            diagnostics.append(
+                Diagnostic(
+                    DEPENDENCY_UNAVAILABLE,
+                    Severity.ERROR,
+                    f"required artifact is unavailable: {coordinate}",
+                )
+            )
+            return
+        if coordinate.version is not None and coordinate.version != str(
+            item.artifact.artifact.version
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    DEPENDENCY_UNAVAILABLE,
+                    Severity.ERROR,
+                    f"required artifact version is unavailable: {coordinate}",
+                )
+            )
+            return
+        closure[key] = item.coordinate
+        for selector in item.artifact.artifact.requires:
+            dependency = records.get((item.coordinate.source, selector.identity))
+            if dependency is None or (
+                selector.version is not None
+                and not selector.version.allows(dependency.artifact.artifact.version)
+            ):
+                rendered = f"{item.coordinate.source}/{selector.identity}"
+                diagnostics.append(
+                    Diagnostic(
+                        DEPENDENCY_UNAVAILABLE,
+                        Severity.ERROR,
+                        f"{item.coordinate} requires unavailable dependency {rendered}",
+                    )
+                )
+                continue
+            include(dependency.coordinate, (*trail, coordinate))
+
+    for coordinate in requested:
+        include(coordinate, ())
+    if diagnostics:
+        return Err(tuple(sorted(diagnostics, key=lambda item: item.message)))
+    return Ok(tuple(sorted(closure.values(), key=str)))
 
 
 __all__ = ["resolve_selectors"]

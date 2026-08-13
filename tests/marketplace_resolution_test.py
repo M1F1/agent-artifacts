@@ -221,6 +221,55 @@ class SelectorResolutionTests(unittest.TestCase):
         self.assertIn("company/collection/starter", resolved.diagnostics[0].message)
         self.assertIn("team/collection/starter", resolved.diagnostics[0].message)
 
+    def test_direct_selection_expands_declared_dependencies_in_the_same_registry(self) -> None:
+        company = configured_source("company", SourceKind.REGISTRY_GIT)
+        kernel = artifact("company-source", "using-residues")
+        stage = artifact(
+            "company-source",
+            "residual-stage",
+            requires=(ArtifactSelector(kernel.identity),),
+        )
+        compiled = graph((company, "company-source", (kernel, stage)))
+        built = build_marketplace(
+            compiled,
+            effective_configuration((company,), default_registry="company"),
+            (source_state(company, "company-source", display_order=0),),
+        )
+        assert isinstance(built, Ok), built
+
+        resolved = _resolve(built.value, "company/skill/residual-stage")
+
+        self.assertIsInstance(resolved, Ok)
+        assert isinstance(resolved, Ok)
+        self.assertEqual(
+            tuple(str(item) for item in resolved.value),
+            (
+                "company/skill/residual-stage@1.0.0",
+                "company/skill/using-residues@1.0.0",
+            ),
+        )
+
+    def test_missing_runtime_dependency_fails_before_installation_planning(self) -> None:
+        company = configured_source("company", SourceKind.REGISTRY_GIT)
+        stage = artifact(
+            "company-source",
+            "residual-stage",
+            requires=(ArtifactSelector(artifact("company-source", "using-residues").identity),),
+        )
+        compiled = graph((company, "company-source", (stage,)))
+        built = build_marketplace(
+            compiled,
+            effective_configuration((company,), default_registry="company"),
+            (source_state(company, "company-source", display_order=0),),
+        )
+        assert isinstance(built, Ok), built
+
+        resolved = _resolve(built.value, "company/skill/residual-stage")
+
+        self.assertIsInstance(resolved, Err)
+        assert isinstance(resolved, Err)
+        self.assertEqual(resolved.diagnostics[0].code.value, "dependency-unavailable")
+
 
 if __name__ == "__main__":  # pragma: no cover - unittest entry point
     unittest.main()

@@ -15,7 +15,7 @@ Highlights:
 
 Breaking migration: the executable no longer treats its package-local catalog as the default
 marketplace. Configure explicit sources and follow the
-[0.1.x migration guide](migration-v1.md). Existing state can be previewed, backed up, migrated, and
+`0.1.x migration guide`. Existing state can be previewed, backed up, migrated, and
 rolled back exactly.
 
 See the [changelog](../../CHANGELOG.md), [compatibility matrix](compatibility-v1.md), and

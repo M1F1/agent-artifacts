@@ -26,6 +26,7 @@ from agent_artifacts.lifecycle import (
     finalize_update,
     prepare_uninstall,
     prepare_update,
+    reconcile_installations,
     status_installations,
 )
 from agent_artifacts.marketplace.catalog import build_marketplace
@@ -213,6 +214,46 @@ class CanonicalLifecycleTest(unittest.TestCase):
                 federated,
             )
             self.assertEqual(unavailable.items[0].status, LifecycleStatus.SOURCE_UNAVAILABLE)
+
+    def test_reconcile_surfaces_upstream_changes_while_retaining_local_effect_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, _paths, location, _request, catalog, effective, adapter = _install(
+                _fixture(root, "skill"), mode="copy"
+            )
+            state = _state(project)
+            newer = _fixture(
+                root,
+                "skill",
+                version=SemVer(2, 0, 0),
+                skill_content=b"# Installed v2\n",
+                resolved_revision="b" * 40,
+            )
+            updated_catalog, updated_effective = newer[-2:]
+
+            reconciled = reconcile_installations(
+                state,
+                LifecycleSelection("project"),
+                updated_catalog,
+                updated_effective,
+                location,
+                adapter,
+            )
+            assert isinstance(reconciled, Ok), reconciled
+            self.assertEqual(reconciled.value.items[0].status, LifecycleStatus.UPDATE_AVAILABLE)
+
+            (project / ".claude/skills/review/SKILL.md").write_text("# local edit\n")
+            drifted = reconcile_installations(
+                state,
+                LifecycleSelection("project"),
+                updated_catalog,
+                updated_effective,
+                location,
+                adapter,
+            )
+            assert isinstance(drifted, Ok), drifted
+            self.assertEqual(drifted.value.items[0].status, LifecycleStatus.DRIFTED)
+            self.assertIn("upstream", drifted.value.items[0].detail)
 
     def test_update_retargets_only_after_review_and_replaces_recorded_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

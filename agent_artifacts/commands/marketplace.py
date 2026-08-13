@@ -1,8 +1,6 @@
 """Agent CLI surface for the configured canonical marketplace.
 
-The legacy ``list``/``install``/``update`` commands remain bounded 0.1 compatibility commands.
-This module exposes the configured-source marketplace and its canonical lifecycle without
-silently changing that legacy contract.
+This module exposes the configured-source marketplace and its canonical lifecycle.
 
 Two properties are load-bearing for automation safety and are asserted by the tests:
 
@@ -21,6 +19,7 @@ import json
 import os
 from pathlib import Path
 
+from agent_artifacts import command_outcome as _common
 from agent_artifacts.consumer.application import ConsumerApplicationService
 from agent_artifacts.consumer.coordinates import CONSUMER_INVALID, parse_artifact_selectors
 from agent_artifacts.consumer.model import (
@@ -57,7 +56,6 @@ from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
 from agent_artifacts.store.model import ObjectReadRequest
 
-from . import _common
 from ._configured_runtime import load_runtime_configuration
 
 _LIST_OPERATION = "marketplace.list"
@@ -255,6 +253,8 @@ def _health(request: Request) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
+        refresh_sources=True,
+        offline=request.offline,
     )
     if isinstance(service, Err):
         return _emit_error(request, service, _HEALTH_OPERATION)
@@ -330,6 +330,7 @@ def _action_request(
         force=request.force,
         offline=request.offline,
         prune=request.prune,
+        memory_mode=request.memory_mode or "prepend",
     )
 
 

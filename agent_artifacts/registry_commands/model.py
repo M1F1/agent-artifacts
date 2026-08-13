@@ -10,7 +10,6 @@ from agent_artifacts.domain.diagnostics import Diagnostic, Severity, sort_diagno
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
-from agent_artifacts.protocol.native_tree import SourceSnapshot
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.semver import SemVer
 
@@ -276,19 +275,3 @@ class RegistryQualityReport:
     @property
     def passed(self) -> bool:
         return all(item.passed for item in self.checks)
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyRegistryMigration:
-    current: SourceSnapshot
-    plan: RegistryWorkspacePlan
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.current, SourceSnapshot) or not isinstance(
-            self.plan, RegistryWorkspacePlan
-        ):
-            raise ValueError("legacy registry migration is invalid")
-
-    @property
-    def changed_paths(self) -> int:
-        return self.plan.changed_paths

@@ -8,17 +8,18 @@ from dataclasses import dataclass
 
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err
-from agent_artifacts.protocol.hashing import file_entry, json_digest, tree_digest
+from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.json import JsonArray, JsonObject, JsonValue, parse_json
-from agent_artifacts.protocol.native_models import PAYLOAD_FORMAT_BY_TYPE
 from agent_artifacts.protocol.native_schema import (
-    artifact_manifest_to_json,
-    parse_artifact_manifest,
     parse_provenance,
     provenance_to_json,
 )
-from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
-from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.protocol.native_tree import (
+    SnapshotEntry,
+    SnapshotEntryKind,
+    compile_native_package,
+)
+from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.registry_models import IndexArtifact, LockedArtifact
 from agent_artifacts.store.model import ObjectCandidate
 
@@ -457,19 +458,6 @@ def _finding(
     )
 
 
-def _payload_digest(entries: tuple[SnapshotEntry, ...]):
-    values = []
-    for entry in entries:
-        raw = str(entry.path)
-        if entry.kind is not SnapshotEntryKind.FILE or not raw.startswith("payload/"):
-            continue
-        parsed = parse_relative_path(raw.removeprefix("payload/"))
-        if isinstance(parsed, Err):
-            return parsed
-        values.append(file_entry(parsed.value, entry.content, executable=entry.executable))
-    return tree_digest(values)
-
-
 def _setup_matches(manifest, indexed: IndexArtifact) -> bool:
     if manifest.setup is None or indexed.setup is None:
         return manifest.setup is None and indexed.setup is None
@@ -492,23 +480,19 @@ def _metadata_findings(
     if entry is None or entry.kind is not SnapshotEntryKind.FILE:
         findings.append(_finding("manifest-missing"))
         return tuple(findings), None, True
-    parsed = parse_artifact_manifest(entry.content, path="artifact.json")
-    if isinstance(parsed, Err):
+    compiled = compile_native_package(request.object_candidate.entries)
+    if isinstance(compiled, Err):
         findings.append(_finding("manifest-invalid", path=entry.path))
         return tuple(findings), None, True
-    manifest = parsed.value
-    if json_digest(artifact_manifest_to_json(manifest)) != request.artifact.manifest_digest:
+    package = compiled.value
+    manifest = package.manifest
+    if package.manifest_digest != request.artifact.manifest_digest:
         findings.append(_finding("manifest-digest-mismatch", path=entry.path))
         failed = True
-    expected_format = PAYLOAD_FORMAT_BY_TYPE.get(
-        manifest.identity.kind  # type: ignore[arg-type]
-    )
     if (
         manifest.identity != request.artifact.identity
         or manifest.version != request.artifact.version
         or manifest.summary != request.artifact.summary
-        or manifest.payload.root.parts != ("payload",)
-        or manifest.payload.format != expected_format
         or manifest.compatibility != request.artifact.compatibility
         or manifest.install != request.artifact.install
         or manifest.requires_aart != request.artifact.requires_aart
@@ -516,8 +500,7 @@ def _metadata_findings(
     ):
         findings.append(_finding("manifest-index-mismatch", path=entry.path))
         failed = True
-    payload = _payload_digest(request.object_candidate.entries)
-    if isinstance(payload, Err) or payload.value != request.artifact.payload_digest:
+    if package.payload_digest != request.artifact.payload_digest:
         findings.append(_finding("payload-digest-mismatch"))
         failed = True
     return tuple(findings), manifest, failed

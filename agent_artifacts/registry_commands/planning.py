@@ -10,7 +10,12 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import sha256_bytes
-from agent_artifacts.protocol.json import canonical_json_bytes, parse_json
+from agent_artifacts.protocol.json import (
+    JsonArray,
+    JsonObject,
+    canonical_json_bytes,
+    parse_json,
+)
 from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
@@ -323,23 +328,88 @@ def _source_manifest(files: dict[str, SnapshotEntry]) -> Result[SourceManifest]:
     return parsed
 
 
-def _payload(options: ArtifactScaffoldOptions) -> tuple[str, bytes]:
-    base = f"artifacts/{options.kind}/{options.name}/payload"
+def _payload(
+    options: ArtifactScaffoldOptions,
+    *,
+    base: str,
+) -> tuple[tuple[str, bytes, bool], ...]:
+    """Create a minimally runnable primary payload for a new canonical package.
+
+    A scaffold must itself satisfy the same compiler used by publication.  In particular, hook
+    descriptors cannot be empty placeholders: they need a registration and an executable target.
+    """
+
     if options.kind == "skill":
         return (
-            f"{base}/SKILL.md",
             (
-                f"---\nname: {options.name}\ndescription: {options.summary}\n---\n\n"
-                f"# {options.name.replace('-', ' ').title()}\n"
-            ).encode(),
+                f"{base}/SKILL.md",
+                (
+                    f"---\nname: {options.name}\ndescription: {options.summary}\n---\n\n"
+                    f"# {options.name.replace('-', ' ').title()}\n"
+                ).encode(),
+                False,
+            ),
         )
     if options.kind in {"guideline", "memory"}:
         return (
-            f"{base}/{options.name}.md",
-            f"# {options.name.replace('-', ' ').title()}\n\n{options.summary}\n".encode(),
+            (
+                f"{base}/{options.name}.md",
+                f"# {options.name.replace('-', ' ').title()}\n\n{options.summary}\n".encode(),
+                False,
+            ),
         )
-    filename = "mcp.json" if options.kind == "mcp" else "hook.json"
-    return (f"{base}/{filename}", b"{}\n")
+    if options.kind == "mcp":
+        return (
+            (
+                f"{base}/mcp.json",
+                canonical_json_bytes(
+                    JsonObject(
+                        (
+                            ("name", options.name),
+                            (
+                                "server",
+                                JsonObject(
+                                    (
+                                        ("command", "echo"),
+                                        (
+                                            "args",
+                                            JsonArray(
+                                                (
+                                                    f"{options.name} is a scaffold; review its "
+                                                    "MCP command before use.",
+                                                )
+                                            ),
+                                        ),
+                                    )
+                                ),
+                            ),
+                        )
+                    )
+                ),
+                False,
+            ),
+        )
+    return (
+        (
+            f"{base}/hook.json",
+            canonical_json_bytes(
+                JsonObject(
+                    (
+                        ("name", options.name),
+                        ("command", f"${{SCRIPT_DIR}}/{options.name}.sh"),
+                    )
+                )
+            ),
+            False,
+        ),
+        (
+            f"{base}/{options.name}.sh",
+            (
+                f"#!/bin/sh\nprintf '%s\\n' '{options.name} hook scaffold requires author review'\n"
+            ).encode(),
+            True,
+        ),
+    )
 
 
 def plan_artifact_scaffold(
@@ -370,9 +440,7 @@ def plan_artifact_scaffold(
             tuple(sorted(INSTALL_EFFECTS_BY_TYPE[kind])),
         ),
     )
-    payload_path, payload = _payload(options)
-    if str(root) != "artifacts":
-        payload_path = payload_path.replace("artifacts/", f"{root}/", 1)
+    payload = _payload(options, base=f"{base}/payload")
     return _plan(
         RegistryOperation.SCAFFOLD,
         snapshot,
@@ -382,7 +450,7 @@ def plan_artifact_scaffold(
                 canonical_json_bytes(artifact_manifest_to_json(manifest)),
                 False,
             ),
-            (payload_path, payload, False),
+            *payload,
         ),
     )
 
@@ -737,7 +805,12 @@ def validate_registry_workspace(
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
 
 
-def audit_registry_workspace(snapshot: SourceSnapshot) -> Result[RegistryQualityReport]:
+def audit_registry_workspace(
+    snapshot: SourceSnapshot,
+    *,
+    executable_version: SemVer,
+    available_capabilities: tuple[Capability, ...],
+) -> Result[RegistryQualityReport]:
     parsed = _registry_inputs(snapshot)
     if isinstance(parsed, Err):
         return Ok(RegistryQualityReport((RegistryQualityCheck("audit", parsed.diagnostics),)))
@@ -745,6 +818,15 @@ def audit_registry_workspace(snapshot: SourceSnapshot) -> Result[RegistryQuality
     files = _files(snapshot)
     assert isinstance(files, Ok)
     diagnostics: list[Diagnostic] = []
+    native = registry_native_content(
+        snapshot,
+        files.value,
+        registry,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
+    if isinstance(native, Err):
+        diagnostics.extend(native.diagnostics)
     if not entries:
         diagnostics.append(
             _diagnostic(

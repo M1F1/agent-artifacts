@@ -94,6 +94,7 @@ class ArtifactManifest:
     homepage: str | None = None
     extensions: tuple[tuple[str, JsonValue], ...] = ()
     requires_aart: VersionBounds = VersionBounds()
+    requires: tuple[ArtifactSelector, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

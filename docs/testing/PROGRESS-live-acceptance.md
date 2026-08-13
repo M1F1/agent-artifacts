@@ -5,7 +5,7 @@ Running record for the live acceptance run. Design:
 [PLAN-live-acceptance-v1.md](PLAN-live-acceptance-v1.md) · Scenarios:
 [live-acceptance-scenarios.md](live-acceptance-scenarios.md).
 
-**Status: not started.** Design and plan are written; no scenario has been executed.
+**Status: in progress.** Phase LA-0 complete; phase LA-R starting.
 
 ---
 
@@ -16,35 +16,138 @@ restarts (design §3).
 
 | Field | Value |
 |---|---|
-| AART commit | _pending_ |
-| Wheel | _pending_ |
-| `aart --version` | _pending_ |
-| Platform | macOS (darwin 25.2.0) |
+| AART commit | `db3c8818997c40df280490f485e1055fa88ca89e` |
+| Wheel | `dist/agent_artifacts-1.4.0-py3-none-any.whl` (636 399 bytes) |
+| `aart --version` | `agent-artifacts 1.4.0` |
+| Test venv | `$LA_ROOT/venv` — only `agent-artifacts`, `pip`, `setuptools` installed |
+| Platform | macOS (darwin 25.2.0), Python 3.11.0 |
 | Registry A | `M1F1/agent-artifacts-registry` |
 | Registry B | `M1F1/agent-artifacts-registry-2` |
 | Consumer | `M1F1/agent-artifacts-live-acceptance-project` (not yet created) |
 | Sandbox root | `$LA_ROOT` = `~/.aart-live-acceptance` |
-| Started | _pending_ |
+| Started | 2026-08-13 |
 | Last updated | 2026-08-13 |
+
+`make wheel` runs `scripts/inject_commit.py`, which writes the SHA above into
+`agent_artifacts/_commit.py`. That file is therefore modified in the working tree for the duration of
+the run; it is the pin, not a stray edit.
 
 ## Phase status
 
 | Phase | WPs | Status | Note |
 |---|---|---|---|
-| LA-0 harness | 0.1 – 0.5 | not started | |
-| LA-R registries | R1 – R7 | not started | |
-| LA-S sources | S1 – S2 | not started | |
-| LA-U user lifecycle | U1 – U11 | not started | |
-| LA-M setup / MCP | M1 – M2 | not started | human-driven; credentials by Michal |
+| LA-0 harness | 0.1 – 0.5 | **complete** | 6/6 pass; 1 `question` finding |
+| LA-R registries | R1 – R7 | in progress | agent scope done except `LA-R-26`/`27` (deferred to after LA-S); `LA-R-24` awaits Michal's curses pass |
+| LA-S sources | S1 – S2 | **complete** | 10/10 pass; 2 `minor` findings; federation against both live remotes works |
+| LA-U user lifecycle | U1 – U11 | **agent scope complete** | 28 of 30 recorded — 23 pass, 1 partial, **4 fail** (`LA-U-13`, `15`, `17`, `22`); `LA-U-27`/`28` await Michal |
+| LA-M setup / MCP | M1 – M2 | **blocked** | LA-M-02 passes; LA-M-01 is blocked by the v1 Docker-MCP recipes (`LAF-24`) and their impossible v2 publication route (`LAF-27`), before the human credential pass |
 | LA-Z harvest | Z1 – Z2 | not started | only after exit criteria hold |
 
 ## Scenario results
 
-One row per executed scenario. Empty until the run starts.
+One row per executed scenario.
 
 | ID | Result | Finding | Note |
 |---|---|---|---|
-| — | — | — | run not started |
+| `LA-0-01` | pass | — | wheel 1.4.0 installed into a clean venv; no non-stdlib dependency pulled in |
+| `LA-0-02` | pass | — | `build_parser()` yields **15 top-level / 49 leaves**, set-identical to the plan ledger |
+| `LA-0-03` | pass | — | all four profiles resolve every user-scope target under `$LA_HOME`; real `~` untouched |
+| `LA-0-04` | pass | — | `cache_dir()` follows `HOME`; live population re-checked at `LA-S-04` |
+| `LA-0-05` | pass | `LAF-01` | the two menus differ and the condition is stateable; see below |
+| `LA-0-06` | pass | — | both `--dry-run` forms print the exact `pip … --no-index` invocation and mutate nothing |
+| `LA-R-01` | pass | — | `init` from an emptied checkout wrote 6 paths (2 protocol markers, 3 workflows, 1 issue template); commit count unchanged at 4 |
+| `LA-R-02` | pass | — | `scaffold skill la-probe` wrote exactly `artifact.json` + `payload/SKILL.md` |
+| `LA-R-03` | pass | — | two `format` runs left a byte-identical tree; `--check` exit `0` |
+| `LA-R-04` | pass | — | re-indented `aart-registry.json` → `--check` exit `1`, named the path, wrote nothing; `format` restored it byte-identically |
+| `LA-R-05` | pass | — | `validate --strict --frozen` passes on a locked+built registry, and correctly **fails** (exit `1`, 3 errors) when the manifest is edited without re-locking |
+| `LA-R-06` | pass | — | `lock` added `aart.lock.json`; `lock --check` → 0 changed |
+| `LA-R-07` | pass | — | `build` added `aart.index.json`; `build --check` → 0 changed |
+| `LA-R-08` | pass | `LAF-02`, `LAF-03` | `audit --json` emits provenance / licence / risk evidence as warnings and exits `0` |
+| `LA-R-09` | pass | — | `test --compatibility all` reports `minimum: passed`, `latest: passed` |
+| `LA-R-10` | pass | — | `diff` reports drift and leaves the worktree untouched; exits `0` where `format --check` exits `1` — consistent with preview-vs-gate roles |
+| `LA-R-11` | **fail** | `LAF-04`, `LAF-05`, `LAF-06` | the `upstream` family cannot author a canonical registry, and `import` does not say so |
+| `LA-R-12` | pass | — | `scan --mode auto` on the residuality repo resolved to `manifest` and listed 14 `[explicit]` candidates (13 skills + 1 guideline); heuristic comparison deferred to `LA-R-28` |
+| `LA-R-13` | pass | — | dry run predicted `copy-tree → skills/using-residues` + `write-file upstreams.json`; the real run wrote exactly that set. The prediction is faithful — of an operation that should not have been permitted (`LAF-06`) |
+| `LA-R-14` | pass | — | 14 superpowers skills + 3 Docker MCP packages carried into Registry A; all validate |
+| `LA-R-15` | pass | `LAF-09` | all five types present in A (14 skill, 4 mcp, 1 guideline, 1 hook, 1 memory) — asserted from `aart.index.json`, because `aart list --source <registry>` returns nothing |
+| `LA-R-16` | pass | — | `mcp/context7` authored; `mcp/github-docker` carries `${GITHUB_PERSONAL_ACCESS_TOKEN}` as a placeholder — **no credential value in either registry** |
+| `LA-R-17` | pass | — | `init` → chain → `validate --strict --frozen` reproduced identically on Registry B |
+| `LA-R-18` | pass | — | 7 Pocock skills + `mcp/atlassian` + the 14-package `residuality` bundle in B |
+| `LA-R-19` | pass | — | `skill/brainstorming` now exists in **both** registries with different payloads; both registries still validate. Collision is representable at authoring time and deferred to resolution time |
+| `LA-R-22` | pass | `LAF-07` | aborting the `promote-native` review left the checkout byte-identical to its pre-flow state; the abort itself required `q` **then** `y` |
+| `LA-R-21` | pass | — | both maintainer menus reached and enumerated through the text front-end — 7 entries on the legacy catalog (header `Catalog:`), 11 on the canonical checkout (header `Canonical registry checkout:`); `q` cancels cleanly from both (`Cancelled; no changes were made`, exit `0`) when the basket is empty, which bounds `LAF-07` to the recovery/discard path; canonical `validate` ran to completion read-only, and its review digest was byte-identical across four re-renders |
+| `LA-R-20` | pass | `LAF-11`, `LAF-12` | on a *real* legacy catalog (`upstream add` of `skill/using-residues`) the whole family works: `check`/`validate`/`health` all exit `0` and agree, local drift is detected by name (`local_drift`), bare `update` refuses to act without a selector, and `update --all` warns and preserves the local edit. Only `--force` misreports (`LAF-11`) |
+| `LA-R-23` | pass | `LAF-10` | a fully piped approval **does** traverse the consent gate and mutate the workspace unattended; recorded, not treated as a defect (design §2) |
+| `LA-R-25` | pass | — | ordinary fast-forward push (no history rewrite needed); clean clones of **both** registries pass `validate --strict --frozen` |
+| `LA-U-02` | pass (method changed) | — | `marketplace install` has no `--dry-run`; the review-without-`--yes` path is the equivalent and is asserted at `LA-U-04`/`LA-U-03` |
+| `LA-U-07` | pass (method changed) | — | covered on the canonical path by `LA-U-19`. Also confirmed: mixing a symlink-incapable type into a symlink install is refused cleanly — `artifact-incompatible: mode 'symlink' is not supported` — though the message never says **which** of the two coordinates is the problem |
+| `LA-U-11` | pass (method changed) | — | `marketplace install` has no `--all`; selection is by coordinate or by collection coordinate, and collection selection is asserted at `LA-U-29` (14/14 members) |
+| `LA-U-15` | **fail** | `LAF-26` | after an artifact was removed upstream (registry rebuilt, `validate --strict --frozen` passing, snapshot synced), `status` still reported it `current`, and `marketplace update --prune` **did not remove it** — it stayed on disk and in the manifest, with no diagnostic |
+| `LA-U-26` | **pass** | — | the whole user walkthrough runs through the text front-end — Role → Sources → Harness → Action → Scope → Mode → Artifacts → Review — and installs the same artifact to the same path as flag mode. The review screen is the strongest surface in the product: source revision, `trust/security: unverified; unknown (not-scanned)`, all three digests, actual modes, and the exact destination. The Sources screen also reports each registry's live health and age (`health: stale, age 1264s`) |
+| `LA-U-13` | **fail** | `LAF-25` | local drift **is** distinguished (proved at `LA-U-12`), but an **upstream change is not reported at all**: after the source content changed and `source sync` published a new snapshot, `status` still said `current` while the advertised payload digest (`61faaa39…`) and the installed one (`2053c087…`) plainly differed. `update` then pulled it correctly |
+| `LA-U-14` | **pass** | — | `update` on an unchanged symlinked artifact is a `no-op` and the link survives as a link |
+| `LA-U-23` | **pass** | — | opencode: install → `.opencode/skills/…` → `status: current` → `uninstall: removed` → 0 files left |
+| `LA-U-24` | **pass** | — | tabnine: `.tabnine/agent/skills/…`, clean round trip. The expected MCP-location caveat is confirmed — an MCP artifact lands in `.tabnine/agent/settings.json`, the profile's general settings file, not a dedicated MCP file |
+| `LA-U-25` | **pass** | — | vibe: `.vibe/skills/…`, clean round trip. `vibe` **refuses** MCP outright (`profile 'vibe' is not supported`) rather than writing somewhere wrong — the right failure |
+| `LA-U-01` | pass | — | `marketplace list` changes nothing on disk; entry count identical before and after, porcelain clean |
+| `LA-U-06` | **pass** | — | the same install run with and without `--json` gives identical exit codes and **identical written path sets**; `--json` alone does not finalize (`finalized: false`, 0 files written) — the standing rule that `--json` is a rendering, never a mode, holds |
+| `LA-U-08` | **pass** | — | `--scope user` writes only `$HOME/.claude/skills/using-git-worktrees/SKILL.md` under the sandbox home; the project checkout is untouched and porcelain-clean |
+| `LA-U-29` | **pass** | — | `marketplace install la-b/collection/residuality` installs all **14** members (13 skills + the guideline), and the sibling reference resolves: `using-residues/kernel/bin/residual` sits beside the stage skills exactly as `residual-03-stressors/scripts/run.py` expects |
+| `LA-U-30` | **pass (residue found)** | `LAF-23` | installing one stage skill without `using-residues` succeeds silently — `ok: true`, `changed`, **no diagnostics**, exit `0` — and produces a structurally valid, functionally broken install. Nothing in AART notices; the *artifact's own* `run.py` catches it at run time with a precise message. The guard lives in the payload, not the product |
+| `LA-U-09` | **partial** | `LAF-21`, `LAF-22` | the default placement works and is a **prepend** into a sentinel-delimited block; `uninstall` then strips *exactly* that block, leaving hand-written text above and below untouched — the headline memory assertion holds. But the other three modes cannot be selected on the canonical path: `marketplace install` has no `--memory-mode` (`LAF-21`), and installing into a repo that already has a `CLAUDE.md` is refused without `--force` (`LAF-22`) |
+| `LA-U-10` | **pass** | — | guideline → `.claude/guidelines/la-house-style.md`, memory → `CLAUDE.md`; separate destinations, no clobber, both reported `changed`, no false drift afterwards |
+| `LA-U-18` | pass | — | `marketplace install --mode copy` writes a real file tree, not a link |
+| `LA-U-19` | **pass** | — | `--mode symlink` links `.claude/skills/using-git-worktrees` → the object store's frozen `…/payload`; `status` reports `current`. The target lives in the read-only (`0o500`) object store, so the linked content cannot be edited in place |
+| `LA-U-20` | pass | — | `--offline` against a warm cache: both `status` and a fresh `install` succeed and set `offline_last_known_good: true` |
+| `LA-U-21` | pass | `LAF-19` | cold cache offline: exit `1`, nothing written, no Git access — but the diagnostic is `artifact-not-found: artifact skill/using-git-worktrees in source la-a was not found` with **empty remediation**, which blames the artifact name instead of the missing snapshot |
+| `LA-U-22` | **fail** | `LAF-20` | `marketplace uninstall` closes the lifecycle cleanly (both `removed`, exit `0`, no orphan symlink on the linked install). `marketplace update` **crashes** with an unhandled `ValueError` whenever no coordinate is given |
+| `LA-U-03` | pass | — | the reviewed `destinations` set and the set actually written are identical (2/2); the skill destination is a directory, its `SKILL.md` landing inside |
+| `LA-U-04` | pass | — | without `--yes`: `finalized: false`, `git status --porcelain` empty, and every reviewed item still carries `destinations`, `manifest_digest`, `payload_digest`, `object_digest` |
+| `LA-U-05` | pass | — | `marketplace status --profile claude --json` reports both installations `current`, `setup_status: not-required` |
+| `LA-U-12` | **pass** | — | a hand-edited guideline is reported `drifted` while the untouched skill stays `current`, and the edit is **preserved** — status diagnoses, it does not repair |
+| `LA-U-16` | pass | — | `uninstall` without `--yes` lists both exact removal paths and changes nothing |
+| `LA-U-17` | **fail** | `LAF-17` | uninstall removes both artifacts (`status: removed`, `session: succeeded`, exit `0`) and correctly empties the manifest to `{"installations": [], "schema_version": 2}` — but `git status --porcelain` is **not empty**: `.agent-artifacts/manifest.json`, `.agent-artifacts/state-migration.lock` and the empty `.claude/skills`, `.claude/guidelines` directories all survive. A repo clean before install is dirty after uninstalling everything |
+| `LA-M-01` | **blocked** | `LAF-24`, `LAF-27` | bare `marketplace setup` correctly requires a coordinate and changes nothing. With `la-a/mcp/github-docker`, its review is JSON-valid and non-mutating (`finalized: false`), but has `planned: []` and a typed `planning_failures` migration instruction because the fixture recipe is v1. The required v2 fixture shape is rejected by the registry (`LAF-27`), so the review cannot state the setup effects or entrypoint. |
+| `LA-M-02` | **pass** | — | `setup status --project <MCP consumer> --scope project --json` returned `{"records": []}` both before and after LA-M-01; its non-mutating review did not enqueue or execute setup. |
+| — | — | `LAF-18` | observed while re-running `LA-U-17` on a drifted workspace: the **drift guard is correct and good** — uninstall refused to delete the edited file (`conflict`, `managed Copy destination drifted: .claude/guidelines/la-house-style.md`) and refused the untouched sibling too (`state or object references changed after Review`), so the plan is atomic. Only the reporting is wrong (`LAF-18`) |
+| `LA-S-01` | pass | — | `source add --alias la-a --kind registry-git --default` → `source added: la-a; snapshot published; default=yes` |
+| `LA-S-02` | pass | — | `la-b` added `--no-default`; both resolve against the real GitHub remotes (`4386ac0`, `7e347a6` — the commits pushed at `LA-R-25`) |
+| `LA-S-03` | pass | — | re-adding `la-a` fails `exit 1`, `error: source alias is already configured: la-a`; no duplicate written |
+| `LA-S-04` | pass | — | `list`/`sync`/`health --json` all well-formed, each carrying `schema_version`, `ok`, `operation`; `sync` reports `disposition: unchanged` per source with matching `snapshot_digest` |
+| `LA-S-05` | pass | `LAF-13` | `doctor` without `--apply` mutates nothing and prints the exact remediation — but on a store the current version just wrote it claims `v1 -> v2` migration is required |
+| `LA-S-06` | pass | — | `doctor --apply` → `Source store migrated to v2`; `config.json` untouched (the store version is a separate axis); afterwards `store_schema_version=2`, `migration_required=false` |
+| `LA-S-07` | pass | — | `marketplace list --json` returns the union — **44 artifacts** = 21 (`la-a`) + 23 (`la-b`) + 4 collections, every entry carrying `manifest_digest`, `payload_digest` and `object_digest`, `diagnostics: []` |
+| `LA-S-08` | **pass** | `LAF-14` | the unqualified colliding name is refused with the best error in the run: `error: artifact skill/brainstorming is ambiguous; valid coordinates: la-a/skill/brainstorming@1.0.0, la-b/skill/brainstorming@1.0.0` — it names the problem and hands over both fixes. Reached only via `marketplace install`; top-level `install` never consults the configured marketplace (`LAF-14`) |
+| `LA-S-09` | **pass** | — | `marketplace install la-b/skill/brainstorming@1.0.0` → `changed=1`; the installed `SKILL.md` self-identifies as `Registry B variant`, so the qualifier picked the intended artifact and not merely *an* artifact |
+| `LA-S-10` | pass | — | `marketplace health --environment <json>` is honestly advisory (`advisory: true`, `installation_blocking: false`); with an environment describing none of the declared capabilities: 7 `unknown` / 37 `not-declared`, each `unknown` explained as `capability is not described by the supplied environment`; describing all six ids (`command.bash/docker/dot/git/node/npm`) flips the same 7 to `satisfied` |
+| `LA-R-26` | pass (with `LAF-15`) | `LAF-15` | `security scan` **works** — 8/8 coverage, `installation_risk: medium`, `object_digest` matching the index, two remediation lines — but only after I built its input by calling the private `io.object_store._read_candidate` from Python. No `aart` command emits the canonical object envelope it requires |
+| `LA-R-27` | **pass** | — | `security scan --cache DIR` writes `attestations/sha256/…json`, and `security verify` on it reports `freshness: current`, `trust: local`, `Evidence was produced locally.` With a mismatched `--object-digest` it flips to `freshness: stale`, exit `1`. Trust is labelled honestly — `local`, never "verified" |
+| `LA-R-28` | pass | — | `scan --mode auto` selected **manifest** for the residuality repo (it ships `agent-artifacts.import.json`); the heuristic side is covered by the same command against a manifest-less path |
+| `LA-R-29` | pass | — | `promote-native` **rejected** the residuality repo with a typed `registry-entry-invalid`: *entry source path must end with its artifact type/name identity*. Rejection is the pass condition (design §8). The remedy is to re-author the upstream, and this run did exactly that — vendoring its payloads into canonical packages rather than loosening AART |
+| `LA-R-30` | pass | — | `registry test --compatibility all` reports `minimum: passed` / `latest: passed` on both registries; `requires_aart` floor is `1.0.0 ≤ v < 2.0.0` |
+
+Legend: `pass` · `fail` (finding filed) · `blocked` (precondition unmet — record the blocking finding
+ID, do **not** record it as a failure) · `deferred` (out of scope with a written reason).
+
+### `LA-0-05` — the maintainer menu switch condition
+
+Stated in one sentence, as the assertion requires:
+
+> The TUI offers the **canonical** 11-entry registry menu when the working directory contains
+> `aart-registry.json`, **or** is a Git checkout carrying none of the legacy markers (`bundles.json`,
+> `upstreams.json`, `skills/`, `guidelines/`, `mcp/`, `hooks/`, `memory/`); otherwise it loads the
+> legacy catalog context and offers the 7-entry menu.
+
+Observed live in the text front-end, and the header line names the branch it took:
+
+| Working directory | Header | Menu |
+|---|---|---|
+| empty Git checkout | `Canonical registry checkout: …` | canonical, 11 entries |
+| Git checkout containing `skills/` | `Catalog: …` | legacy, 7 entries |
+| plain directory, no `.git` | — | `error: not a catalog directory`, exit `2` |
+
+The predicate is [`_is_canonical_maintainer_workspace`](../../agent_artifacts/tui.py); the switch is
+applied in both front-ends.
 
 Legend: `pass` · `fail` (finding filed) · `blocked` (precondition unmet — record the blocking finding
 ID, do **not** record it as a failure) · `deferred` (out of scope with a written reason).
@@ -65,7 +168,124 @@ capability broken or absent) · `minor` (works but misleads) · `question` (defe
 
 | ID | Sev | Scenario | Stressor | Component | Symptom | Reproduction | Blocks |
 |---|---|---|---|---|---|---|---|
-| — | — | — | — | — | none recorded yet | — | — |
+| `LAF-06` | major | `LA-R-11` | `LAS-30` | `commands.upstream.import` | `upstream import` writes a **legacy** `skills/<name>/` tree and `upstreams.json` into a **canonical registry**, reports `Imported 1 artifact`, exits `0` — and the artifact is invisible to the registry: `registry validate --strict --frozen` still passes and `registry build --check` reports `0 changed paths` | `registry init` a checkout, then `aart upstream import --source <that checkout> --select skill/using-residues https://github.com/M1F1/residues-architecture-framework` | silently corrupts a registry; blocks nothing |
+| `LAF-04` | major | `LA-R-11` | `LAS-30` | `curation.model.CurationAction` ↔ `cli.build_parser` | `PROMOTE_NATIVE`, `IMPORT_FOREIGN`, `UPDATE_UPSTREAM` are referenced only from `tui.py`; no `aart registry` subcommand reaches them, so **flag mode cannot author a canonical registry's external content** | `grep -rn "PROMOTE_NATIVE\|UPDATE_UPSTREAM" agent_artifacts/` → only `tui.py` and `curation/` | forced the LA-R2 method change |
+| `LAF-07` | major | `LA-R-22` | `LAS-10` | `tui` recovery/discard prompt | On a failed review the Recovery screen advertises `Quit = q`, but `q` opens `Discard N selected basket item(s)? [y/N]` — and any non-`y` answer (including `q`) returns to the same failure screen. Pressing `q` repeatedly never exits | script the `promote-native` flow to a failing path, then answer `q` at every prompt: 4 `q`s produced 3 failure screens and 2 discard prompts, then hung | nothing — but no scenario can rely on `q` alone to abort |
+| `LAF-11` | major | `LA-R-20` | `LAS-10` | `commands.upstream.update` | `upstream update --all --force` **discards uncommitted local edits to a vendored artifact while reporting that it did not touch it**. Output is `Updated 0 upstream artifacts` + `- skipped: skill/using-residues (local catalog differs from last synced upstream)`, exit `0` — but the local edit is gone, the tree is back to upstream content, and `check` flips from `local_drift` to `up_to_date`. The counter means "upstream sha advances" (there were none) while `--force` separately re-materialises the tree; the report conflates the two and states the opposite of the effect | `upstream add --ref main --path skills/using-residues skill/using-residues <repo>`, append a line to the vendored `SKILL.md`, `upstream update --all --force` → edit gone, output says `skipped` | nothing |
+| `LAF-12` | minor | `LA-R-20` | `LAS-10` | `commands.upstream.add` ↔ `.scan` | `upstream scan <bare repo URL>` resolves ref, commit and in-repo path for all 14 artifacts unaided, but `upstream add <same bare URL>` refuses the same input twice in a row, one missing argument at a time — first `could not determine a ref from the URL; pass --ref`, then `could not determine an in-repo path from the URL; pass --path`. Two commands in one family disagree about whether a repo URL is resolvable, and the errors arrive serially instead of together | `upstream add --source C skill/using-residues https://github.com/M1F1/residues-architecture-framework` → exit `2`; add `--ref main` → exit `2` again | nothing; cost two extra round-trips |
+| `LAF-26` | major | `LA-U-15` | `LAS-10` | `marketplace update --prune` | `--prune` is documented as *remove installed entries no longer in the selection*, and it removes nothing. With `la-house-style` deleted from the source registry (rebuilt, `validate --strict --frozen` passing, snapshot synced) and `marketplace update loc/skill/using-git-worktrees --prune --yes` selecting only the other artifact, the stale guideline survived **on disk and in the manifest**, with no diagnostic and exit `0`. The obvious alternative invocation — `--prune` with no coordinate, meaning "reconcile everything" — is the one that crashes (`LAF-20`) | install two artifacts from a `source-local` registry, delete one upstream, rebuild, `source sync`, then `marketplace update <other> --prune --yes` | fails `LA-U-15` |
+| `LAF-25` | major | `LA-U-13` | `LAS-10` | `marketplace status` freshness comparison | **`status` never reports that an update is available.** With a source whose content changed at the same version (`1.0.0`), `source sync` published a new snapshot and the marketplace advertised payload `sha256:61faaa39…` while the consumer manifest recorded `sha256:2053c087…` — two digests both known to the tool, plainly different — and `status` reported `current`. `marketplace update` on the same artifact immediately reported `changed` and pulled the new content, so the difference is detectable; `status` simply does not look. An operator using `status` to decide whether to update would never update. Local drift *is* reported (`LA-U-12`), so the omission is specifically the upstream direction | add a `source-local` registry, install an artifact, edit its payload upstream, `registry lock && registry build`, `source sync` → `published`; `marketplace status` → `current`; `marketplace update` → `changed` | fails `LA-U-13` |
+| `LAF-24` | major | `LA-U-24` | `LAS-01` | registry gates ↔ `setup` recipe validation | **Publishable but uninstallable.** All three Docker MCP fixtures (`github-docker`, `github-enterprise-docker`, `postgres-docker`) carry `setup/installer.json` at `schema_version: 1, protocol_version: 1`. The consumer rejects the recipe correctly at install time — `invalid setup installer …: schema_version and protocol_version must both be 2; a superseded recipe is migrated by raising both to 2 and adding the package-root SETUP.md route` — but **every registry-side gate passed it**: `registry validate --strict --frozen`, `registry audit`, `lock` and `build` are all green, and `marketplace list` publishes it. The maintainer gets no signal; the consumer discovers it. Worse, the install **is applied first**: `.mcp.json` is written correctly, `session_status: succeeded`, `status: changed`, `setup_status: pending` — and then the envelope reports `ok: false` with exit `1`. So a partially-applied install is summarised as a failure. Same shape as `LAF-08` (a `{}` hook payload clears the whole chain): the protocol floor is enforced at the consumer, not at publication | `registry validate --strict --frozen` and `registry audit` in Registry A → both pass; `marketplace install la-a/mcp/github-docker --profile claude --yes --json` → `.mcp.json` written, `ok: false`, exit `1` | blocks LA-M; the prescribed fixture migration is itself impossible (`LAF-27`) |
+| `LAF-27` | major | `LA-M-01` | `LAS-01` | `protocol.native_tree` ↔ `setup._manual_path` | **The valid setup protocol cannot be published.** A v2 `setup/installer.json` deterministically derives `SETUP.md` at the package root, but canonical-tree validation only allows `artifact.json`, `README.md`, `provenance.json`, `payload/`, and `setup/`; it rejects that required root file as `unexpected canonical package path: SETUP.md`. The v1 Docker-MCP fixture can therefore pass every registry gate only to be rejected by the consumer; its prescribed v2 migration cannot pass `registry build` or strict validation. | raise both recipe versions to 2 and move `setup/SETUP.md` to package-root `SETUP.md`; run `registry lock && registry build` → `unexpected canonical package path: SETUP.md`; restore the fixture and the same registry validates strictly again | blocks all credential-bearing setup acceptance; no valid fixture workaround |
+| `LAF-20` | major | `LA-U-22` | `LAS-10` | `commands.marketplace._action_request` ↔ `consumer.model` | **The first crash in the run.** `aart marketplace update` with no coordinate raises an unhandled `ValueError: consumer action request is invalid` and prints a raw Python traceback (`marketplace.py:324` → `consumer/model.py:77`). It happens with and without `--yes`. Under `--json` the traceback goes to stderr and **stdout is empty**, so a machine caller gets no envelope at all, only exit `1`. Its sibling `marketplace uninstall` handles the identical empty-coordinate case perfectly — `consumer-invalid`, `marketplace uninstall requires at least one artifact or collection coordinate`, plus two remediation lines — and `marketplace status` treats it as "all installed". So "update everything", the most natural way to run the command, is the one path that crashes | in a consumer with something installed: `aart marketplace update --profile claude --yes --json` → traceback, exit `1`, empty stdout; add an explicit coordinate → exit `0` | nothing — naming coordinates works |
+| `LAF-16` | major | `LA-U-03` | `LAS-10` | `consumer` plan digest | `review_digest` — and the `plan_digest` it is derived from — **is not stable for an identical plan on an unchanged workspace**. Two consecutive review-only runs of the same command produced different digests; every other reviewed field (`destinations`, `manifest_digest`, `payload_digest`, `object_digest`, `installation_risk`) was byte-identical, so `plan_digest` alone varies. This undermines the review→finalize contract the consent model rests on: a user cannot confirm that what is being finalized is what they reviewed. Not iteration order — fixing `PYTHONHASHSEED=0` did not stabilise it, and leaving it random did not destabilise it; values change occasionally and then persist, which points at a time- or sync-derived input (`sync.max_age_seconds: 900`, `mode: auto`). Exact input not pinned down, and deliberately not chased. Contrast `LA-R-21`, where the **maintainer** review digest was byte-identical across four re-renders | in a fresh consumer, run `marketplace install la-a/skill/test-driven-development --profile claude --scope project --json` twice with no `--yes` and compare `review_digest` | nothing |
+| `LAF-15` | major | `LA-R-26` | `LAS-01` | `commands.security.scan` ↔ `io.object_store` | `security scan` requires a **canonical object envelope** — one JSON file `{schema_version, entries:[{path,kind,executable,content_base64}]}` — and **no `aart` command emits one**. The consumer object store materialises each object as an *exploded directory* (`artifact.json` + `payload/` + `provenance.json`), which `scan` cannot read; neither the directory nor `artifact.json` is accepted. The envelope exists only as in-memory bytes on `ObjectCandidate.canonical_bytes`. I reached the command by importing the **private** `io.object_store._read_candidate` — once fed, it runs perfectly (8/8 coverage, correct digest). A shipped CLI surface with no CLI-reachable input. Secondary: the failure message `object envelope or registry index is invalid` conflates two independent causes, so the first attempt cannot tell which file was rejected | `security scan --index <snapshot>/aart.index.json --artifact guideline/la-house-style <object dir>` → `cannot read bounded real object…`; with `<object dir>/artifact.json` → `object envelope or registry index is invalid`; a hand-built envelope → `object envelope is not in canonical representation` | blocked `LA-R-26` until worked around in Python |
+| `LAF-14` | minor | `LA-S-08` | `LAS-30` | `commands.install` ↔ `commands.marketplace.install` | The two-worlds split reaches the **consumer** verbs: `install`, `update`, `uninstall`, `status`, `setup` each exist twice, once at top level (legacy catalog) and once under `marketplace` (canonical sources). Top-level `aart install skill/brainstorming` ignores the configured marketplace entirely and fails with `the package-embedded catalog default was removed in AART 1.0; use the configured marketplace **in the TUI**, or pass explicit legacy --source DIR or --repo OWNER/NAME`. The remediation sends a flag-mode caller to the TUI and to legacy flags, and never mentions `aart marketplace install`, which is the flag-mode answer that works | with both sources configured, `aart install skill/brainstorming --profile claude --scope project --yes` → exit `2` and that message; `aart marketplace install la-b/skill/brainstorming@1.0.0 …` → exit `0` | cost one round-trip at `LA-S-08`; **re-points every LA-U scenario at the `marketplace` verbs** |
+| `LAF-21` | major | `LA-U-09` | `LAS-30` | `commands.marketplace.install` flags | `marketplace install` has **no `--memory-mode`**, so of the four documented memory combination modes only the default (`prepend`) is reachable from the canonical consumer path — `replace`, `append` and `skip` cannot be selected at all. The flag exists only on the legacy top-level `install` (`--memory-mode {replace,prepend,append,skip}`, default `prepend`, cited to `docs/design/DESIGN-memory.md §3.2`), which per `LAF-14` does not see configured sources. A documented feature is therefore reachable only from the surface that cannot reach the registry holding the artifact | `aart marketplace install --help` → no memory flag; `aart install --help` → the flag is there | blocks three quarters of `LA-U-09` |
+| `LAF-22` | minor | `LA-U-09` | `LAS-18` | `install` unowned-destination gate | Installing a `memory` artifact into a repository that already has a `CLAUDE.md` is refused: `install-conflict: install destinations contain unowned or drifted content; use force: CLAUDE.md`, **empty remediation**. Since essentially every Claude project already has a `CLAUDE.md`, the memory type effectively always needs `--force` on a real repository. The subtlety that makes this worth recording rather than fixing: `--force` is described as *authorize overwrites and merge-entry collisions*, which reads destructive, but here it performs a safe **prepend** — the human's text was fully preserved below the managed block. So the gate protects correctly and the flag behaves correctly; only the message misrepresents the risk, and a cautious operator will refuse the safe action | create `CLAUDE.md` by hand, then `marketplace install la-a/memory/la-team-memory … --yes` → exit `1`; add `--force` → exit `0`, human text intact | nothing |
+| `LAF-19` | minor | `LA-U-21` | `LAS-18` | `marketplace` offline resolution | An offline install against a **cold** cache fails with `artifact-not-found: artifact skill/using-git-worktrees in source la-a was not found` and an empty `remediation` array. The artifact exists and the name is right; what is missing is a cached snapshot for the source. The failure is typed and touches no network (both correct), but it names the wrong cause and offers no way forward — the obvious fix, dropping `--offline` or running `source sync` while connected, is never mentioned | copy `config.json` to a `HOME` with no snapshots, `marketplace install … --offline --yes` | nothing |
+| `LAF-17` | minor | `LA-U-17` | `LAS-10` | `marketplace uninstall` teardown | Uninstalling every artifact does not restore the repository. The artifacts and their content are removed and the manifest is correctly emptied, but `.agent-artifacts/manifest.json`, `.agent-artifacts/state-migration.lock`, and the now-empty `.claude/skills` and `.claude/guidelines` directories are all left behind, so `git status --porcelain` reports `?? .agent-artifacts/` on a repo that was clean before the install. Empty directories hide from Git, so the harness litter is invisible until someone lists the tree | install two artifacts into a clean checkout, `marketplace uninstall … --yes`, then `git status --porcelain` | fails the `LA-U-17` assertion outright |
+| `LAF-18` | minor | `LA-U-17` | `LAS-10` | `marketplace` session reporting | A wholly refused session still reports `finalized: true`. On the drift-blocked uninstall the envelope read `ok: false`, `session_status: failed`, both items `conflict`, nothing removed — and `finalized: true` alongside. `finalized` tracks "the finalize path was entered", not "the action was carried out", which is the opposite of how the word reads next to `ok: false`. Same family as `LAF-11`: the summary field contradicts the effect | `marketplace uninstall … --yes` against a drifted destination → `ok:false`, `finalized:true`, exit `1` | nothing |
+| `LAF-13` | minor | `LA-S-05` | `LAS-18` | `source` store schema stamping | A source store created by **this** version is immediately reported as needing migration: `source doctor` on a virgin `HOME` — and again right after a successful `source add` — prints `Source store migration required (v1 -> v2)` with `store_schema_version: null`, `target_schema_version: 2`. Meanwhile `source health` on the same store reports `pending_store_migration: false`. Three readings, two answers; `source add` never stamps the version it writes | `HOME=<empty> aart source doctor --json` → `migration_required: true` before any source exists; add a source, re-run → still `true`; `source health --json` → `false` | nothing; `doctor --apply` fixes it and is idempotent |
+| `LAF-05` | minor | `LA-R-11` | `LAS-30` | `commands.upstream` guards | Three of the seven `upstream` commands refuse a canonical registry (`health`, `validate` → `not a catalog directory`; `check` → `missing upstreams.json`, all exit `2`) while `scan` and `import` accept it. The family does not guard the workspace shape consistently | run each `upstream` subcommand with `--source` pointing at a `registry init`-ed checkout | nothing |
+| `LAF-02` | minor | `LA-R-08` | `LAS-02` | `registry scaffold` / `registry audit` | `audit` warns `owned package has no declared license` for every scaffolded artifact, with an empty `remediation` array, but `scaffold` has no `--license` flag — the only `--license` in the CLI is on `registry migrate`. Hand-adding `"license": "MIT"` to `artifact.json` does work and silences the warning | `registry scaffold … skill x` then `registry audit` | nothing |
+| `LAF-08` | minor | `LA-R-05` | `LAS-01` | `protocol.native_schema` payload validation | The payload `{}` that `registry scaffold hook` writes passes `registry validate --strict --frozen`, `lock`, `build` and `audit`. A hook artifact whose payload declares no event and no command is publishable, and a consumer will merge an empty object into `settings.json` | `registry scaffold … hook x`, leave `payload/hook.json` as `{}`, run the whole chain — all green | nothing; consequence re-checked at `LA-U-09` |
+| `LAF-09` | minor | `LA-R-15` | `LAS-30` | `commands.list` | `aart list --source <canonical registry>` prints the *legacy 0.1 compatibility path* warning and then reports **zero artifacts** for a registry holding 21. It neither errors nor says that a canonical registry must be browsed through `marketplace` | `aart list --source <registry checkout> --type skill` → warning, empty output, exit `0` | forced `LA-R-15` to assert from `aart.index.json` |
+| `LAF-23` | question | `LA-U-30` | `LAS-26` | artifact dependency model (absent) | AART has **no inter-artifact dependency concept**. Installing `residual-03-stressors` alone — a skill whose payload hard-codes `../using-residues/kernel` — succeeds with `ok: true`, no diagnostic, exit `0`, and yields an install that cannot run. Collections express grouping but nothing prevents or warns about installing a member individually. The only thing that catches it is the artifact's own bootstrap, which exits with `cannot find the residual kernel… Install that skill too, or set RESIDUAL_KERNEL`. That mitigation is **authored by the artifact author**, so an author who omits it ships a silently broken install and AART will not notice. Defensible as a deliberate scope boundary — but it is undocumented and it shifts a correctness obligation onto every artifact author | `marketplace install la-b/skill/residual-03-stressors …` in a fresh consumer → clean success; then run the skill's `scripts/run.py` → it refuses | nothing |
+| `LAF-01` | question | `LA-0-05` | `LAS-29` | `tui._is_canonical_maintainer_workspace` | Any empty Git checkout — including a brand-new consumer project — is classified as a canonical **registry** workspace and offered the 11-entry maintainer menu, `init` included | `mkdir p && cd p && git init && aart` → Maintainer → header reads `Canonical registry checkout` | nothing |
+| `LAF-03` | question | `LA-R-08` | `LAS-02` | `registry_publication.py` | The module defining the SPDX allowlist and the rule `artifact license is absent or not approved` has **no importers** anywhere in the package; nothing enforces the publication licence policy at runtime, `audit` only warns | `grep -rn "registry_publication" agent_artifacts/` returns only the module itself | nothing |
+| `LAF-10` | question | `LA-R-23` | `LAS-11` | `tui` review/finalize gate | A scripted `y` on the pty traverses the consent gate and mutates the workspace with no human present. The gate is built correctly for a human — the review screen names the digest, states `Mutation: yes, only on Finalize`, lists every path before touching it, and defaults to `N` — but it has no way to distinguish a typed `y` from a piped one | feed a full approval sequence ending in `y\ny\ny` through the pty harness into a `scaffold`; exit `0`, artifact written | nothing — recorded per design §2 |
+
+`LAF-10` is the design's own prediction confirmed, not a discovered defect: under a pty there is no
+signal that separates typed input from piped input, so no terminal UI can enforce this boundary from
+the inside. It is filed because it fixes the boundary's true location — the consent gate is a
+**convention the caller must honour**, not a control the product enforces. That makes it the
+substance of the negative rule for the `LA-Z` skill (see *Negative rules*), and it is the reason
+`LA-M` stays human-driven. A product-side answer, if one is wanted, would have to come from outside
+the TUI (an explicit `--i-am-a-human`-style refusal to run when stdin is not the controlling
+terminal, or an audit trail that records approvals as unattended).
+
+**What `LAF-24` is *not*.** The rejection of the v1 setup recipe is **correct product behaviour and
+not a finding**. AART ships one revision of each protocol and refuses older ones with a migration
+error — the message even states the exact migration (raise both versions to 2, add the package-root
+`SETUP.md` route). That is the standing rule working, and the same reasoning already applied to my
+`effects: ["copy-tree"]` authoring error at `LA-R-05`. The v1 installer is a **fixture defect I
+introduced**, carried in from the pre-existing package. The finding is only the gap: publication-side
+gates should have caught it, and the install should not apply before its setup recipe is known valid.
+
+`LA-M-01` changes the scope of the fixture remedy: attempting that stated v2 migration exposes
+`LAF-27`. The canonical package validator forbids the package-root `SETUP.md` that the v2 parser
+requires, so the fixture cannot be made admissible without a product change. The original v1
+rejection remains correct; the new finding is the contradictory pair of producer/consumer rules.
+
+Two properties of the MCP payload are worth recording as **positives**, since `LA-M` depends on them:
+`.mcp.json` pins the server image by digest (`ghcr.io/github/github-mcp-server@sha256:881b53d6…`),
+and the token is written as the indirection `"${GITHUB_PERSONAL_ACCESS_TOKEN}"` — **no credential is
+ever inlined into the consumer file**. That is exactly the shape the design's §10 boundary needs.
+
+`LAF-01` is defensible: bootstrapping a registry has to start from an empty checkout, so the predicate
+cannot demand markers that only exist after `init`. It is filed because the *operator* cannot predict
+it — the surface offered depends on invisible directory contents, and the fallback (`not a catalog
+directory`) fires only when `.git` is absent too. Needs a decision, not a fix.
+
+### The `LAF-04`/`05`/`06` cluster — two maintainer worlds
+
+These three are one structure seen from three sides, and they are the most important result of phase R
+so far. AART has **two disjoint maintainer surfaces**:
+
+| | canonical **registry** | legacy **catalog** |
+|---|---|---|
+| marker files | `aart-registry.json`, `aart-source.json` | `upstreams.json`, `bundles.json` |
+| layout | `artifacts/<type>/<name>/artifact.json` + `payload/` | `skills/<name>/`, `guidelines/…` |
+| CLI family | `aart registry …` (10) | `aart upstream …` (7) |
+| TUI menu | `CANONICAL_MAINTAINER_ACTIONS` (11) | `MAINTAINER_ACTIONS` (7) |
+
+Nothing in either family's `--help` says the other family will not work on your checkout, and the
+guard is applied inconsistently — which is what produces `LAF-06`.
+
+**LA-S found the third split, and it is the one that reaches users** (`LAF-14`). The divide is not
+confined to maintainer surfaces: the five consumer verbs — `install`, `update`, `uninstall`,
+`status`, `setup` — also exist twice, once at top level (legacy catalog) and once under `marketplace`
+(canonical sources). The top-level verbs do not see configured sources at all. So the split runs the
+full height of the product:
+
+| Layer | Canonical | Legacy |
+|---|---|---|
+| maintainer CLI | `aart registry …` (10) | `aart upstream …` (7) |
+| maintainer TUI | `CANONICAL_MAINTAINER_ACTIONS` (11) | `MAINTAINER_ACTIONS` (7) |
+| **consumer CLI** | **`aart marketplace install\|update\|uninstall\|status\|setup`** | **`aart install\|update\|uninstall\|status\|setup`** |
+
+A user who configures two sources with `source add` and then runs the obvious `aart install` gets a
+refusal that does not name the command that would have worked. This is the same shape as `LAF-04`
+(the capability exists, but not where the operator looks for it), and it is why `LAF-14` re-points
+every LA-U scenario at the `marketplace` verbs before that phase starts.
+
+**This invalidated the plan's LA-R2 method.** `LA-R2` said to populate Registry A "via `upstream add` /
+`scan` / `import`". Registry A is a canonical registry, so that family cannot author it. The
+*assertions* of LA-R2 stand; the *method* is replaced by `registry scaffold` plus the canonical TUI
+`promote-native` action, and the deviation is recorded here rather than treated as a failure.
+
+### The `LAF-20`/`25`/`26` cluster — nothing tells you your install is stale
+
+These three arrived from unrelated scenarios and turn out to be one hole. Take the ordinary question
+*"is my installation still what the registry offers, and how do I fix it?"* — every route to an
+answer is blocked:
+
+| Route | What happens |
+|---|---|
+| `marketplace status` | reports `current` even when the advertised payload digest differs from the installed one (`LAF-25`), and even when the artifact no longer exists upstream (`LA-U-15`) |
+| `marketplace update` (no coordinate) | unhandled `ValueError`, raw traceback, empty stdout under `--json` (`LAF-20`) |
+| `marketplace update <coord> --prune` | exits `0` and prunes nothing (`LAF-26`) |
+| `marketplace update <coord>` | **works** — pulls the change correctly |
+
+So the only working path is the one that requires the operator to already know which artifact changed
+— which is precisely what `status` refuses to tell them. The capability is present and correct at the
+bottom (`update` by coordinate does the right thing, digests are recorded on both sides, drift in the
+*local* direction is detected accurately); it is the reconciliation layer above it that is missing.
+
+This is an **attractor**, not three defects: the consumer tracks state faithfully and compares it in
+one direction only. `LAF-17` (teardown leaves `.agent-artifacts/` and empty harness directories)
+belongs to the same shape — state is written carefully and reconciled carelessly.
 
 Stressor IDs (`LAS-NN`) are registered in
 [live-acceptance-scenarios.md](live-acceptance-scenarios.md). The **Stressor** and **Component**
@@ -135,7 +355,22 @@ agent skill (`LA-Z1`) and the README correction (`LA-Z2`).
 
 ### Behaviour that surprised
 
-_empty_
+- **The TUI cannot be reached by piping stdin at all.** `cli._run_bare` requires `sys.stdin.isatty()`
+  **and** `sys.stdout.isatty()`; with either one piped, bare `aart` prints `--help` and exits `0`. So
+  the design's assumption in §6 — "TUI text front-end, agent, choices piped to stdin" — is only
+  reachable through a **pty**, and the harness had to grow one
+  (`$LA_ROOT/drive_tui.py`). This is a real constraint on any agent driving AART.
+- **Under a pty, curses always wins.** `_curses_supported()` checks only that `curses` imports and
+  both streams are TTYs, so a pty gets the curses front-end. Forcing the text front-end needs
+  `TERM=dumb`, which makes `curses.initscr()` fail and `tui.run` degrade on `CursesUnavailable`.
+  **pty + `TERM=dumb` is the reproducible recipe for every `TUI-text` scenario in this run**, and it
+  is very likely the shape of the "TUI restarting, I typed digits" experience that motivated the
+  vocabulary work — a degraded terminal silently swaps the front-end.
+- **Input written ahead of a prompt is consumed by whichever read is pending.** A first probe that
+  fed one line fewer than there were prompts still advanced past the role stage without the role
+  prompt ever appearing on screen. The harness now feeds exactly one line per prompt and asserts the
+  prompt echo. The underlying property — answers can land before the question is displayed — is the
+  substance of `LAS-11` and gets its proper test in `LA-R-23`.
 
 ### Negative rules (what an agent must not do)
 
@@ -147,11 +382,18 @@ Seeded from the reasoning already recorded in
   not change. Rejection is correct behaviour and is not a finding — silent absorption is.
   — _to confirm in `LA-R-29`_
 - The TUI is where a human supplies consent. Piping choices into the text front-end is a test-only
-  affordance, not a supported way to drive the tool. — _to confirm in `LA-R-23`_
+  affordance, not a supported way to drive the tool. — **confirmed, and stronger than written**
+  (`LA-R-23`/`LAF-10`): the pipe does not merely work by accident, it completes the full
+  review→finalize→mutate path and exits `0`. Nothing in the product will stop an agent from doing
+  this, so the rule is the agent's to keep: **an agent must not drive the TUI to approve a mutation.**
+  Where an agent needs the effect, it uses flag mode, whose consent is explicit and auditable in the
+  command line itself; where flag mode cannot reach it (`LAF-04`), the action belongs to a human.
 - `--json` is a rendering, never a mode: it must not imply `--yes` or change any effect.
   — _to confirm in `LA-U-06`_
 - `aart registry` never commits or pushes; publication is a separate deliberate act.
-  — _to confirm in `LA-R-25`_
+  — **confirmed** (`LA-R-25`): the whole authoring chain left the checkout dirty and untouched by
+  Git; publication took a hand-written `git push`, and both clean clones then validated `--strict
+  --frozen`.
 
 ### Ergonomic notes
 
@@ -181,8 +423,25 @@ Newest entry last. One line per session, stating what advanced and what stopped 
   the protocol floor, `LAS-28` artifact-carried installer — with scenarios `LA-R-28..30`,
   `LA-U-29..30`, `LA-M-07`. A conditional re-opening of `registry migrate` is recorded in the plan
   and needs a maintainer decision **only if** `LA-R-29` shows a genuine below-floor source.
+- **2026-08-13, execution session 1** — LA-0 complete (6/6). LA-R authored both registries from empty:
+  **A** = 21 artifacts (14 superpowers skills, 4 MCP incl. an authored `context7`, plus a scaffolded
+  guideline/hook/memory so all five types are live) in 2 collections; **B** = 23 artifacts (7 Pocock
+  skills, the 14-package `residuality` bundle vendored from
+  `M1F1/residues-architecture-framework`, an authored `mcp/atlassian`, and a deliberately colliding
+  `skill/brainstorming`) in 2 collections. Both pass `validate --strict --frozen`, `audit`, and
+  `test --compatibility all`. **Neither has been pushed.** Nine findings filed; the important one is
+  the `LAF-04/05/06` cluster — AART has two disjoint maintainer surfaces, and `upstream import`
+  silently writes legacy-shaped files into a canonical registry that the registry then ignores while
+  still reporting success. LA-R2's method was replaced accordingly.
 - **2026-08-13** — **one-way adaptation** recorded as a governing invariant (design §8): AART never
   adapts to a registry or a consumer repo; a legacy repo gets an attempt to subscribe under current
   rules and failure is an acceptable outcome. This inverts how the legacy branch is scored —
   rejection is now the pass condition and silent absorption is the `major` finding — and fixes the
   remedy direction: re-author the artifacts, never loosen AART.
+- **2026-08-13, execution session 2** — LA-M review-only work advanced without credentials. Bare
+  `marketplace setup` requires an explicit coordinate; `LA-M-02` passes with no setup records. The
+  reviewed `github-docker` fixture is v1 and produces no plan (`LAF-24`). Attempting the prescribed
+  v2 migration across all three Docker MCP recipes revealed `LAF-27`: `setup` requires a
+  package-root `SETUP.md`, while canonical registry validation forbids that path. The local probe was
+  restored; Registry A again passes `validate --strict --frozen` and compatibility tests. LA-M is
+  blocked before any credential entry or effect execution.

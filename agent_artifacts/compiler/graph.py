@@ -389,6 +389,41 @@ def _semantic_json(artifact: IndexArtifact) -> JsonObject:
                 ),
             )
         )
+    if artifact.requires:
+        requirements: list[JsonObject] = []
+        for selector in artifact.requires:
+            selector_entries: list[tuple[str, JsonValue]] = [
+                ("type", selector.identity.kind),
+                ("name", selector.identity.name),
+            ]
+            if selector.version is not None:
+                selector_entries.append(
+                    (
+                        "version",
+                        JsonObject(
+                            tuple(
+                                item
+                                for item in (
+                                    (
+                                        "min_inclusive",
+                                        None
+                                        if selector.version.min_inclusive is None
+                                        else str(selector.version.min_inclusive),
+                                    ),
+                                    (
+                                        "max_exclusive",
+                                        None
+                                        if selector.version.max_exclusive is None
+                                        else str(selector.version.max_exclusive),
+                                    ),
+                                )
+                                if item[1] is not None
+                            )
+                        ),
+                    )
+                )
+            requirements.append(JsonObject(tuple(selector_entries)))
+        entries.append(("requires", JsonArray(tuple(requirements))))
     return JsonObject(tuple(entries))
 
 
@@ -413,6 +448,7 @@ def _normalize_artifact(artifact: IndexArtifact) -> IndexArtifact:
         ),
         setup=setup,
         collections=tuple(sorted(set(artifact.collections))),
+        requires=tuple(sorted(set(artifact.requires), key=lambda item: str(item.identity))),
     )
 
 
@@ -716,6 +752,18 @@ def compile_marketplace_graph_phase(
     )
 
 
+def _supported(values: Iterable[object]) -> str:
+    """Render the set an operator may choose from, sorted so the message is reproducible.
+
+    A refusal that names only the rejected value leaves the caller guessing which value would
+    work.  Every dimension below is a closed set declared by the artifact, so the message can
+    always name it — that is what makes the refusal actionable rather than merely correct.
+    """
+
+    labels = sorted(str(value) for value in values)
+    return ", ".join(labels) if labels else "none"
+
+
 def evaluate_compatibility(
     artifact: MarketplaceArtifact,
     target: CompatibilityTarget,
@@ -740,28 +788,32 @@ def evaluate_compatibility(
         payload.append(
             CompatibilityReason(
                 "profile-unsupported",
-                f"profile {target.profile!r} is not supported",
+                f"profile {target.profile!r} is not supported; supported profiles: "
+                f"{_supported(manifest.compatibility.profiles)}",
             )
         )
     if target.platform not in manifest.compatibility.platforms:
         payload.append(
             CompatibilityReason(
                 "platform-unsupported",
-                f"platform {target.platform!r} is not supported",
+                f"platform {target.platform!r} is not supported; supported platforms: "
+                f"{_supported(manifest.compatibility.platforms)}",
             )
         )
     if target.scope not in manifest.install.scopes:
         payload.append(
             CompatibilityReason(
                 "scope-unsupported",
-                f"scope {target.scope!r} is not supported",
+                f"scope {target.scope!r} is not supported; supported scopes: "
+                f"{_supported(manifest.install.scopes)}",
             )
         )
     if target.mode not in manifest.install.modes:
         payload.append(
             CompatibilityReason(
                 "mode-unsupported",
-                f"mode {target.mode!r} is not supported",
+                f"mode {target.mode!r} is not supported; supported modes: "
+                f"{_supported(manifest.install.modes)}",
             )
         )
     available_effects = frozenset(target.effects)
@@ -778,7 +830,8 @@ def evaluate_compatibility(
             setup.append(
                 CompatibilityReason(
                     "setup-platform-unsupported",
-                    f"setup does not support platform {target.platform!r}",
+                    f"setup does not support platform {target.platform!r}; supported platforms: "
+                    f"{_supported(manifest.setup.platforms)}",
                 )
             )
         available_setup = frozenset(target.setup_capabilities)
@@ -940,6 +993,9 @@ def _artifact_json(item: MarketplaceArtifact) -> JsonObject:
     requires_aart = semantic.get("requires_aart")
     if requires_aart is not None:
         entries.append(("requires_aart", requires_aart))
+    requires = semantic.get("requires")
+    if requires is not None:
+        entries.append(("requires", requires))
     return JsonObject(tuple(entries))
 
 

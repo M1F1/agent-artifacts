@@ -15,6 +15,7 @@ from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.protocol.native_models import InstallSpec
 from agent_artifacts.protocol.registry_models import ReviewRecord
 from agent_artifacts.protocol.semver import SemVer, VersionBounds
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
 from agent_artifacts.security.attestations import AttestationTrust
 from agent_artifacts.security.model import (
@@ -110,7 +111,7 @@ class TuiMarketplaceTest(unittest.TestCase):
         future = artifact(
             "team-source",
             "future",
-            requires_aart=VersionBounds(min_inclusive=SemVer(2, 0, 0)),
+            requires_aart=VersionBounds(min_inclusive=SemVer(EXECUTABLE_VERSION.major + 1, 0, 0)),
         )
         result = build_marketplace(
             graph((source, "team-source", (future,))),
@@ -131,9 +132,11 @@ class TuiMarketplaceTest(unittest.TestCase):
         self.assertEqual(artifact_cells(rows[0])[1], "unavailable")
         pane = _flat(render_artifact_pane(rows[0], width=100))
         self.assertIn("unavailable", pane)
-        self.assertIn("requires AART >=2.0.0", pane)
+        self.assertIn(f"requires AART >={EXECUTABLE_VERSION.major + 1}.0.0", pane)
         self.assertEqual(rows[0].reasons[0].code, "aart-version-unsupported")
-        self.assertIn("requires AART >=2.0.0", rows[0].reasons[0].message)
+        self.assertIn(
+            f"requires AART >={EXECUTABLE_VERSION.major + 1}.0.0", rows[0].reasons[0].message
+        )
         self.assertEqual(reconcile_marketplace_basket((rows[0].key,), rows).retained, ())
 
     def test_collision_rows_stay_qualified_and_expose_value_trust_health_and_security(self) -> None:

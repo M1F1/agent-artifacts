@@ -25,7 +25,7 @@ WizardStage = Literal[
     "source",
     "mode",
     "artifacts",
-    "upstream_details",
+    "native_details",
     "review",
 ]
 WizardRole = Literal["user", "maintainer"]
@@ -45,7 +45,7 @@ _STAGE_LABELS: Mapping[WizardStage, str] = {
     "source": "Sources",
     "mode": "Mode",
     "artifacts": "Artifacts",
-    "upstream_details": "Upstream details",
+    "native_details": "Native reference details",
     "review": "Review",
 }
 
@@ -59,7 +59,7 @@ class WizardPosition:
 
 @dataclass(frozen=True, slots=True)
 class BasketItem:
-    kind: Literal["artifact", "bundle", "upstream"]
+    kind: Literal["artifact", "bundle", "reference"]
     key: str
     label: str
     description: str = ""
@@ -169,18 +169,12 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     if action in ("health", "validate", "audit", "diff", "lock", "build"):
         return maintainer + ("review",)
     if action in (
-        "add",
         "init",
         "scaffold",
         "promote-native",
-        "import-foreign",
-        "update-upstream",
+        "refresh-native",
     ):
-        return maintainer + ("upstream_details", "review")
-    if action == "import":
-        return maintainer + ("upstream_details", "artifacts", "review")
-    if action in ("check", "update"):
-        return maintainer + ("artifacts", "review")
+        return maintainer + ("native_details", "review")
     if action == "user":
         return _user_stages(session, prefix=maintainer)
     return maintainer

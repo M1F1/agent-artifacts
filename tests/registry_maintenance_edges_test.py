@@ -10,7 +10,7 @@ from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKin
 from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.registry_maintenance.planning import (
-    check_native_upstream,
+    check_native_reference,
     plan_native_promotion,
     plan_registry_entry_add,
     project_registry_mutation,
@@ -177,7 +177,7 @@ class RegistryMaintenanceEdgesTest(unittest.TestCase):
         for path in ("aart.lock.json", "aart.index.json"):
             with self.subTest(path=path):
                 self.assertIsInstance(
-                    check_native_upstream(
+                    check_native_reference(
                         without_snapshot_paths(current, path),
                         registry_entry(),
                         _acquisition(),
@@ -187,7 +187,7 @@ class RegistryMaintenanceEdgesTest(unittest.TestCase):
                     Err,
                 )
                 self.assertIsInstance(
-                    check_native_upstream(
+                    check_native_reference(
                         replace_snapshot_file(current, path, b"{}"),
                         registry_entry(),
                         _acquisition(),
@@ -200,7 +200,7 @@ class RegistryMaintenanceEdgesTest(unittest.TestCase):
         index = json.loads(snapshot_file(current, "aart.index.json"))
         index["artifacts"] = []
         self.assertIsInstance(
-            check_native_upstream(
+            check_native_reference(
                 replace_snapshot_file(current, "aart.index.json", json.dumps(index).encode()),
                 registry_entry(),
                 _acquisition(),
@@ -219,7 +219,7 @@ class RegistryMaintenanceEdgesTest(unittest.TestCase):
             "aart-source.json",
             json.dumps(source).encode(),
         )
-        result = check_native_upstream(
+        result = check_native_reference(
             current,
             registry_entry(),
             _acquisition(changed_source, commit="b" * 40),
@@ -238,7 +238,7 @@ class RegistryMaintenanceEdgesTest(unittest.TestCase):
         )
         malformed = SourceSnapshot(current.origin, entries)
         self.assertIsInstance(
-            check_native_upstream(
+            check_native_reference(
                 malformed,
                 registry_entry(),
                 _acquisition(),

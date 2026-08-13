@@ -8,7 +8,6 @@ import shlex
 import tempfile
 from dataclasses import dataclass
 from typing import Callable, Protocol
-from urllib.parse import urlsplit
 
 from agent_artifacts.application.registry_commands import (
     finalize_registry_workspace,
@@ -20,16 +19,13 @@ from agent_artifacts.application.registry_commands import (
 from agent_artifacts.application.registry_maintenance import finalize_registry_mutation
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias, SourceId
+from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.importers.legacy_catalog import LegacyCatalogOptions, scan_legacy_catalog
-from agent_artifacts.importers.model import ImporterInput, ImportOrigin
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
 from agent_artifacts.protocol.registry_models import RegistryEntry
 from agent_artifacts.protocol.registry_schema import parse_registry_entry
 from agent_artifacts.protocol.semver import SemVer, parse_semver
-from agent_artifacts.registry_commands.migration import plan_legacy_registry_migration
 from agent_artifacts.registry_commands.model import (
     ArtifactScaffoldOptions,
     RegistryInitOptions,
@@ -59,7 +55,7 @@ from agent_artifacts.registry_maintenance.model import (
     RegistryApplyReceipt as MutationApplyReceipt,
 )
 from agent_artifacts.registry_maintenance.planning import (
-    check_native_upstream,
+    check_native_reference,
     plan_native_promotion,
     project_registry_mutation,
 )
@@ -90,7 +86,6 @@ CURATION_INVALID = DiagnosticCode("curation-invalid")
 CURATION_STALE = DiagnosticCode("curation-stale")
 
 NativeAcquirer = Callable[[str, str], Result[NativeReferenceAcquisition]]
-LegacyAcquirer = Callable[[CurationRequest], Result[ImporterInput]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,7 +171,6 @@ def _follow_up(
     if action in {
         CurationAction.INIT,
         CurationAction.SCAFFOLD,
-        CurationAction.IMPORT_FOREIGN,
     }:
         return (
             diff,
@@ -232,36 +226,6 @@ def _default_native_acquirer(url: str, ref: str) -> Result[NativeReferenceAcquis
                 url,
                 ref,
                 acquired.value.resolved_revision,
-                acquired.value.snapshot,
-            )
-        )
-    except ValueError as error:
-        return _error(str(error))
-
-
-def _default_legacy_acquirer(request: CurationRequest) -> Result[ImporterInput]:
-    assert request.legacy_source is not None
-    location = request.legacy_source
-    parsed = urlsplit(location)
-    remote = parsed.scheme in {"https", "ssh"} or location.startswith("git@")
-    if not remote:
-        location = os.path.abspath(location)
-        if request.origin_url is None:
-            return _error("local legacy source requires an origin URL for honest provenance")
-    origin_url = request.legacy_source if remote else request.origin_url
-    assert origin_url is not None
-    acquired = _candidate(
-        location,
-        request.ref,
-        alias="curation-legacy",
-        allow_local_transport=not remote,
-    )
-    if isinstance(acquired, Err):
-        return acquired
-    try:
-        return Ok(
-            ImporterInput(
-                ImportOrigin(origin_url, acquired.value.resolved_revision, None),
                 acquired.value.snapshot,
             )
         )
@@ -349,14 +313,12 @@ class LocalCurationService:
         workspace: str,
         *,
         native_acquirer: NativeAcquirer = _default_native_acquirer,
-        legacy_acquirer: LegacyAcquirer = _default_legacy_acquirer,
     ):
         if not os.path.isabs(workspace) or os.path.normpath(workspace) != workspace:
             raise ValueError("curation workspace must be normalized and absolute")
         self.root = workspace
         self.workspace = FilesystemRegistryWorkspace(workspace)
         self.native_acquirer = native_acquirer
-        self.legacy_acquirer = legacy_acquirer
 
     def _current(self) -> Result[SourceSnapshot]:
         return self.workspace.current()
@@ -470,6 +432,15 @@ class LocalCurationService:
             )
         )
 
+    def _prepare_format(self, request: CurationRequest) -> Result[PreparedCuration]:
+        current = self._current()
+        if isinstance(current, Err):
+            return current
+        planned = plan_registry_format(current.value)
+        if isinstance(planned, Err):
+            return planned
+        return Ok(self._workspace_review(request, planned.value))
+
     def _entry(self, request: CurationRequest) -> Result[RegistryEntry]:
         if None in (request.kind, request.name, request.url, request.path):
             return _error("native promotion requires kind, name, URL, ref, and package path")
@@ -531,7 +502,7 @@ class LocalCurationService:
 
     def _prepare_update(self, request: CurationRequest) -> Result[PreparedCuration]:
         if request.kind is None or request.name is None:
-            return _error("upstream update requires an exact artifact kind and name")
+            return _error("native reference refresh requires an exact artifact kind and name")
         current = self._current()
         if isinstance(current, Err):
             return current
@@ -551,7 +522,7 @@ class LocalCurationService:
         acquired = self.native_acquirer(entry.source.url, entry.source.ref)
         if isinstance(acquired, Err):
             return acquired
-        checked = check_native_upstream(
+        checked = check_native_reference(
             current.value,
             entry,
             acquired.value,
@@ -603,59 +574,6 @@ class LocalCurationService:
             return planned
         return Ok(self._workspace_review(request, planned.value))
 
-    def _prepare_import(self, request: CurationRequest) -> Result[PreparedCuration]:
-        if (
-            request.legacy_source is None
-            or request.source_id is None
-            or request.display_name is None
-            or not request.profiles
-        ):
-            return _error(
-                "foreign import requires legacy source, source ID, display name, and profiles"
-            )
-        version = _semver(request.artifact_version, "artifact version")
-        if isinstance(version, Err):
-            return version
-        acquired = self.legacy_acquirer(request)
-        if isinstance(acquired, Err):
-            return acquired
-        try:
-            options = LegacyCatalogOptions(
-                SourceId(request.source_id),
-                request.display_name,
-                version.value,
-                request.profiles,
-                request.platforms or ("darwin",),
-            )
-        except ValueError as error:
-            return _error(str(error))
-        scanned = scan_legacy_catalog(acquired.value)
-        if isinstance(scanned, Err):
-            return scanned
-        planned = plan_legacy_registry_migration(
-            acquired.value,
-            options,
-            display_name=request.display_name,
-            executable_version=_VERSION,
-        )
-        if isinstance(planned, Err):
-            return planned
-        current = self._current()
-        if isinstance(current, Err):
-            return current
-        if current.value != planned.value.current:
-            return _error("foreign import destination must contain no managed registry files")
-        warnings = tuple(
-            sorted(
-                {
-                    "Conversion uses the built-in legacy-catalog-v1 importer; review every normalized file.",
-                    *scanned.value.warnings,
-                    *(warning for item in scanned.value.artifacts for warning in item.warnings),
-                }
-            )
-        )
-        return Ok(self._workspace_review(request, planned.value.plan, warnings=warnings))
-
     def _prepare_read_only(self, request: CurationRequest) -> Result[PreparedCuration]:
         current = self._current()
         if isinstance(current, Err):
@@ -677,7 +595,11 @@ class LocalCurationService:
                 return report
             checks = _checks(report.value)
         elif request.action is CurationAction.AUDIT:
-            report = audit_registry_workspace(current.value)
+            report = audit_registry_workspace(
+                current.value,
+                executable_version=_VERSION,
+                available_capabilities=_CAPABILITIES,
+            )
             if isinstance(report, Err):
                 return report
             checks = _checks(report.value)
@@ -714,9 +636,9 @@ class LocalCurationService:
         mutating = request.action in {
             CurationAction.INIT,
             CurationAction.SCAFFOLD,
+            CurationAction.FORMAT,
             CurationAction.PROMOTE_NATIVE,
-            CurationAction.IMPORT_FOREIGN,
-            CurationAction.UPDATE_UPSTREAM,
+            CurationAction.REFRESH_NATIVE,
             CurationAction.LOCK,
             CurationAction.BUILD,
         }
@@ -728,11 +650,11 @@ class LocalCurationService:
             return self._prepare_init(request)
         if request.action is CurationAction.SCAFFOLD:
             return self._prepare_scaffold(request)
+        if request.action is CurationAction.FORMAT:
+            return self._prepare_format(request)
         if request.action is CurationAction.PROMOTE_NATIVE:
             return self._prepare_promote(request)
-        if request.action is CurationAction.IMPORT_FOREIGN:
-            return self._prepare_import(request)
-        if request.action is CurationAction.UPDATE_UPSTREAM:
+        if request.action is CurationAction.REFRESH_NATIVE:
             return self._prepare_update(request)
         if request.action in {CurationAction.LOCK, CurationAction.BUILD}:
             return self._prepare_generated(request)

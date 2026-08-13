@@ -24,6 +24,7 @@ from agent_artifacts.domain.identifiers import (
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.marketplace.model import MarketplaceSourceState
 from agent_artifacts.protocol.native_models import (
+    ArtifactSelector,
     CollectionManifest,
     CompatibilitySpec,
     InstallSpec,
@@ -144,6 +145,7 @@ def artifact(
     object_character: str = "3",
     provenance: IndexProvenance | None = None,
     requires_aart: VersionBounds | None = None,
+    requires: tuple[ArtifactSelector, ...] = (),
 ) -> IndexArtifact:
     return IndexArtifact(
         SourceId(source_id),
@@ -158,6 +160,7 @@ def artifact(
         review=review,
         provenance=provenance,
         requires_aart=VersionBounds() if requires_aart is None else requires_aart,
+        requires=requires,
     )
 
 

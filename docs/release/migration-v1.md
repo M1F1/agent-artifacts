@@ -1,5 +1,18 @@
 # Migrating from AART 0.1.x to 1.0.0
 
+> **Historical record — not a supported route on AART 2.0.0 or later.**
+>
+> Every command on this page was removed in `2.0.0`: `migrate`, `list`, `install`, `status`,
+> `check`, `update`, `uninstall`, `setup`, `upstream`, and `registry migrate`. The 0.1 boundary is
+> now refused rather than converted. A retired 0.1 state file is rejected at the boundary with one
+> diagnostic naming the only supported move — remove the retired state and reinstall from a
+> configured canonical source with `aart marketplace install`.
+>
+> The page is kept because it is the released evidence for `1.0.0`, and released evidence is never
+> rewritten. Read it as a record of what `1.0.0` did, not as instructions. If you are still on
+> 0.1.x, the supported path is to migrate under a `1.x` executable first, or to reinstall from a
+> canonical source under `2.0.0`.
+
 AART `1.0.0` separates the executable from operational artifact sources. Migration is explicit,
 preview-first, backup-backed, and reversible; it never guesses between colliding source identities.
 

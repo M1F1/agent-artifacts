@@ -1,8 +1,8 @@
 # Public reference-registry publication boundary v1
 
 The AART tool and operational registries are independently versioned products. The tool wheel
-contains compiler/runtime code, schemas, profiles, importers, and templates; it does not contain,
-export, or bootstrap the public reference registry or another operational artifact catalog.
+contains compiler/runtime code, schemas, profiles, and templates; it does not contain, export, or
+bootstrap the public reference registry or another operational artifact catalog.
 
 The first public reference instance has one approved identity:
 `M1F1/agent-artifacts-registry`, with `PUBLIC` visibility. A different owner, name, existing
@@ -21,11 +21,8 @@ aart registry init --source agent-artifacts-registry \
   --source-id reference-registry --display-name "AART Reference Registry"
 ```
 
-An existing external 0.1 catalog is converted explicitly with `aart registry migrate`; the source
-checkout, public origin URL, ref, destination, and selected profiles are reviewed inputs. The
-migration never changes or deletes the legacy checkout. See
-[`maintainer commands v1`](maintainer-commands-v1.md#migration) for the exact preview and apply
-commands.
+An existing legacy catalog is not an AART input. Its owner must re-author it as a native source
+before publication; the normal registry command family provides no import or migration path.
 
 Before publishing a registry revision, maintainers run the same checks in the registry checkout:
 

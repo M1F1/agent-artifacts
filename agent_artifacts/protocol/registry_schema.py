@@ -21,6 +21,7 @@ from .json import JsonArray, JsonObject, JsonValue, canonical_json_bytes, parse_
 from .native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
+    ArtifactSelector,
     CanonicalArtifactType,
     CollectionManifest,
     CompatibilitySpec,
@@ -802,7 +803,7 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
     validated = validate_object_fields(
         parsed.value,
         required=required,
-        optional=frozenset({"requires_aart"}),
+        optional=frozenset({"requires_aart", "requires"}),
         location=_location(path),
     )
     if isinstance(validated, Err):
@@ -854,6 +855,51 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
         if isinstance(parsed_bounds, Err):
             return parsed_bounds
         requires_aart = parsed_bounds.value
+    requires: tuple[ArtifactSelector, ...] = ()
+    if "requires" in item.keys():
+        raw_requires = _field(item, "requires")
+        if not isinstance(raw_requires, JsonArray):
+            return _error(REGISTRY_INDEX_INVALID, "requires must be an array", path=path)
+        parsed_requires: list[ArtifactSelector] = []
+        for raw_requirement in raw_requires.items:
+            requirement = _object(
+                raw_requirement, REGISTRY_INDEX_INVALID, "artifact requirement", path=path
+            )
+            if isinstance(requirement, Err):
+                return requirement
+            requirement_fields = validate_object_fields(
+                requirement.value,
+                required=frozenset({"type", "name"}),
+                optional=frozenset({"version"}),
+                location=_location(path),
+            )
+            if isinstance(requirement_fields, Err):
+                return requirement_fields
+            requirement_identity = _artifact_identity(
+                _field(requirement_fields.value, "type"),
+                _field(requirement_fields.value, "name"),
+                path=path,
+            )
+            if isinstance(requirement_identity, Err):
+                return requirement_identity
+            bounds = None
+            if "version" in requirement_fields.value.keys():
+                parsed_bounds = _bounds(
+                    _field(requirement_fields.value, "version"),
+                    REGISTRY_INDEX_INVALID,
+                    path=path,
+                )
+                if isinstance(parsed_bounds, Err):
+                    return parsed_bounds
+                bounds = parsed_bounds.value
+            if requirement_identity.value == identity.value:
+                return _error(REGISTRY_INDEX_INVALID, "artifact must not require itself", path=path)
+            parsed_requires.append(ArtifactSelector(requirement_identity.value, bounds))
+        if len({item.identity for item in parsed_requires}) != len(parsed_requires):
+            return _error(
+                REGISTRY_INDEX_INVALID, "requires contains duplicate selectors", path=path
+            )
+        requires = tuple(sorted(parsed_requires, key=lambda item: str(item.identity)))
     compatibility_object = _object(
         _field(item, "compatibility"), REGISTRY_INDEX_INVALID, "compatibility", path=path
     )
@@ -933,6 +979,7 @@ def _index_artifact(value: JsonValue, *, path: str) -> Result[IndexArtifact]:
             provenance.value,
             collections.value,
             requires_aart,
+            requires,
         )
     )
 
@@ -1231,6 +1278,17 @@ def _index_artifact_json(artifact: IndexArtifact) -> JsonObject:
         or artifact.requires_aart.max_exclusive is not None
     ):
         entries.append(("requires_aart", _bounds_json(artifact.requires_aart)))
+    if artifact.requires:
+        values: list[JsonObject] = []
+        for selector in artifact.requires:
+            requirement_entries: list[tuple[str, JsonValue]] = [
+                ("type", selector.identity.kind),
+                ("name", selector.identity.name),
+            ]
+            if selector.version is not None:
+                requirement_entries.append(("version", _bounds_json(selector.version)))
+            values.append(_json_object(requirement_entries))
+        entries.append(("requires", _json_array(values)))
     return _json_object(entries)
 
 

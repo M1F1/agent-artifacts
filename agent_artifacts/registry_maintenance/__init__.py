@@ -1,19 +1,17 @@
 """Pure Maintainer registry curation contracts."""
 
 from .model import (
-    MaterializedUpstreamCheck,
     NativeReferenceAcquisition,
-    NativeUpstreamCheck,
+    NativeReferenceCheck,
+    NativeReferenceDisposition,
     RegistryApplyCommand,
     RegistryApplyReceipt,
     RegistryChangeKind,
     RegistryFileChange,
     RegistryMutationPlan,
-    UpstreamDisposition,
 )
 from .planning import (
-    check_materialized_upstream,
-    check_native_upstream,
+    check_native_reference,
     plan_native_promotion,
     plan_registry_entry_add,
     project_registry_mutation,
@@ -22,17 +20,15 @@ from .planning import (
 )
 
 __all__ = [
-    "MaterializedUpstreamCheck",
     "NativeReferenceAcquisition",
-    "NativeUpstreamCheck",
+    "NativeReferenceCheck",
     "RegistryApplyCommand",
     "RegistryApplyReceipt",
     "RegistryChangeKind",
     "RegistryFileChange",
     "RegistryMutationPlan",
-    "UpstreamDisposition",
-    "check_materialized_upstream",
-    "check_native_upstream",
+    "NativeReferenceDisposition",
+    "check_native_reference",
     "plan_native_promotion",
     "plan_registry_entry_add",
     "project_registry_mutation",

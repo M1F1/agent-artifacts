@@ -8,19 +8,16 @@ PYTHON ?= python
 REGISTRY ?=
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration e2e system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
+.PHONY: test unit integration system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
 
-# Backwards-compatible aggregate. The Python discovery remains the broad unit/regression gate.
-test: unit e2e
+# Aggregate. The Python discovery is the broad unit/regression gate; integration is end to end.
+test: unit integration
 
 unit:
 	$(QUALITY) unit
 
 integration:
 	$(QUALITY) integration
-
-e2e:
-	$(QUALITY) e2e
 
 system-matrix:
 	$(PYTHON) scripts/system_matrix.py

@@ -20,18 +20,16 @@ import sys
 from typing import Callable, Optional, Sequence, Tuple
 
 from . import __version__
-from .cli_rules import validate_flags
-from .commands import check, install, setup, status, uninstall, update, upgrade
-from .commands import list as list_cmd
-from .commands._common import OK
+from .command_outcome import OK
+from .commands import upgrade
 from .model import Request
 from .outcomes import CommandOutcome
+from .runtime_contract import EXECUTABLE_VERSION
 
-
-def _run_upstream(request: Request) -> int:
-    from .commands import upstream
-
-    return upstream.run(request)
+# The conventional ceiling one major above the running release.  Registries and artifacts
+# declare their window against a real executable, so a literal here goes stale on every
+# major and silently produces an unsatisfiable pair.
+_DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 
 
 def _run_registry(request: Request) -> int:
@@ -52,12 +50,6 @@ def _run_reporting(request: Request) -> int:
     return reporting.run(request)
 
 
-def _run_migrate(request: Request) -> int:
-    from .commands import migrate
-
-    return migrate.run(request)
-
-
 def _run_source(request: Request) -> int:
     from .commands import source
 
@@ -72,35 +64,19 @@ def _run_marketplace(request: Request) -> int:
 
 # Command name -> handler. Value-keyed dispatch, not a class hierarchy (docs/design/DESIGN.md §14).
 DISPATCH: dict[str, Callable[[Request], int]] = {
-    "list": list_cmd.run,
-    "install": install.run,
-    "status": status.run,
-    "check": check.run,
-    "update": update.run,
-    "uninstall": uninstall.run,
     "upgrade": upgrade.run,
-    "upstream": _run_upstream,
-    "setup": setup.run,
     "registry": _run_registry,
     "security": _run_security,
     "reporting": _run_reporting,
-    "migrate": _run_migrate,
     "source": _run_source,
     "marketplace": _run_marketplace,
 }
 
 # Structured results used by interactive frontends. Flag mode retains ``DISPATCH`` and its
 # integer contract; both paths execute the same command application service exactly once.
-RESULT_DISPATCH: dict[str, Callable[[Request], CommandOutcome]] = {
-    "install": install.execute,
-    "update": update.execute,
-    "uninstall": uninstall.execute,
-}
+RESULT_DISPATCH: dict[str, Callable[[Request], CommandOutcome]] = {}
 
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
-_MEMORY_MODES = ("replace", "prepend", "append", "skip")
-_IMPORT_MODES = ("auto", "manifest", "heuristic")
-_BUNDLE_MODES = ("append", "replace", "fail")
 _INSTALL_SCOPES = ("project", "user")
 _HELP_FORMATTER = argparse.RawDescriptionHelpFormatter
 
@@ -110,23 +86,6 @@ _HELP_FORMATTER = argparse.RawDescriptionHelpFormatter
 # --------------------------------------------------------------------------- #
 def _add_json(p: argparse.ArgumentParser) -> None:
     p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
-
-
-def _add_version(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--version",
-        dest="version",
-        metavar="REF",
-        help="source git ref (branch/tag/SHA); defaults to main",
-    )
-
-
-def _add_selection(p: argparse.ArgumentParser, *, names: bool = True) -> None:
-    """Artifact-selection flags shared by install/update/uninstall (and partly list)."""
-    if names:
-        p.add_argument("names", nargs="*", metavar="NAME", help="artifact name(s) to select")
-    p.add_argument("--bundle", action="append", metavar="B", help="select a bundle (repeatable)")
-    p.add_argument("--all", action="store_true", help="select every catalog artifact")
 
 
 def _add_profile(p: argparse.ArgumentParser) -> None:
@@ -148,9 +107,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"agent-artifacts {__version__}")
 
-    def _add_repo(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--repo", metavar="OWNER/NAME", help="source-of-truth GitHub repo")
-
     def _add_project(p: argparse.ArgumentParser) -> None:
         p.add_argument(
             "--project",
@@ -170,162 +126,6 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--source", dest="source_dir", metavar="DIR", help=help_text)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
-
-    # list -------------------------------------------------------------------- #
-    p = sub.add_parser("list", help="list catalog artifacts")
-    _add_repo(p)
-    _add_source(p, "read catalog from a local checkout (offline / air-gapped)")
-    p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
-    p.add_argument(
-        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
-    )
-    _add_version(p)
-    _add_json(p)
-
-    # install ----------------------------------------------------------------- #
-    p = sub.add_parser(
-        "install",
-        formatter_class=_HELP_FORMATTER,
-        help="install artifacts (Copy by default; --link enables local Symlink mode)",
-        description=(
-            "Install artifacts into Project or User harness configuration.\n\n"
-            "Scopes:\n"
-            "  Project (recommended) configures only the current repository.\n"
-            "  User configures the selected harness for the current user.\n\n"
-            "Installation modes:\n"
-            "  Copy (recommended) installs an independent snapshot.\n"
-            "  Symlink (--link) keeps supported directory artifacts live-linked to a local "
-            "catalog.\n"
-            "This legacy flag path requires an explicit --source DIR or --repo OWNER/NAME."
-        ),
-        epilog=(
-            "Symlink mode:\n"
-            "  agent-artifacts install code-review --profile tabnine --source DIR --link\n\n"
-            "  Symlink (--link) is local-only and requires an explicit local --source DIR.\n"
-            "  Changes propagate only when that local source changes, for example after you edit it\n"
-            "  or pull upstream updates into it.\n"
-            "  Supported directory artifacts are linked; unsupported explicit selections fail.\n"
-            "  Unsupported entries selected by --all or --bundle are copied and reported.\n"
-            "  Manifest metadata records install.mode, requested_mode, and link targets so agents\n"
-            "  can inspect status/update/uninstall behavior without guessing."
-        ),
-    )
-    _add_repo(p)
-    _add_project(p)
-    _add_scope(p)
-    _add_source(p, "install from a local checkout (offline / air-gapped)")
-    _add_selection(p)
-    _add_profile(p)
-    _add_version(p)
-    p.add_argument(
-        "--memory-mode",
-        dest="memory_mode",
-        choices=_MEMORY_MODES,
-        help="how an `memory` instruction file combines with an existing one "
-        "(default: prepend); see docs/design/DESIGN-memory.md §3.2",
-    )
-    p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
-    p.add_argument(
-        "--force", action="store_true", help="authorize overwrites and merge-entry collisions"
-    )
-    p.add_argument(
-        "--link",
-        action="store_true",
-        help=(
-            "select Symlink mode for supported directory artifacts from a local catalog; "
-            "Copy remains the default"
-        ),
-    )
-    _add_json(p)
-
-    # status ------------------------------------------------------------------ #
-    p = sub.add_parser(
-        "status",
-        formatter_class=_HELP_FORMATTER,
-        help="show installed artifacts, drift, and symlink link state",
-        description="Show installed artifacts and on-disk drift in the selected scope. This command is local-only and uses no network.",
-        epilog=(
-            "For symlink installs, status reports install.mode plus each link target and state.\n"
-            "Use --json to inspect install.links[].target, target_exists, and file states such as\n"
-            "ok (symlink), broken symlink, retargeted symlink, replaced, or missing."
-        ),
-    )
-    _add_repo(p)
-    _add_project(p)
-    _add_scope(p)
-    _add_json(p)
-
-    # check ------------------------------------------------------------------- #
-    p = sub.add_parser(
-        "check",
-        formatter_class=_HELP_FORMATTER,
-        help="compare installed/CLI commit against source and report live links",
-        description="Compare artifacts installed in the selected scope and the CLI commit against the selected remote source.",
-        epilog=(
-            "Symlink installs are reported separately as live-linked entries.\n"
-            "Remote upstream changes do not flow through a symlink by themselves; linked installs\n"
-            "change when the local checkout target changes."
-        ),
-    )
-    _add_repo(p)
-    _add_project(p)
-    _add_scope(p)
-    _add_version(p)
-    _add_json(p)
-
-    # update ------------------------------------------------------------------ #
-    p = sub.add_parser(
-        "update",
-        formatter_class=_HELP_FORMATTER,
-        help="re-pull and re-apply installed artifacts; linked entries stay live",
-        description="Update artifacts in the selected scope while preserving each entry's recorded install mode.",
-        epilog=(
-            "For symlink installs, update keeps the recorded link mode.\n"
-            "A correct existing link is reported as live-linked and does not need a copy.\n"
-            "Missing links are recreated. Replaced, retargeted, or broken links require --force\n"
-            "before they are relinked."
-        ),
-    )
-    _add_repo(p)
-    _add_project(p)
-    _add_scope(p)
-    _add_source(p, "update from a local checkout (offline / air-gapped)")
-    p.add_argument("names", nargs="*", metavar="NAME", help="restrict to artifact name(s)")
-    p.add_argument("--bundle", action="append", metavar="B", help="restrict to a bundle")
-    _add_profile(p)
-    p.add_argument(
-        "--prune", action="store_true", help="remove installed entries no longer in the selection"
-    )
-    p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    p.add_argument("--force", action="store_true", help="overwrite drift / merge collisions")
-    p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
-    _add_json(p)
-
-    # uninstall --------------------------------------------------------------- #
-    p = sub.add_parser(
-        "uninstall",
-        formatter_class=_HELP_FORMATTER,
-        help="reverse installed files, merges, and symlink paths",
-        description="Uninstall selected manifest entries from the selected Project or User scope.",
-        epilog=(
-            "For symlink installs, uninstall removes the symlink path in the project, not the\n"
-            "target directory in the local source checkout. If a managed link was replaced or\n"
-            "retargeted, use --force to confirm removal."
-        ),
-    )
-    _add_project(p)
-    _add_scope(p)
-    _add_selection(p)
-    _add_profile(p)
-    p.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    p.add_argument("--yes", action="store_true", help="assume yes (agent mode, no prompts)")
-    p.add_argument(
-        "--force",
-        action="store_true",
-        help="remove merge entries or changed symlink paths even if locally modified",
-    )
-    _add_json(p)
 
     # upgrade ----------------------------------------------------------------- #
     p = sub.add_parser(
@@ -352,102 +152,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run", action="store_true", help="print the pip invocation; install nothing"
     )
-
-    # setup ------------------------------------------------------------------- #
-    p = sub.add_parser(
-        "setup",
-        formatter_class=_HELP_FORMATTER,
-        help="review, run, retry, inspect, or roll back artifact setup",
-        description=(
-            "Run reviewed declarative setup after artifact installation. "
-            "State and receipts contain no credential values."
-        ),
-    )
-    setup_sub = p.add_subparsers(dest="setup_action", metavar="ACTION", required=True)
-
-    def _add_setup_scope(target: argparse.ArgumentParser) -> None:
-        _add_project(target)
-        _add_scope(target)
-
-    def _add_setup_selection(target: argparse.ArgumentParser, *, optional: bool = False) -> None:
-        target.add_argument(
-            "names",
-            nargs="*" if optional else "+",
-            metavar="TYPE/NAME",
-            help="installed setup-capable artifact key(s)",
-        )
-        _add_profile(target)
-
-    p_run = setup_sub.add_parser("run", help="review and run setup for installed artifacts")
-    _add_setup_selection(p_run)
-    _add_setup_scope(p_run)
-    _add_repo(p_run)
-    _add_source(p_run, "use an explicit installed local catalog")
-    _add_version(p_run)
-    p_run.add_argument("--yes", action="store_true", help="approve the exact rendered plan")
-    p_run.add_argument(
-        "--stop-on-failure",
-        action="store_true",
-        help="stop after an incomplete item and mark unstarted items skipped",
-    )
-    _add_json(p_run)
-
-    p_retry = setup_sub.add_parser("retry", help="retry incomplete setup records")
-    _add_setup_selection(p_retry, optional=True)
-    _add_setup_scope(p_retry)
-    _add_repo(p_retry)
-    _add_source(p_retry, "use an explicit installed local catalog")
-    _add_version(p_retry)
-    p_retry.add_argument("--yes", action="store_true", help="approve the exact rendered plan")
-    p_retry.add_argument(
-        "--stop-on-failure",
-        action="store_true",
-        help="stop after an incomplete retry and mark unstarted items skipped",
-    )
-    _add_json(p_retry)
-
-    p_setup_status = setup_sub.add_parser("status", help="show local setup state")
-    _add_setup_scope(p_setup_status)
-    _add_json(p_setup_status)
-
-    p_rollback = setup_sub.add_parser("rollback", help="roll back owned effects from a receipt")
-    _add_setup_selection(p_rollback)
-    _add_setup_scope(p_rollback)
-    p_rollback.add_argument("--yes", action="store_true", help="confirm rollback")
-    _add_json(p_rollback)
-
-    # migrate ------------------------------------------------------------------ #
-    p = sub.add_parser(
-        "migrate",
-        help="migrate legacy AART consumer state",
-        description=(
-            "Review, apply, or roll back an explicit 0.1.x installation-state migration. "
-            "Migration never guesses between duplicate marketplace artifacts."
-        ),
-    )
-    migration_sub = p.add_subparsers(dest="migration_action", metavar="ACTION", required=True)
-    p_state = migration_sub.add_parser("state", help="migrate 0.1.x installation state to v2")
-    p_state.add_argument(
-        "--from",
-        dest="migration_from",
-        required=True,
-        choices=("0.1",),
-        help="legacy state family (currently: 0.1)",
-    )
-    _add_project(p_state)
-    _add_scope(p_state)
-    p_state.add_argument(
-        "--source-map",
-        action="append",
-        default=[],
-        metavar="TYPE/NAME@PROFILE=ALIAS",
-        help="resolve one ambiguous legacy artifact to an enabled canonical source",
-    )
-    operation = p_state.add_mutually_exclusive_group(required=True)
-    operation.add_argument("--dry-run", action="store_true", help="review the exact migration")
-    operation.add_argument("--apply", action="store_true", help="apply the reviewed migration")
-    operation.add_argument("--rollback", action="store_true", help="restore exact 0.1 state")
-    _add_json(p_state)
 
     # source ------------------------------------------------------------------ #
     p = sub.add_parser(
@@ -544,23 +248,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_alias(p_source_health, "report only this alias (default: every configured source)")
     _add_json(p_source_health)
 
-    p_source_doctor = source_sub.add_parser(
-        "doctor",
-        formatter_class=_HELP_FORMATTER,
-        help="inspect and repair the managed source-store layout",
-        description=(
-            "Report the source-store layout version and any directories still keyed by the "
-            "pre-ref-aware identity. Read-only unless --apply is passed; applying performs only "
-            "the exact rebinds just reported and never renames onto an existing directory."
-        ),
-    )
-    p_source_doctor.add_argument(
-        "--apply",
-        action="store_true",
-        help="perform the reported migration (without this the command only reports)",
-    )
-    _add_json(p_source_doctor)
-
     # marketplace ------------------------------------------------------------- #
     p = sub.add_parser(
         "marketplace",
@@ -568,8 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="browse the configured canonical marketplace",
         description=(
             "Read the local, already-validated configured source snapshots as one canonical "
-            "marketplace. This is the agent-facing browse command; legacy list/install/update "
-            "commands retain their explicit legacy source compatibility contract."
+            "marketplace. This is the one agent-facing consumer command family."
         ),
     )
     marketplace_sub = p.add_subparsers(dest="marketplace_action", metavar="ACTION", required=True)
@@ -615,12 +301,11 @@ def build_parser() -> argparse.ArgumentParser:
         coordinates: str,
         prune: bool = False,
         placement: bool = True,
+        memory_mode: bool = False,
     ) -> argparse.ArgumentParser:
         """Declare one canonical lifecycle action over configured sources.
 
-        Every mutating flag is opt-in: without ``--yes`` the command stops at Review, and no
-        legacy ``--source``/``--repo`` flag is accepted here, so a caller cannot mix the
-        compatibility catalog path into a canonical configured-source operation.
+        Every mutating flag is opt-in: without ``--yes`` the command stops at Review.
         """
 
         lifecycle = marketplace_sub.add_parser(
@@ -652,6 +337,16 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="install placement mode (default: copy)",
             )
+        if memory_mode:
+            lifecycle.add_argument(
+                "--memory-mode",
+                dest="memory_mode",
+                choices=("replace", "prepend", "append", "skip"),
+                default=None,
+                help=(
+                    "how a memory artifact meets an existing instruction file (default: prepend)"
+                ),
+            )
         lifecycle.add_argument(
             "--offline",
             action="store_true",
@@ -680,6 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         "install configured-source artifacts for the selected harness profiles",
         coordinates="artifact or collection coordinate(s) to install",
+        memory_mode=True,
     )
     _add_lifecycle(
         "update",
@@ -721,121 +417,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="approve every reviewed setup effect; without it each effect is declined",
     )
 
-    # upstream ---------------------------------------------------------------- #
-    p = sub.add_parser("upstream", help="maintain vendored artifact upstreams")
-    up = p.add_subparsers(dest="upstream_action", metavar="ACTION", required=True)
-
-    p_validate = up.add_parser("validate", help="validate a local catalog and upstream metadata")
-    _add_source(p_validate, "catalog repository directory to validate (default: current dir)")
-    _add_json(p_validate)
-
-    p_health = up.add_parser("health", help="show local catalog and upstream health")
-    _add_source(p_health, "catalog repository directory to inspect (default: current dir)")
-    _add_json(p_health)
-
-    p_check = up.add_parser("check", help="check tracked upstream artifacts")
-    _add_source(p_check, "catalog repository directory to maintain (default: current dir)")
-    _add_selection(p_check)
-    p_check.add_argument(
-        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
-    )
-    _add_json(p_check)
-
-    p_update = up.add_parser("update", help="update tracked upstream artifacts")
-    _add_source(p_update, "catalog repository directory to maintain (default: current dir)")
-    _add_selection(p_update)
-    p_update.add_argument(
-        "--type", dest="type_filter", choices=_ARTIFACT_TYPES, help="restrict to an artifact type"
-    )
-    p_update.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    p_update.add_argument("--force", action="store_true", help="overwrite local catalog drift")
-    _add_json(p_update)
-
-    p_add = up.add_parser("add", help="adopt an upstream artifact from a GitHub URL")
-    _add_source(p_add, "catalog repository directory to maintain (default: current dir)")
-    p_add.add_argument(
-        "names", nargs=1, metavar="TYPE/NAME", help="artifact key, e.g. skill/grill-me"
-    )
-    p_add.add_argument(
-        "url", metavar="URL", help="GitHub URL: a repo, or a /tree//blob deep link to the artifact"
-    )
-    p_add.add_argument(
-        "--ref",
-        dest="ref",
-        metavar="REF",
-        help="override the ref (needed when a branch name contains slashes)",
-    )
-    p_add.add_argument(
-        "--path", dest="path", metavar="PATH", help="override the in-repo path to the artifact"
-    )
-    p_add.add_argument(
-        "--force",
-        action="store_true",
-        help="overwrite an existing catalog destination / re-adopt a tracked key",
-    )
-    p_add.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    _add_json(p_add)
-
-    p_scan = up.add_parser("scan", help="scan a GitHub repo for importable artifacts")
-    _add_source(p_scan, "catalog repository directory to maintain (default: current dir)")
-    p_scan.add_argument("url", metavar="URL", help="GitHub repo or /tree URL to scan")
-    p_scan.add_argument(
-        "--mode",
-        dest="import_mode",
-        choices=_IMPORT_MODES,
-        default="auto",
-        help="candidate discovery mode",
-    )
-    p_scan.add_argument("--ref", dest="ref", metavar="REF", help="override the ref to scan")
-    p_scan.add_argument(
-        "--path", dest="path", metavar="PATH", help="override the in-repo path to scan"
-    )
-    _add_json(p_scan)
-
-    p_import = up.add_parser("import", help="batch-import artifacts from a GitHub repo")
-    _add_source(p_import, "catalog repository directory to maintain (default: current dir)")
-    p_import.add_argument("url", metavar="URL", help="GitHub repo or /tree URL to import from")
-    p_import.add_argument(
-        "--mode",
-        dest="import_mode",
-        choices=_IMPORT_MODES,
-        default="auto",
-        help="candidate discovery mode",
-    )
-    p_import.add_argument(
-        "--select",
-        action="append",
-        metavar="TYPE/NAME[,TYPE/NAME...]",
-        help="candidate(s) to import; defaults to non-ambiguous candidates",
-    )
-    p_import.add_argument("--bundle", action="append", metavar="B", help="create/update a bundle")
-    p_import.add_argument(
-        "--bundle-description",
-        metavar="TEXT",
-        help="description for a created/replaced import bundle",
-    )
-    p_import.add_argument(
-        "--bundle-mode",
-        choices=_BUNDLE_MODES,
-        default="append",
-        help="how to handle an existing bundle",
-    )
-    p_import.add_argument("--ref", dest="ref", metavar="REF", help="override the ref to import")
-    p_import.add_argument(
-        "--path", dest="path", metavar="PATH", help="override the in-repo path to import"
-    )
-    p_import.add_argument(
-        "--interactive", action="store_true", help="prompt for candidate selection"
-    )
-    p_import.add_argument("--dry-run", action="store_true", help="print the plan; touch nothing")
-    p_import.add_argument("--force", action="store_true", help="replace existing catalog entries")
-    _add_json(p_import)
-
     # registry ---------------------------------------------------------------- #
     p = sub.add_parser(
         "registry",
         formatter_class=_HELP_FORMATTER,
-        help="initialize, compile, audit, and migrate an AART registry",
+        help="initialize, compile, and audit an AART registry",
         description=(
             "Maintain a writable AART registry checkout. Read/check commands never mutate it; "
             "mutation commands only write reviewed managed files and never commit or push."
@@ -853,6 +439,13 @@ def build_parser() -> argparse.ArgumentParser:
             help="report drift without writing; return non-zero when generated files differ",
         )
 
+    def _add_registry_finalize(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--yes",
+            action="store_true",
+            help="finalize the reviewed registry mutation (without this only review)",
+        )
+
     p_init = registry_sub.add_parser("init", help="initialize a canonical registry checkout")
     _add_registry_source(p_init)
     p_init.add_argument(
@@ -862,24 +455,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--display-name", required=True, metavar="TEXT", help="human-readable registry name"
     )
     p_init.add_argument(
+        # A registry initialised today cannot honestly claim an older AART can read it: the
+        # scaffolded markers, manifests, and setup recipes are the current dialect.  The floor is
+        # therefore the AART that wrote them, and an author who really supports more says so.
         "--minimum-version",
-        default="1.0.0",
+        default=__version__,
         metavar="VERSION",
-        help="minimum supported AART version (default: 1.0.0)",
+        help=f"minimum supported AART version (default: {__version__})",
     )
     p_init.add_argument(
+        # The ceiling is the next major after the running release, not a literal.  A default of
+        # "2.0.0" was correct only while AART was 1.x; on 2.0.0 it collides with the floor above
+        # and every `registry init` is refused as an invalid window.
         "--maximum-version",
-        default="2.0.0",
+        default=_DEFAULT_MAXIMUM_AART,
         metavar="VERSION",
-        help="exclusive maximum AART version (default: 2.0.0)",
+        help=f"exclusive maximum AART version (default: {_DEFAULT_MAXIMUM_AART})",
     )
+    _add_registry_finalize(p_init)
     _add_json(p_init)
 
     p_scaffold = registry_sub.add_parser(
         "scaffold", help="create one canonical native artifact package"
     )
     _add_registry_source(p_scaffold)
-    p_scaffold.add_argument("type_filter", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_scaffold.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
     p_scaffold.add_argument("names", nargs=1, metavar="NAME")
     p_scaffold.add_argument(
         "--summary", required=True, metavar="TEXT", help="one-line artifact description"
@@ -920,12 +520,53 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="supported install mode (repeatable; default: copy)",
     )
+    _add_registry_finalize(p_scaffold)
     _add_json(p_scaffold)
 
     p_format = registry_sub.add_parser("format", help="canonicalize registry JSON files")
     _add_registry_source(p_format)
     _add_check(p_format)
+    _add_registry_finalize(p_format)
     _add_json(p_format)
+
+    p_promote = registry_sub.add_parser(
+        "promote-native",
+        help="review and add one exact native Git package reference",
+    )
+    _add_registry_source(p_promote)
+    p_promote.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_promote.add_argument("names", nargs=1, metavar="NAME")
+    p_promote.add_argument(
+        "--url", dest="native_url", required=True, metavar="URL", help="credential-free Git URL"
+    )
+    p_promote.add_argument(
+        "--ref", default="main", metavar="REF", help="Git ref to resolve (default: main)"
+    )
+    p_promote.add_argument(
+        "--path",
+        dest="native_path",
+        required=True,
+        metavar="DIR",
+        help="package path inside the Git snapshot",
+    )
+    p_promote.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    _add_registry_finalize(p_promote)
+    _add_json(p_promote)
+
+    p_refresh = registry_sub.add_parser(
+        "refresh-native",
+        help="review a new immutable snapshot for one existing native reference",
+    )
+    _add_registry_source(p_refresh)
+    p_refresh.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_refresh.add_argument("names", nargs=1, metavar="NAME")
+    _add_registry_finalize(p_refresh)
+    _add_json(p_refresh)
 
     p_validate = registry_sub.add_parser("validate", help="validate registry protocol content")
     _add_registry_source(p_validate)
@@ -944,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
         _add_registry_source(target)
         _add_check(target)
+        _add_registry_finalize(target)
         _add_json(target)
 
     p_audit = registry_sub.add_parser(
@@ -961,68 +603,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="compatibility point to validate (default: all)",
     )
     p_test.add_argument(
+        # The upper compatibility point is the AART doing the publishing, not a version frozen in
+        # the parser: a default that never moves tests a phantom release, so a registry whose floor
+        # sits above it fails as "incompatible" while one below it proves nothing about today.
         "--latest-version",
-        default="1.0.0",
+        default=__version__,
         metavar="VERSION",
-        help="latest compatible AART version under test (default: 1.0.0)",
+        help=f"latest compatible AART version under test (default: {__version__})",
     )
     _add_json(p_test)
 
     p_diff = registry_sub.add_parser("diff", help="show deterministic managed-file drift")
     _add_registry_source(p_diff)
     _add_json(p_diff)
-
-    p_migrate = registry_sub.add_parser(
-        "migrate", help="preview or apply migration from an immutable legacy catalog"
-    )
-    _add_registry_source(p_migrate)
-    p_migrate.add_argument(
-        "--legacy-source",
-        required=True,
-        metavar="GIT-URL-OR-DIR",
-        help="immutable legacy catalog Git source",
-    )
-    p_migrate.add_argument(
-        "--origin-url",
-        metavar="HTTPS-GIT-URL",
-        help="recorded origin when --legacy-source is a local Git checkout",
-    )
-    p_migrate.add_argument(
-        "--ref", default="HEAD", metavar="REF", help="legacy source Git ref (default: HEAD)"
-    )
-    p_migrate.add_argument(
-        "--source-id", required=True, metavar="SLUG", help="identity for the migrated registry"
-    )
-    p_migrate.add_argument(
-        "--display-name", required=True, metavar="TEXT", help="migrated registry display name"
-    )
-    p_migrate.add_argument(
-        "--artifact-version",
-        default="1.0.0",
-        metavar="VERSION",
-        help="version assigned to imported artifacts (default: 1.0.0)",
-    )
-    p_migrate.add_argument(
-        "--license",
-        dest="artifact_license",
-        metavar="SPDX",
-        help="license declared by every imported artifact (for example: MIT)",
-    )
-    p_migrate.add_argument(
-        "--profile",
-        action="append",
-        required=True,
-        metavar="P[,P...]",
-        help="target harness profile(s); comma-separated or repeated",
-    )
-    p_migrate.add_argument(
-        "--platform",
-        action="append",
-        default=[],
-        help="supported platform (repeatable; default: darwin)",
-    )
-    p_migrate.add_argument("--apply", action="store_true", help="apply the reviewed migration")
-    _add_json(p_migrate)
 
     # security --------------------------------------------------------------- #
     p = sub.add_parser(
@@ -1173,54 +766,33 @@ def _to_request(args: argparse.Namespace) -> Request:
 
     Uses ``getattr`` with defaults because each subparser defines only its own flags.
     """
-    select = getattr(args, "select", None)
     return Request(
         command=args.command,
-        names=_split_csv(select)
-        if select is not None
-        else tuple(getattr(args, "names", None) or ()),
-        bundles=tuple(getattr(args, "bundle", None) or ()),
+        names=tuple(getattr(args, "names", None) or ()),
         profiles=_split_csv(getattr(args, "profile", None)),
-        all=bool(getattr(args, "all", False)),
-        version=getattr(args, "version", None),
         source_dir=getattr(args, "source_dir", None),
-        repo=getattr(args, "repo", None),
         project=getattr(args, "project", None),
         scope=getattr(args, "scope", "project"),
-        type_filter=getattr(args, "type_filter", None),
+        artifact_kind=getattr(args, "artifact_kind", None),
         yes=bool(getattr(args, "yes", False)),
         force=bool(getattr(args, "force", False)),
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),
         prune=bool(getattr(args, "prune", False)),
-        # The canonical lifecycle names the mode explicitly; legacy commands keep boolean --link.
-        install_mode=(
-            getattr(args, "install_mode", None)
-            or ("symlink" if bool(getattr(args, "link", False)) else "copy")
-        ),
+        install_mode=getattr(args, "install_mode", None) or "copy",
         memory_mode=getattr(args, "memory_mode", None),
-        upstream_action=getattr(args, "upstream_action", None),
-        url=getattr(args, "url", None),
         ref=getattr(args, "ref", None),
-        path=getattr(args, "path", None),
-        import_mode=getattr(args, "import_mode", None),
-        bundle_mode=getattr(args, "bundle_mode", None),
-        bundle_description=getattr(args, "bundle_description", None),
-        interactive=bool(getattr(args, "interactive", False)),
-        setup_action=getattr(args, "setup_action", None),
-        stop_on_failure=bool(getattr(args, "stop_on_failure", False)),
+        native_url=getattr(args, "native_url", None),
+        native_path=getattr(args, "native_path", None),
+        review_policy=getattr(args, "review_policy", None),
         registry_action=getattr(args, "registry_action", None),
         check=bool(getattr(args, "check", False)),
-        apply=bool(getattr(args, "apply", False)),
         strict=bool(getattr(args, "strict", False)),
         frozen=bool(getattr(args, "frozen", False)),
-        legacy_source=getattr(args, "legacy_source", None),
-        origin_url=getattr(args, "origin_url", None),
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
         summary=getattr(args, "summary", None),
         artifact_version=getattr(args, "artifact_version", None),
-        artifact_license=getattr(args, "artifact_license", None),
         minimum_version=getattr(args, "minimum_version", None),
         maximum_version=getattr(args, "maximum_version", None),
         latest_version=getattr(args, "latest_version", None),
@@ -1233,10 +805,7 @@ def _to_request(args: argparse.Namespace) -> Request:
             getattr(args, "registry_modes", ())
             or (("copy",) if getattr(args, "registry_action", None) == "scaffold" else ())
         ),
-        registry_platforms=tuple(
-            getattr(args, "platform", ())
-            or (("darwin",) if getattr(args, "registry_action", None) == "migrate" else ())
-        ),
+        registry_platforms=tuple(getattr(args, "platform", ()) or ()),
         security_action=getattr(args, "security_action", None),
         security_input=getattr(args, "security_input", None),
         security_artifact=getattr(args, "security_artifact", None),
@@ -1254,9 +823,6 @@ def _to_request(args: argparse.Namespace) -> Request:
         reporting_action=getattr(args, "reporting_action", None),
         reporting_input=getattr(args, "reporting_input", None),
         reporting_output=getattr(args, "reporting_output", None),
-        migration_action=getattr(args, "migration_action", None),
-        migration_from=getattr(args, "migration_from", None),
-        source_mappings=tuple(getattr(args, "source_map", ()) or ()),
         source_action=getattr(args, "source_action", None),
         source_alias=getattr(args, "source_alias", None),
         source_kind=getattr(args, "source_kind", None),
@@ -1268,7 +834,6 @@ def _to_request(args: argparse.Namespace) -> Request:
         authorize_untrusted_source=bool(getattr(args, "authorize_untrusted_source", False)),
         authorize_custom_entrypoint=bool(getattr(args, "authorize_custom_entrypoint", False)),
         approve_setup_effects=bool(getattr(args, "approve_setup_effects", False)),
-        rollback=bool(getattr(args, "rollback", False)),
         upgrade_wheel=getattr(args, "upgrade_wheel", None),
         upgrade_source_checkout=getattr(args, "upgrade_source_checkout", None),
     )
@@ -1283,13 +848,8 @@ def _run_bare(parser: argparse.ArgumentParser, args: Optional[argparse.Namespace
         from . import tui  # WP-20: always present in the package.
 
         kwargs = {}
-        if args:
-            if getattr(args, "source_dir", None):
-                kwargs["source_dir"] = args.source_dir
-            if getattr(args, "repo", None):
-                kwargs["repo"] = args.repo
-            if getattr(args, "project", None):
-                kwargs["project"] = args.project
+        if args and getattr(args, "project", None):
+            kwargs["project"] = args.project
         return int(tui.run(**kwargs))
     parser.print_help()
     return OK
@@ -1302,21 +862,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.command:
         return _run_bare(parser, args)
     request = _to_request(args)
-    # Semantic flag-combination check (issue #4): argparse validates syntax; this rejects
-    # combinations that argparse accepts but the core would silently mishandle (USAGE == 2).
-    problem = validate_flags(request)
-    if problem is not None:
-        print(problem.reason, file=sys.stderr)
-        return problem.code
-    if args.command in {"list", "install", "update", "setup"} and (
-        request.source_dir is not None or request.repo is not None
-    ):
-        print(
-            "warning: --source/--repo use the legacy 0.1 compatibility path; "
-            "prefer `aart marketplace` for agents or the TUI for people "
-            "before this compatibility window ends",
-            file=sys.stderr,
-        )
     return DISPATCH[args.command](request)
 
 

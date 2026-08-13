@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import posixpath
+from dataclasses import replace
 from typing import Protocol
 
-from agent_artifacts import model as legacy
 from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import EffectiveConfiguration
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
@@ -29,6 +29,7 @@ from agent_artifacts.installation.model import (
     classify_link,
 )
 from agent_artifacts.marketplace.model import MarketplaceCatalog
+from agent_artifacts.profiles.model import Profile
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import (
     JsonArray,
@@ -426,6 +427,41 @@ def check_installations(
     return LifecycleOutcome("check", len(items), tuple(items))
 
 
+def reconcile_installations(
+    state: InstallState,
+    selection: LifecycleSelection,
+    catalog: MarketplaceCatalog,
+    effective: EffectiveConfiguration,
+    location: InstallLocation,
+    ports: LifecycleReadPorts,
+) -> Result[LifecycleOutcome]:
+    """Report one current answer for both installed bytes and their recorded origin.
+
+    A local installation can be byte-for-byte current while its subscribed source has moved or
+    withdrawn the artifact.  ``status`` therefore combines the local inspection with the
+    already-refreshed marketplace snapshot; local damage remains the primary status because it
+    needs intervention even when no update exists.
+    """
+
+    local = status_installations(state, selection, location, ports)
+    if isinstance(local, Err):
+        return local
+    upstream = check_installations(state, selection, catalog, effective)
+    remote_by_key = {item.key: item for item in upstream.items}
+    items = []
+    for item in local.value.items:
+        remote = remote_by_key[item.key]
+        if item.status is LifecycleStatus.CURRENT:
+            items.append(LifecycleItem(item.key, remote.status, item.effects, detail=remote.detail))
+        else:
+            detail = item.detail
+            if remote.status is not LifecycleStatus.CURRENT:
+                suffix = remote.detail or remote.status.value
+                detail = f"{detail}; upstream {suffix}" if detail else f"upstream {suffix}"
+            items.append(LifecycleItem(item.key, item.status, item.effects, detail=detail))
+    return Ok(LifecycleOutcome("status", len(items), tuple(items)))
+
+
 def _strip_managed_block(record: InstallationRecord, content: bytes) -> bytes | None:
     try:
         text = content.decode("utf-8", errors="strict")
@@ -458,6 +494,7 @@ def _plan_removal(
     snapshot: PathSnapshot,
     *,
     force: bool,
+    restore: PathSnapshot | None = None,
 ) -> tuple[UninstallOperation | None, str | None]:
     if snapshot.kind == "special":
         return None, f"unsafe special destination: {effect.destination}"
@@ -526,6 +563,13 @@ def _plan_removal(
     owned = snapshot.kind == expected_kind and snapshot.digest == effect.installed_digest
     if not owned and not force:
         return None, f"managed Copy destination drifted: {effect.destination}"
+    if effect.restores_from is not None:
+        # The install displaced content the operator wrote and parked it in a sidecar.  Removing
+        # this destination without putting those bytes back would finish the data loss the sidecar
+        # exists to prevent, so a missing or unreadable sidecar is a conflict, not a silent delete.
+        if restore is None or restore.kind != "file":
+            return None, f"replaced memory backup is missing: {effect.restores_from}"
+        return UninstallOperation(effect, absolute, snapshot, "write", restore.content), None
     return UninstallOperation(effect, absolute, snapshot, "remove"), None
 
 
@@ -579,7 +623,21 @@ def prepare_uninstall(
         observed = ports.inspect_path(absolute)
         if isinstance(observed, Err):
             return observed
-        operation, conflict = _plan_removal(record, effect, absolute, observed.value, force=force)
+        restore: PathSnapshot | None = None
+        if effect.restores_from is not None:
+            sidecar = ports.inspect_path(
+                absolute_effect_path(
+                    replace(effect, destination=effect.restores_from, restores_from=None),
+                    record.scope,
+                    location,
+                )
+            )
+            if isinstance(sidecar, Err):
+                return sidecar
+            restore = sidecar.value
+        operation, conflict = _plan_removal(
+            record, effect, absolute, observed.value, force=force, restore=restore
+        )
         if conflict is not None:
             conflicts.append(conflict)
         elif operation is not None:
@@ -674,7 +732,7 @@ def prepare_update(
     record: InstallationRecord,
     catalog: MarketplaceCatalog,
     effective: EffectiveConfiguration,
-    profile: legacy.Profile,
+    profile: Profile,
     location: InstallLocation,
     store_paths: ObjectStorePaths,
     ports: LifecycleReadPorts,

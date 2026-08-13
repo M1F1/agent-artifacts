@@ -566,7 +566,7 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             result = fixture.plan(authorize_untrusted_source=True)
 
             self.assertIsInstance(result, Err)
-            self.assertIn("manifest is invalid", result.diagnostics[0].message)
+            self.assertIn("setup platforms", result.diagnostics[0].message)
 
     def test_trust_downgrade_after_review_is_terminal_and_non_mutating(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

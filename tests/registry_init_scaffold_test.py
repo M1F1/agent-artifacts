@@ -143,6 +143,49 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertEqual(str(loaded.value.artifacts[0].manifest.identity), "skill/review-python")
         self.assertIsInstance(plan_artifact_scaffold(projected.value, options), Err)
 
+    def test_scaffolded_hook_is_actionable_and_compiles_before_publication(self) -> None:
+        initialized = plan_registry_init(
+            SourceSnapshot(SnapshotOrigin.LOCAL, ()),
+            RegistryInitOptions(
+                "company-registry",
+                "Company Agent Artifacts",
+                SemVer(1, 0, 0),
+                SemVer(2, 0, 0),
+            ),
+        )
+        assert isinstance(initialized, Ok)
+        registry = project_registry_workspace_plan(
+            SourceSnapshot(SnapshotOrigin.LOCAL, ()), initialized.value
+        )
+        assert isinstance(registry, Ok)
+        planned = plan_artifact_scaffold(
+            registry.value,
+            ArtifactScaffoldOptions(
+                "hook",
+                "review-guard",
+                SemVer(1, 0, 0),
+                "Run a reviewed guard before changes are accepted.",
+                ("claude",),
+                ("darwin",),
+                ("project",),
+                ("copy",),
+            ),
+        )
+        assert isinstance(planned, Ok), planned
+        projected = project_registry_workspace_plan(registry.value, planned.value)
+        assert isinstance(projected, Ok), projected
+        files = {str(item.path): item for item in projected.value.entries}
+        descriptor = files["artifacts/hook/review-guard/payload/hook.json"]
+        self.assertIn(b'"command":"${SCRIPT_DIR}/review-guard.sh"', descriptor.content)
+        script = files["artifacts/hook/review-guard/payload/review-guard.sh"]
+        self.assertTrue(script.executable)
+        loaded = load_native_source(
+            projected.value,
+            executable_version=SemVer(1, 0, 0),
+            available_capabilities=(Capability("artifact-manifest-v1"),),
+        )
+        self.assertIsInstance(loaded, Ok)
+
     def test_init_never_overwrites_an_existing_registry_workflow(self) -> None:
         path = parse_relative_path(".github/workflows/aart-registry.yml")
         assert isinstance(path, Ok)

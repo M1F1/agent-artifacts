@@ -27,7 +27,6 @@ from agent_artifacts.sources.model import (
     SourceStorePaths,
     ValidatedSourceCandidate,
     assess_source_health,
-    legacy_source_instance_id,
     make_source_candidate,
     source_instance_id,
     source_store_paths,
@@ -77,7 +76,6 @@ class SourceModelTest(unittest.TestCase):
         # SRC02: the alias is still not part of the identity, but the ref now is — two refs of one
         # origin must own separate mirrors and pointers rather than retargeting each other.
         self.assertNotEqual(source_instance_id(first), source_instance_id(renamed))
-        self.assertEqual(legacy_source_instance_id(first), legacy_source_instance_id(renamed))
         self.assertNotEqual(source_instance_id(first), source_instance_id(registry))
         self.assertRegex(source_instance_id(first).value, r"^git-[0-9a-f]{32}$")
 

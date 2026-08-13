@@ -172,7 +172,7 @@ An earlier revision of this design expanded the cursor row in place. That is rej
 grounds. It is worse to read: every cursor movement reflows every row below it, so the list has
 no stable geometry and the eye loses its place on each keystroke. It is also far more invasive,
 because it breaks the invariant `_draw_list` is built on and that a test names explicitly —
-`test_draw_list_keeps_each_row_to_one_visual_line` ([tui_test.py:839](../../tests/tui_test.py)) —
+`test_draw_list_keeps_each_row_to_one_visual_line` (`tui_test.py:839`) —
 forcing cursor, scroll and checked state to be re-indexed from screen rows to item indices.
 
 The pane avoids both problems because it lives outside the list viewport. Item index and row

@@ -11,12 +11,12 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.capabilities import Capability
-from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_maintenance.model import (
     NativeReferenceAcquisition,
     RegistryApplyReceipt,
 )
 from agent_artifacts.registry_maintenance.planning import project_registry_mutation
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from tests.registry_maintenance_fixtures import (
     empty_registry_snapshot,
     native_snapshot,
@@ -85,7 +85,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
         failed_prepare = prepare_native_promotion(
             registry_entry(),
             acquisition,
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=FailingCurrentOutput(),
         )
@@ -95,7 +95,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
         prepared = prepare_native_promotion(
             registry_entry(),
             acquisition,
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=output,
         )
@@ -117,7 +117,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=output,
         )
@@ -150,7 +150,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=output,
         )
@@ -171,7 +171,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=output,
         )
@@ -221,7 +221,7 @@ class RegistryMaintenanceApplicationTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
             output=output,
         )

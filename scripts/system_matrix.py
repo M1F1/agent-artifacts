@@ -46,14 +46,6 @@ SCENARIOS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "foreign-import",
-        45,
-        (
-            "tests.legacy_importer_e2e_test.LegacyImporterE2ETest."
-            "test_fixture_runs_through_stage_review_atomic_apply_and_noop",
-        ),
-    ),
-    (
         "collision",
         30,
         (
@@ -123,14 +115,6 @@ SCENARIOS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
             "test_disabled_without_destination_has_no_plan_or_provider_call",
             "tests.reporting_runtime_test.ReportingRuntimeTest."
             "test_missing_or_incoherent_registry_snapshot_fails_closed",
-        ),
-    ),
-    (
-        "migration-rollback",
-        45,
-        (
-            "tests.migrate_cli_test.MigrateCliTest."
-            "test_command_dry_run_apply_and_later_process_rollback_are_end_to_end",
         ),
     ),
 )

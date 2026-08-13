@@ -27,23 +27,16 @@ def install_state_paths(
     data_root = _absolute(data_root, "data root")
     if scope == "project":
         state_root = posixpath.join(project_root, ".agent-artifacts")
-        legacy = posixpath.join(state_root, "manifest.json")
         return InstallStatePaths(
             scope,
-            legacy,
-            legacy,
-            posixpath.join(state_root, "backups"),
-            posixpath.join(state_root, "migrations"),
-            posixpath.join(state_root, "state-migration.lock"),
+            posixpath.join(state_root, "manifest.json"),
+            posixpath.join(state_root, "state.lock"),
         )
     if scope == "user":
         state_root = posixpath.join(data_root, "state")
         return InstallStatePaths(
             scope,
-            posixpath.join(user_home, ".agent-artifacts", "manifest.json"),
             posixpath.join(state_root, "manifest.json"),
-            posixpath.join(state_root, "backups"),
-            posixpath.join(state_root, "migrations"),
-            posixpath.join(state_root, "state-migration.lock"),
+            posixpath.join(state_root, "state.lock"),
         )
     raise ValueError("state scope must be 'project' or 'user'")

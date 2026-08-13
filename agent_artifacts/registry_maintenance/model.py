@@ -1,4 +1,4 @@
-"""Frozen values for reviewed registry curation and upstream updates."""
+"""Frozen values for reviewed registry curation and native-reference refreshes."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 from agent_artifacts.domain.identifiers import ObjectDigest
-from agent_artifacts.importers.model import ImportApplyPlan
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
@@ -31,7 +30,7 @@ class RegistryChangeKind(str, Enum):
     UNCHANGED = "unchanged"
 
 
-class UpstreamDisposition(str, Enum):
+class NativeReferenceDisposition(str, Enum):
     UP_TO_DATE = "up-to-date"
     CHANGED = "changed"
 
@@ -172,37 +171,23 @@ class RegistryMutationPlan:
 
 
 @dataclass(frozen=True, slots=True)
-class NativeUpstreamCheck:
-    disposition: UpstreamDisposition
+class NativeReferenceCheck:
+    disposition: NativeReferenceDisposition
     plan: RegistryMutationPlan
 
     def __post_init__(self) -> None:
         if not isinstance(self.plan, RegistryMutationPlan):
-            raise ValueError("native upstream check requires a registry mutation plan")
+            raise ValueError("native reference check requires a registry mutation plan")
         expected = (
-            UpstreamDisposition.UP_TO_DATE
+            NativeReferenceDisposition.UP_TO_DATE
             if self.plan.changed_paths == 0
-            else UpstreamDisposition.CHANGED
+            else NativeReferenceDisposition.CHANGED
         )
         if (
-            not isinstance(self.disposition, UpstreamDisposition)
+            not isinstance(self.disposition, NativeReferenceDisposition)
             or self.disposition is not expected
         ):
-            raise ValueError("native upstream disposition does not match its exact diff")
-
-
-@dataclass(frozen=True, slots=True)
-class MaterializedUpstreamCheck:
-    disposition: UpstreamDisposition
-    apply_plan: ImportApplyPlan
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.apply_plan, ImportApplyPlan):
-            raise ValueError("materialized upstream check requires an import apply plan")
-        changed = sum(item.kind.value != "unchanged" for item in self.apply_plan.changes)
-        expected = UpstreamDisposition.UP_TO_DATE if changed == 0 else UpstreamDisposition.CHANGED
-        if self.disposition is not expected:
-            raise ValueError("materialized upstream disposition does not match its exact diff")
+            raise ValueError("native reference disposition does not match its exact diff")
 
 
 @dataclass(frozen=True, slots=True)

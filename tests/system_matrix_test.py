@@ -11,7 +11,6 @@ EXPECTED_SCENARIOS = (
     "direct-only",
     "public-company-team",
     "native-reference",
-    "foreign-import",
     "collision",
     "trust-downgrade",
     "offline",
@@ -20,7 +19,6 @@ EXPECTED_SCENARIOS = (
     "setup-partial",
     "security-provider-failure",
     "reporting-absent",
-    "migration-rollback",
 )
 
 

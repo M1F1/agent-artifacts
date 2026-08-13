@@ -95,6 +95,7 @@ from agent_artifacts.sources.model import (
     source_instance_id,
     source_store_paths,
 )
+from agent_artifacts.sources.runtime import sync_configured_source
 from agent_artifacts.store.model import (
     ObjectPublishCommand,
     ObjectReadRequest,
@@ -589,7 +590,8 @@ def _consumer_content_port(
         if request.action not in {"install", "update"}:
             return Ok(None)
         selected = []
-        for coordinate in request.coordinates:
+        requested = request.coordinates or tuple(sorted(by_coordinate, key=str))
+        for coordinate in requested:
             exact = coordinate
             if request.action == "update":
                 latest = resolve_artifact(
@@ -808,8 +810,10 @@ def load_local_consumer_service(
     project: str | None,
     user_home: str | None,
     configuration: UserConfiguration | None = None,
+    refresh_sources: bool = False,
+    offline: bool = False,
 ) -> Result[ConsumerApplicationService]:
-    """Load current snapshots against persisted or already-reviewed prospective configuration."""
+    """Load a consumer service, optionally refreshing every configured origin first."""
 
     platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
     home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -845,6 +849,13 @@ def load_local_consumer_service(
         if isinstance(prospective, Err):
             return prospective
         effective = prospective.value
+    if refresh_sources and not offline:
+        for source in effective.configuration.sources:
+            if not source.enabled:
+                continue
+            refreshed = sync_configured_source(source, data_root=config_paths.data_root)
+            if isinstance(refreshed, Err):
+                return refreshed
     now = int(time.time())
     states = []
     graph_sources = []

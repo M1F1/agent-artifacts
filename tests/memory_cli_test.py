@@ -1,9 +1,9 @@
 """WP-30 tests: CLI/TUI surface for the `memory` artifact type.
 
-Pure wiring (mirrors cli_test.py): the install/list handler is stubbed via ``cli.DISPATCH`` so
+Pure wiring (mirrors cli_test.py): the marketplace handler is stubbed via ``cli.DISPATCH`` so
 we assert only that argv maps onto the right :class:`Request` fields — ``--memory-mode`` ->
-``Request.memory_mode``, ``--type memory`` accepted -> ``type_filter`` — and that the TUI's
-display order knows the new type. No command logic runs.
+``Request.memory_mode`` on the canonical install verb — and that the TUI's display order
+knows the type. No command logic runs.
 
 Run: ``python -m unittest discover -s tests -p "memory_cli_test.py" -v``
 """
@@ -35,41 +35,49 @@ class TestMemoryModeFlag(unittest.TestCase):
             with self.subTest(mode=mode):
                 _, req = _dispatch(
                     [
+                        "marketplace",
                         "install",
-                        "house",
+                        "team/memory/house@1.0.0",
                         "--profile",
                         "claude",
-                        "--source",
-                        ".",
                         "--memory-mode",
                         mode,
                     ],
-                    command="install",
+                    command="marketplace",
                 )
                 self.assertEqual(req.memory_mode, mode)
 
     def test_memory_mode_defaults_to_none(self):
         # Absent flag -> None, so the planner applies the "prepend" default (DESIGN-memory §3.4).
         _, req = _dispatch(
-            ["install", "house", "--profile", "claude", "--source", "."],
-            command="install",
+            ["marketplace", "install", "team/memory/house@1.0.0", "--profile", "claude"],
+            command="marketplace",
         )
         self.assertIsNone(req.memory_mode)
 
     def test_invalid_memory_mode_is_usage_error(self):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as ctx:
-                cli.build_parser().parse_args(["install", "x", "--memory-mode", "bogus"])
+                cli.build_parser().parse_args(
+                    ["marketplace", "install", "x", "--memory-mode", "bogus"]
+                )
         self.assertEqual(ctx.exception.code, 2)
 
 
 class TestTypeFilterMemory(unittest.TestCase):
-    def test_list_accepts_type_memory(self):
-        _, req = _dispatch(["list", "--type", "memory", "--source", "."], command="list")
-        self.assertEqual(req.type_filter, "memory")
-
     def test_memory_in_cli_type_choices(self):
         self.assertIn("memory", cli._ARTIFACT_TYPES)
+
+    def test_memory_mode_is_not_offered_where_it_cannot_take_effect(self):
+        # update replays the recorded mode and uninstall has no payload to place, so the flag
+        # exists only on install; offering it elsewhere would promise an ignored option.
+        for action in ("update", "uninstall"):
+            with self.subTest(action=action), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.build_parser().parse_args(
+                        ["marketplace", action, "x", "--memory-mode", "append"]
+                    )
+                self.assertEqual(ctx.exception.code, 2)
 
 
 class TestTuiKnowsMemory(unittest.TestCase):

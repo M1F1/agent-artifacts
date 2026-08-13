@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_artifacts import tui
+from agent_artifacts import cli, tui
 
 
 def _scripted(values):
@@ -23,26 +23,23 @@ class TuiCurationEndToEndTest(unittest.TestCase):
             root = Path(temporary) / "registry"
             root.mkdir()
             subprocess.run(["git", "init", "-q", str(root)], check=True)
-            init_output = []
-            initialized = tui._run_text(
-                _scripted(
-                    [
-                        "",
-                        "2",
-                        "10",
-                        "e2e-registry",
-                        "E2E Registry",
-                        "",
-                        "",
-                        "finalize",
-                    ]
-                ),
-                init_output.append,
-                source_dir=str(root),
+            # An empty Git checkout is not a registry (design §3.2), so the maintainer TUI has
+            # no init action to offer; initialization is a flag-mode command.
+            initialized = cli.main(
+                [
+                    "registry",
+                    "init",
+                    "--source",
+                    str(root),
+                    "--source-id",
+                    "e2e-registry",
+                    "--display-name",
+                    "E2E Registry",
+                    "--yes",
+                ]
             )
             self.assertEqual(initialized, 0)
             self.assertTrue((root / "aart-registry.json").is_file())
-            self.assertIn("Changed", "\n".join(init_output))
 
             scaffold_output = []
             scaffolded = tui._run_text(

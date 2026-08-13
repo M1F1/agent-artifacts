@@ -332,6 +332,55 @@ class ArtifactManifestTest(unittest.TestCase):
             ("protocol-version-bounds-invalid",),
         )
 
+    def test_requires_are_canonical_unique_and_never_self_referential(self):
+        from agent_artifacts.protocol.json import canonical_json_bytes
+        from agent_artifacts.protocol.native_schema import (
+            artifact_manifest_to_json,
+            parse_artifact_manifest,
+        )
+
+        document = _artifact_document(
+            "skill",
+            "aart-skill-v1",
+            name="residual-stage",
+            requires=[
+                {
+                    "type": "skill",
+                    "name": "using-residues",
+                    "version": {"min_inclusive": "1.2.0", "max_exclusive": "2.0.0"},
+                }
+            ],
+        )
+        manifest = _unwrap(parse_artifact_manifest(json.dumps(document)))
+        self.assertEqual(str(manifest.requires[0].identity), "skill/using-residues")
+        self.assertEqual(
+            _unwrap(
+                parse_artifact_manifest(canonical_json_bytes(artifact_manifest_to_json(manifest)))
+            ),
+            manifest,
+        )
+
+        cases = (
+            ([{"type": "skill", "name": "residual-stage"}], "artifact-invalid"),
+            (
+                [
+                    {"type": "skill", "name": "using-residues"},
+                    {"type": "skill", "name": "using-residues"},
+                ],
+                "artifact-invalid",
+            ),
+            (
+                [{"type": "skill", "name": "using-residues", "unexpected": True}],
+                "protocol-schema-unknown-field",
+            ),
+        )
+        for requires, code in cases:
+            with self.subTest(requires=requires):
+                invalid = _artifact_document(
+                    "skill", "aart-skill-v1", name="residual-stage", requires=requires
+                )
+                self.assertEqual(_codes(parse_artifact_manifest(json.dumps(invalid))), (code,))
+
 
 if __name__ == "__main__":
     unittest.main()

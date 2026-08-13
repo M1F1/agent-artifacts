@@ -43,24 +43,18 @@ from agent_artifacts.model import (
 from agent_artifacts.model import (
     Err as LegacyErr,
 )
-from agent_artifacts.model import (
-    Ok as LegacyOk,
-)
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.native_models import ArtifactManifest
-from agent_artifacts.protocol.native_schema import (
-    artifact_manifest_to_json,
-    parse_artifact_manifest,
+from agent_artifacts.protocol.native_tree import (
+    SnapshotEntry,
+    SnapshotEntryKind,
+    compile_native_package,
 )
-from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKind
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
 from agent_artifacts.setup import (
-    custom_entrypoint_name,
-    has_manual_setup_header,
     manual_reference,
-    parse_installer,
     parse_setup_state,
     plan_setup,
     receipt_matches_plan,
@@ -197,18 +191,19 @@ def _setup_recipe(
     stored: StoredObject,
     record: InstallationRecord,
 ):
+    compiled = compile_native_package(
+        stored.candidate.entries,
+        expected_identity=record.artifact.identity,
+    )
+    if isinstance(compiled, Err):
+        detail = compiled.diagnostics[0].message if compiled.diagnostics else "invalid package"
+        return _error(SETUP_INVALID, f"canonical setup package is invalid: {detail}")
+    package = compiled.value
+    manifest = package.manifest
     by_path = {str(entry.path): entry for entry in stored.candidate.entries}
-    manifest_entry = by_path.get("artifact.json")
-    if manifest_entry is None or manifest_entry.kind is not SnapshotEntryKind.FILE:
-        return _error(SETUP_INVALID, "canonical object has no regular artifact manifest")
-    parsed_manifest = parse_artifact_manifest(manifest_entry.content, path="artifact.json")
-    if isinstance(parsed_manifest, Err):
-        return _error(SETUP_INVALID, "canonical object artifact manifest is invalid")
-    manifest = parsed_manifest.value
     if (
-        manifest.identity != record.artifact.identity
-        or manifest.version != record.artifact.version
-        or json_digest(artifact_manifest_to_json(manifest)) != record.artifact.manifest_digest
+        manifest.version != record.artifact.version
+        or package.manifest_digest != record.artifact.manifest_digest
         or manifest.setup is None
     ):
         return _error(
@@ -218,14 +213,14 @@ def _setup_recipe(
     recipe_entry = by_path.get(str(manifest.setup.recipe))
     if recipe_entry is None or recipe_entry.kind is not SnapshotEntryKind.FILE:
         return _error(SETUP_INVALID, "declared setup recipe is not a regular object file")
-    custom_name = custom_entrypoint_name(recipe_entry.content)
-    if isinstance(custom_name, LegacyErr):
-        return _error(SETUP_INVALID, custom_name.reason)
+    installer = package.setup_installer
+    if installer is None:
+        return _error(SETUP_INVALID, "declared setup recipe did not compile")
     custom_path = None
     custom_entry = None
-    if custom_name.value is not None:
+    if installer.custom_entrypoint is not None:
         parent = posixpath.dirname(str(manifest.setup.recipe))
-        parsed_path = parse_relative_path(posixpath.join(parent, custom_name.value))
+        parsed_path = parse_relative_path(posixpath.join(parent, installer.custom_entrypoint))
         if isinstance(parsed_path, Err):
             return _error(SETUP_INVALID, "custom setup entrypoint path is invalid")
         custom_path = parsed_path.value
@@ -239,35 +234,10 @@ def _setup_recipe(
                 SETUP_INVALID,
                 "custom setup entrypoint must be an executable regular object file",
             )
-    parsed_installer = parse_installer(
-        recipe_entry.content,
-        artifact_key=str(record.artifact.identity),
-        descriptor_path=str(manifest.setup.recipe),
-        custom_bytes=None if custom_entry is None else custom_entry.content,
-    )
-    if isinstance(parsed_installer, LegacyErr):
-        return _error(SETUP_INVALID, parsed_installer.reason)
-    assert isinstance(parsed_installer, LegacyOk)
-    manual_entry = by_path.get(parsed_installer.value.manual_path)
-    if manual_entry is None or manual_entry.kind is not SnapshotEntryKind.FILE:
-        return _error(SETUP_INVALID, "setup requires a regular SETUP.md object file")
-    try:
-        manual_text = manual_entry.content.decode("utf-8")
-    except UnicodeDecodeError:
-        return _error(SETUP_INVALID, "SETUP.md must be valid UTF-8")
-    if not manual_text.strip() or "\x00" in manual_text:
-        return _error(SETUP_INVALID, "SETUP.md must be non-empty safe UTF-8 text")
-    if custom_entry is not None and not has_manual_setup_header(custom_entry.content):
-        return _error(SETUP_INVALID, "custom entrypoint lacks the SETUP.md header")
-    if parsed_installer.value.platforms != manifest.setup.platforms:
-        return _error(
-            SETUP_INVALID,
-            "setup recipe platforms do not match the artifact manifest",
-        )
     return (
         manifest,
         recipe_entry,
-        parsed_installer.value,
+        installer,
         custom_path,
         custom_entry,
     )

@@ -29,7 +29,7 @@ from agent_artifacts.lifecycle.application import (
     finalize_update,
     prepare_uninstall,
     prepare_update,
-    status_installations,
+    reconcile_installations,
 )
 from agent_artifacts.lifecycle.model import (
     LifecycleItem,
@@ -195,21 +195,22 @@ def browse_consumer_marketplace(
     if isinstance(current, Err):
         return current
     selection = LifecycleSelection(target.scope, profiles=target.profiles)
-    local = status_installations(current.value, selection, context.location, ports)
-    if isinstance(local, Err):
-        return local
-    update_state = check_installations(
+    reconciled = reconcile_installations(
         current.value,
         selection,
         context.catalog,
         context.effective,
+        context.location,
+        ports,
     )
+    if isinstance(reconciled, Err):
+        return reconciled
     allowed = frozenset(sources)
     rows = project_marketplace_rows(
         context.catalog,
         target,
         security=context.security,
-        lifecycle=(*local.value.items, *update_state.items),
+        lifecycle=reconciled.value.items,
     )
     return Ok(tuple(row for row in rows if not allowed or row.source_alias in allowed))
 
@@ -229,6 +230,8 @@ def _selected_records(
         request.profiles,
     )
     records = select_installations(state, selection)
+    if not requested:
+        return Ok(records)
     expected = {(coordinate, profile) for coordinate in requested for profile in request.profiles}
     actual = {(record.coordinate, record.profile) for record in records}
     missing = tuple(sorted(f"{coordinate}#{profile}" for coordinate, profile in expected - actual))
@@ -445,6 +448,7 @@ def prepare_consumer_action(
                         mode=request.mode,
                         force=request.force,
                         offline=request.offline,
+                        memory_mode=request.memory_mode,
                     ),
                     context.catalog,
                     context.effective,
@@ -477,7 +481,14 @@ def prepare_consumer_action(
             request.profiles,
         )
         if request.action == "status":
-            status_result = status_installations(current.value, selection, context.location, ports)
+            status_result = reconcile_installations(
+                current.value,
+                selection,
+                context.catalog,
+                context.effective,
+                context.location,
+                ports,
+            )
             if isinstance(status_result, Err):
                 return status_result
             by_key = {LifecycleKey.from_record(record): record for record in records}

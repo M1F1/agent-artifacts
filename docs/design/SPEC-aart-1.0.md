@@ -684,7 +684,7 @@ layouts where the transformation is lossless. Ambiguous monolithic instruction f
 maintainer to choose artifact type/name/compatibility explicitly.
 
 The first implemented contract is the closed, deterministic
-[`legacy-catalog-v1`](../importers/legacy-catalog-v1.md) importer. Its mapping, rejection rules,
+`legacy-catalog-v1` importer. Its mapping, rejection rules,
 provenance projection, review/apply boundary, and current limitations are normative for the 0.1.x
 catalog conversion.
 

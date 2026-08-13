@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Mapping
 
-from ..model import (
+from .model import (
     CopyTarget,
     GuidelineTarget,
     HookTarget,

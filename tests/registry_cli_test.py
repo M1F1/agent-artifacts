@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from agent_artifacts import cli
+from agent_artifacts import __version__, cli
 from agent_artifacts.model import Request
 
 
@@ -14,13 +14,14 @@ class RegistryCliTest(unittest.TestCase):
             "init",
             "scaffold",
             "format",
+            "promote-native",
+            "refresh-native",
             "validate",
             "lock",
             "build",
             "audit",
             "test",
             "diff",
-            "migrate",
         }
         registry = next(
             action for action in parser._actions if action.__class__.__name__ == "_SubParsersAction"
@@ -50,31 +51,44 @@ class RegistryCliTest(unittest.TestCase):
         self.assertTrue(captured[0].check)
         self.assertTrue(captured[0].json)
 
-    def test_migrate_defaults_to_dry_run_and_requires_explicit_apply(self) -> None:
+    def test_the_compatibility_ceiling_defaults_to_the_running_aart(self) -> None:
+        # The upper compatibility point is whichever AART is publishing, not a version frozen in
+        # the parser.  A default that never moves refuses every registry whose floor rises above
+        # it, and proves nothing about today's release for the ones below it.
+        request = cli._to_request(cli.build_parser().parse_args(["registry", "test"]))
+
+        self.assertEqual(request.latest_version, __version__)
+
+    def test_native_promotion_maps_an_explicit_reference_and_finalize_consent(self) -> None:
         request = cli._to_request(
             cli.build_parser().parse_args(
                 [
                     "registry",
-                    "migrate",
-                    "--legacy-source",
-                    "/tmp/legacy",
+                    "promote-native",
                     "--source",
                     "/tmp/registry",
-                    "--source-id",
-                    "company-registry",
-                    "--display-name",
-                    "Company Registry",
-                    "--profile",
-                    "generic",
-                    "--license",
-                    "MIT",
+                    "skill",
+                    "review-python",
+                    "--url",
+                    "https://github.com/example/review-python.git",
+                    "--ref",
+                    "release",
+                    "--path",
+                    "artifacts/skill/review-python",
+                    "--review-policy",
+                    "company-review-v2",
+                    "--yes",
                 ]
             )
         )
-        self.assertEqual(request.registry_action, "migrate")
-        self.assertEqual(request.legacy_source, "/tmp/legacy")
-        self.assertFalse(request.apply)
-        self.assertEqual(request.artifact_license, "MIT")
+        self.assertEqual(request.registry_action, "promote-native")
+        self.assertEqual(request.artifact_kind, "skill")
+        self.assertEqual(request.names, ("review-python",))
+        self.assertEqual(request.native_url, "https://github.com/example/review-python.git")
+        self.assertEqual(request.ref, "release")
+        self.assertEqual(request.native_path, "artifacts/skill/review-python")
+        self.assertEqual(request.review_policy, "company-review-v2")
+        self.assertTrue(request.yes)
 
     def test_scaffold_install_scope_and_mode_do_not_silently_include_defaults(self) -> None:
         request = cli._to_request(

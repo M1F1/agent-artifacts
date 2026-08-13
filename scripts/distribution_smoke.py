@@ -157,7 +157,7 @@ def _apply(service: Any, request: Any) -> Any:
 
 def _state(service: Any) -> Any:
     from agent_artifacts.install_state.paths import install_state_paths
-    from agent_artifacts.io.state_store import LocalStateStore
+    from agent_artifacts.install_state.schema import parse_install_state
 
     location = service.context.location
     state_path = install_state_paths(
@@ -166,10 +166,11 @@ def _state(service: Any) -> Any:
         user_home=location.user_home,
         data_root=location.data_root,
     ).destination_path
-    state = _unwrap(LocalStateStore().read_state(state_path))
-    if state is None:
-        raise RuntimeError("project installation state is missing")
-    return state
+    try:
+        content = Path(state_path).read_bytes()
+    except FileNotFoundError:
+        raise RuntimeError("project installation state is missing") from None
+    return _unwrap(parse_install_state(content, path=state_path))
 
 
 def _symlink_receipt(service: Any) -> tuple[str, str]:
@@ -190,6 +191,26 @@ def _symlink_receipt(service: Any) -> tuple[str, str]:
     return str(destination), effect.link_target
 
 
+def _symlinkable_coordinate(service: Any) -> Any:
+    """The one fixture artifact that declares the symlink mode.
+
+    The smoke proves that a managed *symlink* survives environment recreation, so both phases must
+    drive the same symlink-capable artifact; picking positionally would silently switch to
+    whichever artifact the fixture happens to list first.
+    """
+
+    symlinkable = [
+        item
+        for item in service.context.catalog.items
+        if "symlink" in item.artifact.artifact.install.modes
+    ]
+    if len(symlinkable) != 1:
+        raise RuntimeError(
+            "distribution fixture must expose exactly one symlink-capable marketplace artifact"
+        )
+    return symlinkable[0].coordinate
+
+
 def _phase_seed(args: argparse.Namespace) -> dict[str, Any]:
     from agent_artifacts.consumer.model import ConsumerActionRequest
 
@@ -203,9 +224,7 @@ def _phase_seed(args: argparse.Namespace) -> dict[str, Any]:
     )
     disposition = _configure_and_sync(source_root, home)
     service = _load_service(project, home)
-    if len(service.context.catalog.items) != 1:
-        raise RuntimeError("distribution fixture must expose exactly one marketplace artifact")
-    coordinate = service.context.catalog.items[0].coordinate
+    coordinate = _symlinkable_coordinate(service)
     copied = _apply(
         service,
         ConsumerActionRequest(
@@ -241,7 +260,7 @@ def _phase_resume(args: argparse.Namespace) -> dict[str, Any]:
         environment_root=Path(args.environment_root).resolve(),
     )
     service = _load_service(project, home)
-    coordinate = service.context.catalog.items[0].coordinate
+    coordinate = _symlinkable_coordinate(service)
     unversioned = ArtifactCoordinate(coordinate.source, coordinate.artifact)
     current = _apply(
         service,

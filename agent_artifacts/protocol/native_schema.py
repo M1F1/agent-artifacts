@@ -484,7 +484,7 @@ def parse_artifact_manifest(
             "install",
         }
     )
-    optional = frozenset({"setup", "authors", "license", "homepage", "requires_aart"})
+    optional = frozenset({"setup", "authors", "license", "homepage", "requires_aart", "requires"})
     validated = validate_object_fields(
         document.value,
         required=required,
@@ -545,6 +545,25 @@ def parse_artifact_manifest(
         if isinstance(parsed_bounds, Err):
             return parsed_bounds
         requires_aart = parsed_bounds.value
+    requires: tuple[ArtifactSelector, ...] = ()
+    if "requires" in value.keys():
+        raw_requires = _field(value, "requires")
+        if not isinstance(raw_requires, JsonArray):
+            return _error(ARTIFACT_INVALID, "requires must be an array", path=path)
+        parsed_requires: list[ArtifactSelector] = []
+        for item in raw_requires.items:
+            parsed_selector = _artifact_selector(item, path=path)
+            if isinstance(parsed_selector, Err):
+                return parsed_selector
+            if parsed_selector.value.identity == ArtifactIdentity(artifact_type, name.value):
+                return _error(ARTIFACT_INVALID, "artifact must not require itself", path=path)
+            parsed_requires.append(parsed_selector.value)
+        identities = tuple(item.identity for item in parsed_requires)
+        if len(set(identities)) != len(identities):
+            return _error(
+                ARTIFACT_INVALID, "requires contains duplicate artifact selectors", path=path
+            )
+        requires = tuple(sorted(parsed_requires, key=lambda item: str(item.identity)))
     setup: SetupReference | None = None
     if "setup" in value.keys():
         parsed_setup = _setup(_field(value, "setup"), compatibility.value, path=path)
@@ -592,6 +611,7 @@ def parse_artifact_manifest(
             homepage,
             _extensions(value, required | optional),
             requires_aart,
+            requires,
         )
     )
 
@@ -938,6 +958,17 @@ def artifact_manifest_to_json(manifest: ArtifactManifest) -> JsonObject:
         or manifest.requires_aart.max_exclusive is not None
     ):
         entries.append(("requires_aart", _bounds_to_json(manifest.requires_aart)))
+    if manifest.requires:
+        values: list[JsonObject] = []
+        for selector in manifest.requires:
+            selector_entries: list[tuple[str, JsonValue]] = [
+                ("type", selector.identity.kind),
+                ("name", selector.identity.name),
+            ]
+            if selector.version is not None:
+                selector_entries.append(("version", _bounds_to_json(selector.version)))
+            values.append(_object(selector_entries))
+        entries.append(("requires", JsonArray(tuple(values))))
     entries.extend(manifest.extensions)
     return _object(entries)
 

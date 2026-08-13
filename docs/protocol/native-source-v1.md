@@ -2,8 +2,9 @@
 
 A native AART source is an acquired repository tree whose root contains `aart-source.json`.
 Artifact discovery is deliberately limited to the manifest's explicit `artifact_roots`; AART does
-not crawl arbitrary repository layouts during consumer installation. Foreign layouts must be
-converted by a reviewed Maintainer importer before they become consumer inputs.
+not crawl arbitrary repository layouts during consumer installation. A foreign layout must be
+re-authored as a native source before it becomes a consumer input; AART does not convert legacy
+catalogs at runtime.
 
 The executable reference fixture is
 [`tests/fixtures/protocol/native-source-v1`](../../tests/fixtures/protocol/native-source-v1). It

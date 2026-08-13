@@ -9,7 +9,7 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, S
 
 from .capabilities import Capability
 from .json import JsonValue
-from .native_models import CollectionManifest, CompatibilitySpec, InstallSpec
+from .native_models import ArtifactSelector, CollectionManifest, CompatibilitySpec, InstallSpec
 from .paths import SafeRelativePath
 from .semver import SemVer, VersionBounds
 
@@ -125,6 +125,7 @@ class IndexArtifact:
     provenance: IndexProvenance | None = None
     collections: tuple[str, ...] = ()
     requires_aart: VersionBounds = VersionBounds()
+    requires: tuple[ArtifactSelector, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

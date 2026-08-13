@@ -14,6 +14,7 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_registry_entry_add,
     project_registry_mutation,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from tests.registry_maintenance_fixtures import (
     append_snapshot_file,
     empty_registry_snapshot,
@@ -37,7 +38,7 @@ class NativePromotionTest(unittest.TestCase):
             empty_registry_snapshot(),
             registry_entry(),
             acquisition,
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(result, Ok), result
@@ -75,7 +76,7 @@ class NativePromotionTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         self.assertIsInstance(result, Err)
@@ -90,7 +91,7 @@ class NativePromotionTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         self.assertIsInstance(result, Err)
@@ -114,7 +115,7 @@ class NativePromotionTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(result, Ok), result
@@ -136,7 +137,7 @@ class NativePromotionTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(first, Ok)
@@ -159,7 +160,7 @@ class NativePromotionTest(unittest.TestCase):
                 "b" * 40,
                 renamed_native_snapshot("other"),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(promoted, Ok), promoted
@@ -185,7 +186,7 @@ class NativePromotionTest(unittest.TestCase):
             initial,
             registry_entry(),
             acquisition,
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(first, Ok)
@@ -205,7 +206,7 @@ class NativePromotionTest(unittest.TestCase):
             reviewed.value,
             rereviewed,
             acquisition,
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(promotion, Ok), promotion
@@ -227,7 +228,7 @@ class NativePromotionTest(unittest.TestCase):
                 "b" * 40,
                 renamed_native_snapshot("other"),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(result, Ok), result
@@ -238,7 +239,7 @@ class NativePromotionTest(unittest.TestCase):
         assert isinstance(index, Ok), index
         self.assertEqual(
             {str(item.identity) for item in index.value.artifacts},
-            {"skill/code-review", "skill/other"},
+            {"memory/house", "skill/code-review", "skill/other"},
         )
         self.assertFalse(
             any(str(change.path).startswith("artifacts/") for change in result.value.changes)
@@ -276,7 +277,7 @@ class NativePromotionTest(unittest.TestCase):
                 "a" * 40,
                 native_snapshot(),
             ),
-            executable_version=SemVer(1, 0, 0),
+            executable_version=EXECUTABLE_VERSION,
             available_capabilities=(Capability("artifact-manifest-v1"),),
         )
         assert isinstance(result, Ok), result

@@ -492,6 +492,16 @@ class LifecycleRequestMappingTests(unittest.TestCase):
         self.assertEqual(service.prepared_requests[0].coordinates, ())
         self.assertEqual(_payload(output)["operation"], "marketplace.status")
 
+    def test_update_without_coordinates_targets_recorded_installations(self) -> None:
+        service = _StubService(review=_review("update"), outcome=_outcome("update"))
+
+        code, output = _run(["marketplace", "update", "--profile", "claude", "--json"], service)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(service.prepared_requests[0].action, "update")
+        self.assertEqual(service.prepared_requests[0].coordinates, ())
+        self.assertEqual(_payload(output)["operation"], "marketplace.update")
+
     def test_install_requires_at_least_one_coordinate(self) -> None:
         service = _StubService(review=_review(), outcome=_outcome())
 
