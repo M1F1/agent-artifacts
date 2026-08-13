@@ -1,6 +1,6 @@
 # Design: canonical remediation after live acceptance
 
-Status: proposed — no implementation starts before approval.
+Status: accepted — implementation in progress.
 
 Inputs: the findings in
 [PROGRESS-live-acceptance.md](../testing/PROGRESS-live-acceptance.md). This is a product design,

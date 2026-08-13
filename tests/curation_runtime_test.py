@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -15,7 +16,12 @@ from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.sources.model import SourceInstanceId, make_source_candidate
-from tests.registry_maintenance_fixtures import native_snapshot
+from tests.registry_maintenance_fixtures import (
+    append_snapshot_file,
+    native_snapshot,
+    replace_snapshot_file,
+    snapshot_file,
+)
 
 
 def _git_checkout(root: Path) -> None:
@@ -25,6 +31,24 @@ def _git_checkout(root: Path) -> None:
 
 def _failure(message: str = "injected failure") -> Err:
     return Err((Diagnostic(DiagnosticCode("test-failure"), Severity.ERROR, message),))
+
+
+def _setup_v1_native_snapshot():
+    """A retired recipe must fail at promotion, before a registry entry can exist."""
+
+    manifest_path = "artifacts/skill/code-review/artifact.json"
+    manifest = json.loads(snapshot_file(native_snapshot(), manifest_path))
+    manifest["setup"] = {"recipe": "setup/installer.json", "platforms": ["darwin"]}
+    with_recipe = replace_snapshot_file(
+        native_snapshot(),
+        manifest_path,
+        json.dumps(manifest, sort_keys=True).encode("utf-8"),
+    )
+    return append_snapshot_file(
+        with_recipe,
+        "artifacts/skill/code-review/setup/installer.json",
+        json.dumps({"schema_version": 1, "protocol_version": 1}, sort_keys=True).encode("utf-8"),
+    )
 
 
 class CurationRuntimeTest(unittest.TestCase):
@@ -535,6 +559,43 @@ class CurationRuntimeTest(unittest.TestCase):
             mismatched.write_bytes(entry.read_bytes())
             invalid_identity = service.prepare(CurationRequest(CurationAction.LOCK, str(root)))
             self.assertIsInstance(invalid_identity, Err)
+
+    def test_promote_rejects_retired_setup_v1_before_registry_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "registry"
+            _git_checkout(root)
+            service = LocalCurationService(
+                str(root),
+                native_acquirer=lambda url, ref: Ok(
+                    NativeReferenceAcquisition(url, ref, "a" * 40, _setup_v1_native_snapshot())
+                ),
+            )
+            initialized = service.prepare(
+                CurationRequest(
+                    CurationAction.INIT,
+                    str(root),
+                    source_id="test-registry",
+                    display_name="Test Registry",
+                )
+            )
+            assert isinstance(initialized, Ok), initialized
+            assert isinstance(
+                service.finalize(initialized.value, initialized.value.review.review_digest), Ok
+            )
+
+            promoted = service.prepare(
+                CurationRequest(
+                    CurationAction.PROMOTE_NATIVE,
+                    str(root),
+                    kind="skill",
+                    name="code-review",
+                    url="https://github.com/example/reference-skills.git",
+                    path="artifacts/skill/code-review",
+                )
+            )
+
+            self.assertIsInstance(promoted, Err)
+            self.assertFalse((root / "entries" / "skill" / "code-review.json").exists())
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 # Plan: canonical remediation after live acceptance
 
-Status: proposed — implementation begins only after approval of
+Status: accepted — implementation in progress under
 [the design](../design/DESIGN-post-live-acceptance-remediation.md).
 
 The work is sequenced by contracts, not by individual findings. Every work package ends with

@@ -37,17 +37,11 @@ artifact.
 The same acquisition is an explicit `up-to-date` no-op. A new commit or changed canonical package
 produces a reviewable `changed` plan. Advancing a ref never mutates the workspace automatically.
 
-## Materialized upstream updates
+## Retired foreign layouts
 
-Materialized foreign content is updated by rerunning the importer recorded in every package's
-provenance. Protocol v1 accepts only the closed built-in `legacy-catalog-v1` importer and requires
-its exact version and options digest. The new immutable input is scanned, planned, materialized,
-native-validated, and diffed using the importer pipeline described in
-[`legacy-catalog-v1`](../importers/legacy-catalog-v1.md). A missing, forged, or different importer
-record is rejected.
-
-The result is an import apply plan, not an automatic write. Changing importer options is a separate
-maintainer migration and cannot masquerade as an upstream refresh.
+Registry maintenance accepts only native AART sources. A foreign or legacy layout must be
+re-authored outside the normal AART runtime before it can be promoted; there is no importer or
+automatic migration path.
 
 ## Review and apply boundary
 
