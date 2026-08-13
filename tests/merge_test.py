@@ -3,7 +3,8 @@
 import unittest
 
 from agent_artifacts import merge
-from agent_artifacts.model import Err, MergeJson, MergeSpec, Ok
+from agent_artifacts.model import Err, MergeJson, Ok
+from agent_artifacts.profiles.model import MergeSpec
 
 MCP_SPEC = MergeSpec(file=".mcp.json", json_path="mcpServers", mode="key")
 HOOK_SPEC = MergeSpec(

@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from typing import Mapping, Optional, Tuple
 
-from .model import Err, MergeJson, MergeSpec, Ok, Result
+from .model import Err, MergeJson, Ok, Result
+from .profiles.model import MergeSpec
 
 _PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
 

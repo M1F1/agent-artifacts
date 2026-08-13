@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 
-from agent_artifacts.model import MemoryTarget, Profile
+from agent_artifacts.profiles.model import MemoryTarget, Profile
 from agent_artifacts.profiles.builtin import builtin
 from agent_artifacts.profiles.loader import _profile_from_dict, load_profiles
 

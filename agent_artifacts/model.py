@@ -246,80 +246,8 @@ class ResolvedBundle:
     pins: Mapping[str, str]  # artifact name -> resolved ref
 
 
-# --------------------------------------------------------------------------- #
-# Profiles (harness mapping — data, see docs/design/DESIGN.md §11)                          #
-# --------------------------------------------------------------------------- #
-@dataclass(frozen=True, slots=True)
-class CopyTarget:
-    dir: str  # may contain the "<name>" placeholder
-
-
-@dataclass(frozen=True, slots=True)
-class GuidelineTarget:
-    # A guideline is a standalone reference doc copied into ``dest`` (a directory) as
-    # ``<name>.md``. It is never merged into a shared file — that sentinel-block behaviour
-    # belongs to the ``memory`` artifact (see ``MemoryTarget`` / ``MemoryMode``).
-    dest: str
-
-
-@dataclass(frozen=True, slots=True)
-class MergeSpec:
-    file: str
-    json_path: str
-    mode: Literal["key", "list"]
-    identity: Tuple[str, ...] = ()
-    entry_template: Optional[Mapping[str, object]] = None
-
-
-@dataclass(frozen=True, slots=True)
-class HookTarget:
-    scripts_dir: str  # may contain "<name>"
-    events: Mapping[str, str]  # abstract event name -> json_path under merge.file
-    merge: MergeSpec
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryTarget:
-    """Where a harness's top-level instruction file lives (docs/design/DESIGN-memory.md §4).
-
-    ``kind="file"`` — a single shared instruction file (``CLAUDE.md`` / ``AGENTS.md``); all
-    four `MemoryMode` modes apply. ``kind="dir"`` — the harness has no single instruction
-    file (e.g. Tabnine), so the artifact is copied into ``dest`` as ``<name>.md`` and the
-    content-merge modes do not apply (``skip`` still avoids overwriting an existing file).
-    """
-
-    kind: Literal["file", "dir"]
-    dest: str  # the file (kind="file") or the directory (kind="dir")
-
-
-@dataclass(frozen=True, slots=True)
-class ProfileTargets:
-    """One scope's explicit targets plus reasons for intentionally unsupported types."""
-
-    skills: Optional[CopyTarget] = None
-    guidelines: Optional[GuidelineTarget] = None
-    mcp: Optional[MergeSpec] = None
-    hooks: Optional[HookTarget] = None
-    memory: Optional[MemoryTarget] = None
-    unsupported: Mapping[ArtifactType, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class Profile:
-    name: str
-    # Every artifact-type target is optional: ``None`` means this harness does not support
-    # that type (docs/design/DESIGN-memory.md §5). Installing an unsupported type errors (by-name) or is
-    # skipped with a warning (bundle/--all expansion).
-    skills: Optional[CopyTarget] = None
-    guidelines: Optional[GuidelineTarget] = None
-    mcp: Optional[MergeSpec] = None
-    hooks: Optional[HookTarget] = None
-    memory: Optional[MemoryTarget] = None
-    # Reasons apply to the currently projected target set. Built-in project profiles retain
-    # their historical generic behavior; user projection fills this from ``user.unsupported``.
-    unsupported: Mapping[ArtifactType, str] = field(default_factory=dict)
-    user: Optional[ProfileTargets] = None
-
+# Profile/harness mapping types live in ``agent_artifacts.profiles.model``; that module is
+# the single definition of the canonical profile data. Nothing may re-declare them here.
 
 # --------------------------------------------------------------------------- #
 # Version resolution                                                           #

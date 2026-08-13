@@ -7,7 +7,7 @@ import os
 import tempfile
 import unittest
 
-from agent_artifacts.model import (
+from agent_artifacts.profiles.model import (
     CopyTarget,
     GuidelineTarget,
     HookTarget,
