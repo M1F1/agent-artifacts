@@ -57,7 +57,7 @@ from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
 from agent_artifacts.store.model import ObjectReadRequest
 
-from . import _common
+from agent_artifacts import command_outcome as _common
 from ._configured_runtime import load_runtime_configuration
 
 _LIST_OPERATION = "marketplace.list"

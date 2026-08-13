@@ -8,17 +8,6 @@ from dataclasses import replace
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.importers.legacy_catalog import (
-    LEGACY_CATALOG_IMPORTER,
-    LegacyCatalogOptions,
-    build_import_apply_plan,
-    diff_legacy_import,
-    materialize_legacy_catalog,
-    plan_legacy_catalog,
-    scan_legacy_catalog,
-    validate_legacy_import,
-)
-from agent_artifacts.importers.model import ImporterInput
 from agent_artifacts.protocol.capabilities import Capability, negotiate_capabilities
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import canonical_json_bytes
@@ -66,7 +55,6 @@ from agent_artifacts.sources.model import source_snapshot_digest
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
 from .model import (
-    MaterializedUpstreamCheck,
     NativeReferenceAcquisition,
     NativeUpstreamCheck,
     RegistryChangeKind,
@@ -771,52 +759,3 @@ def check_native_upstream(
         else UpstreamDisposition.CHANGED
     )
     return Ok(NativeUpstreamCheck(disposition, plan.value))
-
-
-def check_materialized_upstream(
-    current: SourceSnapshot,
-    request: ImporterInput,
-    options: LegacyCatalogOptions,
-    *,
-    executable_version: SemVer,
-) -> Result[MaterializedUpstreamCheck]:
-    loaded_current = load_native_source(
-        current,
-        executable_version=executable_version,
-        available_capabilities=(),
-    )
-    if isinstance(loaded_current, Err):
-        return loaded_current
-    scan = scan_legacy_catalog(request)
-    if isinstance(scan, Err):
-        return scan
-    plan = plan_legacy_catalog(scan.value, options)
-    if isinstance(plan, Err):
-        return plan
-    for package in loaded_current.value.artifacts:
-        provenance = package.provenance
-        if (
-            provenance is None
-            or provenance.importer.id != LEGACY_CATALOG_IMPORTER.id
-            or provenance.importer.version != LEGACY_CATALOG_IMPORTER.version
-            or provenance.importer.options_digest != plan.value.options_digest
-        ):
-            return _error(
-                "materialized upstream update must rerun its recorded importer and exact options"
-            )
-    materialized = materialize_legacy_catalog(request, plan.value)
-    if isinstance(materialized, Err):
-        return materialized
-    validated = validate_legacy_import(
-        materialized.value,
-        executable_version=executable_version,
-    )
-    if isinstance(validated, Err):
-        return validated
-    diff = diff_legacy_import(validated.value, current)
-    if isinstance(diff, Err):
-        return diff
-    apply_plan = build_import_apply_plan(validated.value, diff.value)
-    changed = sum(item.kind.value != "unchanged" for item in apply_plan.changes)
-    disposition = UpstreamDisposition.UP_TO_DATE if changed == 0 else UpstreamDisposition.CHANGED
-    return Ok(MaterializedUpstreamCheck(disposition, apply_plan))

@@ -22,9 +22,9 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 class CurationAction(str, Enum):
     INIT = "init"
     SCAFFOLD = "scaffold"
+    FORMAT = "format"
     PROMOTE_NATIVE = "promote-native"
-    IMPORT_FOREIGN = "import-foreign"
-    UPDATE_UPSTREAM = "update-upstream"
+    REFRESH_NATIVE = "refresh-native"
     LOCK = "lock"
     BUILD = "build"
     VALIDATE = "validate"
@@ -64,8 +64,6 @@ class CurationRequest:
     ref: str = "main"
     path: str | None = None
     review_policy: str = "manual-review-v1"
-    legacy_source: str | None = None
-    origin_url: str | None = None
     source_id: str | None = None
     display_name: str | None = None
     minimum_version: str = "1.0.0"
@@ -87,8 +85,6 @@ class CurationRequest:
                 for value in (
                     self.url,
                     self.path,
-                    self.legacy_source,
-                    self.origin_url,
                     self.source_id,
                     self.display_name,
                 )

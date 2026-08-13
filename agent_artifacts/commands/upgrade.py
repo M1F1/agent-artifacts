@@ -16,7 +16,7 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.model import Request
 
-from ._common import ERROR, OK
+from agent_artifacts.command_outcome import ERROR, OK
 
 UPGRADE_INVALID = DiagnosticCode("upgrade-invalid")
 _WHEEL_NAME_RE = re.compile(

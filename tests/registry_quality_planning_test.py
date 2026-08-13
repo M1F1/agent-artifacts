@@ -162,7 +162,11 @@ class RegistryQualityPlanningTest(unittest.TestCase):
         )
         assert isinstance(validated, Ok), validated
         self.assertTrue(validated.value.passed)
-        audited = audit_registry_workspace(fixture)
+        audited = audit_registry_workspace(
+            fixture,
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
         assert isinstance(audited, Ok), audited
         self.assertTrue(audited.value.passed)
         matrix = check_registry_compatibility(
@@ -233,7 +237,11 @@ class RegistryQualityPlanningTest(unittest.TestCase):
             security_index_bytes(security_index),
         )
 
-        audited = audit_registry_workspace(with_security)
+        audited = audit_registry_workspace(
+            with_security,
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
 
         assert isinstance(audited, Ok)
         messages = tuple(
@@ -247,7 +255,11 @@ class RegistryQualityPlanningTest(unittest.TestCase):
             str(entries[0].path),
             b"{}\n",
         )
-        rejected = audit_registry_workspace(tampered)
+        rejected = audit_registry_workspace(
+            tampered,
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
         assert isinstance(rejected, Ok)
         self.assertFalse(rejected.value.passed)
         rejected_messages = tuple(
@@ -262,7 +274,11 @@ class RegistryQualityPlanningTest(unittest.TestCase):
         projected = project_registry_mutation(snapshot, entry.value)
         assert isinstance(projected, Ok)
 
-        audited = audit_registry_workspace(projected.value)
+        audited = audit_registry_workspace(
+            projected.value,
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
 
         assert isinstance(audited, Ok)
         self.assertFalse(audited.value.passed)
@@ -274,7 +290,11 @@ class RegistryQualityPlanningTest(unittest.TestCase):
     def test_audit_requires_a_lock_for_approved_external_references(self) -> None:
         authored = _authored_registry()
 
-        audited = audit_registry_workspace(authored)
+        audited = audit_registry_workspace(
+            authored,
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
 
         assert isinstance(audited, Ok)
         self.assertFalse(audited.value.passed)

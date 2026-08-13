@@ -90,7 +90,7 @@ class TuiCurationTest(unittest.TestCase):
                 selection["wizard_session"] = session
                 return session
 
-            singles = iter((1, 10))  # Maintainer, Enter User workflows
+            singles = iter((1, 9))  # Maintainer, Enter User workflows
             output = io.StringIO()
             with (
                 redirect_stdout(output),
@@ -133,7 +133,7 @@ class TuiCurationTest(unittest.TestCase):
                 mock.patch.object(tui, "_run_user_text_wizard", return_value=0) as run_user,
             ):
                 code = tui._run_text(
-                    _scripted(["", "2", "11"]),
+                    _scripted(["", "2", "10"]),
                     mock.Mock(),
                     source_dir=str(root),
                     project=str(root),

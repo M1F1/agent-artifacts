@@ -173,9 +173,8 @@ def custom_entrypoint_name(raw: bytes) -> Result:
 def has_manual_setup_header(raw: bytes) -> bool:
     """Return whether a custom script begins with the standard manual-route comment.
 
-    A POSIX shebang may precede the comment so direct execution remains possible.  The source
-    loader calls this only for version-2 descriptors; retained version-1 custom scripts remain
-    valid exactly as published.
+    A POSIX shebang may precede the comment so direct execution remains possible.  The one current
+    setup protocol requires this header on every custom entrypoint.
     """
 
     lines = raw.splitlines()

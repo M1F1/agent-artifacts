@@ -1,6 +1,5 @@
 """Maintainer registry command functional core."""
 
-from .migration import plan_legacy_registry_migration
 from .model import (
     ArtifactScaffoldOptions,
     RegistryApplyCommand,
@@ -39,7 +38,6 @@ __all__ = [
     "WorkspaceChangeKind",
     "audit_registry_workspace",
     "plan_artifact_scaffold",
-    "plan_legacy_registry_migration",
     "plan_registry_build",
     "plan_registry_format",
     "plan_registry_init",

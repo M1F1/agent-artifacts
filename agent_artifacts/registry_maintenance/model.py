@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 from agent_artifacts.domain.identifiers import ObjectDigest
-from agent_artifacts.importers.model import ImportApplyPlan
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
@@ -189,20 +188,6 @@ class NativeUpstreamCheck:
             or self.disposition is not expected
         ):
             raise ValueError("native upstream disposition does not match its exact diff")
-
-
-@dataclass(frozen=True, slots=True)
-class MaterializedUpstreamCheck:
-    disposition: UpstreamDisposition
-    apply_plan: ImportApplyPlan
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.apply_plan, ImportApplyPlan):
-            raise ValueError("materialized upstream check requires an import apply plan")
-        changed = sum(item.kind.value != "unchanged" for item in self.apply_plan.changes)
-        expected = UpstreamDisposition.UP_TO_DATE if changed == 0 else UpstreamDisposition.CHANGED
-        if self.disposition is not expected:
-            raise ValueError("materialized upstream disposition does not match its exact diff")
 
 
 @dataclass(frozen=True, slots=True)

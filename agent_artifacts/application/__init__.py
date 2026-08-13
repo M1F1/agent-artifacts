@@ -6,7 +6,6 @@ from .configuration import (
     ConfigurationRequest,
     load_configuration,
 )
-from .importers import finalize_legacy_import, prepare_legacy_import
 from .registry_commands import (
     finalize_registry_workspace,
     prepare_artifact_scaffold,
@@ -28,7 +27,6 @@ from .sources import (
     source_status,
     sync_source,
 )
-from .state_migration import StateMigrationService
 from .store import (
     ReferenceUpdatePorts,
     ReferenceUpdateRequest,
@@ -50,9 +48,7 @@ __all__ = [
     "ReferenceUpdatePorts",
     "ReferenceUpdateRequest",
     "StoreGcPorts",
-    "StateMigrationService",
     "collect_garbage",
-    "finalize_legacy_import",
     "finalize_registry_mutation",
     "finalize_registry_workspace",
     "finalize_source_addition",
@@ -60,7 +56,6 @@ __all__ = [
     "object_status",
     "compile_sources",
     "load_configuration",
-    "prepare_legacy_import",
     "prepare_native_promotion",
     "prepare_artifact_scaffold",
     "prepare_registry_build",

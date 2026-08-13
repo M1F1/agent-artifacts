@@ -35,20 +35,11 @@ from agent_artifacts.planners import (
 )
 from agent_artifacts.profiles.scope import profile_for_scope
 from agent_artifacts.protocol.hashing import (
-    directory_entry,
-    file_entry,
     json_digest,
     sha256_bytes,
-    tree_digest,
 )
 from agent_artifacts.protocol.json import JsonArray, JsonObject, JsonValue, parse_json
-from agent_artifacts.protocol.native_models import PAYLOAD_FORMAT_BY_TYPE, CanonicalArtifactType
-from agent_artifacts.protocol.native_schema import (
-    artifact_manifest_to_json,
-    parse_artifact_manifest,
-    parse_provenance,
-)
-from agent_artifacts.protocol.native_tree import SnapshotEntryKind
+from agent_artifacts.protocol.native_tree import SnapshotEntryKind, compile_native_package
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.store.model import ObjectReadRequest, ObjectStorePaths, StoredObject
@@ -183,125 +174,40 @@ def _payload_members(stored: StoredObject) -> Result[tuple[TreeMember, ...]]:
     return Ok(tuple(sorted(members, key=lambda member: str(member.path))))
 
 
-def _payload_evidence_digest(stored: StoredObject) -> Result[ObjectDigest]:
-    files = tuple(
-        entry
-        for entry in stored.candidate.entries
-        if entry.kind is SnapshotEntryKind.FILE and str(entry.path).startswith("payload/")
-    )
-    entries = []
-    directories: set[str] = set()
-    for entry in files:
-        relative = str(entry.path).removeprefix("payload/")
-        parsed = parse_relative_path(relative)
-        if isinstance(parsed, Err):
-            return _error(INSTALL_OBJECT_EVIDENCE_INVALID, "object payload path is invalid")
-        entries.append(file_entry(parsed.value, entry.content, executable=entry.executable))
-        for length in range(1, len(parsed.value.parts)):
-            directories.add("/".join(parsed.value.parts[:length]))
-    for directory in sorted(directories):
-        parsed = parse_relative_path(directory)
-        if isinstance(parsed, Err):
-            return _error(INSTALL_OBJECT_EVIDENCE_INVALID, "object payload directory is invalid")
-        entries.append(directory_entry(parsed.value))
-    digest = tree_digest(entries)
-    if isinstance(digest, Err):
-        return _error(INSTALL_OBJECT_EVIDENCE_INVALID, "object payload cannot be hashed")
-    return digest
-
-
 def _validate_object_evidence(stored: StoredObject, indexed) -> Result[None]:
-    by_path = {str(entry.path): entry for entry in stored.candidate.entries}
-    unexpected = tuple(
-        path
-        for path in by_path
-        if path.split("/", 1)[0]
-        not in {"artifact.json", "README.md", "provenance.json", "SETUP.md", "payload", "setup"}
+    compiled = compile_native_package(
+        stored.candidate.entries,
+        expected_identity=indexed.identity,
     )
-    manifest_entry = by_path.get("artifact.json")
-    if unexpected or manifest_entry is None or manifest_entry.kind is not SnapshotEntryKind.FILE:
-        return _error(
-            INSTALL_OBJECT_EVIDENCE_INVALID,
-            "object package roots or artifact manifest are invalid",
-        )
-    parsed = parse_artifact_manifest(manifest_entry.content, path="artifact.json")
-    if isinstance(parsed, Err):
-        return _error(INSTALL_OBJECT_EVIDENCE_INVALID, "object artifact manifest is invalid")
-    manifest = parsed.value
-    provenance_entry = by_path.get("provenance.json")
-    if provenance_entry is None:
-        object_provenance = None
-    elif provenance_entry.kind is SnapshotEntryKind.FILE:
-        parsed_provenance = parse_provenance(
-            provenance_entry.content,
-            path="provenance.json",
-        )
-        if isinstance(parsed_provenance, Err):
-            return _error(
-                INSTALL_OBJECT_EVIDENCE_INVALID,
-                "object artifact provenance is invalid",
-            )
-        object_provenance = parsed_provenance.value
-    else:
-        return _error(
-            INSTALL_OBJECT_EVIDENCE_INVALID,
-            "object provenance must be a regular file",
-        )
-    expected_format = PAYLOAD_FORMAT_BY_TYPE.get(
-        cast(CanonicalArtifactType, manifest.identity.kind)
-    )
+    if isinstance(compiled, Err):
+        detail = compiled.diagnostics[0].message if compiled.diagnostics else "invalid package"
+        return _error(INSTALL_OBJECT_EVIDENCE_INVALID, f"canonical object package is invalid: {detail}")
+    package = compiled.value
+    manifest = package.manifest
     setup_matches = (manifest.setup is None) == (indexed.setup is None)
     if manifest.setup is not None and indexed.setup is not None:
         setup_matches = (
             manifest.setup.recipe == indexed.setup.recipe
             and manifest.setup.platforms == indexed.setup.platforms
         )
-    manifest_digest = json_digest(artifact_manifest_to_json(manifest))
-    payload_digest = _payload_evidence_digest(stored)
-    if isinstance(payload_digest, Err):
-        return payload_digest
-    payload_paths = tuple(
-        path
-        for path, entry in by_path.items()
-        if path.startswith("payload/") and entry.kind is SnapshotEntryKind.FILE
-    )
-    primary_valid = bool(payload_paths)
-    if manifest.identity.kind == "skill":
-        primary_valid = "payload/SKILL.md" in payload_paths
-    elif manifest.identity.kind in {"guideline", "memory"}:
-        primary_valid = len(payload_paths) == 1 and payload_paths[0].endswith(".md")
-    elif manifest.identity.kind == "mcp":
-        primary_valid = "payload/mcp.json" in payload_paths
-    elif manifest.identity.kind == "hook":
-        primary_valid = "payload/hook.json" in payload_paths
-    setup_paths = tuple(path for path in by_path if path.startswith("setup/"))
-    if manifest.setup is None:
-        setup_content_valid = not setup_paths
-    else:
-        recipe = by_path.get(str(manifest.setup.recipe))
-        setup_content_valid = recipe is not None and recipe.kind is SnapshotEntryKind.FILE
-    provenance_matches = (object_provenance is None) == (indexed.provenance is None)
-    if object_provenance is not None and indexed.provenance is not None:
+    provenance_matches = (package.provenance is None) == (indexed.provenance is None)
+    if package.provenance is not None and indexed.provenance is not None:
         provenance_matches = (
-            object_provenance.origin.url == indexed.provenance.origin_url
-            and object_provenance.origin.resolved_commit == indexed.provenance.resolved_commit
-            and object_provenance.origin.path == indexed.provenance.path
+            package.provenance.origin.url == indexed.provenance.origin_url
+            and package.provenance.origin.resolved_commit == indexed.provenance.resolved_commit
+            and package.provenance.origin.path == indexed.provenance.path
         )
     if (
         manifest.identity != indexed.identity
         or manifest.version != indexed.version
         or manifest.summary != indexed.summary
-        or manifest.payload.root.parts != ("payload",)
-        or manifest.payload.format != expected_format
         or manifest.compatibility != indexed.compatibility
         or manifest.install != indexed.install
         or manifest.requires_aart != indexed.requires_aart
         or not setup_matches
         or not provenance_matches
-        or manifest_digest != indexed.manifest_digest
-        or payload_digest.value != indexed.payload_digest
-        or not primary_valid
-        or not setup_content_valid
+        or package.manifest_digest != indexed.manifest_digest
+        or package.payload_digest != indexed.payload_digest
     ):
         return _error(
             INSTALL_OBJECT_EVIDENCE_INVALID,

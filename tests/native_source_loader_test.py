@@ -96,13 +96,40 @@ def _provenance_document():
     }
 
 
+def _setup_recipe(artifact: str):
+    return {
+        "schema_version": 2,
+        "protocol_version": 2,
+        "artifact": artifact,
+        "purpose": "Configure the fixture without credentials.",
+        "platforms": ["darwin"],
+        "help_urls": [],
+        "required_tools": [],
+        "capabilities": [],
+        "inputs": [],
+        "steps": [
+            {
+                "id": "restart",
+                "use": "restart.notice@1",
+                "with": {"message": "Restart the harness."},
+            }
+        ],
+    }
+
+
 def _five_package_entries():
     packages = (
         ("skill", "review", "aart-skill-v1", "SKILL.md", b"---\nname: review\n---\n"),
         ("guideline", "python", "aart-guideline-v1", "python.md", b"Use Ruff.\n"),
         ("memory", "house", "aart-memory-v1", "house.md", b"Remember tests.\n"),
         ("mcp", "postgres", "aart-mcp-v1", "mcp.json", b'{"servers":{}}'),
-        ("hook", "guard", "aart-hook-v1", "hook.json", b'{"events":[]}'),
+        (
+            "hook",
+            "guard",
+            "aart-hook-v1",
+            "hook.json",
+            b'{"command":"./guard.sh","name":"guard"}',
+        ),
     )
     entries = [_json_entry("aart-source.json", _source_document())]
     for artifact_type, name, payload_format, payload_name, payload in packages:
@@ -329,7 +356,24 @@ class NativeSourceLoaderTest(unittest.TestCase):
         setup_entries.append(
             _json_entry("artifacts/mcp/postgres/setup/installer.json", {"schema_version": 1})
         )
+        self.assertEqual(_codes(_load(setup_entries)), ("artifact-invalid",))
+        setup_entries = _replaced(
+            setup_entries,
+            "artifacts/mcp/postgres/setup/installer.json",
+            _json_entry(
+                "artifacts/mcp/postgres/setup/installer.json",
+                _setup_recipe("mcp/postgres"),
+            ),
+        )
+        setup_entries.append(
+            _entry("artifacts/mcp/postgres/SETUP.md", b"Manual fixture setup.\n")
+        )
         self.assertEqual(len(_unwrap(_load(setup_entries)).artifacts), 5)
+
+        root_manual_without_setup = _five_package_entries() + [
+            _entry("artifacts/mcp/postgres/SETUP.md", b"Orphaned manual.\n")
+        ]
+        self.assertEqual(_codes(_load(root_manual_without_setup)), ("artifact-invalid",))
 
     def test_rejects_malformed_payloads_undeclared_setup_and_bad_provenance(self):
         base = _five_package_entries()

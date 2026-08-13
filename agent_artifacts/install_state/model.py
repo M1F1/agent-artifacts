@@ -1,10 +1,10 @@
-"""Frozen installation-state v2 and reviewed migration values."""
+"""Frozen installation-state v2 values."""
 
 from __future__ import annotations
 
 import posixpath
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal
 
 from agent_artifacts.configuration.model import SourceKind, git_location_parts
@@ -17,7 +17,7 @@ from agent_artifacts.domain.identifiers import (
 )
 from agent_artifacts.domain.result import Ok
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
-from agent_artifacts.protocol.json import JsonObject, JsonValue, canonical_json_bytes
+from agent_artifacts.protocol.json import JsonValue
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.semver import SemVer
 
@@ -40,7 +40,6 @@ _HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _LOCAL_REVISION_RE = re.compile(r"^local(?::[0-9a-f]{64})?$")
 _SETUP_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
 _ARTIFACT_KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
-_LEGACY_SOURCE_RE = re.compile(r"^(?:main|pin):[A-Za-z0-9._-]+$")
 _MAX_STATE_BYTES = 10 * 1024 * 1024
 _EFFECT_KINDS = frozenset(
     {
@@ -330,200 +329,19 @@ class InstallState:
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyMigrationCandidate:
-    legacy_artifact: str
-    legacy_type: str
-    legacy_profile: str
-    legacy_source: str
-    source: SourceEvidence
-    artifact: ArtifactEvidence
-    profile_version: int
-    effects: tuple[EffectProof, ...]
-    setup_state_ref: str | None = None
-    # Legacy proofs deliberately stay outside InstallationRecord. 0.1.x hashed raw
-    # file bytes and repr(merge_value), while v2 hashes framed snapshots/canonical JSON.
-    legacy_file_digests: tuple[tuple[str, str], ...] = ()
-    legacy_merge_value_hash: str | None = None
-
-    def __post_init__(self) -> None:
-        if (
-            _SLUG_RE.fullmatch(self.legacy_artifact) is None
-            or self.legacy_type not in _ARTIFACT_KINDS
-            or _SLUG_RE.fullmatch(self.legacy_profile) is None
-            or not (
-                _LEGACY_SOURCE_RE.fullmatch(self.legacy_source) is not None
-                or (
-                    self.legacy_source.startswith("local:")
-                    and posixpath.isabs(self.legacy_source.removeprefix("local:"))
-                    and posixpath.normpath(self.legacy_source.removeprefix("local:"))
-                    == self.legacy_source.removeprefix("local:")
-                )
-            )
-            or self.artifact.identity.kind != self.legacy_type
-            or self.artifact.identity.name != self.legacy_artifact
-            or not isinstance(self.profile_version, int)
-            or isinstance(self.profile_version, bool)
-            or self.profile_version < 1
-            or self.profile_version > 2**63 - 1
-            or any(not isinstance(effect, EffectProof) for effect in self.effects)
-            or any(
-                not _one_line(destination) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
-                for destination, digest in self.legacy_file_digests
-            )
-            or len({destination for destination, _digest in self.legacy_file_digests})
-            != len(self.legacy_file_digests)
-            or (
-                self.legacy_merge_value_hash is not None
-                and re.fullmatch(r"sha256:[0-9a-f]{64}", self.legacy_merge_value_hash) is None
-            )
-            or (
-                self.setup_state_ref is not None
-                and _SETUP_REF_RE.fullmatch(self.setup_state_ref) is None
-            )
-        ):
-            raise ValueError("legacy migration candidate is invalid")
-
-    @property
-    def legacy_key(self) -> tuple[str, str, str, str]:
-        return (
-            self.legacy_type,
-            self.legacy_artifact,
-            self.legacy_profile,
-            self.legacy_source,
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class InstallStatePaths:
     scope: InstallScope
-    legacy_path: str
     destination_path: str
-    backup_directory: str
-    journal_directory: str
     lock_path: str
 
     def __post_init__(self) -> None:
         if self.scope not in {"project", "user"}:
             raise ValueError("state scope is invalid")
         for path in (
-            self.legacy_path,
             self.destination_path,
-            self.backup_directory,
-            self.journal_directory,
             self.lock_path,
         ):
             if not posixpath.isabs(path) or posixpath.normpath(path) != path:
                 raise ValueError("state paths must be normalized absolute paths")
-        if (self.scope == "project") != (self.legacy_path == self.destination_path):
-            raise ValueError("project state stays in place; user state must move to the data root")
-        if (
-            len(
-                {
-                    self.destination_path,
-                    self.backup_directory,
-                    self.journal_directory,
-                    self.lock_path,
-                }
-            )
-            != 4
-        ):
-            raise ValueError("state data, backup, journal, and lock paths must be distinct")
-
-
-@dataclass(frozen=True, slots=True)
-class StateMigrationPlan:
-    scope: InstallScope
-    legacy_path: str
-    destination_path: str
-    backup_path: str
-    journal_path: str
-    lock_path: str
-    expected_legacy_digest: ObjectDigest
-    replacement_digest: ObjectDigest
-    legacy_content: bytes
-    replacement: bytes
-    journal_content: bytes
-    review_digest: ObjectDigest
-
-    def __post_init__(self) -> None:
-        paths = (
-            self.legacy_path,
-            self.destination_path,
-            self.backup_path,
-            self.journal_path,
-            self.lock_path,
-        )
-        if (
-            self.scope not in {"project", "user"}
-            or any(not posixpath.isabs(path) or posixpath.normpath(path) != path for path in paths)
-            or not all(
-                _valid_digest(value)
-                for value in (
-                    self.expected_legacy_digest,
-                    self.replacement_digest,
-                    self.review_digest,
-                )
-            )
-        ):
-            raise ValueError("state migration plan is invalid")
-        if (self.scope == "project") != (self.legacy_path == self.destination_path):
-            raise ValueError("state migration scope/path relationship is invalid")
-        if len({self.destination_path, self.backup_path, self.journal_path, self.lock_path}) != 4:
-            raise ValueError(
-                "state migration data, backup, journal, and lock paths must be distinct"
-            )
-        if (
-            max(len(self.legacy_content), len(self.replacement), len(self.journal_content))
-            > _MAX_STATE_BYTES
-        ):
-            raise ValueError("state migration content exceeds the maximum supported size")
-        if (
-            sha256_bytes(self.legacy_content) != self.expected_legacy_digest
-            or sha256_bytes(self.replacement) != self.replacement_digest
-        ):
-            raise ValueError("state migration content does not match its reviewed digests")
-        review = JsonObject(
-            (
-                ("schema_version", 1),
-                ("scope", self.scope),
-                ("legacy_path", self.legacy_path),
-                ("destination_path", self.destination_path),
-                ("backup_path", self.backup_path),
-                ("journal_path", self.journal_path),
-                ("legacy_digest", str(self.expected_legacy_digest)),
-                ("replacement_digest", str(self.replacement_digest)),
-            )
-        )
-        if json_digest(review) != self.review_digest:
-            raise ValueError("state migration review digest does not bind the plan")
-        expected_journal = canonical_json_bytes(
-            JsonObject(
-                (
-                    ("schema_version", 1),
-                    ("review_digest", str(self.review_digest)),
-                    ("scope", self.scope),
-                    ("legacy_path", self.legacy_path),
-                    ("destination_path", self.destination_path),
-                    ("backup_path", self.backup_path),
-                    ("legacy_digest", str(self.expected_legacy_digest)),
-                    ("replacement_digest", str(self.replacement_digest)),
-                )
-            )
-        )
-        if self.journal_content != expected_journal:
-            raise ValueError("state migration journal does not bind the reviewed plan")
-
-
-@dataclass(frozen=True, slots=True)
-class MigrationReceipt:
-    plan: StateMigrationPlan
-    changed: bool
-
-    def current(self) -> MigrationReceipt:
-        return replace(self, changed=False)
-
-
-@dataclass(frozen=True, slots=True)
-class RollbackReceipt:
-    review_digest: ObjectDigest
-    changed: bool
+        if self.destination_path == self.lock_path:
+            raise ValueError("state data and lock paths must be distinct")

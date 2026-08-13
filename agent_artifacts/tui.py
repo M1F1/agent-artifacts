@@ -12,7 +12,7 @@ Two front-ends, one body:
   full-screen selector and **degrades to a plain ``input()``/``print()`` flow** when curses
   is unavailable or fails to initialise (no TTY, dumb terminal, ``curses`` import/`setupterm`
   error). Either way the *same* selection→Request→dispatch path runs.
-* ``_run_text(read, write, ...)`` — the fallback flow, factored so I/O and source resolution are
+* ``_run_text(read, write, ...)`` — the fallback flow, factored so I/O and source selection are
   injectable. Text and curses fold explicit input events into the same immutable
   :class:`~agent_artifacts.wizard.WizardSession`, then map only a finalized Review to the command
   core. This keeps the complete interaction headlessly testable without a real terminal.
@@ -33,7 +33,6 @@ from dataclasses import dataclass, replace
 from typing import Callable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from . import __version__
-from .catalog import resolve_bundle
 from .compatibility import check_profile_compatibility
 from .configuration.model import (
     ConfiguredSource,
@@ -101,7 +100,6 @@ from .setup import (
     render_setup_outcome,
     render_setup_review,
 )
-from .source import open_source
 from .sources.model import HealthStatus, SourceHealth
 from .tui_failures import (
     WizardOperation,
@@ -182,31 +180,20 @@ ROLES: Tuple[_RoleChoice, ...] = (
     _RoleChoice(
         "user",
         "User",
-        "Install, update, or remove harness artifacts from subscribed catalogs.",
+        "Install, update, or remove harness artifacts from configured registries.",
     ),
     _RoleChoice(
         "maintainer",
         "Maintainer",
-        "Do the same, plus curate the catalog and manage third-party upstreams.",
+        "Do the same, plus curate a canonical registry checkout.",
     ),
-)
-
-MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
-    ("health", "Show catalog health"),
-    ("validate", "Validate the local catalog"),
-    ("add", "Add one upstream from GitHub"),
-    ("import", "Scan and import artifacts from GitHub"),
-    ("check", "Check tracked upstreams"),
-    ("update", "Preview and update tracked upstreams"),
-    ("user", "Enter User workflows"),
 )
 
 CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("validate", "Validate canonical registry protocol and generated evidence"),
     ("scaffold", "Scaffold one native artifact package for review"),
     ("promote-native", "Promote one reviewed native Git reference"),
-    ("import-foreign", "Convert a pinned legacy catalog with explicit warnings"),
-    ("update-upstream", "Check and review one locked native upstream update"),
+    ("refresh-native", "Check and review one locked native reference update"),
     ("lock", "Resolve approved references into the committed lock"),
     ("build", "Build the payload-free marketplace index"),
     ("audit", "Audit review, provenance, setup, license, and security evidence"),
@@ -229,6 +216,12 @@ ReadFn = Callable[[str], str]
 WriteFn = Callable[[str], None]
 SourceFactory = Callable[[Request], Result]
 DispatchFn = Callable[[Request], int]
+
+
+def _unsupported_source_factory(_request: Request) -> Result:
+    """Defend the removed direct-catalog seam for private legacy test callers."""
+
+    raise RuntimeError("direct catalog sources have been removed")
 SourceFinalizeFn = Callable[[SourceManagementRequest], DomainResult[object]]
 SourceAdditionFinalizeFn = Callable[[SourceAdditionRequest], DomainResult[object]]
 ConsumerServiceFactory = Callable[[UserConfiguration], DomainResult[ConsumerApplicationService]]
@@ -949,99 +942,15 @@ def _run_post_install_setup(
     read: ReadFn,
     write: WriteFn,
 ) -> int:
-    """Run the reviewed setup queue in the foreground after the core install succeeds."""
+    """Reject the removed catalog setup path.
 
-    if not queue:
-        return 0
-    from .commands import setup as setup_command
+    Canonical setup is prepared and finalized by ``ConsumerApplicationService`` above.  This
+    private shim only protects embedders that still call the former post-install hook.
+    """
 
-    setup_request = replace(
-        request,
-        command="setup",
-        setup_action="run",
-        yes=False,
-        dry_run=False,
-    )
-    result = setup_command.run_queue(
-        queue,
-        scope_root=scope_root,
-        target_root=os.path.abspath(request.user_home or os.path.expanduser("~")),
-        request=setup_request,
-        read=read,
-        write=write,
-    )
-    if isinstance(result, Err):
-        return _write_setup_stage_failure(result, request, write, manual=queue)
-    queue_by_key = {
-        (item.artifact_type, item.artifact_name, item.profile, item.scope): item for item in queue
-    }
-    for record in result:
-        item = queue_by_key.get(
-            (record.artifact_type, record.artifact_name, record.profile, record.scope)
-        )
-        for line in render_setup_outcome(
-            artifact=f"{record.artifact_type}/{record.artifact_name}",
-            profile=record.profile,
-            scope=record.scope,
-            status=record.status,
-            detail=record.detail,
-            retry_command=record.retry_command,
-            rollback_command=record.rollback_command,
-            recovery=recovery_messages(record),
-            manual=None if item is None else manual_reference(item),
-        ):
-            write(line)
-    incomplete = tuple(
-        record for record in result if record.status not in ("configured", "already_configured")
-    )
-    if not incomplete:
-        return 0
-    try:
-        answer = read("Retry incomplete setup now? [Y/n]: ").strip().lower()
-    except EOFError:
-        answer = "n"
-    if answer in ("", "y", "yes"):
-        failed_keys = {
-            (record.artifact_type, record.artifact_name, record.profile) for record in incomplete
-        }
-        retry_queue = tuple(
-            item
-            for item in queue
-            if (item.artifact_type, item.artifact_name, item.profile) in failed_keys
-        )
-        retried = setup_command.run_queue(
-            retry_queue,
-            scope_root=scope_root,
-            target_root=os.path.abspath(request.user_home or os.path.expanduser("~")),
-            request=replace(setup_request, setup_action="retry"),
-            read=read,
-            write=write,
-        )
-        if isinstance(retried, Err):
-            # Each retried item already carried its own outcome record and manual route.
-            return _write_setup_stage_failure(retried, request, write)
-        for record in retried:
-            item = queue_by_key.get(
-                (record.artifact_type, record.artifact_name, record.profile, record.scope)
-            )
-            for line in render_setup_outcome(
-                artifact=f"{record.artifact_type}/{record.artifact_name}",
-                profile=record.profile,
-                scope=record.scope,
-                status=record.status,
-                detail=record.detail,
-                retry_command=record.retry_command,
-                rollback_command=record.rollback_command,
-                recovery=recovery_messages(record),
-                manual=None if item is None else manual_reference(item),
-            ):
-                write(line)
-        return (
-            0
-            if all(record.status in ("configured", "already_configured") for record in retried)
-            else 1
-        )
-    return 1
+    del queue, request, scope_root, read
+    write("error: direct catalog setup has been removed; use the canonical consumer workflow.")
+    return 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -1411,7 +1320,7 @@ def _run_user_text(
     read: ReadFn = input,
     write: WriteFn = print,
     *,
-    source_factory: SourceFactory = open_source,
+    source_factory: SourceFactory = _unsupported_source_factory,
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
@@ -1427,7 +1336,7 @@ def _run_user_text(
     Injection points (so the flow is testable with no real terminal):
 
     * ``read`` / ``write`` — the I/O channels (default ``input`` / ``print``).
-    * ``source_factory`` — ``(Request) -> Result[Source]`` (default :func:`open_source`); a
+    * ``source_factory`` — retained only for private legacy callers; canonical browsing ignores it.
       test points this at a fixture-backed source.
     * ``source_dir`` / ``repo`` / ``project`` — threaded into every `Request` so the catalog
       shown and the command dispatched resolve against the **same** source (offline-friendly).
@@ -1626,49 +1535,6 @@ def _run_user_text(
     )
 
 
-def _legacy_source_stage_view(
-    *,
-    source_dir: Optional[str],
-    repo: Optional[str],
-) -> SourceStageView:
-    """Describe one explicitly requested legacy source without touching the executable checkout."""
-
-    if source_dir is not None:
-        source = ConfiguredSource(
-            SourceAlias("explicit-local"),
-            SourceKind.SOURCE_LOCAL,
-            os.path.abspath(source_dir),
-            None,
-            True,
-        )
-    elif repo is not None:
-        source = ConfiguredSource(
-            SourceAlias("explicit-git"),
-            SourceKind.SOURCE_GIT,
-            f"https://github.com/{repo.removesuffix('.git')}.git",
-            "main",
-            True,
-        )
-    else:
-        raise ValueError("legacy source stage requires an explicit --source or --repo")
-    baseline = default_user_configuration()
-    configuration = UserConfiguration(
-        baseline.schema_version,
-        (source,),
-        None,
-        baseline.sync,
-        baseline.reporting,
-    )
-    projected = build_source_stage(
-        configuration,
-        OrganizationPolicy(1),
-        {source.alias: SourceHealth(HealthStatus.MISSING, None, None)},
-        first_run=True,
-    )
-    assert isinstance(projected, DomainOk)
-    return projected.value
-
-
 def _empty_source_stage_view() -> SourceStageView:
     """Return the real no-source state for private frontend tests without filesystem effects."""
 
@@ -1691,11 +1557,14 @@ def _runtime_source_stage_context(
     """Load configured sources and current managed health at the imperative TUI boundary."""
 
     if source_dir is not None or repo is not None:
-        return DomainOk(
-            _RuntimeSourceStage(
-                _legacy_source_stage_view(source_dir=source_dir, repo=repo),
-                None,
-                None,
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("legacy-source-rejected"),
+                    Severity.ERROR,
+                    "direct catalog directories and repository aliases are no longer supported",
+                    remediation=("add a canonical registry in Sources instead",),
+                ),
             )
         )
 
@@ -2087,68 +1956,6 @@ def _prompt_source_addition_text(
         return WizardInput("back")
 
 
-def _selected_legacy_source_arguments(
-    view: SourceStageView,
-    selection: SourceSelection,
-    *,
-    source_dir: Optional[str],
-    repo: Optional[str],
-) -> DomainResult[Tuple[Optional[str], Optional[str]]]:
-    """Bridge one selected source to the 0.1 command core until TUI02 owns source unions."""
-
-    if len(selection.enabled_aliases) != 1:
-        return DomainErr(
-            (
-                Diagnostic(
-                    DiagnosticCode("source-selection-invalid"),
-                    Severity.ERROR,
-                    "the current consumer view accepts one source; select one source before "
-                    "continuing to artifact choices",
-                    remediation=("use aart source commands to manage the wider source set",),
-                ),
-            )
-        )
-    selected = selection.enabled_aliases[0]
-    row = next((row for row in view.rows if row.source.alias == selected), None)
-    if row is None:
-        return DomainErr(
-            (
-                Diagnostic(
-                    DiagnosticCode("source-selection-invalid"),
-                    Severity.ERROR,
-                    "selected source is absent from the reviewed source view",
-                ),
-            )
-        )
-    if row.source.kind is SourceKind.SOURCE_LOCAL:
-        return DomainOk((row.source.location, None))
-    if row.source.kind is SourceKind.REGISTRY_GIT:
-        return DomainErr(
-            (
-                Diagnostic(
-                    DiagnosticCode("source-incompatible"),
-                    Severity.ERROR,
-                    f"registry {selected} is ready for source management, but artifact browsing "
-                    "requires the federated marketplace view",
-                ),
-            )
-        )
-    parts = git_location_parts(row.source.location)
-    if parts is not None and parts[0] == "github.com" and row.source.ref == "main":
-        return DomainOk((None, parts[1]))
-    return DomainErr(
-        (
-            Diagnostic(
-                DiagnosticCode("source-incompatible"),
-                Severity.ERROR,
-                f"source {selected} requires its managed snapshot before this consumer view can "
-                "open its Git host",
-                remediation=("sync the source and retry",),
-            ),
-        )
-    )
-
-
 def _finalize_source_selection(
     session: WizardSession,
     source_finalizer: Optional[SourceFinalizeFn],
@@ -2456,6 +2263,7 @@ def _load_user_wizard_read_model(
     user_home: Optional[str],
     consumer_service: Optional[ConsumerApplicationService] = None,
 ) -> DomainResult[_UserWizardReadModel]:
+    del source_factory, source_dir, repo
     assert session.action is not None
     base_profiles = load_profiles(project)
     resolved_home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -2468,175 +2276,58 @@ def _load_user_wizard_read_model(
             for name, profile in base_profiles.items()
         }
     )
-    if consumer_service is not None:
-        selected_sources = (
-            () if session.source_selection is None else session.source_selection.enabled_aliases
+    if consumer_service is None:
+        return DomainErr(
+            (
+                Diagnostic(
+                    DiagnosticCode("canonical-consumer-unavailable"),
+                    Severity.ERROR,
+                    "the canonical consumer service is unavailable",
+                    remediation=("configure and synchronize a canonical registry source",),
+                ),
+            )
         )
-        projected = consumer_service.browse(
-            MarketplaceTarget(
-                tuple(sorted(session.profiles)),
-                "darwin" if sys.platform == "darwin" else "linux",
-                scope,  # type: ignore[arg-type]
-                session.install_mode,  # type: ignore[arg-type]
-            ),
+    selected_sources = (
+        () if session.source_selection is None else session.source_selection.enabled_aliases
+    )
+    projected = consumer_service.browse(
+        MarketplaceTarget(
+            tuple(sorted(session.profiles)),
+            "darwin" if sys.platform == "darwin" else "linux",
+            scope,  # type: ignore[arg-type]
+            session.install_mode,  # type: ignore[arg-type]
+        ),
+        sources=selected_sources,
+    )
+    if isinstance(projected, DomainErr):
+        return projected
+    rows = projected.value
+    if session.action in ("update", "uninstall"):
+        rows = tuple(row for row in rows if row.installed)
+    choices = tuple(_canonical_choice(row) for row in rows)
+    if session.action == "install":
+        choices += _canonical_collection_choices(
+            consumer_service.context.catalog,
+            rows,
             sources=selected_sources,
         )
-        if isinstance(projected, DomainErr):
-            return projected
-        rows = projected.value
-        if session.action in ("update", "uninstall"):
-            rows = tuple(row for row in rows if row.installed)
-        choices = tuple(_canonical_choice(row) for row in rows)
-        if session.action == "install":
-            choices += _canonical_collection_choices(
-                consumer_service.context.catalog,
-                rows,
-                sources=selected_sources,
-            )
-        return DomainOk(
-            _UserWizardReadModel(
-                Catalog(artifacts={}, bundles={}),
-                None,
-                choices,
-                profiles_map,
-                "federated configured marketplace",
-                consumer_service.context.store_paths.root,
-                rows,
-            )
-        )
-    request_project = project if scope == "project" else None
-    catalog = Catalog(artifacts={}, bundles={})
-    source_label = ""
-    source_root = ""
-    if session.action in ("install", "update"):
-        source_result = source_factory(
-            Request(
-                command=session.action,
-                source_dir=source_dir,
-                repo=repo,
-                project=request_project,
-                scope=scope,  # type: ignore[arg-type]
-                user_home=user_home,
-            )
-        )
-        if isinstance(source_result, Err):
-            return _legacy_wizard_read_failure(source_result)
-        source = source_result.value
-        catalog_result = source.catalog()
-        if isinstance(catalog_result, Err):
-            return _legacy_wizard_read_failure(catalog_result)
-        catalog = catalog_result.value
-        source_label = source.label()
-        source_root = getattr(source, "root", source_label.removeprefix("local:"))
-        if (
-            session.action == "install"
-            and session.install_mode == "symlink"
-            and not source_label.startswith("local:")
-        ):
-            return DomainErr(
-                (
-                    Diagnostic(
-                        DiagnosticCode("install-mode-incompatible"),
-                        Severity.ERROR,
-                        "Symlink requires a durable local catalog.",
-                        remediation=(
-                            "choose a local catalog with aart install --source DIR --link",
-                        ),
-                        details=(("legacy_exit_code", "2"),),
-                    ),
-                )
-            )
-    elif session.action == "uninstall":
-        source_result = source_factory(
-            Request(
-                command="uninstall",
-                source_dir=source_dir,
-                repo=repo,
-                project=request_project,
-                scope=scope,  # type: ignore[arg-type]
-                user_home=user_home,
-            )
-        )
-        if not isinstance(source_result, Err):
-            catalog_result = source_result.value.catalog()
-            if not isinstance(catalog_result, Err):
-                catalog = catalog_result.value
-                source_label = source_result.value.label()
-                source_root = source_result.value.root
-
-    manifest: Optional[Manifest] = None
-    if session.action in ("update", "uninstall"):
-        manifest_result = _load_manifest_for_action(
-            session.action,
-            source_dir=source_dir,
-            repo=repo,
-            project=request_project,
-            scope=scope,  # type: ignore[arg-type]
-            user_home=user_home,
-        )
-        if isinstance(manifest_result, Err):
-            return _legacy_wizard_read_failure(manifest_result)
-        manifest = manifest_result.value
-    choices = build_action_choices(
-        session.action,
-        catalog,
-        manifest,
-        session.profiles,
-        profiles_map,
-        install_mode=session.install_mode,  # type: ignore[arg-type]
-        scope=scope,  # type: ignore[arg-type]
-    )
     return DomainOk(
         _UserWizardReadModel(
-            catalog,
-            manifest,
+            Catalog(artifacts={}, bundles={}),
+            None,
             choices,
             profiles_map,
-            source_label,
-            source_root,
+            "federated configured marketplace",
+            consumer_service.context.store_paths.root,
+            rows,
         )
     )
 
 
-def _legacy_wizard_read_failure(result: Err) -> DomainErr:
-    """Name the sole 0.1 command-result bridge used by the canonical loader."""
+def _stage_failure_exit_code(_failure: WizardStageFailure) -> int:
+    """All canonical TUI stage failures have the stable nonzero exit code 2."""
 
-    return DomainErr(
-        (
-            Diagnostic(
-                DiagnosticCode("legacy-wizard-read-failed"),
-                Severity.ERROR,
-                result.reason,
-                details=(("legacy_exit_code", str(result.code)),),
-            ),
-        )
-    )
-
-
-def _stage_failure_exit_code(failure: WizardStageFailure) -> int:
-    """Read an explicit nonzero compatibility exit code carried by one old command adapter."""
-
-    for diagnostic in failure.diagnostics:
-        legacy_code = dict(diagnostic.details).get("legacy_exit_code")
-        if legacy_code is None:
-            continue
-        try:
-            parsed = int(legacy_code)
-        except ValueError:
-            continue
-        if parsed > 0:
-            return parsed
     return 2
-
-
-def _has_compatibility_exit_code(failure: WizardStageFailure) -> bool:
-    """Whether this record crossed a legacy command boundary with a preserved exit status."""
-
-    return any(
-        key == "legacy_exit_code"
-        for diagnostic in failure.diagnostics
-        for key, _value in diagnostic.details
-    )
 
 
 def _confirm_wizard_quit(session: WizardSession, read: ReadFn, write: WriteFn) -> bool:
@@ -2862,8 +2553,6 @@ def _run_user_text_wizard(
                     if recovery.kind == "back":
                         session = wizard_back(session)
                         continue
-                    if _has_compatibility_exit_code(failure):
-                        return _stage_failure_exit_code(failure)
                     if _confirm_wizard_quit(session, read, write):
                         return _cancel(write)
                     continue
@@ -2915,80 +2604,43 @@ def _run_user_text_wizard(
             session = wizard_advance(session)
             continue
         if session.current == "review":
-            chosen: Tuple[_Choice, ...] = ()
-            if read_model is not None:
-                by_key = {_basket_key(choice): choice for choice in read_model.choices}
-                chosen = tuple(by_key[item.key] for item in session.basket if item.key in by_key)
-            request = _build_request(
-                session.action or "status",
-                chosen,
-                session.profiles,
-                source_dir=source_dir,
-                repo=repo,
-                project=project,
-                install_mode=session.install_mode,  # type: ignore[arg-type]
-                scope=session.scope,  # type: ignore[arg-type]
-                user_home=user_home,
+            assert consumer_service is not None
+            selected_keys = {item.key for item in session.basket}
+            selected_coordinates = (
+                set()
+                if read_model is None
+                else {
+                    row.coordinate
+                    for row in read_model.marketplace_rows
+                    if row.key in selected_keys
+                }
             )
-            confirmation: Optional[InstallConfirmation] = None
-            canonical_review: Optional[ConsumerReview] = None
-            if consumer_service is not None:
-                coordinates: tuple = ()
-                if read_model is not None:
-                    selected_keys = {item.key for item in session.basket}
-                    selected_coordinates = {
-                        row.coordinate
-                        for row in read_model.marketplace_rows
-                        if row.key in selected_keys
-                    }
-                    for collection in consumer_service.context.catalog.collections:
-                        if str(collection.coordinate) in selected_keys:
-                            selected_coordinates.update(collection.members)
-                    coordinates = tuple(sorted(selected_coordinates, key=str))
-                prepared = consumer_service.prepare(
-                    ConsumerActionRequest(
-                        session.action or "status",  # type: ignore[arg-type]
-                        coordinates,
-                        tuple(sorted(session.profiles)),
-                        session.scope,  # type: ignore[arg-type]
-                        session.install_mode,  # type: ignore[arg-type]
-                    )
+            for collection in consumer_service.context.catalog.collections:
+                if str(collection.coordinate) in selected_keys:
+                    selected_coordinates.update(collection.members)
+            prepared = consumer_service.prepare(
+                ConsumerActionRequest(
+                    session.action or "status",  # type: ignore[arg-type]
+                    tuple(sorted(selected_coordinates, key=str)),
+                    tuple(sorted(session.profiles)),
+                    session.scope,  # type: ignore[arg-type]
+                    session.install_mode,  # type: ignore[arg-type]
                 )
-                if isinstance(prepared, DomainErr):
-                    recovered = _recover_text_stage_failure(
-                        wizard_stage_failure(session, "review", prepared, recoverable=False),
-                        session,
-                        read,
-                        write,
-                    )
-                    if isinstance(recovered, int):
-                        return recovered
-                    session = recovered
-                    continue
-                canonical_review = prepared.value
-                for line in render_consumer_review(canonical_review):
-                    write(line)
-            elif session.action == "install":
-                assert read_model is not None
-                confirmation = build_install_confirmation(
-                    source_label=read_model.source_label,
-                    source_root=read_model.source_root,
-                    project=project,
-                    profiles=session.profiles,
-                    requested_mode=session.install_mode,  # type: ignore[arg-type]
-                    catalog=read_model.catalog,
-                    choices=chosen,
-                    profiles_map=read_model.profiles_map,
-                    scope=session.scope,  # type: ignore[arg-type]
-                    user_home=user_home,
+            )
+            if isinstance(prepared, DomainErr):
+                recovered = _recover_text_stage_failure(
+                    wizard_stage_failure(session, "review", prepared, recoverable=False),
+                    session,
+                    read,
+                    write,
                 )
-                for line in render_install_confirmation(confirmation):
-                    write(line)
-            else:
-                for line in _user_review_lines(
-                    session, read_model, project=project, user_home=user_home
-                ):
-                    write(line)
+                if isinstance(recovered, int):
+                    return recovered
+                session = recovered
+                continue
+            canonical_review = prepared.value
+            for line in render_consumer_review(canonical_review):
+                write(line)
             write("Finalize applies this reviewed action; Back edits without changes.")
             review_answer = _read_line(read, "Finalize? [y/N] (b=back, q=quit): ")
             answer = "q" if review_answer is None else review_answer.strip().lower()
@@ -3017,40 +2669,25 @@ def _run_user_text_wizard(
                     return recovered
                 session = recovered
                 continue
-            if canonical_review is not None:
-                finalized = consumer_service.finalize(  # type: ignore[union-attr]
-                    canonical_review,
-                    canonical_review.review_digest,
+            finalized = consumer_service.finalize(canonical_review, canonical_review.review_digest)
+            if isinstance(finalized, DomainErr):
+                recovered = _recover_text_stage_failure(
+                    wizard_stage_failure(session, "finalize", finalized, recoverable=False),
+                    session,
+                    read,
+                    write,
                 )
-                if isinstance(finalized, DomainErr):
-                    recovered = _recover_text_stage_failure(
-                        wizard_stage_failure(session, "finalize", finalized, recoverable=False),
-                        session,
-                        read,
-                        write,
-                    )
-                    if isinstance(recovered, int):
-                        return recovered
-                    session = recovered
-                    continue
-                for line in render_consumer_outcome(finalized.value):
-                    write(line)
-                return _complete_canonical_consumer_action(
-                    consumer_service,  # type: ignore[arg-type]
-                    canonical_review,
-                    finalized.value,
-                    reporting_service,
-                    read=read,
-                    write=write,
-                )
-            outcome = _dispatch_result(request)
-            code = _render_result(outcome, write)
-            if code != 0 or confirmation is None:
-                return code
-            return _run_post_install_setup(
-                confirmation.setup_queue,
-                request,
-                scope_root=confirmation.destination_root,
+                if isinstance(recovered, int):
+                    return recovered
+                session = recovered
+                continue
+            for line in render_consumer_outcome(finalized.value):
+                write(line)
+            return _complete_canonical_consumer_action(
+                consumer_service,
+                canonical_review,
+                finalized.value,
+                reporting_service,
                 read=read,
                 write=write,
             )
@@ -3060,7 +2697,7 @@ def _run_text(
     read: ReadFn = input,
     write: WriteFn = print,
     *,
-    source_factory: SourceFactory = open_source,
+    source_factory: SourceFactory = _unsupported_source_factory,
     source_dir: Optional[str] = None,
     repo: Optional[str] = None,
     project: Optional[str] = None,
@@ -3077,15 +2714,15 @@ def _run_text(
 ) -> int:
     """Persistent onboarding/role wizard shared by the fallback and headless tests."""
 
+    if repo is not None:
+        write(
+            "error: direct legacy repository selection is no longer supported; "
+            "add a canonical registry in Sources instead."
+        )
+        return 2
     session = initial_session()
     buffered_role: Optional[str] = None
-    legacy_source_dir = source_dir
-    legacy_repo = repo
-    stage_view = source_stage_view or (
-        _legacy_source_stage_view(source_dir=source_dir, repo=repo)
-        if source_dir is not None or repo is not None
-        else _empty_source_stage_view()
-    )
+    stage_view = source_stage_view or _empty_source_stage_view()
     while True:
         if session.current == "onboarding":
             for line in onboarding_lines("text"):
@@ -3107,18 +2744,15 @@ def _run_text(
                 session = wizard_back(session)
                 continue
             session = wizard_select(session, "role", role)
-            if role == "maintainer" and source_dir is None and repo is None:
+            if role == "maintainer" and repo is None and (
+                source_dir is None or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+            ):
                 session = use_current_checkout(session)
             session = wizard_advance(session)
             continue
         if session.current == "source":
-            if source_stage_view is None and (source_dir is not None or repo is not None):
-                selected_source: WizardInput | SourceSelection = _automatic_source_selection(
-                    stage_view
-                )
-            else:
-                _write_wizard_header(session, write)
-                selected_source = _prompt_source_stage_text(session, stage_view, read, write)
+            _write_wizard_header(session, write)
+            selected_source = _prompt_source_stage_text(session, stage_view, read, write)
             if isinstance(selected_source, WizardInput):
                 if selected_source.kind == "back":
                     session = wizard_back(session)
@@ -3189,26 +2823,13 @@ def _run_text(
                     active_reporting_service = None
                 else:
                     active_reporting_service = loaded_reporting.value
-            if active_consumer_service is None or session.role != "user":
-                source_arguments = _selected_legacy_source_arguments(
-                    stage_view,
-                    selected_source,
-                    source_dir=legacy_source_dir,
-                    repo=legacy_repo,
-                )
-                if isinstance(source_arguments, DomainErr):
-                    recovered = _recover_text_stage_failure(
-                        _source_stage_failure(session, source_arguments),
-                        session,
-                        read,
-                        write,
-                    )
-                    if isinstance(recovered, int):
-                        return recovered
-                    session = recovered
-                    continue
-                source_dir, repo = source_arguments.value
             if session.role == "user":
+                if active_consumer_service is None:
+                    write(
+                        "error: canonical consumer services are unavailable; "
+                        "restart after configuring a registry source."
+                    )
+                    return 2
                 result = _run_user_text_wizard(
                     session,
                     read,
@@ -3251,10 +2872,12 @@ def _run_text(
                 read,
                 write,
                 source_factory=source_factory,
-                source_dir=os.path.abspath(os.getcwd())
-                if session.maintainer_checkout
-                else source_dir,
-                repo=None if session.maintainer_checkout else repo,
+                source_dir=(
+                    os.path.abspath(source_dir or os.getcwd())
+                    if session.maintainer_checkout
+                    else source_dir
+                ),
+                repo=None,
                 project=project,
                 user_home=user_home,
                 source_finalizer=source_finalizer,
@@ -3504,7 +3127,7 @@ def _prompt_curation_request(
             review_policy=policy or "manual-review-v1",
         )
 
-    if action is CurationAction.UPDATE_UPSTREAM:
+    if action is CurationAction.REFRESH_NATIVE:
         kind = value("Locked artifact kind: ", "kind")
         if isinstance(kind, WizardInput):
             return kind
@@ -3512,59 +3135,6 @@ def _prompt_curation_request(
         if isinstance(name, WizardInput):
             return name
         return CurationRequest(action, workspace, kind=kind, name=name)
-
-    if action is CurationAction.IMPORT_FOREIGN:
-        legacy = value("Pinned legacy Git URL or local checkout: ", "legacy_source")
-        if isinstance(legacy, WizardInput):
-            return legacy
-        origin = value(
-            "Origin URL for a local checkout (blank for remote): ",
-            "origin_url",
-            required=False,
-        )
-        if isinstance(origin, WizardInput):
-            return origin
-        ref = value("Legacy Git ref [HEAD]: ", "ref", default="HEAD")
-        if isinstance(ref, WizardInput):
-            return ref
-        source_id = value("New registry/source ID: ", "source_id")
-        if isinstance(source_id, WizardInput):
-            return source_id
-        display_name = value("New registry display name: ", "display_name")
-        if isinstance(display_name, WizardInput):
-            return display_name
-        version = value("Imported artifact version [1.0.0]: ", "artifact_version", default="1.0.0")
-        if isinstance(version, WizardInput):
-            return version
-        profiles = _prompt_wizard_csv(
-            read,
-            write,
-            "Harness profiles (comma-separated): ",
-            current=existing.profiles if existing else (),
-        )
-        if isinstance(profiles, WizardInput):
-            return profiles
-        platforms = _prompt_wizard_csv(
-            read,
-            write,
-            "Platforms [darwin]: ",
-            current=existing.platforms if existing else (),
-            default=("darwin",),
-        )
-        if isinstance(platforms, WizardInput):
-            return platforms
-        return CurationRequest(
-            action,
-            workspace,
-            legacy_source=legacy,
-            origin_url=origin,
-            ref=ref or "HEAD",
-            source_id=source_id,
-            display_name=display_name,
-            artifact_version=version or "1.0.0",
-            profiles=profiles,
-            platforms=platforms,
-        )
 
     return CurationRequest(action, workspace)
 
@@ -3662,7 +3232,7 @@ def _run_canonical_maintainer_text(
                     session,
                     read,
                     write,
-                    source_factory=open_source,
+                    source_factory=_unsupported_source_factory,
                     source_dir=workspace,
                     repo=None,
                     project=project,
@@ -3680,7 +3250,7 @@ def _run_canonical_maintainer_text(
         action_name = session.maintainer_action
         assert action_name is not None and action_name != "user"
         action = CurationAction(action_name)
-        if session.current == "upstream_details":
+        if session.current == "native_details":
             previous_request = request
             try:
                 prompted = _prompt_curation_request(
@@ -3708,7 +3278,7 @@ def _run_canonical_maintainer_text(
             )
             session = replace(
                 session,
-                basket=(BasketItem("upstream", label, label),),
+                basket=(BasketItem("reference", label, label),),
                 revision=session.revision + 1,
             )
             session = wizard_advance(session)
@@ -3799,251 +3369,33 @@ def _run_maintainer_text(
     curation_service_factory: Optional[CurationServiceFactory] = None,
 ) -> int | WizardSession:
     """Drive Maintainer stages and expose apply only at the Review Finalize boundary."""
-    del source_factory  # maintainer source resolution belongs to the upstream command core
-    from .commands import upstream
-
-    catalog_root = os.path.abspath(source_dir or ".")
-    if _is_canonical_maintainer_workspace(catalog_root):
-        return _run_canonical_maintainer_text(
-            session,
-            read,
-            write,
-            workspace=catalog_root,
-            project=project,
-            user_home=user_home,
-            source_finalizer=source_finalizer,
-            consumer_service_factory=consumer_service_factory,
-            reporting_service_factory=reporting_service_factory,
-            consumer_configuration=consumer_configuration,
-            curation_service_factory=curation_service_factory,
+    del source_factory, repo
+    workspace = os.path.abspath(source_dir or os.getcwd())
+    if not _is_canonical_maintainer_workspace(workspace):
+        write(
+            "error: maintainer mode accepts only a canonical registry checkout; "
+            "initialize one with `aart registry init`."
         )
-    context_request = Request(
-        command="upstream",
-        upstream_action="validate",
-        source_dir=catalog_root,
-        repo=repo,
+        return 2
+    return _run_canonical_maintainer_text(
+        session,
+        read,
+        write,
+        workspace=workspace,
+        project=project,
+        user_home=user_home,
+        source_finalizer=source_finalizer,
+        consumer_service_factory=consumer_service_factory,
+        reporting_service_factory=reporting_service_factory,
+        consumer_configuration=consumer_configuration,
+        curation_service_factory=curation_service_factory,
     )
-    context_result = upstream.load_maintainer_context(context_request)
-    if isinstance(context_result, Err):
-        write(f"error: {context_result.reason}")
-        return getattr(context_result, "code", 1)
-    context = context_result.value
-
-    request: Optional[Request] = None
-    previewed: Optional[Request] = None
-    while True:
-        if session.current == "role":
-            return session
-        _write_wizard_header(session, write)
-        if session.current == "maintainer_action":
-            write(f"Catalog: {context.root}")
-            write("Maintainer action:")
-            for index, (_action, label) in enumerate(MAINTAINER_ACTIONS, start=1):
-                write(f"  {index:>2}. {label}")
-            selected = _prompt_maintainer_action_wizard(read, write)
-            if isinstance(selected, WizardInput):
-                if selected.kind == "back":
-                    return wizard_back(session)
-                return _cancel(write)
-            session = replace(session, basket=(), notices=())
-            session = wizard_select(session, "maintainer_action", selected)
-            session = wizard_advance(session)
-            request = None
-            previewed = None
-            if selected == "user":
-                consumer_service: Optional[ConsumerApplicationService] = None
-                reporting_service: Optional[ReportingApplicationService] = None
-                if consumer_service_factory is not None and consumer_configuration is not None:
-                    loaded_consumer = consumer_service_factory(consumer_configuration)
-                    if isinstance(loaded_consumer, DomainErr):
-                        recovered = _recover_text_stage_failure(
-                            _maintainer_action_failure(session, loaded_consumer),
-                            session,
-                            read,
-                            write,
-                        )
-                        if isinstance(recovered, int):
-                            return recovered
-                        session = recovered
-                        continue
-                    consumer_service = loaded_consumer.value
-                if reporting_service_factory is not None and consumer_configuration is not None:
-                    loaded_reporting = reporting_service_factory(consumer_configuration)
-                    if isinstance(loaded_reporting, DomainErr):
-                        write(
-                            "warning: usage reporting is unavailable; artifact installation "
-                            "remains available"
-                        )
-                    else:
-                        reporting_service = loaded_reporting.value
-                result = _run_user_text_wizard(
-                    session,
-                    read,
-                    write,
-                    source_factory=open_source,
-                    source_dir=source_dir,
-                    repo=repo,
-                    project=project,
-                    user_home=user_home,
-                    source_finalizer=source_finalizer,
-                    consumer_service=consumer_service,
-                    reporting_service=reporting_service,
-                )
-                if isinstance(result, WizardSession):
-                    session = result
-                    continue
-                return result
-            continue
-
-        action = session.maintainer_action
-        assert action is not None
-        if session.current == "upstream_details":
-            if action == "add":
-                add_prompted = _prompt_upstream_add_wizard(
-                    read, write, context.root, existing=request
-                )
-                if isinstance(add_prompted, WizardInput):
-                    if add_prompted.kind == "back":
-                        session = wizard_back(session)
-                        continue
-                    if _confirm_wizard_quit(session, read, write):
-                        return _cancel(write)
-                    continue
-                request = add_prompted
-                session = wizard_select(
-                    session,
-                    "artifacts",
-                    (BasketItem("upstream", request.names[0], request.names[0]),),
-                )
-                session = wizard_advance(session)
-                previewed = None
-                continue
-            if action == "import":
-                import_request, code = _prompt_upstream_import(read, write, context.root)
-                if import_request is None:
-                    if code:
-                        return code
-                    if _confirm_wizard_quit(session, read, write):
-                        return _cancel(write)
-                    continue
-                request = import_request
-                session = wizard_select(
-                    session,
-                    "artifacts",
-                    tuple(BasketItem("upstream", name, name) for name in request.names),
-                )
-                session = wizard_advance(wizard_advance(session))
-                previewed = None
-                continue
-
-        if session.current == "artifacts":
-            if action in ("check", "update"):
-                tracked_prompted = _prompt_tracked_upstreams_wizard(
-                    read, write, context, existing=request
-                )
-                if isinstance(tracked_prompted, WizardInput):
-                    if tracked_prompted.kind == "back":
-                        session = wizard_back(session)
-                        continue
-                    if _confirm_wizard_quit(session, read, write):
-                        return _cancel(write)
-                    continue
-                names, all_selected = tracked_prompted
-                request = Request(
-                    command="upstream",
-                    upstream_action=action,
-                    names=names,
-                    all=all_selected,
-                    source_dir=context.root,
-                )
-                basket_names = names or (("all tracked upstreams",) if all_selected else ())
-                session = wizard_select(
-                    session,
-                    "artifacts",
-                    tuple(BasketItem("upstream", name, name) for name in basket_names),
-                )
-                session = wizard_advance(session)
-                previewed = None
-                continue
-            if action == "import":
-                write("Selected import candidates:")
-                for item in session.basket:
-                    write(f"  - {item.label}")
-                line = _read_line(read, "Enter=continue, b=back, q=quit: ")
-                answer = "q" if line is None else line.strip().lower()
-                if answer in ("b", "back"):
-                    session = wizard_back(session)
-                    continue
-                if answer in ("q", "quit"):
-                    if _confirm_wizard_quit(session, read, write):
-                        return _cancel(write)
-                    continue
-                session = wizard_advance(session)
-                continue
-
-        if session.current != "review":
-            return 2
-        if request is None:
-            request = Request(
-                command="upstream",
-                upstream_action=action,
-                source_dir=context.root,
-            )
-        is_mutation = action in ("add", "import", "update")
-        if is_mutation and previewed != request:
-            preview_code = _preview_maintainer_mutation(request, write)
-            if preview_code:
-                return preview_code
-            previewed = request
-        write("Review maintainer action")
-        write(f"  Catalog: {context.root}")
-        write(f"  Action: {action}")
-        if request.names:
-            write(f"  Selected: {', '.join(request.names)}")
-        if request.all:
-            write("  Selected: all tracked upstreams")
-        if request.url:
-            write(f"  URL: {request.url}")
-        if is_mutation:
-            write("  Preview succeeded; Finalize applies the reviewed catalog changes.")
-        else:
-            write("  Finalize runs the reviewed read-only command.")
-        line = _read_line(read, "Finalize? [y/N] (b=back, q=quit): ")
-        answer = "q" if line is None else line.strip().lower()
-        if answer in ("b", "back"):
-            session = wizard_back(session)
-            continue
-        if answer in ("q", "quit"):
-            if _confirm_wizard_quit(session, read, write):
-                return _cancel(write)
-            continue
-        if answer not in ("y", "yes", "f", "finalize"):
-            write("Review not finalized; no changes were made.")
-            continue
-        if not can_finalize(session, revision=session.revision):
-            write("Wizard state changed; review it again before Finalize.")
-            continue
-        source_failure = _finalize_source_selection(session, source_finalizer, write)
-        if source_failure is not None:
-            recovered = _recover_text_stage_failure(
-                wizard_stage_failure(session, "finalize", source_failure, recoverable=False),
-                session,
-                read,
-                write,
-            )
-            if isinstance(recovered, int):
-                return recovered
-            session = recovered
-            continue
-        if is_mutation:
-            return _apply_maintainer_mutation(request, write)
-        return _dispatch(request)
 
 
 def _prompt_maintainer_action_wizard(
     read: ReadFn,
     write: WriteFn,
-    actions: Tuple[Tuple[str, str], ...] = MAINTAINER_ACTIONS,
+    actions: Tuple[Tuple[str, str], ...] = CANONICAL_MAINTAINER_ACTIONS,
 ) -> str | WizardInput:
     while True:
         line = _read_line(read, "Maintainer action (b=back, q=quit): ")
@@ -4087,275 +3439,6 @@ def _prompt_wizard_value(
         if not required:
             return None
         write("A value is required (or enter 'b' to go back, 'q' to quit).")
-
-
-def _prompt_upstream_add_wizard(
-    read: ReadFn,
-    write: WriteFn,
-    catalog_root: str,
-    *,
-    existing: Optional[Request] = None,
-) -> Request | WizardInput:
-    key = _prompt_wizard_value(
-        read,
-        write,
-        "Artifact key (TYPE/NAME): ",
-        current=existing.names[0] if existing and existing.names else None,
-        required=True,
-    )
-    if isinstance(key, WizardInput):
-        return key
-    url = _prompt_wizard_value(
-        read,
-        write,
-        "GitHub URL: ",
-        current=existing.url if existing else None,
-        required=True,
-    )
-    if isinstance(url, WizardInput):
-        return url
-    ref = _prompt_wizard_value(
-        read,
-        write,
-        "Ref override (blank to infer): ",
-        current=existing.ref if existing else None,
-        required=False,
-    )
-    if isinstance(ref, WizardInput):
-        return ref
-    path = _prompt_wizard_value(
-        read,
-        write,
-        "Path override (blank to infer): ",
-        current=existing.path if existing else None,
-        required=False,
-    )
-    if isinstance(path, WizardInput):
-        return path
-    assert isinstance(key, str)
-    assert isinstance(url, str)
-    return Request(
-        command="upstream",
-        upstream_action="add",
-        names=(key,),
-        url=url,
-        ref=ref,
-        path=path,
-        source_dir=catalog_root,
-    )
-
-
-def _prompt_required(read: ReadFn, write: WriteFn, prompt: str) -> Optional[str]:
-    while True:
-        line = _read_line(read, prompt)
-        if line is None:
-            return None
-        answer = line.strip()
-        if answer.lower() == "q":
-            return None
-        if answer:
-            return answer
-        write("A value is required (or enter 'q' to cancel).")
-
-
-def _prompt_optional(read: ReadFn, prompt: str) -> Optional[str]:
-    line = _read_line(read, prompt)
-    if line is None:
-        return None
-    answer = line.strip()
-    return answer or None
-
-
-def _prompt_upstream_import(
-    read: ReadFn, write: WriteFn, catalog_root: str
-) -> Tuple[Optional[Request], int]:
-    from .commands import upstream
-    from .import_candidates import candidate_label
-
-    url = _prompt_required(read, write, "GitHub repository/tree URL: ")
-    if url is None:
-        return None, 0
-    scan_request = Request(
-        command="upstream",
-        upstream_action="scan",
-        url=url,
-        import_mode="auto",
-        source_dir=catalog_root,
-    )
-    scan_result = upstream.scan_import_candidates(scan_request)
-    if isinstance(scan_result, Err):
-        write(f"error: {scan_result.reason}")
-        return None, getattr(scan_result, "code", 1)
-    candidates = scan_result.value.candidates
-    if not candidates:
-        write("No importable artifacts detected.")
-        return None, 0
-    choices = tuple(
-        _Choice(
-            "artifact",
-            candidate_label(candidate),
-            candidate.key.type,
-            f"{candidate_label(candidate)} [{candidate.confidence}] {candidate.source.path}",
-        )
-        for candidate in candidates
-    )
-    write("Detected artifacts:")
-    for index, choice in enumerate(choices, start=1):
-        write(f"  {index:>2}. {choice.label}")
-    picked = _prompt_indices(read, write, "Import selection: ", choices)
-    if not picked:
-        return None, 0
-    bundle = _prompt_optional(read, "Bundle name (blank for none): ")
-    bundle_description = None
-    if bundle is not None:
-        bundle_description = _prompt_optional(read, "Bundle description (blank for default): ")
-    return (
-        replace(
-            scan_request,
-            upstream_action="import",
-            names=tuple(choices[index].name for index in picked),
-            bundles=(bundle,) if bundle else (),
-            bundle_description=bundle_description,
-            bundle_mode="append",
-        ),
-        0,
-    )
-
-
-def _prompt_tracked_upstreams_wizard(
-    read: ReadFn,
-    write: WriteFn,
-    context,
-    *,
-    existing: Optional[Request] = None,
-) -> Tuple[Tuple[str, ...], bool] | WizardInput:
-    from .upstreams import format_upstream_key
-
-    labels = tuple(
-        format_upstream_key(key)
-        for key in sorted(context.upstreams.entries, key=format_upstream_key)
-    )
-    if not labels:
-        write(f"No tracked upstreams in {context.root}.")
-        return WizardInput("quit")
-    write("Tracked upstreams:")
-    for index, label in enumerate(labels, start=1):
-        marker = "x" if existing and (existing.all or label in existing.names) else " "
-        write(f"  {index:>2}. [{marker}] {label}")
-    while True:
-        line = _read_line(read, "Selection (numbers, 'a'=all, b=back, q=quit): ")
-        if line is None:
-            return WizardInput("quit")
-        answer = line.strip().lower()
-        if answer in ("q", "quit"):
-            return WizardInput("quit")
-        if answer in ("b", "back"):
-            return WizardInput("back")
-        if answer == "" and existing is not None:
-            return existing.names, existing.all
-        if answer in ("a", "all"):
-            return (), True
-        picked = _parse_indices(answer, len(labels))
-        if picked:
-            return tuple(labels[index] for index in picked), False
-        write(f"Please enter number(s) between 1 and {len(labels)}, 'a', 'b', or 'q'.")
-
-
-def _run_maintainer_mutation(
-    request: Request,
-    read: ReadFn,
-    write: WriteFn,
-    *,
-    dispatch: Optional[DispatchFn] = None,
-) -> int:
-    """Validate -> preview -> confirm -> apply -> validate, with no hidden mutation."""
-    dispatch_fn = dispatch or _dispatch
-    preview = _preview_maintainer_mutation(request, write, dispatch=dispatch_fn)
-    if preview != 0:
-        return preview
-
-    answer = _read_line(read, "Apply these catalog changes? [y/N]: ")
-    if answer is None or answer.strip().lower() not in ("y", "yes"):
-        write("Cancelled; no catalog changes were applied.")
-        return 0
-    return _apply_maintainer_mutation(request, write, dispatch=dispatch_fn)
-
-
-def _preview_maintainer_mutation(
-    request: Request,
-    write: WriteFn,
-    *,
-    dispatch: Optional[DispatchFn] = None,
-) -> int:
-    """Run the non-mutating validation and dry-run half of a maintainer change."""
-    dispatch_fn = dispatch or _dispatch
-    validation = Request(
-        command="upstream",
-        upstream_action="validate",
-        source_dir=request.source_dir,
-    )
-    before = dispatch_fn(validation)
-    if before != 0:
-        write(f"Catalog validation failed before mutation: {request.source_dir}")
-        return before
-
-    preview = dispatch_fn(replace(request, dry_run=True))
-    if preview != 0:
-        write("Preview failed; no catalog changes were applied.")
-        return preview
-    write("Preview succeeded; no catalog changes have been applied yet.")
-    return 0
-
-
-def _apply_maintainer_mutation(
-    request: Request,
-    write: WriteFn,
-    *,
-    dispatch: Optional[DispatchFn] = None,
-) -> int:
-    """Apply an already-previewed maintainer request and validate the result."""
-    dispatch_fn = dispatch or _dispatch
-    applied = dispatch_fn(replace(request, dry_run=False))
-    if applied != 0:
-        return applied
-    validation = Request(
-        command="upstream",
-        upstream_action="validate",
-        source_dir=request.source_dir,
-    )
-    after = dispatch_fn(validation)
-    if after != 0:
-        write(f"Catalog validation failed after mutation: {request.source_dir}")
-        return after
-    write(
-        f"Next: review the working-tree diff in {request.source_dir} and run "
-        f"`aart upstream validate --source {request.source_dir}`."
-    )
-    return 0
-
-
-def _load_manifest_for_action(
-    action: str,
-    *,
-    source_dir: Optional[str],
-    repo: Optional[str],
-    project: Optional[str],
-    scope: InstallScope = "project",
-    user_home: Optional[str] = None,
-) -> Result:
-    """Load the consumer manifest for update/uninstall choice building."""
-    from .commands import _common
-
-    return _common.load_manifest(
-        Request(
-            command=action,
-            source_dir=source_dir,
-            repo=repo,
-            project=project if scope == "project" else None,
-            scope=scope,
-            user_home=user_home,
-        )
-    )
 
 
 def _profiles_label(profile_names: Sequence[str]) -> str:
@@ -5155,7 +4238,7 @@ def _run_user_curses_wizard(
             if read_model is None or read_key != key:
                 loaded = _load_user_wizard_read_model(
                     session,
-                    source_factory=open_source,
+                    source_factory=_unsupported_source_factory,
                     source_dir=source_dir,
                     repo=repo,
                     project=project,
@@ -5177,9 +4260,6 @@ def _run_user_curses_wizard(
                     if recovery.kind == "back":
                         session = wizard_back(session)
                         continue
-                    if _has_compatibility_exit_code(failure):
-                        selection["error"] = failure
-                        return session
                     if _curses_confirm_discard(curses, stdscr, session):
                         selection["cancelled"] = True
                         return session
@@ -5245,101 +4325,46 @@ def _run_user_curses_wizard(
 
         if session.current == "review":
             context.capture(session, "review")
-            chosen: Tuple[_Choice, ...] = ()
-            if read_model is not None:
-                by_key = {_basket_key(choice): choice for choice in read_model.choices}
-                chosen = tuple(by_key[item.key] for item in session.basket if item.key in by_key)
-            request = _build_request(
-                session.action or "status",
-                chosen,
-                session.profiles,
-                source_dir=source_dir,
-                repo=repo,
-                project=project,
-                install_mode=session.install_mode,  # type: ignore[arg-type]
-                scope=session.scope,  # type: ignore[arg-type]
-                user_home=user_home,
+            assert consumer_service is not None
+            selected_keys = {item.key for item in session.basket}
+            selected_coordinates = (
+                set()
+                if read_model is None
+                else {
+                    row.coordinate
+                    for row in read_model.marketplace_rows
+                    if row.key in selected_keys
+                }
             )
-            confirmation: Optional[InstallConfirmation] = None
-            canonical_review: Optional[ConsumerReview] = None
-            if consumer_service is not None:
-                selected_keys = {item.key for item in session.basket}
-                selected_coordinates = (
-                    set()
-                    if read_model is None
-                    else {
-                        row.coordinate
-                        for row in read_model.marketplace_rows
-                        if row.key in selected_keys
-                    }
+            for collection in consumer_service.context.catalog.collections:
+                if str(collection.coordinate) in selected_keys:
+                    selected_coordinates.update(collection.members)
+            prepared = consumer_service.prepare(
+                ConsumerActionRequest(
+                    session.action or "status",  # type: ignore[arg-type]
+                    tuple(sorted(selected_coordinates, key=str)),
+                    tuple(sorted(session.profiles)),
+                    session.scope,  # type: ignore[arg-type]
+                    session.install_mode,  # type: ignore[arg-type]
                 )
-                for collection in consumer_service.context.catalog.collections:
-                    if str(collection.coordinate) in selected_keys:
-                        selected_coordinates.update(collection.members)
-                coordinates = tuple(sorted(selected_coordinates, key=str))
-                prepared = consumer_service.prepare(
-                    ConsumerActionRequest(
-                        session.action or "status",  # type: ignore[arg-type]
-                        coordinates,
-                        tuple(sorted(session.profiles)),
-                        session.scope,  # type: ignore[arg-type]
-                        session.install_mode,  # type: ignore[arg-type]
-                    )
-                )
-                if isinstance(prepared, DomainErr):
-                    failure = wizard_stage_failure(session, "review", prepared, recoverable=False)
-                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
-                    if recovery.kind == "back":
-                        session = wizard_back(session)
-                        continue
-                    if _curses_confirm_discard(curses, stdscr, session):
-                        selection["cancelled"] = True
-                        return session
+            )
+            if isinstance(prepared, DomainErr):
+                failure = wizard_stage_failure(session, "review", prepared, recoverable=False)
+                recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
+                if recovery.kind == "back":
+                    session = wizard_back(session)
                     continue
-                canonical_review = prepared.value
-                review = _curses_review(
-                    curses,
-                    stdscr,
-                    session,
-                    render_consumer_review(canonical_review),
-                )
-            elif session.action == "install":
-                assert read_model is not None
-                confirmation = build_install_confirmation(
-                    source_label=read_model.source_label,
-                    source_root=read_model.source_root,
-                    project=project,
-                    profiles=session.profiles,
-                    requested_mode=session.install_mode,  # type: ignore[arg-type]
-                    catalog=read_model.catalog,
-                    choices=chosen,
-                    profiles_map=read_model.profiles_map,
-                    scope=session.scope,  # type: ignore[arg-type]
-                    user_home=user_home,
-                )
-                try:
-                    review = _curses_confirm_install(
-                        curses,
-                        stdscr,
-                        confirmation,
-                        header=_curses_header(stdscr, session),
-                    )
-                except TypeError as error:
-                    if "unexpected keyword argument" not in str(error):
-                        raise
-                    review = _curses_confirm_install(curses, stdscr, confirmation)
-            else:
-                review = _curses_review(
-                    curses,
-                    stdscr,
-                    session,
-                    _user_review_lines(
-                        session,
-                        read_model,
-                        project=project,
-                        user_home=user_home,
-                    ),
-                )
+                if _curses_confirm_discard(curses, stdscr, session):
+                    selection["cancelled"] = True
+                    return session
+                continue
+            canonical_review = prepared.value
+            review = _curses_review(
+                curses,
+                stdscr,
+                session,
+                render_consumer_review(canonical_review),
+            )
             if review == "back":
                 session = wizard_back(session)
                 continue
@@ -5354,8 +4379,6 @@ def _run_user_curses_wizard(
             if not can_finalize(session, revision=session.revision):
                 selection["error"] = ("Wizard state changed; review it again before Finalize.", 2)
                 return session
-            selection["request"] = request
-            selection["confirmation"] = confirmation
             selection["consumer_review"] = canonical_review
             selection["wizard_session"] = session
             return session
@@ -5461,11 +4484,13 @@ def _run_curses(
         return 0
     selection: dict = {}
     interacted = False
-    stage_view = source_stage_view or (
-        _legacy_source_stage_view(source_dir=source_dir, repo=repo)
-        if source_dir is not None or repo is not None
-        else _empty_source_stage_view()
-    )
+    if repo is not None:
+        print(
+            "error: direct legacy repository selection is no longer supported; "
+            "add a canonical registry in Sources instead."
+        )
+        return 2
+    stage_view = source_stage_view or _empty_source_stage_view()
 
     def _ui(stdscr) -> None:
         nonlocal stage_view, source_stage_view, source_finalizer, source_addition_finalizer
@@ -5505,29 +4530,24 @@ def _run_curses(
                     return
                 role = ROLES[event.selected[0]].name
                 session = wizard_select(session, "role", role)
-                if role == "maintainer" and source_dir is None and repo is None:
+                if role == "maintainer" and repo is None and (
+                    source_dir is None
+                    or _is_canonical_maintainer_workspace(os.path.abspath(source_dir))
+                ):
                     session = use_current_checkout(session)
                 session = wizard_advance(session)
 
             if session.current == "maintainer_action" and session.maintainer_checkout:
-                catalog_root = os.path.abspath(os.getcwd())
+                catalog_root = os.path.abspath(source_dir or os.getcwd())
                 canonical_curation = _is_canonical_maintainer_workspace(catalog_root)
-                context_result = None
                 maintainer_actions = CANONICAL_MAINTAINER_ACTIONS
                 if not canonical_curation:
-                    from .commands import upstream
-
-                    context_result = upstream.load_maintainer_context(
-                        Request(
-                            command="upstream",
-                            upstream_action="validate",
-                            source_dir=catalog_root,
-                        )
+                    selection["error"] = (
+                        "maintainer mode accepts only a canonical registry checkout; "
+                        "initialize one with `aart registry init`.",
+                        2,
                     )
-                    if isinstance(context_result, Err):
-                        selection["error"] = (context_result.reason, context_result.code)
-                        return
-                    maintainer_actions = MAINTAINER_ACTIONS
+                    return
                 event = _curses_single_event(
                     curses,
                     stdscr,
@@ -5600,34 +4620,26 @@ def _run_curses(
                             selection["reporting_warning"] = True
                     return
                 selection["maintainer_action"] = action
-                if context_result is not None:
-                    assert not isinstance(context_result, Err)
-                    selection["maintainer_context"] = context_result.value
                 selection["maintainer_session"] = session
                 selection["source_arguments"] = (catalog_root, None)
                 selection["consumer_configuration"] = stage_view.configuration
                 return
 
             assert session.current == "source"
-            if source_stage_view is None and (source_dir is not None or repo is not None):
-                selected_source_value = _automatic_source_selection(stage_view)
-            else:
-                event, maybe_selected_source, source_error = _curses_source_event(
-                    curses,
-                    stdscr,
-                    session,
-                    stage_view,
-                )
-                session = remember_position(
-                    session, "source", cursor=event.cursor, scroll=event.scroll
-                )
-                if event.kind == "back":
+            event, maybe_selected_source, source_error = _curses_source_event(
+                curses,
+                stdscr,
+                session,
+                stage_view,
+            )
+            session = remember_position(session, "source", cursor=event.cursor, scroll=event.scroll)
+            if event.kind == "back":
                     session = wizard_back(session)
                     continue
-                if event.kind == "quit":
+            if event.kind == "quit":
                     selection["cancelled"] = True
                     return
-                if event.kind == "add":
+            if event.kind == "add":
                     if source_addition_finalizer is None or source_stage_loader is None:
                         selection["error"] = ("source setup is unavailable in this TUI runtime", 2)
                         return
@@ -5689,7 +4701,7 @@ def _run_curses(
                         ),
                     )
                     continue
-                if source_error is not None:
+            if source_error is not None:
                     failure = _source_stage_failure(session, source_error)
                     recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
                     if recovery.kind == "back":
@@ -5698,8 +4710,8 @@ def _run_curses(
                         selection["cancelled"] = True
                         return
                     continue
-                assert maybe_selected_source is not None
-                selected_source_value = maybe_selected_source
+            assert maybe_selected_source is not None
+            selected_source_value = maybe_selected_source
             session = wizard_select(session, "source", selected_source_value)
             session = wizard_advance(session)
             if selected_source_value.no_source:
@@ -5730,33 +4742,21 @@ def _run_curses(
                     active_reporting_failed = True
                 else:
                     active_reporting_service = loaded_reporting.value
-            active_source_dir, active_repo = source_dir, repo
-            if active_consumer_service is None or selected_role != "user":
-                source_arguments = _selected_legacy_source_arguments(
-                    stage_view,
-                    selected_source_value,
-                    source_dir=source_dir,
-                    repo=repo,
-                )
-                if isinstance(source_arguments, DomainErr):
-                    failure = _source_stage_failure(session, source_arguments)
-                    recovery = _curses_stage_failure_recovery(curses, stdscr, failure)
-                    if recovery.kind == "back":
-                        session = wizard_back(session)
-                        continue
-                    if _curses_confirm_discard(curses, stdscr, session):
-                        selection["cancelled"] = True
-                        return
-                    continue
-                active_source_dir, active_repo = source_arguments.value
             if selected_role == "user":
+                if active_consumer_service is None:
+                    selection["error"] = (
+                        "canonical consumer services are unavailable; "
+                        "restart after configuring a registry source.",
+                        2,
+                    )
+                    return
                 session = _run_user_curses_wizard(
                     curses,
                     stdscr,
                     session,
                     selection,
-                    source_dir=active_source_dir,
-                    repo=active_repo,
+                    source_dir=None,
+                    repo=None,
                     project=project,
                     user_home=user_home,
                     consumer_service=active_consumer_service,
@@ -5773,25 +4773,16 @@ def _run_curses(
                     continue
                 return
 
-            catalog_root = os.path.abspath(active_source_dir or ".")
+            catalog_root = os.path.abspath(source_dir or os.getcwd())
             canonical_curation = _is_canonical_maintainer_workspace(catalog_root)
-            context_result = None
             maintainer_actions = CANONICAL_MAINTAINER_ACTIONS
             if not canonical_curation:
-                from .commands import upstream
-
-                context_result = upstream.load_maintainer_context(
-                    Request(
-                        command="upstream",
-                        upstream_action="validate",
-                        source_dir=catalog_root,
-                        repo=active_repo,
-                    )
+                selection["error"] = (
+                    "maintainer mode accepts only a canonical registry checkout; "
+                    "initialize one with `aart registry init`.",
+                    2,
                 )
-                if isinstance(context_result, Err):
-                    selection["error"] = (context_result.reason, context_result.code)
-                    return
-                maintainer_actions = MAINTAINER_ACTIONS
+                return
             while session.current == "maintainer_action":
                 context.capture(session)
                 event = _curses_single_event(
@@ -5862,8 +4853,8 @@ def _run_curses(
                         stdscr,
                         session,
                         selection,
-                        source_dir=active_source_dir,
-                        repo=active_repo,
+                        source_dir=None,
+                        repo=None,
                         project=project,
                         user_home=user_home,
                         consumer_service=maintainer_consumer_service,
@@ -5878,11 +4869,8 @@ def _run_curses(
                         return
                     continue
                 selection["maintainer_action"] = action
-                if context_result is not None:
-                    assert not isinstance(context_result, Err)
-                    selection["maintainer_context"] = context_result.value
                 selection["maintainer_session"] = session
-                selection["source_arguments"] = (active_source_dir, active_repo)
+                selection["source_arguments"] = (catalog_root, None)
                 selection["consumer_configuration"] = selected_source_value.request.after
                 return
 
@@ -5922,7 +4910,7 @@ def _run_curses(
             selection["maintainer_session"],
             input,
             print,
-            source_factory=open_source,
+            source_factory=_unsupported_source_factory,
             source_dir=active_source_dir,
             repo=active_repo,
             project=project,
@@ -5934,12 +4922,11 @@ def _run_curses(
             curation_service_factory=curation_service_factory,
         )
         return _cancel(print) if isinstance(result, WizardSession) else result
-    if "request" not in selection:
+    if "consumer_review" not in selection:
         if "empty_selection" in selection:
             return _cancel(print, "No artifacts selected; no changes were made.")
         return _cancel(print)
 
-    request = selection["request"]
     context.capture(selection["wizard_session"], "finalize")
     source_failure = _finalize_source_selection(
         selection["wizard_session"],
@@ -5955,51 +4942,35 @@ def _run_curses(
         for line in render_wizard_stage_failure(failure):
             print(line)
         return _stage_failure_exit_code(failure)
-    consumer_review = selection.get("consumer_review")
-    if consumer_review is not None:
-        active_consumer_service = selection.get("active_consumer_service", consumer_service)
-        assert active_consumer_service is not None
-        finalized = active_consumer_service.finalize(
-            consumer_review,
-            consumer_review.review_digest,
+    consumer_review = selection["consumer_review"]
+    active_consumer_service = selection.get("active_consumer_service", consumer_service)
+    assert active_consumer_service is not None
+    finalized = active_consumer_service.finalize(
+        consumer_review,
+        consumer_review.review_digest,
+    )
+    if isinstance(finalized, DomainErr):
+        failure = _terminal_stage_failure(
+            selection["wizard_session"],
+            "finalize",
+            finalized,
         )
-        if isinstance(finalized, DomainErr):
-            failure = _terminal_stage_failure(
-                selection["wizard_session"],
-                "finalize",
-                finalized,
-            )
-            for line in render_wizard_stage_failure(failure):
-                print(line)
-            return _stage_failure_exit_code(failure)
-        for line in render_consumer_outcome(finalized.value):
+        for line in render_wizard_stage_failure(failure):
             print(line)
-        if selection.get("reporting_warning"):
-            print(
-                "warning: usage reporting is unavailable; artifact installation remains available"
-            )
-        context.capture(selection["wizard_session"], "setup")
-        return _complete_canonical_consumer_action(
-            active_consumer_service,
-            consumer_review,
-            finalized.value,
-            selection.get("active_reporting_service", reporting_service),
-            read=input,
-            write=print,
-            failure_context=context,
-        )
-    outcome = _dispatch_result(request)
-    code = _render_result(outcome, print)
-    confirmation = selection.get("confirmation")
-    if code != 0 or confirmation is None:
-        return code
+        return _stage_failure_exit_code(failure)
+    for line in render_consumer_outcome(finalized.value):
+        print(line)
+    if selection.get("reporting_warning"):
+        print("warning: usage reporting is unavailable; artifact installation remains available")
     context.capture(selection["wizard_session"], "setup")
-    return _run_post_install_setup(
-        confirmation.setup_queue,
-        request,
-        scope_root=confirmation.destination_root,
+    return _complete_canonical_consumer_action(
+        active_consumer_service,
+        consumer_review,
+        finalized.value,
+        selection.get("active_reporting_service", reporting_service),
         read=input,
         write=print,
+        failure_context=context,
     )
 
 
@@ -6640,9 +5611,14 @@ def run(
 
     Called by ``cli._run_bare`` on a bare TTY invocation. Tries the ``curses`` selector and
     **degrades to the ``input()`` flow** if curses cannot be imported or initialised. A clean
-    quit (no selection) returns 0. ``source_dir`` / ``repo`` / ``project`` default to ``None``
-    so the standard source resolution (default repo, or env/flags handled upstream) applies.
+    quit (no selection) returns 0. Sources are loaded only from canonical user configuration.
     """
+    if source_dir is not None or repo is not None:
+        print(
+            "error: direct catalog directories and repository aliases are no longer supported; "
+            "add a canonical registry in Sources instead."
+        )
+        return 2
     source_context = _runtime_source_stage_context(
         source_dir=source_dir,
         repo=repo,

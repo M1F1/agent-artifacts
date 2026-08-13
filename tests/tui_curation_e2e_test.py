@@ -29,7 +29,7 @@ class TuiCurationEndToEndTest(unittest.TestCase):
                     [
                         "",
                         "2",
-                        "10",
+                        "9",
                         "e2e-registry",
                         "E2E Registry",
                         "",

@@ -40,7 +40,7 @@ from agent_artifacts.security.tool_adapters import (
 )
 from agent_artifacts.store.model import parse_object_candidate
 
-from . import _common
+from agent_artifacts import command_outcome as _common
 
 _MAX_OBJECT_BYTES = 150 * 1024 * 1024
 _MAX_EVIDENCE_BYTES = 16 * 1024 * 1024

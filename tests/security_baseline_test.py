@@ -118,8 +118,8 @@ def _fixture(
     ]
     if capabilities:
         recipe = {
-            "schema_version": 1,
-            "protocol_version": 1,
+            "schema_version": 2,
+            "protocol_version": 2,
             "artifact": f"{kind}/review",
             "purpose": "Configure review.",
             "platforms": ["darwin"],
@@ -144,6 +144,22 @@ def _fixture(
                 json.dumps(recipe, sort_keys=True, separators=(",", ":")).encode("utf-8"),
             )
         )
+        entries.append(
+            SnapshotEntry(
+                _path("SETUP.md"),
+                SnapshotEntryKind.FILE,
+                b"Manual fixture setup.\n",
+            )
+        )
+        if "custom-code" in capabilities:
+            entries.append(
+                SnapshotEntry(
+                    _path("setup/install.sh"),
+                    SnapshotEntryKind.FILE,
+                    b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\nexit 0\n",
+                    True,
+                )
+            )
     if provenance and include_provenance_file:
         entries.append(
             SnapshotEntry(
@@ -582,7 +598,7 @@ class SecurityBaselineDeclaredRiskTest(unittest.TestCase):
         missing = _replace_entry(candidate, "setup/installer.json", None)
         missing_result = _scan(missing, replace(indexed, object_digest=missing.digest))
         self.assertIn("setup-recipe-missing", {item.rule_id for item in missing_result.findings})
-        self.assertEqual(missing_result.status, AssessmentStatus.PARTIAL)
+        self.assertEqual(missing_result.status, AssessmentStatus.FAILED)
 
         invalid = _replace_entry(candidate, "setup/installer.json", b"[]")
         invalid_result = _scan(invalid, replace(indexed, object_digest=invalid.digest))
@@ -726,7 +742,7 @@ class SecurityBaselineContentTest(unittest.TestCase):
         )
         invalid_json = _scan(candidate, indexed)
         self.assertIn("json-parse-failed", {item.rule_id for item in invalid_json.findings})
-        self.assertEqual(invalid_json.status, AssessmentStatus.PARTIAL)
+        self.assertEqual(invalid_json.status, AssessmentStatus.FAILED)
 
         binary, binary_index, _ = _fixture(
             files=(

@@ -106,30 +106,10 @@ def _instance_id(source: ConfiguredSource, fields: tuple[tuple[str, str], ...]) 
 
 
 def source_instance_id(source: ConfiguredSource) -> SourceInstanceId:
-    """Return the ref-aware store identity for one configured source.
+    """Return the one canonical store identity for one configured source.
 
-    The ref participates in the identity so that two refs of one Git origin own separate mirrors,
-    snapshots, and ``current.json`` pointers.  Without it a second ref would silently retarget the
-    first source's installed content.  Local sources have no ref and keep their v1 identity.
-    """
-
-    if source.ref is None:
-        return legacy_source_instance_id(source)
-    return _instance_id(
-        source,
-        (
-            ("kind", source.kind.value),
-            ("location", source.location),
-            ("ref", source.ref),
-        ),
-    )
-
-
-def legacy_source_instance_id(source: ConfiguredSource) -> SourceInstanceId:
-    """Return the v1 identity, which ignored ``ref``.
-
-    Retained so the store migration can find directories written before ref-aware storage; it must
-    not be used to resolve a source for reading or publishing.
+    The configured ref is always represented, including the empty ref of a local source. Earlier
+    directory shapes are intentionally not discovered or rebound by the current runtime.
     """
 
     return _instance_id(
@@ -137,6 +117,7 @@ def legacy_source_instance_id(source: ConfiguredSource) -> SourceInstanceId:
         (
             ("kind", source.kind.value),
             ("location", source.location),
+            ("ref", source.ref or ""),
         ),
     )
 

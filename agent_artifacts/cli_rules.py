@@ -24,8 +24,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .commands import _common
-from .commands._common import USAGE
+from .command_outcome import USAGE
 from .model import Err, Request
 
 
@@ -37,34 +36,6 @@ def validate_flags(request: Request) -> Optional[Err]:
     * --source and --version are mutually exclusive
     * --all cannot be combined with named artifacts or --bundle
     """
-    if request.repo is not None and request.source_dir is not None:
-        return Err(
-            "--repo and --source are mutually exclusive (both name the catalog source)",
-            code=USAGE,
-        )
-    if request.source_dir is not None and request.version is not None:
-        return Err(
-            "--source and --version are mutually exclusive "
-            "(a local checkout has no ref to resolve)",
-            code=USAGE,
-        )
-    if request.command == "upgrade" and any(
-        value is not None for value in (request.repo, request.source_dir, request.version)
-    ):
-        return Err(
-            "upgrade accepts only an explicit local --wheel or --source-checkout",
-            code=USAGE,
-        )
-    if request.all and (request.names or request.bundles):
-        return Err(
-            "--all cannot be combined with named artifacts or --bundle",
-            code=USAGE,
-        )
-    if request.migration_action == "state" and request.rollback and request.source_mappings:
-        return Err(
-            "--source-map applies only to migration dry-run/apply, not --rollback",
-            code=USAGE,
-        )
     publisher_context = (
         request.publisher_source_id,
         request.security_registry_inputs_digest,
@@ -78,4 +49,10 @@ def validate_flags(request: Request) -> Optional[Err]:
             "must be provided together",
             code=USAGE,
         )
-    return _common.validate_scope(request)
+    if request.scope == "user" and request.project is not None:
+        return Err(
+            "--scope user cannot be combined with --project "
+            "(user targets and state are resolved from the current user's home)",
+            code=USAGE,
+        )
+    return None

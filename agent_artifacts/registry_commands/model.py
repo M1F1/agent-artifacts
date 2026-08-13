@@ -276,19 +276,3 @@ class RegistryQualityReport:
     @property
     def passed(self) -> bool:
         return all(item.passed for item in self.checks)
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyRegistryMigration:
-    current: SourceSnapshot
-    plan: RegistryWorkspacePlan
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.current, SourceSnapshot) or not isinstance(
-            self.plan, RegistryWorkspacePlan
-        ):
-            raise ValueError("legacy registry migration is invalid")
-
-    @property
-    def changed_paths(self) -> int:
-        return self.plan.changed_paths

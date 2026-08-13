@@ -456,51 +456,38 @@ Plan = Tuple[Action, ...]
 class Request:
     command: str
     names: Tuple[str, ...] = ()
-    bundles: Tuple[str, ...] = ()
     profiles: Tuple[str, ...] = ()
-    all: bool = False
-    version: Optional[str] = None
+    # A registry workspace path for registry authoring commands.  Consumer operations only read
+    # configured canonical sources and never accept an arbitrary catalog directory.
     source_dir: Optional[str] = None
-    repo: Optional[str] = None
     project: Optional[str] = None
     scope: InstallScope = "project"
     # Adapter/test injection only; not exposed as a public CLI flag. ``None`` resolves via
     # ``expanduser('~')`` at the command boundary.
     user_home: Optional[str] = None
-    type_filter: Optional[ArtifactType] = None
+    artifact_kind: Optional[ArtifactType] = None
     yes: bool = False
     force: bool = False
     dry_run: bool = False
     json: bool = False
     prune: bool = False
     install_mode: InstallMode = "copy"
-    memory_mode: Optional[str] = (
-        None  # docs/design/DESIGN-memory.md §3.4; None → planner applies "prepend"
-    )
-    upstream_action: Optional[str] = (
-        None  # maintainer action: validate/health/add/scan/import/check/update
-    )
-    url: Optional[str] = None  # GitHub URL for `upstream add`
-    ref: Optional[str] = None  # explicit ref override for `upstream add`
-    path: Optional[str] = None  # explicit in-repo path override for `upstream add`
-    import_mode: Optional[str] = None  # "auto" | "manifest" | "heuristic" for upstream import
-    bundle_mode: Optional[str] = None  # "append" | "replace" | "fail" for import-created bundles
-    bundle_description: Optional[str] = None
-    interactive: bool = False
-    setup_action: Optional[str] = None  # run | retry | status | rollback
-    stop_on_failure: bool = False
+    # Git reference supplied only while adding a configured canonical source.
+    ref: Optional[str] = None
+    # Exact native package reference used by registry promotion.  These fields are deliberately
+    # distinct from configured consumer sources: a maintainer reviews an explicit Git package
+    # before its registry entry is allowed to name it.
+    native_url: Optional[str] = None
+    native_path: Optional[str] = None
+    review_policy: Optional[str] = None
     registry_action: Optional[str] = None
     check: bool = False
-    apply: bool = False
     strict: bool = False
     frozen: bool = False
-    legacy_source: Optional[str] = None
-    origin_url: Optional[str] = None
     source_id: Optional[str] = None
     display_name: Optional[str] = None
     summary: Optional[str] = None
     artifact_version: Optional[str] = None
-    artifact_license: Optional[str] = None
     minimum_version: Optional[str] = None
     maximum_version: Optional[str] = None
     latest_version: Optional[str] = None
@@ -525,11 +512,7 @@ class Request:
     reporting_action: Optional[str] = None
     reporting_input: Optional[str] = None
     reporting_output: Optional[str] = None
-    migration_action: Optional[str] = None
-    migration_from: Optional[str] = None
-    source_mappings: Tuple[str, ...] = ()
-    # Canonical configured-source command surface.  These values deliberately remain distinct
-    # from the legacy ``--source DIR`` catalog compatibility flag above.
+    # Canonical configured-source command surface.
     source_action: Optional[str] = None
     source_alias: Optional[str] = None
     source_kind: Optional[str] = None
@@ -543,6 +526,5 @@ class Request:
     authorize_untrusted_source: bool = False
     authorize_custom_entrypoint: bool = False
     approve_setup_effects: bool = False
-    rollback: bool = False
     upgrade_wheel: Optional[str] = None
     upgrade_source_checkout: Optional[str] = None
