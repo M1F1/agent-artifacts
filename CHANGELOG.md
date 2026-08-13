@@ -3,6 +3,53 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.1.0 — 2026-08-13
+
+The source subscription lifecycle closes. `2.0.0` could subscribe to a source and refresh it, but
+could not end a subscription or follow a source through a declared identity change. Minor, and
+strictly additive: two commands are added, nothing is removed, renamed, or narrowed, and the v9
+schema freeze is byte-identical to v8 in every declared input.
+
+### Added
+
+- `aart source remove` ends one subscription and owns both places it lives: the configuration entry
+  and the managed snapshot, plus the `default_registry` pointer when it named that alias. The
+  snapshot is discarded before the configuration is written, so an interrupted removal leaves a
+  subscription `aart source sync` repairs rather than an unsubscribed origin whose store still binds
+  an unreachable identity. Installed files and durable manifests are never touched.
+- `aart source resubscribe` adopts a changed declared `source_id` at an unchanged origin and ref,
+  keeping alias, kind, location, ref, and the default-registry flag — by writing no configuration at
+  all. The review renders both identities, both revisions, and both snapshot digests, and finalize
+  applies that exact transition or refuses, so an upstream that moves again between review and
+  finalize is never absorbed silently. Resubscribing an unchanged identity is refused, naming
+  `aart source sync`.
+- Both commands reach the curses Sources stage on `r` and `i`, dispatching the same application
+  request values as the flag-mode paths.
+
+### Changed
+
+- The `source sync` identity refusal names `aart source resubscribe --alias <alias>` instead of
+  advising a "replace" that did not exist; the alias-already-configured and origin-already-configured
+  refusals name `sync`, `resubscribe`, and `remove`. Diagnostic text only — no refusal was loosened,
+  and adoption is never implicit.
+
+### Testing
+
+- The 2026-08-13 live-acceptance reproduction (`LAF-28`) is a test: recovery uses shipped commands
+  only, with no hand-edited configuration and no directory deleted from the data root.
+- Every source operation runs against a project holding an installed payload and a durable manifest,
+  with the project tree compared byte for byte including `st_mtime_ns`; a managed symlink still
+  resolves after its source is removed, and a durable manifest outlives its subscription and
+  reconciles as `source-unavailable`.
+- Every `aart …` command named in a source-area remediation is parsed by the real
+  `cli.build_parser()`, so remediation text cannot drift from the shipped surface.
+
+### Compatibility
+
+No protocol revision, schema, store layout, or on-disk format changed, and no `requires_aart` window
+needs re-authoring: `>= 2.0.0, < 3.0.0` admits this release. A `2.1.0` data root is fully readable by
+`2.0.0`. See [compatibility-v9.md](docs/release/compatibility-v9.md).
+
 ## 2.0.0 — 2026-08-13
 
 The canonical remediation: one product, one interface, one compiler before every boundary.
