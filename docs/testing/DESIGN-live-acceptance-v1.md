@@ -128,7 +128,7 @@ that blocked it.
 
 ## 5. Coverage rule
 
-The inventory is derived, not authored: `build_parser()` currently exposes **16 top-level commands /
+The inventory is derived, not authored: `build_parser()` currently exposes **15 top-level commands /
 49 leaf subcommands**, with constrained flags enumerated in the plan.
 
 > Every leaf subcommand is either **covered** by at least one scenario, or **deferred** with a

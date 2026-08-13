@@ -54,6 +54,8 @@ the code.
 | `LAS-26` | Partial install of a bundle with an internal sibling dependency | `LA-U-29`, `LA-U-30` |
 | `LAS-27` | Legacy upstream against the current protocol floor | `LA-R-29`, `LA-R-30` |
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
+| `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
+| `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
