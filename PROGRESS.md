@@ -5,9 +5,10 @@
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
 - **Current code version:** `2.0.0`
-- **Execution status:** canonical remediation WP-1..WP-6 implemented on `codex/canonical-remediation`;
-  the `2.0.0` release contract (v8) is written and every local gate is green
-- **Next task:** merge and publish `v2.0.0`, then publish both re-authored registries, then run WP-7
+- **Execution status:** `v2.0.0` is released and both registries are published on the `2.0.0`
+  contract; the consumer project exists and reconciles against them in CI
+- **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
+  then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-13
 
 ## Live acceptance run
@@ -1708,3 +1709,42 @@ None.
   83.00% branch coverage (threshold 82), `2.0.0` packaging, docs. `make release-check` fails only on
   the expected publication-ordering controls: the registry checkouts are on unpublished branches and
   the release source is not yet merged into `origin/main`. Nothing is pushed.
+
+### 2026-08-13 — 2.0.0 released; both registries published; consumer project created
+
+- **`v2.0.0` is released.** Tag `eb82f5c`, GitHub release *AART 2.0.0* with the reviewed
+  `docs/release/github-release-v2.0.0.md` notes and `agent_artifacts-2.0.0-py3-none-any.whl`
+  (461 668 bytes) attached by the release workflow.
+- The release gate is circular by design and was resolved in the recorded order. The `release` job
+  clones `M1F1/agent-artifacts-registry` and runs the full checklist against it, so the tagged run
+  failed on `registry-validate/build/audit/compatibility` while main still carried `1.x` content.
+  Tag first, publish Registry A, re-run the gate: green, then publish the release itself.
+- **Both WP-6 branches had to be redone.** `origin/main` of each registry had been force-replaced
+  during the live acceptance run (`4386ac0` Registry A, `7e347a6` Registry B), so the branches
+  described in the previous entry targeted artifacts main no longer has. Both PRs were closed with
+  that explanation and the work redone against the current content. What the previous entry says
+  about `skill/author-aart-installer` and the `github-docker` end-to-end manual is a record of that
+  superseded branch, not of what is published.
+- **Registry A** ([#5](https://github.com/M1F1/agent-artifacts-registry/pull/5), `319fe35`): the
+  three Docker MCP recipes migrated to setup v2 with `SETUP.md` at the package root, window raised
+  to `>= 2.0.0, < 3.0.0`, CI repinned from `main` to `v2.0.0`. Two content defects surfaced on the
+  way. `hook/la-guard` shipped `payload/hook.json` as literally `{}` — published, installable, and
+  inert; the `2.0.0` compiler refuses it before publication, and it now carries a real PreToolUse
+  guard. The `github-enterprise-docker` manual told the reader to add `agent-artifacts-registry-2`
+  as the source for an artifact that lives in `agent-artifacts-registry`.
+- **Registry B** ([#4](https://github.com/M1F1/agent-artifacts-registry-2/pull/4), `b7b7d6f`):
+  closes WP-5 on the registry side. The nine `residual-0*` stages and three `residual-run-*` drivers
+  declare `requires: skill/using-residues >= 1.0.0, < 2.0.0`; until now the kernel dependency lived
+  in prose and in a sibling path lookup that failed at first use. `requires` is an unknown field to
+  every released `1.x` parser, so the window is `>= 2.0.0, < 3.0.0` and all three workflows pin
+  `v2.0.0`.
+- **Consumer project created:**
+  [`M1F1/agent-artifacts-live-acceptance-project`](https://github.com/M1F1/agent-artifacts-live-acceptance-project).
+  Eleven installations from both registries covering all five artifact kinds, written by the
+  released wheel at project scope for `claude` in copy mode and committed exactly as AART wrote
+  them. Ten were requested — `skill/using-residues` is the eleventh, pulled in by the declared
+  dependency, which is design §6 acceptance criterion 6 proven on published content rather than on a
+  fixture. CI installs the released wheel, configures both sources from scratch, and fails on any
+  installation that is not `current` or any file the run changed.
+- Not yet done: WP-7's full agent-driven acceptance matrix, and the human-gated curses, real-home,
+  and MCP credential passes.
