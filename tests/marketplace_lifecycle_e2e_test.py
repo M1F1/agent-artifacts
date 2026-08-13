@@ -302,6 +302,28 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
             state = json.loads((env.project / ".agent-artifacts" / "manifest.json").read_text())
             self.assertEqual(len(state["installations"]), 1, state)
 
+    def test_a_bare_update_selects_every_installation_in_the_scope(self) -> None:
+        # ``update`` without coordinates is the routine operator action.  It must reconcile the
+        # whole recorded scope, not silently do nothing because no coordinate was named.
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+
+            code, payload = env.run("marketplace", "update", "--profile", "claude", "--yes")
+
+            self.assertEqual(code, 0, payload)
+            self.assertEqual(len(payload["items"]), 1, payload)
+            self.assertEqual(payload["items"][0]["status"], "current")
+
+    def test_review_and_json_are_observations_that_change_no_effect(self) -> None:
+        # ``--json`` selects a rendering.  An agent reading the plan must be able to trust that
+        # asking for it never installs anything the human-readable path would not have.
+        with _environment() as env:
+            code, payload = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+
+            self.assertEqual(code, 0, payload)
+            self.assertFalse(payload["finalized"])
+            self.assertEqual(list(env.project.iterdir()), [], "review must not touch the project")
+
     def test_uninstall_removes_the_installed_payload(self) -> None:
         with _environment() as env:
             env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")

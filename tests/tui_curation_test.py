@@ -243,5 +243,34 @@ class TuiCurationTest(unittest.TestCase):
             self.assertEqual(service.prepared[0].action, CurationAction.VALIDATE)
 
 
+class WorkspaceClassificationTest(unittest.TestCase):
+    """A workspace is a registry only when it says so (DESIGN §3.2)."""
+
+    def test_an_empty_git_checkout_is_not_classified_as_a_registry(self) -> None:
+        # Inferring the maintainer role from "looks like a repository" is what sent a consumer
+        # into registry curation during live acceptance. Only the explicit current marker counts.
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / ".git").mkdir()
+
+            self.assertFalse(tui._is_canonical_maintainer_workspace(str(root)))
+
+    def test_a_directory_with_the_current_registry_marker_is_a_maintainer_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "aart-registry.json").write_text("{}", encoding="utf-8")
+
+            self.assertTrue(tui._is_canonical_maintainer_workspace(str(root)))
+
+    def test_a_retired_registry_marker_does_not_classify_the_workspace(self) -> None:
+        # A retired marker is not translated into the current one; it simply is not a registry.
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "registry.json").write_text("{}", encoding="utf-8")
+            (root / "catalog.json").write_text("{}", encoding="utf-8")
+
+            self.assertFalse(tui._is_canonical_maintainer_workspace(str(root)))
+
+
 if __name__ == "__main__":
     unittest.main()
