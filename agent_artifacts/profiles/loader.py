@@ -7,8 +7,8 @@ import os
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, cast
 
-from ..model import (
-    ArtifactType,
+from .model import (
+    ArtifactKind,
     CopyTarget,
     GuidelineTarget,
     HookTarget,
@@ -22,12 +22,12 @@ from .builtin import builtin
 _ARTIFACT_TYPES = ("skill", "guideline", "mcp", "hook", "memory")
 
 
-def _unsupported_from_dict(value: object, label: str) -> Mapping[ArtifactType, str]:
+def _unsupported_from_dict(value: object, label: str) -> Mapping[ArtifactKind, str]:
     """Validate stable user-facing reasons from a custom profile record."""
 
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be an object")
-    parsed: dict[ArtifactType, str] = {}
+    parsed: dict[ArtifactKind, str] = {}
     for raw_type, raw_reason in value.items():
         if raw_type not in _ARTIFACT_TYPES:
             raise ValueError(f"{label} has unknown artifact type {raw_type!r}")
@@ -38,7 +38,7 @@ def _unsupported_from_dict(value: object, label: str) -> Mapping[ArtifactType, s
             or "\r" in raw_reason
         ):
             raise ValueError(f"{label}.{raw_type} must be a non-empty single-line string")
-        parsed[cast(ArtifactType, raw_type)] = raw_reason.strip()
+        parsed[cast(ArtifactKind, raw_type)] = raw_reason.strip()
     return MappingProxyType(parsed)
 
 

@@ -1,8 +1,0 @@
-{
-  "name": "database",
-  "description": "Connect an agent to the test database.",
-  "server": {
-    "command": "database-server",
-    "args": ["--stdio"]
-  }
-}

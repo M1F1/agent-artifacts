@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import posixpath
-from dataclasses import replace
-from typing import Mapping, Protocol, cast
+import re
+from dataclasses import dataclass, replace
+from typing import Literal, Mapping, Protocol, cast
 
-from agent_artifacts import model as legacy
 from agent_artifacts.compiler.graph import CompatibilityTarget, evaluate_compatibility
 from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import EffectiveConfiguration
@@ -26,13 +26,7 @@ from agent_artifacts.install_state.paths import install_state_paths
 from agent_artifacts.install_state.schema import install_state_bytes, parse_install_state
 from agent_artifacts.marketplace.catalog import resolve_artifact
 from agent_artifacts.marketplace.model import ArtifactQuery, TrustClass
-from agent_artifacts.planners import (
-    plan_guideline,
-    plan_hook,
-    plan_mcp,
-    plan_memory,
-    plan_skill,
-)
+from agent_artifacts.profiles.model import Profile
 from agent_artifacts.profiles.scope import profile_for_scope
 from agent_artifacts.protocol.hashing import (
     json_digest,
@@ -79,6 +73,30 @@ _TRUST_RANK = {
     TrustClass.REGISTRY_REVIEWED.value: 3,
     TrustClass.COMPANY_REVIEWED.value: 4,
 }
+_PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
+
+
+@dataclass(frozen=True, slots=True)
+class _CopyPayload:
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
+class _WritePayload:
+    destination: str
+    content: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _MergePayload:
+    destination: str
+    json_path: str
+    mode: Literal["key", "list"]
+    value: object
+    identity: tuple[str, ...]
+
+
+_NativeAction = _CopyPayload | _WritePayload | _MergePayload
 
 
 def _error(code: DiagnosticCode, message: str) -> Err:
@@ -249,7 +267,7 @@ def _destination(
     return Ok((normalized, normalized))
 
 
-def _target_paths(kind: str, name: str, profile: legacy.Profile) -> Result[tuple[str, ...]]:
+def _target_paths(kind: str, name: str, profile: Profile) -> Result[tuple[str, ...]]:
     if kind == "skill" and profile.skills is not None:
         target = profile.skills.dir.replace("<name>", name).rstrip("/")
         if "<name>" not in profile.skills.dir:
@@ -287,31 +305,70 @@ def _existing_mapping(snapshot: PathSnapshot) -> Result[dict[str, object]]:
     return _strict_mapping(snapshot.content, path=snapshot.path)
 
 
-def _legacy_actions(
+def _render_template(template: object, values: Mapping[str, object]) -> object:
+    """Render profile-owned JSON templates without importing the retired action algebra."""
+
+    if isinstance(template, str):
+        whole = _PLACEHOLDER.fullmatch(template)
+        if whole:
+            return values.get(whole.group(1))
+        return _PLACEHOLDER.sub(lambda match: str(values.get(match.group(1), "")), template)
+    if isinstance(template, Mapping):
+        return {key: _render_template(value, values) for key, value in template.items()}
+    if isinstance(template, (list, tuple)):
+        return [_render_template(value, values) for value in template]
+    return template
+
+
+def _memory_block(existing: str | None, name: str, body: str, *, position: str) -> str:
+    begin = f"<!-- >>> agent-artifacts memory:{name} >>> -->"
+    end = f"<!-- <<< agent-artifacts memory:{name} <<< -->"
+    block = f"{begin}\n{body.rstrip(chr(10))}\n{end}"
+    base = existing or ""
+    start = base.find(begin)
+    if start != -1:
+        stop = base.find(end, start)
+        if stop != -1:
+            tail = base[stop + len(end) :]
+            if tail.startswith("\n"):
+                tail = tail[1:]
+            return base[:start] + block + ("\n" + tail if tail else "\n")
+        return base[:start] + block + "\n"
+    if not base:
+        return block + "\n"
+    if not base.endswith("\n"):
+        base += "\n"
+    return (block + "\n\n" + base) if position == "top" else (base + "\n" + block + "\n")
+
+
+def _native_actions(
     request: InstallRequest,
     stored: StoredObject,
-    profile: legacy.Profile,
+    profile: Profile,
     snapshots: Mapping[str, PathSnapshot],
-):
+) -> Result[tuple[_NativeAction, ...]]:
+    """Project a compiled native package directly to canonical install operations."""
+
     kind = request.identity.kind
-    artifact = legacy.Artifact(
-        kind,  # type: ignore[arg-type]
-        request.identity.name,
-        posixpath.join(stored.root, "payload"),
-    )
     if kind == "skill":
         assert profile.skills is not None
-        return plan_skill(artifact, profile.skills.dir, force=request.force, install_mode="copy")
+        target = profile.skills.dir.replace("<name>", request.identity.name).rstrip("/")
+        if "<name>" not in profile.skills.dir:
+            target = posixpath.join(target, request.identity.name)
+        return Ok((_CopyPayload(target),))
     if kind == "guideline":
         assert profile.guidelines is not None
         primary = _payload_file(stored)
         if isinstance(primary, Err):
             return primary
-        try:
-            text = primary.value[1].decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            return _error(INSTALL_INVALID, "guideline payload is not UTF-8")
-        return plan_guideline(artifact, profile.guidelines, text, force=request.force)
+        return Ok(
+            (
+                _WritePayload(
+                    posixpath.join(profile.guidelines.dest, f"{request.identity.name}.md"),
+                    primary.value[1],
+                ),
+            )
+        )
     if kind == "mcp":
         assert profile.mcp is not None
         primary = _payload_file(stored, "payload/mcp.json")
@@ -324,12 +381,20 @@ def _legacy_actions(
         existing = _existing_mapping(target)
         if isinstance(existing, Err):
             return existing
-        return plan_mcp(
-            artifact,
-            descriptor.value,
-            profile.mcp,
-            existing.value,
-            force=request.force,
+        name = descriptor.value.get("name", request.identity.name)
+        server = descriptor.value.get("server", {})
+        if not isinstance(name, str) or not name:
+            return _error(INSTALL_INVALID, "MCP descriptor has no canonical server name")
+        return Ok(
+            (
+                _MergePayload(
+                    profile.mcp.file,
+                    profile.mcp.json_path,
+                    "key",
+                    server,
+                    (name,),
+                ),
+            )
         )
     if kind == "hook":
         assert profile.hooks is not None
@@ -343,13 +408,25 @@ def _legacy_actions(
         existing = _existing_mapping(target)
         if isinstance(existing, Err):
             return existing
-        return plan_hook(
-            artifact,
-            descriptor.value,
-            profile.hooks,
-            existing.value,
-            force=request.force,
-            install_mode="copy",
+        values = dict(descriptor.value)
+        command = values.get("command")
+        scripts_dir = profile.hooks.scripts_dir.replace("<name>", request.identity.name).rstrip("/")
+        if isinstance(command, str):
+            values["command"] = command.replace("${SCRIPT_DIR}", scripts_dir)
+        rendered = _render_template(profile.hooks.merge.entry_template or {}, values)
+        if not isinstance(rendered, Mapping):
+            return _error(INSTALL_INVALID, "hook profile template must render a JSON object")
+        return Ok(
+            (
+                _CopyPayload(scripts_dir),
+                _MergePayload(
+                    profile.hooks.merge.file,
+                    profile.hooks.merge.json_path,
+                    profile.hooks.merge.mode,
+                    rendered,
+                    profile.hooks.merge.identity,
+                ),
+            )
         )
     if kind == "memory":
         assert profile.memory is not None
@@ -376,26 +453,30 @@ def _legacy_actions(
             )
         except UnicodeDecodeError:
             return _error(INSTALL_CONFLICT, "existing memory destination is not UTF-8")
-        planned = plan_memory(
-            artifact,
-            profile.memory,
-            text,
-            existing_text,
-            snapshot.kind != "absent",
-            mode=request.memory_mode,
-            force=request.force,
-        )
-        if isinstance(planned, legacy.Err):
-            return planned
-        retained = tuple(
-            action
-            for action in planned.value
-            if not isinstance(action, legacy.WriteFile)
-            or not action.path.endswith(".agent-artifacts-bak")
-        )
-        if not retained:
-            return _error(INSTALL_INVALID, "memory install was skipped and has no managed effect")
-        return legacy.Ok(retained)
+        if profile.memory.kind == "dir":
+            if request.memory_mode == "skip" and snapshot.kind != "absent":
+                return _error(INSTALL_INVALID, "memory install was skipped and has no managed effect")
+            return Ok((_WritePayload(target_path, text.encode("utf-8")),))
+        if request.memory_mode == "skip":
+            if snapshot.kind != "absent":
+                return _error(INSTALL_INVALID, "memory install was skipped and has no managed effect")
+            return Ok((_WritePayload(target_path, text.encode("utf-8")),))
+        if request.memory_mode == "replace":
+            if bool((existing_text or "").strip()) and not request.force:
+                return _error(
+                    INSTALL_CONFLICT,
+                    f"memory {request.identity.name!r}: {target_path} exists; use force to replace",
+                )
+            return Ok((_WritePayload(target_path, text.encode("utf-8")),))
+        if request.memory_mode in {"prepend", "append"}:
+            merged = _memory_block(
+                existing_text,
+                request.identity.name,
+                text,
+                position="top" if request.memory_mode == "prepend" else "bottom",
+            )
+            return Ok((_WritePayload(target_path, merged.encode("utf-8")),))
+        return _error(INSTALL_INVALID, f"unknown canonical memory mode: {request.memory_mode!r}")
     return _error(INSTALL_INVALID, f"canonical {kind} install is not implemented by INS01")
 
 
@@ -421,7 +502,7 @@ def _descend(root: dict[str, object], json_path: str, *, force: bool) -> Result[
 
 
 def _merged_content(
-    action: legacy.MergeJson,
+    action: _MergePayload,
     snapshot: PathSnapshot,
     identity_evidence: JsonValue,
     *,
@@ -520,7 +601,7 @@ def _identity_evidence(value: object, identity: tuple[str, ...]) -> JsonValue | 
     return JsonObject(tuple(fields))
 
 
-def _merge_identity_evidence(action: legacy.MergeJson) -> Result[JsonValue]:
+def _merge_identity_evidence(action: _MergePayload) -> Result[JsonValue]:
     if action.mode == "key":
         if not action.identity:
             return _error(INSTALL_INVALID, "key merge has no identity")
@@ -532,7 +613,7 @@ def _merge_identity_evidence(action: legacy.MergeJson) -> Result[JsonValue]:
 
 
 def _convert_actions(
-    actions,
+    actions: tuple[_NativeAction, ...],
     request: InstallRequest,
     stored: StoredObject,
     location: InstallLocation,
@@ -546,18 +627,14 @@ def _convert_actions(
     primary = _payload_file(stored)
     converted: list[InstallOperation] = []
     for action in actions:
-        target_path = (
-            action.dst
-            if isinstance(action, legacy.CopyTree)
-            else (action.path if isinstance(action, legacy.WriteFile) else action.file)
-        )
+        target_path = action.destination
         destination = _destination(target_path, request, location)
         if isinstance(destination, Err):
             return destination
         logical, absolute = destination.value
         snapshot = snapshots[target_path]
         operation: InstallOperation
-        if isinstance(action, legacy.CopyTree):
+        if isinstance(action, _CopyPayload):
             desired = tree_members_digest(payload.value)
             if request.mode == "symlink":
                 payload_root = request.mutable_local_payload_root or posixpath.join(
@@ -603,7 +680,7 @@ def _convert_actions(
                     snapshot,
                     snapshot.kind != "absent" and snapshot.digest != desired,
                 )
-        elif isinstance(action, legacy.WriteFile):
+        elif isinstance(action, _WritePayload):
             source_path = "payload"
             executable = False
             if isinstance(primary, Ok):
@@ -663,7 +740,7 @@ def _convert_actions(
                     ),
                     overwrote=snapshot.kind != "absent" and snapshot.digest != desired,
                 )
-        elif isinstance(action, legacy.MergeJson):
+        elif isinstance(action, _MergePayload):
             identity_evidence = _merge_identity_evidence(action)
             if isinstance(identity_evidence, Err):
                 return identity_evidence
@@ -695,8 +772,6 @@ def _convert_actions(
                     and snapshot.digest != file_snapshot_digest(merged.value)
                 ),
             )
-        else:
-            return _error(INSTALL_INVALID, "legacy planner emitted an unsupported action")
         converted.append(operation)
     return Ok(tuple(converted))
 
@@ -861,7 +936,7 @@ def prepare_install(
     request: InstallRequest,
     catalog,
     effective: EffectiveConfiguration,
-    profile: legacy.Profile,
+    profile: Profile,
     location: InstallLocation,
     store_paths: ObjectStorePaths,
     ports: InstallReadPorts,
@@ -955,15 +1030,11 @@ def prepare_install(
                 f"install destination has an unsafe existing type: {destination.value[1]}",
             )
         snapshots[target_path] = observed.value
-    legacy = _legacy_actions(request, stored, scoped_profile, snapshots)
-    if isinstance(legacy, Err):
-        return legacy
-    if hasattr(legacy, "reason"):
-        code = INSTALL_CONFLICT if getattr(legacy, "code", 1) == 4 else INSTALL_INVALID
-        return _error(code, getattr(legacy, "reason", "legacy install planning failed"))
-    actions = legacy.value
+    actions = _native_actions(request, stored, scoped_profile, snapshots)
+    if isinstance(actions, Err):
+        return actions
     converted = _convert_actions(
-        actions,
+        actions.value,
         request,
         stored,
         location,

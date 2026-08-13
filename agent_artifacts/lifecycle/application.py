@@ -5,7 +5,6 @@ from __future__ import annotations
 import posixpath
 from typing import Protocol
 
-from agent_artifacts import model as legacy
 from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import EffectiveConfiguration
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
@@ -29,6 +28,7 @@ from agent_artifacts.installation.model import (
     classify_link,
 )
 from agent_artifacts.marketplace.model import MarketplaceCatalog
+from agent_artifacts.profiles.model import Profile
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import (
     JsonArray,
@@ -674,7 +674,7 @@ def prepare_update(
     record: InstallationRecord,
     catalog: MarketplaceCatalog,
     effective: EffectiveConfiguration,
-    profile: legacy.Profile,
+    profile: Profile,
     location: InstallLocation,
     store_paths: ObjectStorePaths,
     ports: LifecycleReadPorts,
