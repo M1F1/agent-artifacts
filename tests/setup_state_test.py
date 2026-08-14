@@ -22,7 +22,7 @@ class SetupStateTests(unittest.TestCase):
                 installer_hash="a" * 64,
                 plan_hash="b" * 64,
                 retry_command="",
-                rollback_command=f"aart setup rollback mcp/atlassian --profile {profile} --scope user",
+                rollback_command=f"undo mcp/atlassian in {profile} (user) from the recorded receipt",
             )
             for profile in ("tabnine", "claude")
         )

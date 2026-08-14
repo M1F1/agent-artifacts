@@ -3,6 +3,82 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.2.0 — 2026-08-14
+
+Live acceptance v2 ran forty scenarios against `2.1.0` and filed thirteen residues; this release
+closes nine — every finding whose fix does not require a major — and decides the three open
+questions. Minor and additive: one flag on existing commands, one computed reconciliation status,
+one refusal that the maintainer gate already enforced. The v10 schema freeze carries protocol
+versions identical to v9 and differs in two inputs, neither of them a parsed field.
+
+### Added
+
+- `--expect <review-digest>` on every review-first consumer command, and `--expect <from>:<to>` on
+  `aart source resubscribe`. Finalize proceeds only when the recomputed review still matches what
+  was read; otherwise it refuses and renders the new plan in both text and JSON, so an operator who
+  cannot see the new plan cannot re-authorize it. `--yes` alone keeps its exact meaning.
+- `identity-changed`: an installation whose subscription is intact but whose origin now declares a
+  different `source_id` reconciles as that instead of `source-unavailable` forever.
+  `aart marketplace update` rebinds the record in the project that owns the installation, and the
+  review field is digest-bound, so consent for one identity cannot apply another.
+- A consumer-side refusal for a snapshot whose `aart-registry.json` and `aart-source.json` declare
+  different identities, naming both values and both files, on the direct and local paths as well as
+  registry-git. `registry validate --strict --frozen` already refused it; no registry that passes
+  its own maintainer gate is affected.
+- `python scripts/release.py wheel-digest`, which stamps `HEAD` into a throwaway copy, builds, and
+  prints the digest of the wheel this commit publishes. Publishing that line with the release
+  artifacts is a checklist step from v10 onward.
+
+### Changed
+
+- The plan review digest no longer moves on an unchanged workspace: `source_age_seconds` and source
+  health left the digested value. Freshness is rendered instead — a `Source freshness:` line in text
+  and a `source_freshness` field beside `review` in JSON, never inside it.
+- Resolution failures name the layer that failed. An alias never configured, one configured but
+  never synchronized, and a cold cache read under `--offline` each carry their own diagnostic and
+  remediation; `artifact-not-found` survives for the case where it is true.
+- `aart marketplace uninstall` plans from the durable manifest rather than resolving through the
+  source, so an artifact whose subscription is gone can still be removed. **This is the one refusal
+  loosened in this release**: `no-source-configured` no longer gates uninstall, because uninstall is
+  not a content operation. Collections remain the exception.
+- Uninstall reclaims what it emptied — the profile directories the removed record created, and the
+  manifest and its lock with the last record in a scope. A directory holding anything the install
+  did not put there is never removed, and a harness root such as `.claude` is never reclaimed.
+  Uninstalling everything no longer leaves `.agent-artifacts/` behind.
+- The `requires` refusal states its rule: the dependency must be published by this registry, with an
+  identity the registry does not publish distinguished from one it references from another origin.
+  The rule is unchanged and is now written down in `docs/protocol/registry-v1.md`.
+- Per-source diagnostics render their remediation in text mode, not only under `--json`. A busy
+  source lock reports the holder's age, pid, host, liveness, and the stale window; every
+  `store-unavailable` failure carries remediation instead of a bare errno.
+- `aart setup retry` and `aart setup rollback` are gone from rendered text. The retry names
+  `aart marketplace setup`, which is the canonical verb; the rollback field names the artifact,
+  profile, and scope to undo from the recorded receipt and states that no command does it.
+
+### Packaging
+
+- `agent_artifacts-2.2.0-py3-none-any.whl` is byte-reproducible: member dates come from the
+  committer date stamped into the source, and member order, compression, permissions, and
+  create-system are pinned rather than taken from the build platform. `SOURCE_DATE_EPOCH` is
+  deliberately not read.
+
+### Testing
+
+- Every user-visible `aart …` mention in the shipped package — display reasons and TUI hints
+  included, not only `Diagnostic.remediation` — is parsed by the real `cli.build_parser()`. Commands
+  removed in `2.0.0` are legible to that guard because it reads the removals out of the
+  compatibility tables, which makes the addendum part of the gate.
+- Text and JSON carry the same remediation for every command family that renders both.
+- Clean checkout → install → uninstall everything → `git status --porcelain` is empty, against a
+  real git repository; a pre-existing profile directory holding foreign content survives.
+- Two builds of one commit at different wall-clock times produce byte-identical wheels.
+
+### Compatibility
+
+No protocol revision, schema, store layout, or on-disk format changed, and no `requires_aart` window
+needs re-authoring: `>= 2.0.0, < 3.0.0` admits this release. A `2.2.0` data root is fully readable by
+`2.1.0` and `2.0.0`. See [compatibility-v10.md](docs/release/compatibility-v10.md).
+
 ## 2.1.0 — 2026-08-13
 
 The source subscription lifecycle closes. `2.0.0` could subscribe to a source and refresh it, but

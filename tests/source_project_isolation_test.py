@@ -66,6 +66,19 @@ def _project_snapshot(project: Path) -> dict[str, tuple[str, ...]]:
     return {str(path.relative_to(project)): _entry(path) for path in sorted(project.rglob("*"))}
 
 
+def _stable_entry(path: Path) -> tuple[str, ...]:
+    """Like :func:`_entry` without the modification time, for comparing two separate runs."""
+
+    described = _entry(path)
+    return described if described[0] != "file" else (described[0], described[1], described[3])
+
+
+def _stable_snapshot(project: Path) -> dict[str, tuple[str, ...]]:
+    return {
+        str(path.relative_to(project)): _stable_entry(path) for path in sorted(project.rglob("*"))
+    }
+
+
 class SourceOperationProjectIsolationTest(unittest.TestCase):
     def test_no_source_operation_writes_beneath_the_project(self) -> None:
         with _environment() as env:
@@ -173,6 +186,69 @@ class SourceOperationProjectIsolationTest(unittest.TestCase):
             self.assertEqual(code, 0, status)
             self.assertEqual([item["status"] for item in status["items"]], ["source-unavailable"])
             self.assertEqual(status["items"][0]["key"], f"{_COORDINATE}@1.0.0#claude/project")
+
+
+class UninstallAfterSourceRemovalTest(unittest.TestCase):
+    """SI-3: uninstall plans from the manifest, so removing a subscription cannot strand a project.
+
+    `source remove`'s review names uninstall as a valid exit.  That claim was false while uninstall
+    resolved through the catalog first: with the subscription gone there was nothing to resolve
+    through, and the command refused with `artifact-not-found` for an artifact it had a complete
+    record of.  The removal is what these tests hold constant — the outcome must not depend on it.
+    """
+
+    def test_uninstall_succeeds_after_the_source_it_came_from_is_removed(self) -> None:
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+            installed = env.project / _INSTALLED
+            self.assertTrue(installed.exists())
+            removed_code, removed = _source(
+                env, "source", "remove", "--alias", "reference", "--yes"
+            )
+            self.assertEqual(removed_code, 0, removed)
+
+            code, payload = env.run(
+                "marketplace", "uninstall", _COORDINATE, "--profile", "claude", "--yes"
+            )
+
+            self.assertEqual(code, 0, payload)
+            self.assertTrue(payload["finalized"], payload)
+            self.assertFalse(installed.exists(), sorted(map(str, env.project.rglob("*"))))
+
+    def test_the_removal_changes_nothing_about_what_uninstall_leaves_behind(self) -> None:
+        """Two runs differing only in whether the subscription was removed must land identically."""
+
+        def _uninstalled(remove_source: bool) -> dict[str, tuple[str, ...]]:
+            with _environment() as env:
+                env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+                if remove_source:
+                    _source(env, "source", "remove", "--alias", "reference", "--yes")
+                code, payload = env.run(
+                    "marketplace", "uninstall", _COORDINATE, "--profile", "claude", "--yes"
+                )
+                self.assertEqual(code, 0, payload)
+                return _stable_snapshot(env.project)
+
+        self.assertEqual(_uninstalled(remove_source=True), _uninstalled(remove_source=False))
+
+    def test_an_uninstall_selector_naming_nothing_installed_says_exactly_that(self) -> None:
+        # Resolving from the manifest must not turn "you never installed this" into "uninstall
+        # everything": an empty selection is how a bare `uninstall` selects the whole project.
+        with _environment() as env:
+            env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+
+            code, payload = env.run(
+                "marketplace",
+                "uninstall",
+                "reference/skill/absent",
+                "--profile",
+                "claude",
+                "--yes",
+            )
+
+            self.assertEqual(code, 1, payload)
+            self.assertEqual(payload["diagnostics"][0]["code"], "installation-not-found")
+            self.assertTrue((env.project / _INSTALLED).exists())
 
 
 if __name__ == "__main__":

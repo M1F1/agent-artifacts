@@ -20,6 +20,7 @@ from .model import (
     ConsumerTerminalItem,
     render_consumer_outcome,
     render_consumer_review,
+    review_source_freshness,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "prepare_consumer_setup_queue",
     "render_consumer_outcome",
     "render_consumer_review",
+    "review_source_freshness",
 ]

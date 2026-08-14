@@ -69,6 +69,10 @@ The canonical verbs take a `<source>/<kind>/<name>[@<version>]` coordinate. An u
 `<kind>/<name>` resolves only when it is unique; otherwise the diagnostic names every valid
 coordinate. Legacy `--source`/`--repo` are not accepted anywhere.
 
+This table lists top-level commands only. The subcommands removed with them —
+`aart source doctor` and the `aart setup` verbs — are recorded in
+[`compatibility-v8-addendum.md`](compatibility-v8-addendum.md), added during `2.2.0`.
+
 ### `requires_aart` windows must be re-authored
 
 A registry or artifact declaring the conventional `max_exclusive: "2.0.0"` excludes this release.

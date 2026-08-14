@@ -35,6 +35,7 @@ class LifecycleStatus(str, Enum):
     REMOVED = "removed"
     REMOVED_UPSTREAM = "removed-upstream"
     SOURCE_UNAVAILABLE = "source-unavailable"
+    IDENTITY_CHANGED = "identity-changed"
     MISSING = "missing"
     DRIFTED = "drifted"
     BROKEN = "broken"
@@ -172,6 +173,61 @@ def absolute_effect_path(
 
 
 @dataclass(frozen=True, slots=True)
+class ScopeTeardown:
+    """What an uninstall reclaims beyond the effects it removes.
+
+    Two lifetimes meet here.  The directories belong to the record being removed: they held its
+    payload and nothing else put anything in them, so each uninstall reclaims its own.  The
+    manifest and its lock belong to the scope, so ``reclaims_state`` is true only for the uninstall
+    that empties it.
+
+    Directories are listed deepest first and every one of them is removed only while it is empty,
+    so a harness directory holding anything the install did not put there survives untouched.  The
+    harness root itself — ``.claude``, ``.tabnine`` — is never a member: it is the agent's own
+    directory, shared with the harness, and nothing here can prove an install created it.
+    """
+
+    state_path: str
+    state_lock_path: str
+    state_root: str
+    directories: tuple[str, ...] = ()
+    reclaims_state: bool = False
+
+    def __post_init__(self) -> None:
+        paths = (self.state_path, self.state_lock_path, self.state_root, *self.directories)
+        if (
+            any(
+                not isinstance(path, str)
+                or not posixpath.isabs(path)
+                or posixpath.normpath(path) != path
+                or path == "/"
+                for path in paths
+            )
+            or self.state_root != posixpath.dirname(self.state_path)
+            or self.state_root != posixpath.dirname(self.state_lock_path)
+            or not isinstance(self.reclaims_state, bool)
+            or len(set(self.directories)) != len(self.directories)
+            or list(self.directories)
+            != sorted(self.directories, key=lambda path: (-path.count("/"), path))
+        ):
+            raise ValueError("scope teardown is invalid")
+
+
+def _prunable_ancestors(destination: str, root: str) -> tuple[str, ...]:
+    """Ancestors of ``destination`` that the install could only have created for it.
+
+    The walk stops one level below ``root``: the first segment under a project root or a home
+    directory is the harness's own directory, not this installation's.
+    """
+
+    prefix = root.rstrip("/") + "/"
+    if not destination.startswith(prefix):
+        return ()
+    parts = destination[len(prefix) :].split("/")
+    return tuple(posixpath.join(root, *parts[:depth]) for depth in range(len(parts) - 1, 1, -1))
+
+
+@dataclass(frozen=True, slots=True)
 class UninstallOperation:
     effect: EffectProof
     absolute_destination: str
@@ -191,6 +247,33 @@ class UninstallOperation:
             or (self.mutation != "write" and self.replacement_content)
         ):
             raise ValueError("uninstall operation is invalid")
+
+
+def scope_teardown(
+    record: InstallationRecord,
+    operations: tuple[UninstallOperation, ...],
+    state_path: str,
+    state_lock_path: str,
+    location: InstallLocation,
+    *,
+    reclaims_state: bool,
+) -> ScopeTeardown:
+    """Compute what an uninstall leaves behind and may reclaim."""
+
+    root = location.project_root if record.scope == "project" else location.user_home
+    directories = {
+        ancestor
+        for operation in operations
+        if operation.mutation == "remove"
+        for ancestor in _prunable_ancestors(operation.absolute_destination, root)
+    }
+    return ScopeTeardown(
+        state_path,
+        state_lock_path,
+        posixpath.dirname(state_path),
+        tuple(sorted(directories, key=lambda path: (-path.count("/"), path))),
+        reclaims_state,
+    )
 
 
 def reference_owner(record: InstallationRecord) -> str:
@@ -276,6 +359,7 @@ class UninstallPlan:
     terminal: LifecycleStatus | None
     detail: str
     review_digest: ObjectDigest
+    teardown: ScopeTeardown | None = None
 
     def __post_init__(self) -> None:
         parsed_state = (
@@ -339,6 +423,18 @@ class UninstallPlan:
                     for item in self.reference_precondition.references
                     if not (item.kind.value == "installed" and item.owner == self.reference_owner)
                 ),
+            )
+            # Reclaiming the manifest belongs to the uninstall that empties the scope, and to no
+            # other: a plan that leaves a record behind must leave the manifest holding it behind
+            # too.  A plan that applies nothing reclaims nothing.
+            or (
+                self.teardown is not None
+                and (
+                    self.terminal is not None
+                    or self.teardown.state_path != self.state_path
+                    or self.teardown.state_lock_path != self.state_lock_path
+                    or self.teardown.reclaims_state != (not self.replacement_state.installations)
+                )
             )
         ):
             raise ValueError("uninstall plan is not exactly bound")

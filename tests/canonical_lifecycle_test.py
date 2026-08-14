@@ -163,7 +163,9 @@ class CanonicalLifecycleTest(unittest.TestCase):
             self.assertEqual(removed.value.status, LifecycleStatus.REMOVED)
             remaining = json.loads(config_path.read_text())
             self.assertEqual(remaining, {"mcpServers": {"foreign": {"command": "keep-me"}}})
-            self.assertEqual(_state(project).installations, ())
+            # The last record out of the scope takes the manifest with it (SI-7), so "no
+            # installations remain" is now read from the absence of the state itself.
+            self.assertFalse((project / ".agent-artifacts").exists())
 
     def test_check_is_fetch_free_and_compares_only_the_recorded_subscription(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

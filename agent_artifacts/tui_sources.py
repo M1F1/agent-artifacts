@@ -386,7 +386,9 @@ def _availability_reason(
     if display_health is SourceDisplayHealth.INCOMPATIBLE:
         return "source is incompatible with this AART version"
     if display_health is SourceDisplayHealth.INVALID:
-        return "source state is invalid; run source doctor before enabling it"
+        # `source doctor` was removed in 2.0.0.  Synchronizing is what republishes a managed
+        # snapshot whose state is unreadable, and it is the command that still exists.
+        return "source state is invalid; run `aart source sync --alias <alias>` before enabling it"
     if source.kind is not SourceKind.SOURCE_LOCAL and git_location_parts(source.location) is None:
         return "source has an invalid Git origin"
     return ""
@@ -830,8 +832,12 @@ def render_source_resubscription_review(request: SourceResubscriptionRequest) ->
         f"  preserves: alias, kind, origin{ref and ', ref'}, and the default-registry flag",
         "  effect: publish the new snapshot and bind this alias to it",
         "  keeps: every installed artifact and every file in every project",
-        "  note: installed artifacts are not re-installed; they surface as update-available or "
-        "removed-upstream through the normal reconciliation",
+        # The precise statuses matter: this note is the promise `LAF-33` proved false, and it is
+        # only true because reconciliation now names an adopted identity change instead of
+        # reporting those installations as permanently source-unavailable.
+        "  note: installed artifacts are not re-installed; they surface as identity-changed, "
+        "update-available, or removed-upstream through the normal reconciliation, and "
+        "`aart marketplace update` in each project rebinds them",
     )
 
 

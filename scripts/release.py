@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -20,8 +21,8 @@ PYTHON = sys.executable
 # The release series this checklist governs.  REL01's `1.0.0` evidence is immutable: its
 # schema freeze, checklist, and release notes are never regenerated or edited.  A new release
 # series adds its own contract here and its own versioned documents beside the frozen ones.
-EXPECTED_VERSION = "2.1.0"
-RELEASE_CONTRACT_VERSION = 9
+EXPECTED_VERSION = "2.2.0"
+RELEASE_CONTRACT_VERSION = 10
 REFERENCE_REGISTRY_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry"
 SCHEMA_FREEZE_PATH = f"docs/release/schema-freeze-v{RELEASE_CONTRACT_VERSION}.json"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -133,6 +134,52 @@ def schema_freeze_bytes(root: Path = ROOT) -> bytes:
         "schema_version": 1,
     }
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _script(name: str):
+    path = ROOT / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"_aart_release_{name}", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load scripts/{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def wheel_digest(root: Path = ROOT) -> tuple[str, str]:
+    """Build this commit's wheel in a throwaway copy and return ``(filename, digest)``.
+
+    The published wheel is dated from the commit it was built at, so its digest is a property of
+    the tag and cannot be recorded inside the tag: writing it into a tracked file would change the
+    commit that determines it.  This command is how the digest reaches the release evidence — run
+    it at the tag and publish what it prints beside the artifact
+    (``docs/release/wheel-reproducibility-v1.md``).
+    """
+
+    inject = _script("inject_commit")
+    packaging = _script("packaging_check")
+    with tempfile.TemporaryDirectory(prefix="aart-wheel-digest-") as raw:
+        temp_root = Path(raw)
+        source_copy = temp_root / "source"
+        source_copy.mkdir()
+        packaging._copy_project(root, source_copy)
+        # The copy has no ``.git``, so the stamp is taken from the real checkout and written in —
+        # otherwise this would hash a wheel no release ever publishes.
+        (source_copy / "agent_artifacts" / "_commit.py").write_text(
+            inject.render(inject.current_commit(), inject.current_commit_epoch()),
+            encoding="utf-8",
+        )
+        subprocess.run(
+            [PYTHON, "scripts/build_wheel.py"],
+            cwd=source_copy,
+            check=True,
+            capture_output=True,
+        )
+        built = tuple((source_copy / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        if len(built) != 1:
+            raise ValueError(f"expected one built wheel, found {built}")
+        return built[0].name, _sha256(built[0].read_bytes())
 
 
 def _environment() -> dict[str, str]:
@@ -594,6 +641,7 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     freeze = commands.add_parser("freeze", help="write exact schema-freeze evidence")
     freeze.add_argument("--write", action="store_true", help="required write acknowledgement")
+    commands.add_parser("wheel-digest", help="print the digest of the wheel this commit publishes")
     check = commands.add_parser("check", help="run the complete stable-release checklist")
     check.add_argument("--registry", required=True, type=Path)
     check.add_argument("--json", action="store_true")
@@ -615,6 +663,14 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
             print(f"release error: cannot write schema freeze: {error}", file=sys.stderr)
             return 1
         print(f"schema freeze written: {SCHEMA_FREEZE_PATH}")
+        return 0
+    if args.command == "wheel-digest":
+        try:
+            name, digest = wheel_digest(root)
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"release error: cannot build the wheel to digest: {error}", file=sys.stderr)
+            return 1
+        print(f"{digest}  {name}")
         return 0
     receipt = check_release(root, args.registry)
     if args.json:

@@ -524,7 +524,9 @@ def _custom_receipt(
         "plan_hash": plan.plan_hash,
         "applied": applied,
         "reversible": bool(applied.get("reversible", True)),
-        "recovery": "Retry the validated custom rollback with aart setup rollback.",
+        # No command reverses a completed setup; `aart setup rollback` never shipped.  Running the
+        # recipe again is what re-applies the compensation this receipt describes.
+        "recovery": "Re-run `aart marketplace setup` for this artifact to retry the compensation.",
     }
 
 

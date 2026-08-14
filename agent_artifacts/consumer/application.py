@@ -60,6 +60,7 @@ from agent_artifacts.tui_marketplace import (
     project_marketplace_rows,
 )
 
+from .coordinates import ArtifactSelector
 from .model import (
     ConsumerActionRequest,
     ConsumerContext,
@@ -73,6 +74,7 @@ from .model import (
     ConsumerSetupQueue,
     ConsumerTerminalItem,
 )
+from .resolution import resolve_installed_selectors
 
 CONSUMER_INVALID = DiagnosticCode("consumer-invalid")
 CONSUMER_REVIEW_MISMATCH = DiagnosticCode("consumer-review-mismatch")
@@ -359,6 +361,13 @@ def _review_item(
         assert isinstance(plan, (UpdatePlan, UninstallPlan))
         plan_digest = plan.review_digest
     security_status, installation_risk = _security(exact_coordinate, context.security)
+    # Only an update can rebind: install has no prior record, and uninstall builds no new one.
+    identity_transition = None
+    if record is not None and install is not None:
+        installed_under = record.source.declared_id
+        now_declares = install.source.declared_id
+        if installed_under != now_declares:
+            identity_transition = f"{installed_under}:{now_declares}"
     return ConsumerReviewItem(
         f"{exact_coordinate}#{profile}/{scope}",
         exact_coordinate,
@@ -376,6 +385,7 @@ def _review_item(
         _setup(item),
         plan_digest,
         plan,
+        identity_transition,
     )
 
 
@@ -760,6 +770,29 @@ class ConsumerApplicationService:
         sources: tuple[SourceAlias, ...] = (),
     ) -> Result[tuple[MarketplaceArtifactRow, ...]]:
         return browse_consumer_marketplace(target, self.context, self.ports, sources=sources)
+
+    def resolve_uninstall(
+        self,
+        selectors: tuple[ArtifactSelector, ...],
+        *,
+        scope: str,
+        profiles: tuple[str, ...],
+    ) -> Result[tuple[ArtifactCoordinate, ...]]:
+        """Bind an uninstall selection to what is recorded, without consulting any source."""
+
+        # ``_state`` reads only the scope; an uninstall request cannot be built yet, because the
+        # coordinates it requires are precisely what this call is resolving.
+        request = ConsumerActionRequest("status", (), profiles, scope)  # type: ignore[arg-type]
+        current = _state(request, self.context, self.ports)
+        if isinstance(current, Err):
+            return current
+        # Exactly the records ``_selected_records`` will later consider, so a selector cannot resolve
+        # here against a record the basket then refuses to see.
+        records = select_installations(
+            current.value,
+            LifecycleSelection(scope, profiles=profiles),  # type: ignore[arg-type]
+        )
+        return resolve_installed_selectors(records, selectors, self.context.catalog)
 
     def prepare(self, request: ConsumerActionRequest) -> Result[ConsumerReview]:
         available = self.ensure_content(request)

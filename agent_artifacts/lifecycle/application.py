@@ -57,6 +57,7 @@ from .model import (
     UpdatePlan,
     absolute_effect_path,
     reference_owner,
+    scope_teardown,
     select_installations,
 )
 
@@ -335,11 +336,19 @@ def status_installations(
     return Ok(LifecycleOutcome("status", len(items), tuple(items)))
 
 
-def _recorded_source_current(
+def _recorded_subscription_current(
     record: InstallationRecord,
     catalog: MarketplaceCatalog,
     effective: EffectiveConfiguration,
 ) -> bool:
+    """Is the subscription this record was installed through still the same subscription?
+
+    Deliberately no ``declared_id`` comparison.  A subscription is an alias pointed at an origin at a
+    ref; the identity the origin declares is evidence carried *inside* it, not the key that finds it.
+    Folding the two together is what made an adopted identity change orphan every installation from
+    that source permanently — see :func:`_recorded_identity_changed`.
+    """
+
     configured = next(
         (
             source
@@ -364,7 +373,6 @@ def _recorded_source_current(
         and configured.kind is record.source.kind
         and configured_origin == record.source.origin
         and source is not None
-        and source.source_id == record.source.declared_id
         and source.kind is record.source.kind
         and source.origin == record.source.origin
         and configured.ref == record.source.subscription_ref
@@ -372,6 +380,23 @@ def _recorded_source_current(
         and source.snapshot_digest is not None
         and source.health.value in {"healthy", "stale", "degraded"}
     )
+
+
+def _recorded_identity_changed(
+    record: InstallationRecord,
+    catalog: MarketplaceCatalog,
+) -> bool:
+    """Does the live subscription declare a different identity than the record was installed under?
+
+    Only meaningful once :func:`_recorded_subscription_current` holds: same alias, same origin, same
+    ref, different declared ID.  That is exactly the state `source resubscribe` leaves behind after
+    adopting a new identity, and the state this project's own reconciliation must be able to name.
+    """
+
+    source = next(
+        (candidate for candidate in catalog.sources if candidate.alias == record.source.alias), None
+    )
+    return source is not None and source.source_id != record.source.declared_id
 
 
 def _current_item(record: InstallationRecord, catalog: MarketplaceCatalog):
@@ -397,10 +422,25 @@ def check_installations(
     items: list[LifecycleItem] = []
     for record in select_installations(state, selection):
         key = LifecycleKey.from_record(record)
-        if not _recorded_source_current(record, catalog, effective):
+        if not _recorded_subscription_current(record, catalog, effective):
             items.append(
                 LifecycleItem(
                     key, LifecycleStatus.SOURCE_UNAVAILABLE, detail="recorded source unavailable"
+                )
+            )
+            continue
+        if _recorded_identity_changed(record, catalog):
+            source = next(
+                candidate for candidate in catalog.sources if candidate.alias == record.source.alias
+            )
+            items.append(
+                LifecycleItem(
+                    key,
+                    LifecycleStatus.IDENTITY_CHANGED,
+                    detail=(
+                        f"installed under {record.source.declared_id}; "
+                        f"{record.source.alias} now declares {source.source_id}"
+                    ),
                 )
             )
             continue
@@ -645,6 +685,21 @@ def prepare_uninstall(
     replacement_state = InstallState(
         2, tuple(item for item in state.installations if item.key != record.key)
     )
+    # An uninstall reclaims the harness directories its own payload emptied; the last record out of
+    # a scope also takes the scope's own files with it. Both are the install's litter rather than
+    # the operator's state (LAF-17).
+    teardown = (
+        None
+        if conflicts
+        else scope_teardown(
+            record,
+            tuple(operations),
+            paths.destination_path,
+            paths.lock_path,
+            location,
+            reclaims_state=not replacement_state.installations,
+        )
+    )
     placeholder = sha256_bytes(b"unreviewed-uninstall-plan")
     try:
         return Ok(
@@ -664,6 +719,7 @@ def prepare_uninstall(
                 LifecycleStatus.CONFLICT if conflicts else None,
                 "; ".join(conflicts),
                 placeholder,
+                teardown,
             )
         )
     except ValueError as error:
@@ -744,14 +800,18 @@ def prepare_update(
 ) -> Result[UpdatePlan]:
     if profile.name != record.profile:
         return _error(LIFECYCLE_INVALID, "lifecycle profile does not match the recorded profile")
-    if not _recorded_source_current(record, catalog, effective):
+    if not _recorded_subscription_current(record, catalog, effective):
         return Ok(
             _terminal_update(
                 record,
                 LifecycleStatus.SOURCE_UNAVAILABLE,
-                "recorded source is missing, disabled, unhealthy, or changed identity/ref",
+                "recorded source is missing, disabled, unhealthy, or changed origin/ref",
             )
         )
+    # An identity change is deliberately not a refusal here.  `update` is the one place the design
+    # makes it actionable: the plan below is built from the live subscription, so its replacement
+    # record carries the new declared ID, and the review states both identities before anything is
+    # written.  Refusing would leave the operator with no route but uninstall and reinstall.
     if _current_item(record, catalog) is None:
         if not prune:
             return Ok(
@@ -856,8 +916,14 @@ def finalize_update(
     if plan.terminal is not None:
         return Ok(plan.terminal)
     if plan.uninstall_plan is not None:
+        # Both halves, unchanged from before the split: this is a prune, reviewed as "the source
+        # under identity X no longer publishes this artifact".  An identity change between Review
+        # and Finalize invalidates that evidence just as a vanished subscription does, so the
+        # identity comparison stays part of the precondition here even though it is no longer part
+        # of the reconciliation status.
         if (
-            not _recorded_source_current(plan.record, catalog, effective)
+            not _recorded_subscription_current(plan.record, catalog, effective)
+            or _recorded_identity_changed(plan.record, catalog)
             or _current_item(plan.record, catalog) is not None
         ):
             return Ok(

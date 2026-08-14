@@ -384,6 +384,30 @@ class ObjectStoreAdapterTest(unittest.TestCase):
             self.assertIsInstance(delete_object(ObjectDeleteCommand(paths, candidate.digest)), Err)
             self.assertEqual(tuple(external.iterdir()), ())
 
+    def test_an_unavailable_store_tells_the_operator_what_to_do_about_it(self) -> None:
+        """SI-6: an errno is a cause, not an instruction.
+
+        Every `store-unavailable` failure is the same environment problem — the managed store could
+        not be read or written — and it reached the operator as a bare `[Errno 13]` with nothing to
+        act on.
+        """
+
+        with tempfile.TemporaryDirectory() as root:
+            paths = object_store_paths(root)
+
+            with patch(
+                "agent_artifacts.io.object_store.os.open", side_effect=PermissionError("denied")
+            ):
+                failed = publish_object(ObjectPublishCommand(paths, _candidate()))
+
+            assert isinstance(failed, Err)
+            self.assertEqual(len(failed.diagnostics), 1, failed)
+            diagnostic = failed.diagnostics[0]
+            self.assertEqual(diagnostic.code.value, "store-unavailable")
+            self.assertIn("denied", diagnostic.message)
+            self.assertTrue(diagnostic.remediation, diagnostic)
+            self.assertTrue(any("writable" in line for line in diagnostic.remediation))
+
 
 if __name__ == "__main__":
     unittest.main()

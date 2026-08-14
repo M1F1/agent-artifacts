@@ -812,8 +812,15 @@ def load_local_consumer_service(
     configuration: UserConfiguration | None = None,
     refresh_sources: bool = False,
     offline: bool = False,
+    content_required: bool = True,
 ) -> Result[ConsumerApplicationService]:
-    """Load a consumer service, optionally refreshing every configured origin first."""
+    """Load a consumer service, optionally refreshing every configured origin first.
+
+    ``content_required`` is the canonical no-source contract: a content operation needs at least one
+    enabled source, and every organization-required alias.  Uninstall is the one lifecycle operation
+    that is not a content operation — it reads the manifest — so it passes ``False`` rather than
+    refusing to remove what a project already has because the subscription it came from is gone.
+    """
 
     platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
     home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -828,7 +835,7 @@ def load_local_consumer_service(
         ConfigurationRequest(
             config_paths,
             RuntimeOverrides(),
-            content_required=configuration is None,
+            content_required=content_required and configuration is None,
         ),
         ConfigurationPorts(
             read_configuration,

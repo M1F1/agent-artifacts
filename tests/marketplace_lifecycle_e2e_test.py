@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -55,7 +56,11 @@ def _unwrap(result):
 class _Environment:
     """A real, isolated home/project/XDG environment with one synchronized local source."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, source_location: Path | None = None) -> None:
+        # ``source_location`` defaults to the shared read-only fixture.  Tests that need to mutate
+        # what the source publishes — a new identity, a withdrawn artifact — pass a writable copy;
+        # the fixture itself is never written to.
+        self.source_location = (source_location or _FIXTURE).resolve()
         self.root = root
         self.home = root / "home"
         self.project = root / "project"
@@ -80,7 +85,7 @@ class _Environment:
         self.source = ConfiguredSource(
             SourceAlias("reference"),
             SourceKind.SOURCE_LOCAL,
-            str(_FIXTURE.resolve()),
+            str(self.source_location),
             None,
             True,
         )
@@ -141,9 +146,9 @@ class _Environment:
 
 
 @contextlib.contextmanager
-def _environment():
+def _environment(source_location: Path | None = None):
     with tempfile.TemporaryDirectory() as raw:
-        yield _Environment(Path(raw).resolve())
+        yield _Environment(Path(raw).resolve(), source_location)
 
 
 class LifecycleCopyE2ETest(unittest.TestCase):
@@ -323,6 +328,80 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
             self.assertEqual(code, 0, payload)
             self.assertFalse(payload["finalized"])
             self.assertEqual(list(env.project.iterdir()), [], "review must not touch the project")
+
+    def test_two_reviews_seconds_apart_produce_one_digest_to_authorize(self) -> None:
+        # The review digest is consent a human carries to a later ``--yes``.  This runs the real CLI
+        # twice across a real second boundary: the workspace is untouched between them, so the
+        # digest must not move.  Freshness still reaches the operator, beside the digest.
+        with _environment() as env:
+            _, first = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+            time.sleep(1.2)
+            _, second = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+
+            self.assertEqual(first["review_digest"], second["review_digest"])
+            self.assertEqual(first["review"], second["review"])
+            ages = [
+                reading["age_seconds"]
+                for payload in (first, second)
+                for reading in payload["source_freshness"]
+            ]
+            self.assertEqual(len(ages), 2)
+            self.assertGreater(ages[1], ages[0], "the clock must actually have advanced")
+
+    def test_expect_carries_one_reviewed_decision_across_two_commands(self) -> None:
+        # The workflow the review text prescribes: read the digest from a review, then finalize that
+        # exact plan in a second command.  A digest that no longer describes the plan must refuse.
+        with _environment() as env:
+            _, review = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+            reviewed = review["review_digest"]
+
+            stale = "sha256:" + "0" * 64
+            code, refused = env.run(
+                "marketplace",
+                "install",
+                _COORDINATE,
+                "--profile",
+                "claude",
+                "--yes",
+                "--expect",
+                stale,
+            )
+
+            self.assertEqual(code, 1)
+            self.assertFalse(refused["ok"])
+            self.assertFalse(refused["finalized"])
+            self.assertEqual(refused["expected_review_digest"], stale)
+            self.assertEqual(refused["review_digest"], reviewed)
+            self.assertEqual(
+                refused["diagnostics"][0]["code"],
+                "consumer-review-mismatch",
+            )
+            self.assertIn("review", refused, "a refusal must show the plan that would have run")
+            self.assertEqual(list(env.project.iterdir()), [], "a refusal writes nothing")
+
+            code, applied = env.run(
+                "marketplace",
+                "install",
+                _COORDINATE,
+                "--profile",
+                "claude",
+                "--yes",
+                "--expect",
+                reviewed,
+            )
+
+            self.assertEqual(code, 0, applied)
+            self.assertTrue(applied["finalized"])
+            self.assertTrue((env.project / ".claude" / "skills" / "code-review").exists())
+
+    def test_yes_without_expect_keeps_its_meaning(self) -> None:
+        with _environment() as env:
+            code, applied = env.run(
+                "marketplace", "install", _COORDINATE, "--profile", "claude", "--yes"
+            )
+
+            self.assertEqual(code, 0, applied)
+            self.assertTrue(applied["finalized"])
 
     def test_uninstall_removes_the_installed_payload(self) -> None:
         with _environment() as env:

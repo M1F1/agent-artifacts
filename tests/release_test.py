@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -392,6 +395,34 @@ class ReleaseChecklistTest(unittest.TestCase):
             "source-not-merged-into-main",
             tuple(item["code"] for item in receipt["diagnostics"]),
         )
+
+
+@unittest.skipIf(sys.version_info < (3, 11), "the stdlib wheel builder requires Python 3.11+")
+class WheelDigestEvidenceTest(unittest.TestCase):
+    """SI-8: the digest a verifier compares against is produced by a command, not by hand."""
+
+    def test_the_digest_names_the_published_wheel_and_repeats(self) -> None:
+        release = _load_script("release")
+
+        first_name, first_digest = release.wheel_digest(ROOT)
+        second_name, second_digest = release.wheel_digest(ROOT)
+
+        self.assertEqual(first_name, f"agent_artifacts-{release.EXPECTED_VERSION}-py3-none-any.whl")
+        self.assertEqual(first_digest, second_digest)
+        self.assertRegex(first_digest, r"^sha256:[0-9a-f]{64}$")
+        self.assertEqual(first_name, second_name)
+
+    def test_the_command_prints_the_digest_beside_the_wheel_name(self) -> None:
+        release = _load_script("release")
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            code = release.main(["wheel-digest"], root=ROOT)
+
+        self.assertEqual(code, 0)
+        digest, name = stdout.getvalue().split()
+        self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
+        self.assertTrue(name.endswith("-py3-none-any.whl"), name)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,11 @@ produce one — which means the project builds **and** installs with no external
 
 Requires Python 3.11+ to build (uses stdlib ``tomllib`` to read pyproject.toml); the built
 wheel itself runs on Python 3.10+.
+
+The archive is byte-reproducible (SI-8, design §7.1): every member is dated from the commit
+stamped into ``agent_artifacts/_commit.py``, and member order, compression, permissions and
+create-system are pinned, so rebuilding the same commit anywhere produces the same digest rather
+than merely the same contents.  Nothing here reads the clock, the environment, or the platform.
 """
 
 from __future__ import annotations
@@ -17,12 +22,25 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import sys
+import time
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 _RESOURCE_ROOTS = frozenset({"schemas", "profiles", "importers", "templates"})
+_COMMIT_EPOCH_RE = re.compile(r"^COMMIT_EPOCH = (\d+)$", re.MULTILINE)
+# Zip stores DOS timestamps, which begin in 1980.  A source with no commit date — an editable
+# checkout, or a copy taken outside git — builds at that floor rather than at "now".
+_DOS_EPOCH_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+_DOS_EPOCH = 315532800  # 1980-01-01T00:00:00Z, the earliest a zip member can be dated
+# Pinned so the archive cannot drift with a future zipfile default: mode 0o600 is what
+# ``ZipFile.writestr`` has always written, and create-system 3 (Unix) is what a build on Windows
+# would otherwise change.
+_MEMBER_EXTERNAL_ATTR = 0o600 << 16
+_UNIX_CREATE_SYSTEM = 3
+_COMPRESS_LEVEL = 9
 
 
 def load_project() -> dict:
@@ -81,6 +99,38 @@ def _allowed_package_member(arcname: str) -> bool:
     return len(parts) >= 3 and parts[1] in _RESOURCE_ROOTS
 
 
+def source_epoch() -> int:
+    """Return the commit date stamped into the source, or ``0`` when none was stamped.
+
+    The stamp is read rather than imported: the package being packaged must not have to import
+    cleanly for its own build, and no environment variable may steer the result — a wheel that
+    dates differently on two machines is exactly what this build refuses to produce.
+    """
+
+    try:
+        text = (ROOT / "agent_artifacts" / "_commit.py").read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    match = _COMMIT_EPOCH_RE.search(text)
+    return int(match.group(1)) if match else 0
+
+
+def member_date_time(epoch: int) -> tuple[int, int, int, int, int, int]:
+    """Date a zip member in UTC, never in the build host's local time."""
+
+    if epoch < _DOS_EPOCH:
+        return _DOS_EPOCH_DATE_TIME
+    return time.gmtime(epoch)[:6]
+
+
+def member_info(arcname: str, date_time: tuple[int, int, int, int, int, int]) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(arcname, date_time)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = _UNIX_CREATE_SYSTEM
+    info.external_attr = _MEMBER_EXTERNAL_ATTR
+    return info
+
+
 def collect_package_files() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     for path in sorted((ROOT / "agent_artifacts").rglob("*")):
@@ -113,16 +163,20 @@ def main() -> int:
     if eps:
         files[f"{info}/entry_points.txt"] = eps.encode("utf-8")
 
-    record = "".join(record_line(arc, data) + "\n" for arc, data in files.items())
+    # Sorted, so the archive's member order comes from the names rather than from the order a
+    # directory walk happened to return them in.
+    ordered = tuple(sorted(files.items()))
+    record = "".join(record_line(arc, data) + "\n" for arc, data in ordered)
     record += f"{info}/RECORD,,\n"
 
+    date_time = member_date_time(source_epoch())
     dist_dir = ROOT / "dist"
     dist_dir.mkdir(exist_ok=True)
     wheel_path = dist_dir / f"{dist_name}-{version}-py3-none-any.whl"
     with zipfile.ZipFile(wheel_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for arc, data in files.items():
-            z.writestr(arc, data)
-        z.writestr(f"{info}/RECORD", record)
+        for arc, data in ordered:
+            z.writestr(member_info(arc, date_time), data, compresslevel=_COMPRESS_LEVEL)
+        z.writestr(member_info(f"{info}/RECORD", date_time), record, compresslevel=_COMPRESS_LEVEL)
 
     print(f"built {wheel_path.relative_to(ROOT)}  ({wheel_path.stat().st_size} bytes)")
     return 0

@@ -123,7 +123,7 @@ def _evidence(candidate):
     return json_digest(artifact_manifest_to_json(manifest.value)), payload.value
 
 
-def _catalog(kind: str, candidate, *, second: bool = False):
+def _catalog(kind: str, candidate, *, second: bool = False, now: int = 100):
     effects = {
         "skill": ("copy-tree",),
         "guideline": ("write-file",),
@@ -141,13 +141,13 @@ def _catalog(kind: str, candidate, *, second: bool = False):
         install=InstallSpec(("project", "user"), ("copy",), effects),
     )
     definitions = [(direct, "direct-source", (indexed,))]
-    states = [source_state(direct, "direct-source", display_order=0)]
+    states = [source_state(direct, "direct-source", display_order=0, now=now)]
     sources = [direct]
     if second:
         other = configured_source("other", SourceKind.SOURCE_GIT)
         other_index = replace(indexed, source_id=artifact("other-source", "review").source_id)
         definitions.append((other, "other-source", (other_index,)))
-        states.append(source_state(other, "other-source", display_order=1))
+        states.append(source_state(other, "other-source", display_order=1, now=now))
         sources.append(other)
     effective = effective_configuration(tuple(sources))
     built = build_marketplace(graph(*definitions), effective, tuple(states))
@@ -183,9 +183,10 @@ class CanonicalInstallPlanningTest(unittest.TestCase):
         policy=None,
         offline: bool = False,
         scope: str = "project",
+        now: int = 100,
     ):
         candidate = _candidate(kind)
-        catalog, effective = _catalog(kind, candidate, second=source is not None)
+        catalog, effective = _catalog(kind, candidate, second=source is not None, now=now)
         if policy is not None:
             effective = replace(effective, policy=policy)
         request = InstallRequest(
@@ -232,6 +233,20 @@ class CanonicalInstallPlanningTest(unittest.TestCase):
         self.assertEqual(operation.destination, ".claude/skills/review")
         self.assertEqual(operation.absolute_destination, "/project/.claude/skills/review")
         self.assertEqual(operation.source_path, "payload")
+
+    def test_review_digest_describes_the_plan_not_the_moment(self) -> None:
+        # published_at is 90 and the freshness threshold is 30, so these three readings of one
+        # unchanged workspace span the healthy/stale boundary: ages 10, 25 and 40 seconds.
+        plans = []
+        for now in (100, 115, 130):
+            result = self._prepare("skill", source="other", offline=True, now=now)
+            self.assertIsInstance(result, Ok)
+            assert isinstance(result, Ok)
+            plans.append(result.value)
+
+        self.assertEqual([plan.source_age_seconds for plan in plans], [10, 25, 40])
+        self.assertEqual([plan.source_health for plan in plans], ["healthy", "healthy", "stale"])
+        self.assertEqual(len({str(plan.review_digest) for plan in plans}), 1)
 
     def test_unqualified_collision_and_missing_cached_object_fail_closed(self) -> None:
         candidate = _candidate("skill")

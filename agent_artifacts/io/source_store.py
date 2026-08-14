@@ -411,10 +411,14 @@ def acquire_source_lock(
                 assert isinstance(acquired, int)
                 assert isinstance(hostname, str)
                 assert isinstance(pid, int)
-                stale = observed_at - acquired > request.stale_after_seconds and not owner_alive(
-                    hostname, pid
+                alive = owner_alive(hostname, pid)
+                stale = observed_at - acquired > request.stale_after_seconds and not alive
+                holder = (
+                    f"held for {observed_at - acquired:.0f}s by pid {pid} on {hostname}, "
+                    f"which is {'alive' if alive else 'not running'}"
                 )
             else:
+                holder = "the holder did not record who it is"
                 try:
                     lock_status = os.stat(lock, follow_symlinks=False)
                     stale = (
@@ -435,8 +439,14 @@ def acquire_source_lock(
             if monotonic() >= deadline:
                 return _error(
                     SOURCE_LOCK_BUSY,
-                    "source synchronization is already running",
+                    # A busy lock is only actionable if the operator can tell a live peer from a
+                    # crashed one.  The age, the pid, its liveness, and the width of the stale
+                    # window are exactly the four facts that decide whether to wait or to retry.
+                    f"source synchronization is already running: {holder}; a holder is reclaimed "
+                    f"after {request.stale_after_seconds}s without a live process",
                     "retry after the active synchronization completes",
+                    "if no synchronization is running, wait out the stale window and retry: "
+                    "the next attempt reclaims an abandoned lock by itself",
                 )
             sleep(min(0.05, max(0.0, deadline - monotonic())))
         except OSError as error:

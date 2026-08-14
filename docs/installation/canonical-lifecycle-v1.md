@@ -14,9 +14,16 @@ caller processing a basket can preserve one terminal result per item even when a
 conflicts or fails.
 
 Terminal statuses are explicit: `current`, `update-available`, `changed`, `removed`,
-`removed-upstream`, `source-unavailable`, `missing`, `drifted`, `broken`, `retargeted`, `replaced`,
-`conflict`, `failed`, and `skipped`. A zero-change selection is represented by current/missing/
-source outcomes rather than an ambiguous successful return.
+`removed-upstream`, `source-unavailable`, `identity-changed`, `missing`, `drifted`, `broken`,
+`retargeted`, `replaced`, `conflict`, `failed`, and `skipped`. A zero-change selection is represented
+by current/missing/source outcomes rather than an ambiguous successful return.
+
+`source-unavailable` and `identity-changed` divide what used to be one status. The recorded
+subscription — alias, kind, origin, ref — is what resolution follows; the source identity the origin
+declares is evidence carried inside it. A subscription that is gone, disabled, unhealthy, or now
+points somewhere else is `source-unavailable`. A subscription that is intact while its origin
+declares a different identity than the installation was made under is `identity-changed`, and
+`update` acts on it: the review states both identities and finalizing rebinds the record.
 
 ## Status and check do not fetch
 
@@ -77,6 +84,22 @@ snapshots, applies effects, writes replacement state last, then releases only th
 object reference owner. Every mutation is read back before the next phase. A filesystem/state/
 reference failure compensates changed effects and state and verifies the restoration; project and
 user state/reference owners remain isolated.
+
+## Teardown
+
+A proven uninstall also reclaims what it emptied, so a checkout that was clean before an install is
+clean again after removing everything:
+
+- each uninstall removes the harness directories its own effects emptied — `.claude/skills` once the
+  last skill under it is gone — while a directory holding anything else is left exactly as it is;
+- the harness root itself (`.claude`, `.tabnine`) is never removed: it is shared with the agent, and
+  no record proves an install created it; and
+- the uninstall that removes the last record in a scope also removes that scope's manifest, its
+  lock, and their directory when nothing else remains in it. The user scope keeps its state
+  directory, which it shares with the object-reference index.
+
+Teardown runs inside the scope lock, after the removal it belongs to has been proven. It cannot fail
+that removal: anything it cannot reclaim is reported in the item's detail and left in place.
 
 ## Merge identity evidence
 

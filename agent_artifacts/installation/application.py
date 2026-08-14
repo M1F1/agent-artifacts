@@ -974,6 +974,7 @@ def prepare_install(
     resolved = resolve_artifact(
         catalog,
         ArtifactQuery(request.identity, request.source, request.version),
+        offline=request.offline,
     )
     if isinstance(resolved, Err):
         return resolved
@@ -1222,7 +1223,11 @@ def _marketplace_precondition_is_current(
         or item.source.source_id is None
         or item.source.resolved_revision is None
         or item.source.snapshot_digest is None
-        or item.source.health.value != plan.source_health
+        # Not equality: healthy and stale differ only by how long ago the pinned snapshot was
+        # published, and the plan pins that snapshot by digest, so ageing across the freshness
+        # threshold between review and finalize changes nothing the operator reviewed. Acquiring
+        # diagnostics does, so a source that degraded since the review still invalidates the plan.
+        or (item.source.health.value == "degraded" and plan.source_health != "degraded")
         or item.source.snapshot_digest != plan.source_snapshot_digest
         or item.trust.kind.value != plan.trust
         or item.trust.evidence_digest != plan.trust_evidence_digest

@@ -114,6 +114,84 @@ class SourceLockAdapterTest(unittest.TestCase):
         with patch("agent_artifacts.io.source_store.os.kill", side_effect=PermissionError):
             self.assertTrue(_owner_alive(__import__("socket").gethostname(), 123))
 
+    def _busy(self, lock: Path, *, alive: bool, stale_after: int = 600):
+        """Attempt an already-held lock once and return the refusal."""
+
+        clock = iter((100.0, 101.0))
+        refused = acquire_source_lock(
+            SourceLockRequest(str(lock), 0.01, stale_after_seconds=stale_after),
+            token_factory=lambda: "new-token",
+            now=lambda: 1000.0,
+            monotonic=lambda: next(clock),
+            owner_alive=lambda _host, _pid: alive,
+            sleep=lambda _seconds: None,
+        )
+        self.assertIsInstance(refused, Err)
+        assert isinstance(refused, Err)
+        self.assertEqual(len(refused.diagnostics), 1, refused)
+        return refused.diagnostics[0]
+
+    def _held_by(self, root: str, *, pid: int, acquired_at: int) -> Path:
+        lock = Path(root) / "sync.lock"
+        lock.mkdir()
+        (lock / "owner.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "token": "held-secret-token",
+                    "hostname": "peer-host",
+                    "pid": pid,
+                    "acquired_at_epoch_seconds": acquired_at,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return lock
+
+    def test_a_busy_lock_reports_the_holder_its_age_and_the_stale_window(self) -> None:
+        """SI-6: "already running" is not actionable without knowing whether it really is.
+
+        The four facts that decide whether to wait or to retry are the age, the pid, whether that
+        pid is alive, and how long a holder must be silent before it is reclaimed.
+        """
+
+        with tempfile.TemporaryDirectory() as root:
+            lock = self._held_by(root, pid=4321, acquired_at=910)
+
+            refused = self._busy(lock, alive=True)
+
+            self.assertEqual(refused.code.value, "source-lock-busy")
+            self.assertIn("held for 90s", refused.message)
+            self.assertIn("pid 4321", refused.message)
+            self.assertIn("peer-host", refused.message)
+            self.assertIn("alive", refused.message)
+            self.assertIn("600s", refused.message)
+            self.assertTrue(refused.remediation)
+            # The holder's identity is reported; the holder's token stays out of it.
+            self.assertNotIn("held-secret-token", refused.message)
+
+    def test_a_busy_lock_whose_holder_is_gone_says_so_rather_than_implying_progress(self) -> None:
+        """A dead holder inside the stale window still refuses, but must not read as "in progress"."""
+
+        with tempfile.TemporaryDirectory() as root:
+            lock = self._held_by(root, pid=4321, acquired_at=910)
+
+            refused = self._busy(lock, alive=False)
+
+            self.assertIn("not running", refused.message)
+            self.assertTrue(any("stale window" in line for line in refused.remediation))
+
+    def test_a_busy_lock_without_an_owner_record_says_the_holder_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            lock = Path(root) / "sync.lock"
+            lock.mkdir()
+            (lock / "owner.json").write_text("[]", encoding="utf-8")
+
+            refused = self._busy(lock, alive=True)
+
+            self.assertIn("did not record who it is", refused.message)
+            self.assertTrue(refused.remediation)
+
     def test_ownerless_lock_left_by_interrupted_acquisition_is_recovered_when_stale(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             lock = Path(root) / "sync.lock"

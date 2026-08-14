@@ -6,19 +6,26 @@ against a throwaway copy of the project so the repo's real ``dist/`` is never to
 Run: ``python -m unittest discover -s tests -p "packaging_test.py" -v``
 """
 
+import hashlib
 import importlib.util
+import io
 import pathlib
 import re
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
+from unittest import mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = REPO_ROOT / "scripts"
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# Captured before any test patches ``time.localtime``, so a build under a moved clock can still be
+# handed the local time that clock implies.
+real_localtime = time.localtime
 
 
 def _load_script(name: str):
@@ -64,8 +71,9 @@ class InjectCommitTest(unittest.TestCase):
         self.assertTrue(rendered.endswith("\n"))
 
 
-@unittest.skipIf(sys.version_info < (3, 11), "stdlib wheel builder requires Python 3.11+")
-class BuildWheelTest(unittest.TestCase):
+class _WheelBuildFixture:
+    """A throwaway copy of the project, built by the real builder redirected into it."""
+
     def setUp(self):
         # Build against a throwaway copy of the project so the real dist/ is untouched.
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="wp21_wheel_"))
@@ -90,6 +98,9 @@ class BuildWheelTest(unittest.TestCase):
         self.assertEqual(len(wheels), 1, f"expected exactly one wheel, got {wheels}")
         return wheels[0]
 
+
+@unittest.skipIf(sys.version_info < (3, 11), "stdlib wheel builder requires Python 3.11+")
+class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
     def test_wheel_is_valid_zip_with_dist_info(self):
         wheel = self._build()
         self.assertTrue(zipfile.is_zipfile(wheel))
@@ -176,6 +187,83 @@ class BuildWheelTest(unittest.TestCase):
         recorded = {line.split(",")[0] for line in record.splitlines() if line.strip()}
         # Every archive member is accounted for in RECORD (RECORD lists itself too).
         self.assertEqual(names, recorded)
+
+
+@unittest.skipIf(sys.version_info < (3, 11), "stdlib wheel builder requires Python 3.11+")
+class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
+    """SI-8: rebuilding one commit reproduces the published archive, not merely its contents.
+
+    `LAF-30`'s probe failed this by hand — two builds of the same source differed, because every
+    member was dated from the clock. The assertions here compare whole-archive digests, so a
+    regression cannot pass by being "content-identical" while the bytes move.
+    """
+
+    def _stamp(self, epoch: int) -> None:
+        commit = self.tmp / "agent_artifacts" / "_commit.py"
+        commit.write_text(
+            f'"""Stamp fixture."""\n\nCOMMIT = "{"a" * 40}"\nCOMMIT_EPOCH = {epoch}\n',
+            encoding="utf-8",
+        )
+
+    def _build_at(self, now: float) -> bytes:
+        # Everything zipfile would reach for if a member were dated from the clock, moved between
+        # the two builds. A builder that reads either one produces a different archive.
+        with (
+            mock.patch("time.time", return_value=now),
+            mock.patch("time.localtime", lambda *arguments: real_localtime(now)),
+        ):
+            return self._build().read_bytes()
+
+    def test_two_builds_of_one_commit_at_different_times_are_byte_identical(self):
+        self._stamp(1_600_000_000)
+
+        first = self._build_at(1_700_000_000.0)
+        second = self._build_at(1_700_086_400.0)
+
+        self.assertEqual(
+            hashlib.sha256(first).hexdigest(),
+            hashlib.sha256(second).hexdigest(),
+            "the wheel is not byte-reproducible across build times",
+        )
+
+    def test_members_are_dated_from_the_stamped_commit(self):
+        epoch = 1_600_000_000
+        self._stamp(epoch)
+
+        wheel = self._build_at(1_700_000_000.0)
+
+        expected = time.gmtime(epoch)[:6]
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            dates = {item.date_time for item in archive.infolist()}
+        self.assertEqual(dates, {expected})
+
+    def test_an_unstamped_source_dates_at_the_zip_floor_rather_than_now(self):
+        # An editable checkout, or a copy taken outside git, has no commit date. It still must not
+        # reach for the clock: two dev builds of one tree are the same wheel.
+        self._stamp(0)
+
+        wheel = self._build_at(1_700_000_000.0)
+
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            dates = {item.date_time for item in archive.infolist()}
+        self.assertEqual(dates, {(1980, 1, 1, 0, 0, 0)})
+
+    def test_member_order_compression_and_attributes_are_pinned(self):
+        self._stamp(1_600_000_000)
+
+        wheel = self._build_at(1_700_000_000.0)
+
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            members = archive.infolist()
+        names = [item.filename for item in members]
+        record = names[-1]
+        self.assertTrue(record.endswith(".dist-info/RECORD"), names[-3:])
+        self.assertEqual(names[:-1], sorted(names[:-1]))
+        # Create-system would otherwise be 0 on a Windows build host, and the mode would come from
+        # a zipfile default rather than from this builder.
+        self.assertEqual({item.create_system for item in members}, {3})
+        self.assertEqual({item.external_attr for item in members}, {0o600 << 16})
+        self.assertEqual({item.compress_type for item in members}, {zipfile.ZIP_DEFLATED})
 
 
 class TypedBehaviorProbeTest(unittest.TestCase):

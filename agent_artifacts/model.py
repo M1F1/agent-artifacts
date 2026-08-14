@@ -456,6 +456,10 @@ class Request:
     # Canonical lifecycle gates.  Each defaults to the denying value so that neither an agent nor a
     # script can acquire an authorization by omitting a flag.
     offline: bool = False
+    # The digest a human actually reviewed, carried from the reviewing command to the finalizing
+    # one.  ``--yes`` alone still means "finalize what this process just computed"; supplying this
+    # additionally requires that what was reviewed is still what would happen.
+    expect: Optional[str] = None
     authorize_untrusted_source: bool = False
     authorize_custom_entrypoint: bool = False
     approve_setup_effects: bool = False

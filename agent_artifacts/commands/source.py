@@ -474,6 +474,26 @@ def _resubscribe(request: Request) -> int:
             print("Reviewed only; re-run with --yes to adopt this exact identity change.")
         return _common.OK
 
+    if request.expect is not None:
+        transition = reviewed.value.transition
+        offered = f"{transition.from_source_id.value}:{transition.to_source_id.value}"
+        if request.expect != offered:
+            # ``SourceIdentityTransition`` carries both sides precisely so that "adopt this exact
+            # change" can be checked again in a later command, not only inside the one that
+            # rendered it.  Render the offered transition so it can be re-authorized.
+            return _emit_error(
+                request,
+                _RESUBSCRIBE_OPERATION,
+                _failure(
+                    "source-invalid",
+                    (
+                        f"the offered identity change is not the one expected: expected "
+                        f"{request.expect}, offered {offered}"
+                    ),
+                    "re-run source resubscribe without --yes and read the transition it prints",
+                ),
+            )
+
     adopted = resubscribe_configured_source(
         planned.value,
         data_root=runtime.value.paths.data_root,
@@ -597,9 +617,12 @@ def _sync(request: Request) -> int:
                 }
             )
             lines.append(f"{source.alias.value}: failed")
-            lines.extend(
-                f"  {item.severity.value}: {item.message}" for item in synchronized.diagnostics
-            )
+            # Remediation is rendered here for the same reason the single-operation renderer
+            # renders it: a refusal an operator cannot act on is a dead end, and `sync` is where
+            # the `source resubscribe` line that 2.1.0 exists to deliver is produced.
+            for item in synchronized.diagnostics:
+                lines.append(f"  {item.severity.value}: {item.message}")
+                lines.extend(f"    remediation: {line}" for line in item.remediation)
             continue
         current = synchronized.value.current
         results.append(

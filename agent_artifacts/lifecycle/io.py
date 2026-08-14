@@ -30,6 +30,7 @@ from .model import (
     LifecycleItem,
     LifecycleKey,
     LifecycleStatus,
+    ScopeTeardown,
     UninstallOperation,
     UninstallPlan,
 )
@@ -74,6 +75,42 @@ def _apply_operation(operation: UninstallOperation) -> None:
 
 def _diagnostic_detail(result: Err) -> str:
     return "; ".join(diagnostic.message for diagnostic in result.diagnostics)
+
+
+def _remove_if_empty(path: Path) -> None:
+    """Remove ``path`` only if it is a real, empty directory.
+
+    ``rmdir`` is the guard rather than a check preceding one: a directory holding anything at all —
+    foreign content, or a concurrent installation's files — refuses to go, and refusing is the
+    outcome this wants.
+    """
+
+    try:
+        path.rmdir()
+    except OSError:
+        return
+
+
+def _tear_down(teardown: ScopeTeardown) -> str:
+    """Reclaim what the uninstall emptied, reporting rather than raising.
+
+    This runs after the uninstall it belongs to has been proven, so nothing here may fail the
+    operation: the artifact really is gone, and rolling a proven removal back over leftover litter
+    would trade a correct result for an incorrect one.  What is left behind is named in the item's
+    detail instead.
+    """
+
+    for directory in teardown.directories:
+        _remove_if_empty(Path(directory))
+    if not teardown.reclaims_state:
+        return ""
+    try:
+        _remove(Path(teardown.state_path))
+        _remove(Path(teardown.state_lock_path))
+    except OSError as error:
+        return f"installation state left in place: {error}"
+    _remove_if_empty(Path(teardown.state_root))
+    return ""
 
 
 class LocalLifecycleAdapter(LocalInstallAdapter, LifecycleApplyPorts):
@@ -180,12 +217,16 @@ class LocalLifecycleAdapter(LocalInstallAdapter, LifecycleApplyPorts):
                     )
                     for operation in plan.operations
                 )
+                # Teardown runs inside the scope lock, and removes that lock's own file last.  The
+                # descriptor stays valid across the unlink, so the exclusion this holds outlives
+                # the path; anything arriving afterwards creates the scope again from nothing.
+                litter = "" if plan.teardown is None else _tear_down(plan.teardown)
                 return Ok(
                     LifecycleItem(
                         LifecycleKey.from_record(plan.record),
                         LifecycleStatus.REMOVED,
                         effects,
-                        release_warning,
+                        "; ".join(item for item in (release_warning, litter) if item),
                     )
                 )
         except (OSError, RuntimeError, ValueError) as error:
