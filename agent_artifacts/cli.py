@@ -710,6 +710,34 @@ def build_parser() -> argparse.ArgumentParser:
     _add_registry_finalize(p_vendor)
     _add_json(p_vendor)
 
+    p_revendor = registry_sub.add_parser(
+        "revendor",
+        help="re-resolve one vendored artifact's upstream and report or apply what moved",
+        description=(
+            "Re-resolve the ref this artifact was vendored at and compare the subtree with the "
+            "copy this registry ships. Reports up-to-date, changed, or unreachable; an upstream "
+            "that cannot be read is never reported as up-to-date. Upstream declares no version "
+            "AART can trust, so applying a change requires the version you state for it."
+        ),
+    )
+    _add_registry_source(p_revendor)
+    p_revendor.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_revendor.add_argument("names", nargs=1, metavar="NAME")
+    p_revendor.add_argument(
+        "--artifact-version",
+        metavar="VERSION",
+        help="version this registry publishes the moved copy under; without it, nothing is planned",
+    )
+    p_revendor.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    _add_check(p_revendor)
+    _add_registry_finalize(p_revendor)
+    _add_json(p_revendor)
+
     p_refresh = registry_sub.add_parser(
         "refresh-native",
         help="review a new immutable snapshot for one existing native reference",

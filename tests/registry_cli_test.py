@@ -17,6 +17,7 @@ class RegistryCliTest(unittest.TestCase):
             "promote-native",
             "refresh-native",
             "vendor",
+            "revendor",
             "validate",
             "lock",
             "build",

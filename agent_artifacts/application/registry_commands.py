@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ObjectDigest
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.paths import SafeRelativePath
@@ -15,9 +15,12 @@ from agent_artifacts.registry_commands.model import (
     RegistryApplyReceipt,
     RegistryInitOptions,
     RegistryWorkspacePlan,
+    VendoredArtifactCheck,
     VendoredArtifactPlan,
 )
 from agent_artifacts.registry_commands.planning import (
+    VendoredArtifactOrigin,
+    plan_artifact_revendor,
     plan_artifact_scaffold,
     plan_artifact_vendor,
     plan_registry_build,
@@ -25,6 +28,7 @@ from agent_artifacts.registry_commands.planning import (
     plan_registry_init,
     plan_registry_lock,
     project_registry_workspace_plan,
+    read_vendored_artifact,
 )
 from agent_artifacts.registry_commands.ports import RegistryWorkspacePort
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
@@ -77,6 +81,39 @@ def prepare_artifact_vendor(
         acquisition,
         options,
         path=path,
+        review=review,
+        importer_version=importer_version,
+    )
+
+
+def read_vendored_artifact_origin(
+    identity: ArtifactIdentity,
+    *,
+    output: RegistryWorkspacePort,
+) -> Result[VendoredArtifactOrigin]:
+    current = output.current()
+    if isinstance(current, Err):
+        return current
+    return read_vendored_artifact(current.value, identity)
+
+
+def prepare_artifact_revendor(
+    acquisition: NativeReferenceAcquisition,
+    vendored: VendoredArtifactOrigin,
+    *,
+    version: SemVer | None,
+    review: ReviewRecord,
+    importer_version: SemVer,
+    output: RegistryWorkspacePort,
+) -> Result[VendoredArtifactCheck]:
+    current = output.current()
+    if isinstance(current, Err):
+        return current
+    return plan_artifact_revendor(
+        current.value,
+        acquisition,
+        vendored,
+        version=version,
         review=review,
         importer_version=importer_version,
     )

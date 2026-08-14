@@ -33,6 +33,10 @@ class RegistryChangeKind(str, Enum):
 class NativeReferenceDisposition(str, Enum):
     UP_TO_DATE = "up-to-date"
     CHANGED = "changed"
+    # A pinned reference cannot be unreachable at check time — `check_native_reference` has already
+    # acquired the snapshot it compares.  A vendored copy can: re-vendoring is the one check whose
+    # first step is reaching an upstream that may be gone, and that must not read as `up-to-date`.
+    UNREACHABLE = "unreachable"
 
 
 @dataclass(frozen=True, slots=True)

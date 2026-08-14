@@ -34,6 +34,7 @@ class CurationAction(str, Enum):
     PROMOTE_NATIVE = "promote-native"
     REFRESH_NATIVE = "refresh-native"
     VENDOR = "vendor"
+    REVENDOR = "revendor"
     LOCK = "lock"
     BUILD = "build"
     VALIDATE = "validate"
@@ -64,7 +65,10 @@ class CurationRequest:
     kind: str | None = None
     name: str | None = None
     summary: str | None = None
-    artifact_version: str = "1.0.0"
+    # `None` means the maintainer did not state one.  Re-vendoring needs that distinction: upstream
+    # movement without a stated version is reported, never applied (design §4), and a default would
+    # silently answer the one question the command exists to ask.
+    artifact_version: str | None = "1.0.0"
     profiles: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
     scopes: tuple[str, ...] = ("project",)

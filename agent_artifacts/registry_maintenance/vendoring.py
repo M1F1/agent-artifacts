@@ -25,7 +25,7 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, S
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.codes import ARTIFACT_INVALID
 from agent_artifacts.protocol.hashing import json_digest
-from agent_artifacts.protocol.json import JsonObject, canonical_json_bytes
+from agent_artifacts.protocol.json import JsonArray, JsonObject, canonical_json_bytes
 from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
@@ -74,6 +74,11 @@ from agent_artifacts.sources.subtree import TakenSubtree
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
 VENDOR_IMPORTER_ID = "registry-vendor-v1"
+# A namespaced extension rather than a new provenance field: the release adds no schema revision,
+# and every AART from `2.0.0` already preserves unknown namespaced keys unchanged.  `origin` could
+# not hold it — that object rejects unknown fields, and widening it would be the format revision
+# this design promised not to make.
+VENDOR_RECORD_KEY = "aart.vendor"
 _PAYLOAD_ROOT = "payload"
 # The one document each kind's payload cannot load without.  A vendored subtree rarely contains it,
 # because the upstream repository was never shaped for AART — supplying it is the maintainer's
@@ -130,7 +135,7 @@ class VendoredPackage:
     provenance: Provenance
 
 
-def acquisition_options_digest(origin: VendorOrigin, subtree: TakenSubtree) -> ObjectDigest:
+def vendor_options_digest(url: str, ref: str, path: SafeRelativePath) -> ObjectDigest:
     """Digest every input that decides which bytes were taken.
 
     Two vendorings of one upstream state must be comparable, so this covers the origin URL, the
@@ -142,12 +147,73 @@ def acquisition_options_digest(origin: VendorOrigin, subtree: TakenSubtree) -> O
     return json_digest(
         JsonObject(
             (
-                ("path", str(subtree.path)),
-                ("ref", origin.ref),
-                ("url", origin.url),
+                ("path", str(path)),
+                ("ref", ref),
+                ("url", url),
             )
         )
     )
+
+
+def acquisition_options_digest(origin: VendorOrigin, subtree: TakenSubtree) -> ObjectDigest:
+    return vendor_options_digest(origin.url, origin.ref, subtree.path)
+
+
+@dataclass(frozen=True, slots=True)
+class VendorRecord:
+    """How this copy was made: the standing instruction, and which files are not upstream's.
+
+    `provenance.json` records the resolved commit, which cannot move, but re-vendoring needs the
+    instruction that produced it — a branch and a tag resolving to one commit ask for different
+    things next time. It also needs to know which files the maintainer wrote, because a file in the
+    package that upstream no longer has is either their wrapper or an upstream deletion, and nothing
+    else in the package distinguishes the two.
+    """
+
+    ref: str
+    authored: tuple[str, ...]
+
+
+def _record_json(record: VendorRecord) -> JsonObject:
+    return JsonObject(
+        (
+            ("authored", JsonArray(record.authored)),
+            ("ref", record.ref),
+        )
+    )
+
+
+def read_vendor_record(provenance: Provenance) -> Result[VendorRecord]:
+    """Recover the vendoring instruction, refusing a record its own digest does not confirm.
+
+    The extension is ordinary JSON in a file a maintainer can edit, so a ref read back out of it is
+    checked against `importer.options_digest` — the value written when the copy was made. A hand-
+    edited ref would otherwise silently re-vendor from somewhere the recorded copy never came from.
+    """
+
+    if provenance.importer.id != VENDOR_IMPORTER_ID:
+        return _error(
+            f"this artifact was not produced by {VENDOR_IMPORTER_ID}; "
+            "only a vendored artifact can be re-vendored"
+        )
+    raw = dict(provenance.extensions).get(VENDOR_RECORD_KEY)
+    if not isinstance(raw, JsonObject):
+        return _error(f"provenance does not record {VENDOR_RECORD_KEY}")
+    ref = raw.get("ref")
+    authored = raw.get("authored")
+    if not isinstance(ref, str) or not ref or not isinstance(authored, JsonArray):
+        return _error(f"{VENDOR_RECORD_KEY} must record a ref and the authored file list")
+    if any(not isinstance(item, str) or not item for item in authored.items):
+        return _error(f"{VENDOR_RECORD_KEY}.authored must be package-relative paths")
+    paths = tuple(cast(tuple[str, ...], authored.items))
+    if vendor_options_digest(provenance.origin.url, ref, provenance.origin.path) != (
+        provenance.importer.options_digest
+    ):
+        return _error(
+            "the recorded vendoring instruction does not match its options digest; "
+            "provenance.json has been edited by hand"
+        )
+    return Ok(VendorRecord(ref, paths))
 
 
 def _authored_files(
@@ -254,6 +320,17 @@ def project_vendored_package(
         # the baseline surfaces them as `importer-warning`, so a second reviewer sees what the first
         # was told.
         tuple(sorted(set(options.warnings))),
+        (
+            (
+                VENDOR_RECORD_KEY,
+                _record_json(
+                    VendorRecord(
+                        origin.ref,
+                        tuple(sorted(relative for relative, _c, _e in authored.value)),
+                    )
+                ),
+            ),
+        ),
     )
     base = f"{artifact_root}/{kind}/{options.identity.name}"
     files: list[tuple[str, bytes, bool]] = [

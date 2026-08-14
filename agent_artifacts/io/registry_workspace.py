@@ -267,6 +267,26 @@ class FilesystemRegistryWorkspace:
         except OSError as error:
             return _error(REGISTRY_WORKSPACE_APPLY_FAILED, f"cannot write registry file: {error}")
 
+    def _remove(self, path: SafeRelativePath) -> Result[None]:
+        """Unlink one reviewed file, leaving the directory that held it.
+
+        Rollback restores the bytes from the backup taken immediately before, so a removal is as
+        recoverable as an overwrite. The emptied directory stays because Git does not track empty
+        directories and the applier verifies itself against a re-read snapshot that would still
+        contain it.
+        """
+
+        target = _safe_path(self.root, path)
+        if isinstance(target, Err):
+            return target
+        try:
+            os.unlink(target.value)
+        except FileNotFoundError:
+            return Ok(None)
+        except OSError as error:
+            return _error(REGISTRY_WORKSPACE_APPLY_FAILED, f"cannot remove registry file: {error}")
+        return Ok(None)
+
     def _backup(self, path: SafeRelativePath) -> Result[tuple[bytes | None, bool]]:
         safe = _safe_path(self.root, path)
         if isinstance(safe, Err):
@@ -394,7 +414,11 @@ class FilesystemRegistryWorkspace:
                     f"registry mutation target changed after review: {change.path}",
                 )
             backups.append((change.path, before, executable))
-            written = self._write(change.path, change.content, change.executable)
+            written = (
+                self._remove(change.path)
+                if change.kind is WorkspaceChangeKind.REMOVED
+                else self._write(change.path, change.content, change.executable)
+            )
             if isinstance(written, Err):
                 rolled_back = self._rollback(backups, preserved_directories)
                 return written if isinstance(rolled_back, Ok) else rolled_back

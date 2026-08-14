@@ -11,11 +11,13 @@ from typing import Callable, Protocol, cast
 
 from agent_artifacts.application.registry_commands import (
     finalize_registry_workspace,
+    prepare_artifact_revendor,
     prepare_artifact_scaffold,
     prepare_artifact_vendor,
     prepare_registry_build,
     prepare_registry_init,
     prepare_registry_lock,
+    read_vendored_artifact_origin,
 )
 from agent_artifacts.application.registry_maintenance import finalize_registry_mutation
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
@@ -36,6 +38,7 @@ from agent_artifacts.registry_commands.model import (
     RegistryQualityReport,
     RegistryWorkspaceChange,
     RegistryWorkspacePlan,
+    VendoredArtifactCheck,
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
@@ -43,12 +46,14 @@ from agent_artifacts.registry_commands.model import (
     RegistryApplyCommand as WorkspaceApplyCommand,
 )
 from agent_artifacts.registry_commands.planning import (
+    VendoredArtifactOrigin,
     audit_registry_workspace,
     plan_registry_format,
     validate_registry_workspace,
 )
 from agent_artifacts.registry_maintenance.model import (
     NativeReferenceAcquisition,
+    NativeReferenceDisposition,
     RegistryMutationPlan,
 )
 from agent_artifacts.registry_maintenance.model import (
@@ -180,6 +185,7 @@ def _follow_up(
         # rebuilt: `validate --strict` alone would fail and send the maintainer looking for a fault
         # in the copy.
         CurationAction.VENDOR,
+        CurationAction.REVENDOR,
     }:
         return (
             diff,
@@ -416,6 +422,8 @@ class LocalCurationService:
             or not request.platforms
         ):
             return _error("scaffold requires kind, name, summary, profiles, and platforms")
+        if request.artifact_version is None:
+            return _error("scaffold requires an artifact version")
         version = _semver(request.artifact_version, "artifact version")
         if isinstance(version, Err):
             return version
@@ -512,6 +520,8 @@ class LocalCurationService:
             return _error(
                 "vendoring requires kind, name, summary, URL, subtree path, profiles, and platforms"
             )
+        if request.artifact_version is None:
+            return _error("vendoring requires an artifact version")
         version = _semver(request.artifact_version, "artifact version")
         if isinstance(version, Err):
             return version
@@ -568,6 +578,162 @@ class LocalCurationService:
                     "Assessments reduce uncertainty; they are not safety guarantees.",
                     "This registry now owns the copy: upstream fixes do not reach consumers until "
                     "it is vendored again.",
+                ),
+            )
+        )
+
+    def _informational_review(
+        self,
+        request: CurationRequest,
+        snapshot: SourceSnapshot,
+        checks: tuple[CurationCheck, ...],
+        warnings: tuple[str, ...],
+    ) -> Result[PreparedCuration]:
+        """A review that reports and writes nothing, and whose failing checks fail the command."""
+
+        digest = _snapshot_digest(snapshot)
+        if isinstance(digest, Err):
+            return digest
+        return Ok(
+            PreparedCuration(
+                CurationReview(
+                    request.action,
+                    self.root,
+                    False,
+                    curation_review_digest(request.action, digest.value, (), checks, warnings),
+                    digest.value,
+                    (),
+                    checks,
+                    warnings,
+                ),
+                _ReadOnlyPrepared(snapshot, checks),
+            )
+        )
+
+    def _drift_check(
+        self,
+        vendored: VendoredArtifactOrigin,
+        checked: VendoredArtifactCheck,
+    ) -> CurationCheck:
+        """Say which of the three things happened, and never let two of them read alike.
+
+        `up-to-date` passes.  `changed` without a stated version and `unreachable` both fail, for
+        different reasons that the details spell out: one is work the maintainer has to finish, the
+        other is an upstream they can no longer read.  Neither is a copy that is known to be current.
+        """
+
+        details = [
+            f"disposition: {checked.disposition.value}",
+            f"origin: {vendored.url}",
+            f"ref: {vendored.ref}",
+            f"subtree: {vendored.path}",
+            f"recorded commit: {checked.recorded_commit}",
+        ]
+        if checked.resolved_commit is not None:
+            details.append(f"resolved commit: {checked.resolved_commit}")
+        if checked.disposition is NativeReferenceDisposition.CHANGED:
+            details.extend(
+                (
+                    f"upstream files added: {checked.added}",
+                    f"upstream files changed: {checked.changed}",
+                    f"upstream files removed: {checked.removed}",
+                )
+            )
+            if checked.plan is None:
+                details.append(
+                    "state the version this movement deserves with --artifact-version to plan it"
+                )
+        return CurationCheck(
+            "vendor-drift",
+            checked.disposition is NativeReferenceDisposition.UP_TO_DATE
+            or checked.plan is not None,
+            tuple(details),
+        )
+
+    def _prepare_revendor(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if request.kind is None or request.name is None:
+            return _error("re-vendoring requires an exact artifact kind and name")
+        current = self._current()
+        if isinstance(current, Err):
+            return current
+        identity = ArtifactIdentity(cast(CanonicalArtifactType, request.kind), request.name)
+        vendored = read_vendored_artifact_origin(identity, output=self.workspace)
+        if isinstance(vendored, Err):
+            return vendored
+        version: SemVer | None = None
+        if request.artifact_version is not None:
+            parsed = _semver(request.artifact_version, "artifact version")
+            if isinstance(parsed, Err):
+                return parsed
+            version = parsed.value
+        acquired = self.native_acquirer(vendored.value.url, vendored.value.ref)
+        if isinstance(acquired, Err):
+            # An upstream that cannot be read is a disposition, not a crash: the maintainer needs to
+            # be told their copy's provenance can no longer be checked, which is a different fact
+            # from the copy being current (design §6).
+            return self._informational_review(
+                request,
+                current.value,
+                (
+                    self._drift_check(
+                        vendored.value,
+                        VendoredArtifactCheck(
+                            NativeReferenceDisposition.UNREACHABLE,
+                            None,
+                            vendored.value.recorded_commit,
+                            0,
+                            0,
+                            0,
+                        ),
+                    ),
+                    CurationCheck(
+                        "vendor-origin-error",
+                        False,
+                        tuple(" ".join(item.message.split()) for item in acquired.diagnostics),
+                    ),
+                ),
+                (
+                    "An unreachable upstream is not an up-to-date copy; nothing was compared.",
+                    "The vendored copy is unchanged and still installable; only the check failed.",
+                ),
+            )
+        checked = prepare_artifact_revendor(
+            acquired.value,
+            vendored.value,
+            version=version,
+            review=ReviewRecord("approved", request.review_policy),
+            importer_version=_VERSION,
+            output=self.workspace,
+        )
+        if isinstance(checked, Err):
+            return checked
+        drift = self._drift_check(vendored.value, checked.value)
+        if checked.value.plan is None:
+            return self._informational_review(
+                request,
+                current.value,
+                (drift,),
+                ("Nothing was written; re-vendoring compares upstream and reports.",)
+                if checked.value.disposition is NativeReferenceDisposition.UP_TO_DATE
+                else (
+                    "Upstream moved. This registry owns the version, so it states the new one.",
+                    "Nothing was written.",
+                ),
+            )
+        assert checked.value.assessment is not None
+        return Ok(
+            self._workspace_review(
+                request,
+                checked.value.plan,
+                checks=(
+                    drift,
+                    self._vendor_assessment_check(checked.value.assessment),
+                ),
+                warnings=(
+                    "Re-vendoring replaces the copied bytes and re-pins the commit; "
+                    "a successful re-vendor reports what was copied, and is not a safety claim.",
+                    "Assessments reduce uncertainty; they are not safety guarantees.",
+                    "Consumers receive this movement only after the version you stated is published.",
                 ),
             )
         )
@@ -780,6 +946,7 @@ class LocalCurationService:
             CurationAction.PROMOTE_NATIVE,
             CurationAction.REFRESH_NATIVE,
             CurationAction.VENDOR,
+            CurationAction.REVENDOR,
             CurationAction.LOCK,
             CurationAction.BUILD,
         }
@@ -795,6 +962,8 @@ class LocalCurationService:
             return self._prepare_format(request)
         if request.action is CurationAction.VENDOR:
             return self._prepare_vendor(request)
+        if request.action is CurationAction.REVENDOR:
+            return self._prepare_revendor(request)
         if request.action is CurationAction.PROMOTE_NATIVE:
             return self._prepare_promote(request)
         if request.action is CurationAction.REFRESH_NATIVE:

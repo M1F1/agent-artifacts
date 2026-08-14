@@ -1,6 +1,6 @@
 # Plan: registry vendoring
 
-Status: **`VN-1` … `VN-4` landed; `VN-5` … `VN-9` open.** Implements
+Status: **`VN-1` … `VN-5` landed; `VN-6` … `VN-9` open.** Implements
 [the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
 "What the plan did not anticipate" section; those sections, not this line, are the run record.
 
@@ -276,6 +276,63 @@ appears as `unpinned-package-install`; the rendered review contains no word clai
 added/changed/removed counts and refuses without `--version`; an unreachable origin is `unreachable`
 and mutates nothing; a re-vendor at the recorded commit reproduces `origin.input_digest` exactly
 (design acceptance 11).
+
+**What the plan did not anticipate**
+
+- **Nothing recorded the ref.** Design §6 says re-resolve "the recorded `origin.url` at the recorded
+  ref", and `provenance.json` records the URL, the resolved commit, the path and the input digest —
+  but not the ref, because a commit is what a copy is pinned to and a ref is only how it was found.
+  `origin` could not hold it either: that object rejects unknown fields, and widening it is the
+  format revision this release promised not to make. The ref is therefore written as a namespaced
+  extension, `aart.vendor`, which every AART from `2.0.0` already preserves unchanged. It is read
+  back through `importer.options_digest` — the digest `VN-2` already computed over URL, ref and path
+  — so a ref edited by hand into that extension is refused rather than silently re-vendored from
+  somewhere the copy never came from.
+- **The same extension has to record which files are the maintainer's.** A file present in the
+  package but absent from upstream's subtree is either their wrapper or an upstream deletion, and
+  nothing else in the package distinguishes the two. The alternative — re-acquiring at the recorded
+  commit to recover the old file list — was rejected on a practical ground: fetching an arbitrary
+  commit SHA is refused by many hosts, so an ordinary drift check would fail as `unreachable` for a
+  reason that has nothing to do with reachability. The authored list is small by construction: it is
+  what the maintainer wrote, and if they wrote five hundred files, recording five hundred paths is
+  proportionate.
+- **The workspace plan could not express removal at all.** `WorkspaceChangeKind` had `added`,
+  `changed` and `unchanged`, and `after_digest` was mandatory — every other registry operation
+  writes a fixed set of derived documents and has nothing to delete. Re-vendoring is the first
+  operation where upstream's deletion must reach the copy, so `removed` was added, with
+  `after_digest` `None` and pruning confined to the package's own directory. Existing review digests
+  are unaffected: the serialization changes only for plans that contain a removal.
+- **An emptied directory is deliberately left behind.** The applier verifies itself by re-reading
+  the workspace and comparing it with the projection, and the directory is still there after the
+  file is unlinked — so a projection that pruned it would fail its own verification. Git does not
+  track empty directories, so the maintainer's commit is identical either way.
+- **`up-to-date` does not re-pin the commit**, even when the ref has advanced over content outside
+  the subtree. Nothing this registry ships changed, and writing a new `resolved_commit` would
+  produce a diff claiming the copy was refreshed when it was not.
+- **The refusal without `--artifact-version` had to come after the diff, not instead of it.** The
+  maintainer cannot state the version a movement deserves without first seeing the movement, so a
+  moved upstream with no stated version is a complete review — counts, commits, both dispositions —
+  that plans nothing and fails.
+- **`--check` had to start counting a failed check as drift.** It exited zero whenever no path
+  changed, which for `revendor` against an unreachable upstream is exactly the reading design §6
+  forbids: writing nothing is not being current. The rule now also requires every check to pass,
+  which is correct for the other actions too.
+- **`CurationRequest.artifact_version` became optional.** It defaulted to `1.0.0`, and a default
+  here would silently answer the one question the command exists to ask.
+
+**Questions raised while building this, deliberately not answered here:** whether `--path` should
+accept a single file rather than only a directory (`VN-1` refuses it today, and neither design nor
+plan asks for it), and whether a bulk `revendor --all` should exist (it cannot be one action while
+design §4 requires a stated version per artifact). Both are product decisions for the maintainer,
+not defects.
+
+**Residues found, recorded against the package that will own them:**
+
+- `VN-6`: `registry audit` runs read-only over a workspace snapshot and has no acquirer, so the
+  behind-upstream finding needs one injected — and the audit must stay green when it cannot reach an
+  upstream, which is the same distinction `revendor` draws between `changed` and `unreachable`.
+- `VN-8`: `registry vendor --help` still says "A clean vendor reports what was found", while the
+  review says "a successful vendor reports what was copied". `VN-8` owns the help text.
 
 **Exit:** design §4 and §6. Depends on `VN-3`.
 
