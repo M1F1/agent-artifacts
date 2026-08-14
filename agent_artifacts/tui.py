@@ -549,7 +549,10 @@ def _canonical_setup_run(
             scope=scope or "selected scope",
             status="planning-failed",
             detail=failure.detail,
-            retry_command=f"aart setup retry --artifact {key}",
+            # `aart setup` was removed in 2.0.0; the canonical verb re-runs the recipe. Planning
+            # failed here, so no effect was applied and the profile/scope may not be known: the
+            # coordinate alone is the most this failure can honestly say.
+            retry_command=f"aart marketplace setup {key}",
             manual=failure.manual,
         ):
             write(line)
@@ -648,7 +651,12 @@ def _canonical_setup_run(
             status=item.setup_status.value,
             detail=item.detail,
             retry_command=(
-                "" if item.successful else f"aart setup retry --artifact {item.coordinate}"
+                ""
+                if item.successful
+                else (
+                    f"aart marketplace setup {item.coordinate} --profile {item.profile} "
+                    f"--scope {item.scope} --yes --approve-setup-effects"
+                )
             ),
             recovery=() if item.record is None else recovery_messages(item.record),
             manual=None
@@ -2937,7 +2945,7 @@ def _run_maintainer_text(
     if not _is_canonical_maintainer_workspace(workspace):
         write(
             "error: maintainer mode accepts only a canonical registry checkout; "
-            "initialize one with `aart registry init`."
+            "initialize one with `aart registry init --source-id <slug> --display-name <name>`."
         )
         return 2
     return _run_canonical_maintainer_text(
@@ -4275,7 +4283,7 @@ def _run_curses(
                 if not canonical_curation:
                     selection["error"] = (
                         "maintainer mode accepts only a canonical registry checkout; "
-                        "initialize one with `aart registry init`.",
+                        "initialize one with `aart registry init --source-id <slug> --display-name <name>`.",
                         2,
                     )
                     return
@@ -4713,7 +4721,7 @@ def _run_curses(
             if not canonical_curation:
                 selection["error"] = (
                     "maintainer mode accepts only a canonical registry checkout; "
-                    "initialize one with `aart registry init`.",
+                    "initialize one with `aart registry init --source-id <slug> --display-name <name>`.",
                     2,
                 )
                 return

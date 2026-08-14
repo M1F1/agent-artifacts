@@ -163,7 +163,7 @@ class SetupReviewProjectionTests(unittest.TestCase):
                 scope="project",
                 status="cancelled",
                 detail="setup api_token=do-not-render was cancelled",
-                retry_command="aart setup retry mcp/atlassian --profile tabnine --scope project",
+                retry_command="aart marketplace setup mcp/atlassian --profile tabnine --scope project",
                 recovery=("Remove only a file created by this run.",),
                 manual=reference,
                 width=width,

@@ -40,8 +40,30 @@ _MAX_DEPTH = 64
 _HEX = frozenset("0123456789abcdef")
 
 
-def _error(code: DiagnosticCode, message: str) -> Err:
-    return Err((Diagnostic(code, Severity.ERROR, redact_text(message)),))
+# Every ``store-unavailable`` failure is the same class of problem: the managed object store under
+# the AART home could not be read or written, and the operating system said why in the message.  A
+# bare errno is not an instruction, so each one carries the two steps that actually resolve it.
+_STORE_REMEDIATION = (
+    "check that the path named in this message exists, is writable, and has free space",
+    "re-run the command once it is: artifact objects are republished from the synchronized snapshot",
+)
+
+
+def _error(code: DiagnosticCode, message: str, *remediation: str) -> Err:
+    return Err(
+        (
+            Diagnostic(
+                code,
+                Severity.ERROR,
+                redact_text(message),
+                remediation=tuple(remediation),
+            ),
+        )
+    )
+
+
+def _unavailable(message: str) -> Err:
+    return _error(STORE_UNAVAILABLE, message, *_STORE_REMEDIATION)
 
 
 def _warning(message: str) -> Diagnostic:
@@ -197,7 +219,7 @@ def _write_candidate(stage: Path, candidate: ObjectCandidate) -> Result[None]:
         _freeze_tree(stage, candidate.entries)
         return Ok(None)
     except OSError as error:
-        return _error(STORE_UNAVAILABLE, f"cannot stage artifact object: {error}")
+        return _unavailable(f"cannot stage artifact object: {error}")
 
 
 def _read_candidate(root: Path, expected: ObjectDigest) -> Result[ObjectCandidate]:
@@ -296,7 +318,7 @@ def _read_candidate(root: Path, expected: ObjectDigest) -> Result[ObjectCandidat
                     )
                 )
         except OSError as error:
-            return _error(STORE_UNAVAILABLE, f"cannot read artifact object: {error}")
+            return _unavailable(f"cannot read artifact object: {error}")
         finally:
             if descriptor is not None:
                 os.close(descriptor)
@@ -335,7 +357,7 @@ def _prepare_store(paths: ObjectStorePaths, digest: ObjectDigest) -> Result[Path
                 )
         return Ok(prefix)
     except OSError as error:
-        return _error(STORE_UNAVAILABLE, f"cannot prepare artifact object store: {error}")
+        return _unavailable(f"cannot prepare artifact object store: {error}")
 
 
 def _stored_receipt(
@@ -362,7 +384,7 @@ def publish_object(command: ObjectPublishCommand) -> Result[ObjectPublishReceipt
         created_stage = Path(tempfile.mkdtemp(prefix=".stage-", dir=prefix))
         os.chmod(created_stage, 0o700)
     except OSError as error:
-        return _error(STORE_UNAVAILABLE, f"cannot prepare artifact object stage: {error}")
+        return _unavailable(f"cannot prepare artifact object stage: {error}")
     stage: Path | None = created_stage
     try:
         written = _write_candidate(created_stage, command.candidate)
@@ -379,10 +401,7 @@ def publish_object(command: ObjectPublishCommand) -> Result[ObjectPublishReceipt
                 return _stored_receipt(command, created=not repaired, repaired=repaired)
             except OSError as publish_error:
                 if not os.path.lexists(target):
-                    return _error(
-                        STORE_UNAVAILABLE,
-                        f"cannot publish artifact object: {publish_error}",
-                    )
+                    return _unavailable(f"cannot publish artifact object: {publish_error}")
                 if not _real_directory(target):
                     return _error(
                         STORE_UNSAFE_ENTRY,
@@ -417,7 +436,7 @@ def publish_object(command: ObjectPublishCommand) -> Result[ObjectPublishReceipt
                             os.chmod(target, 0o500, follow_symlinks=False)
                     except OSError:
                         pass
-                    return _error(STORE_UNAVAILABLE, f"cannot quarantine corrupt object: {error}")
+                    return _unavailable(f"cannot quarantine corrupt object: {error}")
                 try:
                     assert stage is not None
                     os.rename(stage, target)
@@ -432,13 +451,13 @@ def publish_object(command: ObjectPublishCommand) -> Result[ObjectPublishReceipt
                             _freeze_existing_tree(target)
                     except OSError:
                         pass
-                    return _error(STORE_UNAVAILABLE, f"cannot repair corrupt object: {error}")
+                    return _unavailable(f"cannot repair corrupt object: {error}")
                 try:
                     _remove_tree(abandoned)
                 except OSError:
                     pass
                 return _stored_receipt(command, created=False, repaired=True)
-        return _error(STORE_UNAVAILABLE, "artifact object publication did not converge")
+        return _unavailable("artifact object publication did not converge")
     finally:
         if stage is not None and _real_directory(stage):
             try:
@@ -484,7 +503,7 @@ def inventory_objects(paths: ObjectStorePaths) -> Result[ObjectInventory]:
                             continue
                         digests.append(ObjectDigest("sha256", prefix.name + suffix.name))
     except OSError as error:
-        return _error(STORE_UNAVAILABLE, f"cannot inventory artifact objects: {error}")
+        return _unavailable(f"cannot inventory artifact objects: {error}")
     return Ok(ObjectInventory(tuple(digests), tuple(diagnostics)))
 
 
@@ -521,7 +540,7 @@ def delete_object(command: ObjectDeleteCommand) -> Result[None]:
                 _restore_gc_tombstone(tombstone, target, command.digest)
         except OSError:
             pass
-        return _error(STORE_UNAVAILABLE, f"cannot delete artifact object: {error}")
+        return _unavailable(f"cannot delete artifact object: {error}")
 
 
 def materialize_compiler_object(

@@ -386,7 +386,9 @@ def _availability_reason(
     if display_health is SourceDisplayHealth.INCOMPATIBLE:
         return "source is incompatible with this AART version"
     if display_health is SourceDisplayHealth.INVALID:
-        return "source state is invalid; run source doctor before enabling it"
+        # `source doctor` was removed in 2.0.0.  Synchronizing is what republishes a managed
+        # snapshot whose state is unreadable, and it is the command that still exists.
+        return "source state is invalid; run `aart source sync --alias <alias>` before enabling it"
     if source.kind is not SourceKind.SOURCE_LOCAL and git_location_parts(source.location) is None:
         return "source has an invalid Git origin"
     return ""

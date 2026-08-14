@@ -1014,16 +1014,34 @@ def render_setup_review(plan: SetupPlan, *, width: int = CONTENT_MEASURE) -> Tup
 
 
 def retry_command(item: SetupQueueItem) -> str:
+    """The command that runs this item's setup again.
+
+    `aart setup` was one of the nine top-level commands removed in `2.0.0`; the canonical verb is
+    `aart marketplace setup`, which re-runs the declared recipe for an installed artifact and is
+    therefore the retry.  `--approve-setup-effects` is named because without it every reviewed
+    effect is declined, and a retry that declines everything is not a retry.
+    """
+
+    coordinate = shlex.quote(f"{item.artifact_type}/{item.artifact_name}")
     return (
-        f"aart setup retry {shlex.quote(f'{item.artifact_type}/{item.artifact_name}')} "
-        f"--profile {shlex.quote(item.profile)} --scope {item.scope}"
+        f"aart marketplace setup {coordinate} --profile {shlex.quote(item.profile)} "
+        f"--scope {item.scope} --yes --approve-setup-effects"
     )
 
 
 def rollback_command(item: SetupQueueItem) -> str:
+    """What reverses effects this item already applied — which is not a command.
+
+    `aart setup rollback` never shipped: the engine reverses its own effects when an apply fails,
+    and `rollback_setup` has no CLI surface.  Naming it here sent an operator whose setup left
+    receipts behind to a command that does not exist, which is worse than saying so.  The missing
+    surface is recorded as a residue rather than invented here.
+    """
+
+    coordinate = f"{item.artifact_type}/{item.artifact_name}"
     return (
-        f"aart setup rollback {shlex.quote(f'{item.artifact_type}/{item.artifact_name}')} "
-        f"--profile {shlex.quote(item.profile)} --scope {item.scope}"
+        f"no command reverses a completed setup; undo {coordinate} in {item.profile} "
+        f"({item.scope}) from the recorded receipt, then re-run setup"
     )
 
 

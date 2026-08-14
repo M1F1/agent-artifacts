@@ -301,7 +301,7 @@ def _resolution_failure(
             SOURCE_UNAVAILABLE,
             message,
             remediation=(
-                f"aart source add --alias {alias} --location <url>",
+                f"aart source add --alias {alias} --kind registry-git --location <url>",
                 "aart marketplace uninstall, if you are removing what this source installed",
             ),
         )

@@ -175,6 +175,52 @@ side effect of this package.
 **Tests:** the widened guard fails on a planted stale command name; renderer parity holds for every
 family; the stale-lock message states the age.
 
+**What the plan did not anticipate:**
+
+- **The widened guard needed a definition of "a command claim", and prose forced it.** The package
+  says `aart installs your team's artifacts`; it also writes the managed-block marker
+  `# >>> aart setup: <coordinate> >>>` into config files. Neither is an offer to run something. A
+  mention counts as a claim on three shapes only: it is backticked, its first word is a command name,
+  or it carries a `--flag`. Docstrings are excluded — this file's own explanation of the removals
+  would otherwise be a finding about itself — and an f-string is rendered whole with each
+  interpolation replaced by `PLACEHOLDER`, because reading only its constant pieces reports
+  `aart source sync --alias` as a command missing its value. A choice-constrained flag rejecting
+  `PLACEHOLDER` is not a finding: the guard proves the command and its flags exist and cannot prove
+  a value computed at run time.
+- **Item 5 turned out to be load-bearing for item 2, not documentation beside it.** `aart setup
+  retry` reads as prose to any regex, because `setup` names no live command. The guard therefore
+  reads the removed command names out of the compatibility tables in `docs/release/`. Recording a
+  removal is what makes a mention of it legible; the addendum is wired into the gate.
+- **`source doctor` was the smallest thing the widened guard caught.** It also caught
+  `aart setup retry` and `aart setup rollback` in `setup.py`, `tui.py` and `setup_runtime.py` — the
+  `aart setup` group was renamed in `2.0.0` — `aart source add` offered without its required
+  `--kind`, and `aart registry init` offered without `--source-id`/`--display-name` in three places.
+  Each was a command an operator could copy and be refused by.
+- **One of them has no replacement, and the package refused to invent one.** `aart setup rollback`
+  never shipped: `setup_engine.rollback_setup` is reachable only from library code. Exposing the
+  verb is a CLI addition and a release-contract change, so the rollback field now names the artifact,
+  profile and scope to undo from the recorded receipt and says plainly that no command does it. The
+  missing surface is recorded in the addendum and as a residue below.
+- **"Every command family" is three families, and the other three say why.** `upgrade` defines no
+  `--json`, so it has a single renderer and nothing to compare. `security` and `reporting` report
+  through plain messages rather than a diagnostic envelope. `registry` is covered and parity holds,
+  but vacuously — see the residue.
+- **The object-store remediation is one shared pair, not one line.** Every `store-unavailable`
+  failure is the same environment problem stated by a different syscall, so all eleven now route
+  through one helper. Writing a distinct remediation per call site would have invented distinctions
+  the operator does not have.
+
+**Recorded residues, not fixed here:**
+
+- **No `registry` refusal carries remediation at all.** The family emits next-step lines after a
+  successful action, and its refusals carry an empty `remediation` in both renderers. That is not a
+  rendering defect — there is nothing to render — and authoring remediation across the registry
+  surface is its own package. The parity test covers `registry` today so the gap cannot widen
+  silently into a text/JSON divergence.
+- **A completed setup cannot be reversed by any command.** Recorded in
+  `docs/release/compatibility-v8-addendum.md`. Adding the surface is a CLI addition; this package
+  only stopped advertising one that does not exist.
+
 **Exit:** design §4 and attractor A3. Independent of every other package.
 
 ## SI-7 — teardown leaves the repository as it found it

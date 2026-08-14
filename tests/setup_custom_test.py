@@ -129,7 +129,10 @@ class CustomProtocolTests(unittest.TestCase):
             self.assertEqual(result.status, "rollback_incomplete")
             self.assertIn("rollback", result.detail)
             self.assertIn("custom.install@1", [item["module"] for item in result.receipt])
-            self.assertIn("setup rollback", result.rollback_command)
+            # SI-6: the rollback field names the artifact to undo and says plainly that no command
+            # does it.  `aart setup rollback` never shipped, and pointing at it was the dead end.
+            self.assertIn("mcp/atlassian", result.rollback_command)
+            self.assertIn("no command reverses a completed setup", result.rollback_command)
 
 
 if __name__ == "__main__":

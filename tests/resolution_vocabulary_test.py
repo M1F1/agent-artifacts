@@ -69,7 +69,8 @@ class ResolutionFailureVocabularyTest(unittest.TestCase):
             self.assertEqual(diagnostic["code"], "source-unavailable")
             self.assertIn("ghost", diagnostic["message"])
             self.assertIn(
-                "aart source add --alias ghost --location <url>", diagnostic["remediation"]
+                "aart source add --alias ghost --kind registry-git --location <url>",
+                diagnostic["remediation"],
             )
             # Uninstall is a valid exit here, and naming it is the whole point: an operator whose
             # source is gone still needs to remove what it installed.
