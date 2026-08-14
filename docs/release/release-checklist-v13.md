@@ -36,10 +36,21 @@ window `>= 2.0.0, < 3.0.0`, setup recipes at `2`/`2` with a package-root `SETUP.
 `registry test --compatibility all --latest-version 2.5.0` unchanged, and every recipe that parsed on
 `2.4.0` parses here with the same meaning.
 
-1. **Re-run `registry build` on `2.5.0`.** An index compiled earlier publishes capabilities in the
-   declared vocabulary, which a `2.5.0` consumer refuses to match — the same artifacts it already
-   refused, so nothing regresses, but nothing improves either until the index is rebuilt. It also
-   refreshes assessment evidence recorded under `baseline-v1`, which now resolves as stale.
+1. **Re-run `registry build` on `2.5.0`, and move the registry's AART pin in the same change.** An
+   index compiled earlier publishes capabilities in the declared vocabulary, and `registry validate
+   --strict --frozen` on `2.5.0` fails it — `compiled index disagrees with owned package
+   <identity>` — for every artifact whose recipe needs more than `keychain`. Rebuilding fixes that
+   and inverts it: the rebuilt index fails the same check under `2.4.0` and under `2.0.0`. **A
+   committed index is valid under one side or the other, never both**, so a registry whose CI pins an
+   AART ref must move the pin with the rebuild. Consumers are unaffected in both directions, verified
+   in [compatibility-v13.md](compatibility-v13.md). The rebuild also refreshes assessment evidence
+   recorded under `baseline-v1`, which now resolves as stale.
+
+   **This makes `release-check` order-dependent, which it has not been before.** The reference
+   registry has to be rebuilt on `2.5.0` before `registry-validate`, `registry-build`, and
+   `registry-compatibility` can pass — and rebuilding it withholds it from whatever older AART its
+   own CI pins. The order that works: merge, tag, rebuild the reference registry and move its pin,
+   re-run `release-check` for the green evidence, publish.
 2. **Do not publish an artifact using the new modules until consumers have upgraded.** An older
    executable refuses the *whole source*: `source add` fails on the unknown module, and a subscriber
    already on `2.4.0` fails `source sync` on the unknown capability and freezes at last-known-good.

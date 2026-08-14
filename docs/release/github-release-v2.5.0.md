@@ -112,10 +112,17 @@ same `context_digest` appears across three runs and two different executables.
 
 ## Upgrading
 
-**Re-run `registry build` on `2.5.0`.** An index compiled earlier publishes the old vocabulary and a
-`2.5.0` consumer will not match it — the same artifacts it already refused, so nothing regresses, but
-nothing improves until the index is rebuilt. Rebuilding also refreshes assessment evidence recorded
-under `baseline-v1`.
+**Re-run `registry build` on `2.5.0`, and move the AART ref your registry CI pins in the same
+change.** An index compiled earlier publishes the old vocabulary, and `registry validate --strict
+--frozen` on `2.5.0` reports `compiled index disagrees with owned package …` for every artifact whose
+recipe needs more than `keychain`. Rebuilding fixes that and inverts it — the rebuilt index fails the
+same check under `2.4.0` and `2.0.0` — so **a committed index is valid under one side or the other,
+never both.** Rebuilding also refreshes assessment evidence recorded under `baseline-v1`.
+
+**Consumers are unaffected in both directions**, because a consumer recompiles the index from the
+source snapshot rather than trusting the committed one. A `2.4.0` consumer adds a `2.5.0`-rebuilt
+registry, lists every artifact `healthy`, and installs one exactly as before. The version split is a
+registry maintainer's problem, and it is a one-command problem.
 
 **Do not publish an artifact using the new modules until your consumers have upgraded.** A recipe is
 validated when a source snapshot is validated, before any artifact-level bound is read, so a
