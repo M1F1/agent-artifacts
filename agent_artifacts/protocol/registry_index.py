@@ -11,7 +11,7 @@ from agent_artifacts.domain.result import Err, Ok, Result
 from .capabilities import Capability
 from .codes import REGISTRY_GRAPH_INVALID, REGISTRY_INDEX_INVALID
 from .native_models import CollectionManifest
-from .native_tree import NativeArtifactPackage
+from .native_tree import NativeArtifactPackage, dependency_scope_error
 from .registry_models import (
     IndexArtifact,
     IndexProvenance,
@@ -152,9 +152,13 @@ def validate_registry_graph(
         for selector in artifact.requires:
             dependency = artifact_map.get(selector.identity)
             if dependency is None:
-                return _error(
+                # Every artifact this index holds is in this registry, owned or referenced, so an
+                # identity absent from the map is absent from the registry — there is no second
+                # shape to distinguish here (SI-9).
+                return dependency_scope_error(
                     REGISTRY_GRAPH_INVALID,
-                    f"artifact {artifact.identity} requires missing {selector.identity}",
+                    artifact.identity,
+                    selector.identity,
                 )
             if selector.version is not None and not selector.version.allows(dependency.version):
                 return _error(

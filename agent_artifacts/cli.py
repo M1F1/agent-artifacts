@@ -490,7 +490,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="initialize, compile, and audit an AART registry",
         description=(
             "Maintain a writable AART registry checkout. Read/check commands never mutate it; "
-            "mutation commands only write reviewed managed files and never commit or push."
+            "mutation commands only write reviewed managed files and never commit or push. "
+            "An artifact's requires resolves inside this one registry, against artifacts this "
+            "registry owns: depend on foreign content by publishing it here, never by naming "
+            "another registry's artifact."
         ),
     )
     registry_sub = p.add_subparsers(dest="registry_action", metavar="ACTION", required=True)

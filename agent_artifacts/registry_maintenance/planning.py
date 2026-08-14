@@ -138,6 +138,21 @@ def _current_entries(files: dict[str, SnapshotEntry]) -> Result[tuple[RegistryEn
     return Ok(tuple(entries))
 
 
+def _referenced_origins(files: dict[str, SnapshotEntry]) -> dict[ArtifactIdentity, str]:
+    """Which identities this registry references from another origin rather than owning.
+
+    Read for one purpose: a `requires` naming a referenced identity is refused, and the refusal has
+    to say *that* rather than "missing" (SI-9).  A malformed entry is not this function's refusal to
+    make — the callers parse the workspace first and refuse there — so an unparseable set of entries
+    means only that nothing extra is knowable.
+    """
+
+    entries = _current_entries(files)
+    if isinstance(entries, Err):
+        return {}
+    return {entry.identity: entry.source.url for entry in entries.value}
+
+
 def _optional_lock(files: dict[str, SnapshotEntry]) -> Result[RegistryLock | None]:
     item = files.get("aart.lock.json")
     if item is None:
@@ -444,6 +459,7 @@ def _native_registry_content(
         snapshot,
         executable_version=executable_version,
         available_capabilities=available_capabilities,
+        referenced_origins=_referenced_origins(files),
     )
     if isinstance(loaded, Err):
         return loaded

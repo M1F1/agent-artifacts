@@ -339,6 +339,45 @@ digests, not member contents, so a regression cannot pass by being "content-iden
 distinguishes "absent from this registry" from "present in another configured one" when the second is
 knowable.
 
+**What the plan did not anticipate:**
+
+- **The second route could not be named as a dependency route, because it is not one.** Item 1 asks
+  for `registry promote-native` to be named as a way of depending on foreign content. It is not.
+  `registry build` compiles registry-owned content through `load_native_source`, whose dependency
+  graph sees owned packages only, *before* referenced entries are folded into the index — so an owned
+  artifact that requires a promoted identity is refused (`skill/code-review requires missing
+  skill/helper`) even though the registry publishes `skill/helper` and a consumer can install it.
+  Verified against the real planning path before a line was written, not inferred. The protocol text
+  and the remediation therefore name `promote-native` for what it does — offering a foreign package
+  to consumers — and say plainly that it is not a `requires` target. Naming it as the fix would have
+  sent a maintainer to a command that cannot make their build pass, which is the defect shape item 1
+  warns against in its own last sentence.
+- **"When the second is knowable" had to be made knowable, by the only layer that knows.** Both
+  refusal sites are pure protocol functions: a native source knows nothing about the registry around
+  it, and the index holds only artifacts already in this registry. The workspace is the one layer
+  that knows which identities it references from elsewhere, so `load_native_source` takes an optional
+  `referenced_origins` mapping, read from `entries/` inside `_native_registry_content`. It changes no
+  outcome — a referenced dependency is still refused, and a test holds that — it only chooses which
+  of the two wordings the maintainer gets. Nothing is plumbed through the call sites, and an
+  unparseable entry set means "nothing extra is knowable" rather than a new refusal in a new place,
+  so refusal ordering is untouched.
+- **One helper, two sites, and the import direction was already decided.** `native_tree.py` holds
+  `dependency_scope_error` and `registry_index.py` calls it; the reverse import would be circular.
+- **This is the first `registry` refusal that carries remediation at all.** `SI-6` recorded that none
+  did and that its parity test covered the family vacuously. The text renderer was already printing
+  remediation — there was simply never any — so the parity test now has something to compare.
+- **Vendoring is named as an act, never as a command.** The remediation says "copy the upstream
+  content into an artifact this registry owns". `VN-3` adds `aart registry vendor`, and `VN-8`
+  revises this protocol text once it exists.
+
+**Recorded residue, not fixed here:** a promoted artifact looks published from the index and is not a
+`requires` target, and the protocol document now states that without offering a way to change it.
+Making an owned artifact's `requires` resolve to a referenced identity is not a wording change: it
+decides what the lock and the index must cover for a dependency whose payload lives in someone else's
+repository, and design §7.2 takes no such decision. `VN-8` owns it, and vendoring is the answer —
+a vendored artifact is an owned package, so the dependency resolves for the same reason any owned
+one does.
+
 **Exit:** design §7.2. Independent of everything else.
 
 ## SI-10 — `source add` reviews like its siblings · **`3.0.0` only**
