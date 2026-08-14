@@ -193,6 +193,19 @@ The residue is that every installation made from that source stops being reconci
 silently, and while the tool reports `ok: true`. It is also the one residue that lands squarely on
 the feature this release shipped, which is the most useful place for a residue to land.
 
+## The three `question` findings — decided 2026-08-14
+
+`question` means "defensible but undocumented; needs a decision, not a fix" (design §8). All three
+were decided by the maintainer; the reasoning is in
+[DESIGN-subscription-identity-binding.md](../design/DESIGN-subscription-identity-binding.md) §7 and
+the work is planned, so none of them stays open in this ledger.
+
+| Finding | Decision | Lands as |
+|---|---|---|
+| `LAF-30` byte-reproducible wheel | build it reproducibly — verifiability outweighs build freedom | `SI-8`, `2.2.0` |
+| `LAF-38` cross-registry `requires` | keep it intra-registry, deliberately, and say so in three places | `SI-9`, `2.2.0` |
+| `LAF-39` `source add` without a review | give it one — but it breaks every existing caller, so it is a major | `SI-10`, `3.0.0`; help-text half in `2.2.0` |
+
 ## Positive results worth keeping
 
 - The removal ordering invariant is real (`LA2-X-04`): a store deleted under an intact configuration

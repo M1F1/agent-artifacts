@@ -4,6 +4,9 @@ Status: **not started.** Implements
 [the design](../design/DESIGN-subscription-identity-binding.md), which composes the response to
 [live acceptance v2](../testing/PROGRESS-live-acceptance-v2.md).
 
+SI-1..SI-9 are the `2.2.0` release; SI-10 is a breaking change to `source add` and is gated on
+`3.0.0` (design §7.3).
+
 Sequenced by boundary, not by finding. Every work package ends with stdlib/`unittest` coverage and a
 clean `git diff --check`. Run tests with `python3 -m unittest discover -s tests -p "*_test.py"`;
 `make quality` gates the branch.
@@ -127,6 +130,65 @@ pre-existing `.claude/skills` with foreign content survives.
 
 **Exit:** v1 `LAF-17`, unresolved across two runs.
 
+## SI-8 — the published wheel is byte-reproducible
+
+**Files:** `scripts/build_wheel.py`, `scripts/release.py`, `docs/release/`
+
+1. Derive every zip entry timestamp from the tagged commit's date instead of build time, and pin the
+   archive's member order and compression so nothing else varies with the machine.
+2. Publish the expected wheel digest in the release evidence, so a verifier has something to compare
+   against without rebuilding twice.
+
+**Tests:** two builds of one commit, at different wall-clock times, produce byte-identical archives —
+the assertion the run's `LAF-30` probe failed by hand. A packaging test compares whole-archive
+digests, not member contents, so a regression cannot pass by being "content-identical".
+
+**Exit:** design §7.1. Independent of everything else.
+
+## SI-9 — `requires` is intra-registry, and says so
+
+**Files:** `docs/protocol/registry-v1.md`, `agent_artifacts/cli.py` help,
+`registry build` dependency diagnostic
+
+1. State the rule in the protocol document: `requires` resolves inside one registry, deliberately,
+   because a cross-registry dependency breaks when a maintainer who does not own the artifact changes
+   their own registry. Name vendoring as the supported way to depend on foreign content.
+2. Say the same in one line of `registry` help.
+3. Change the build refusal from `skill/x requires missing skill/y` — which reads as "not published
+   yet" — to a diagnostic that says the dependency must live in this registry, with remediation
+   naming both routes (publish it here, or vendor it).
+
+**Tests:** the refusal's remediation parses, as `SI-6`'s widened guard requires; the diagnostic
+distinguishes "absent from this registry" from "present in another configured one" when the second is
+knowable.
+
+**Exit:** design §7.2. Independent of everything else.
+
+## SI-10 — `source add` reviews like its siblings · **`3.0.0` only**
+
+**Files:** `agent_artifacts/cli.py`, `agent_artifacts/commands/source.py`,
+`agent_artifacts/tui_sources.py`, tutorials, registry CI workflows
+
+**This package must not ship in a minor.** `aart source add …` currently configures the source; after
+it, the same invocation would review and exit `0` having configured nothing. Every script, tutorial,
+and registry workflow that calls it would silently stop working while still reporting success — the
+exact defect shape this project files against itself. It is a breaking change to a public command's
+contract, so it lands with the next major, with no deprecation window (design §7.3).
+
+1. Give `add` the same review/finalize contract as `sync`, `resubscribe`, and `remove`: a review that
+   states origin, ref, default-registry effect, and what will be fetched; `--yes` to finalize; and
+   `--expect` from `SI-2`.
+2. Update the tutorials and both registries' CI workflows in the same release.
+3. Until then — and this part ships with `2.2.0` — `aart source --help` states which verbs review and
+   which mutate immediately.
+
+**Tests:** without `--yes`, `add` writes no configuration and publishes no snapshot; the TUI Add path
+produces the same request value as flag mode; a `2.x`-shaped invocation is refused with a diagnostic
+naming `--yes` rather than silently reviewing.
+
+**Exit:** design §7.3. Parked until the `3.0.0` branch exists; the help-text half is carried by
+`SI-6`.
+
 ## Dependency order
 
 ```mermaid
@@ -136,24 +198,29 @@ flowchart LR
   SI5["SI-5 identity agreement"]
   SI6["SI-6 remediation"]
   SI7["SI-7 teardown"]
+  SI8["SI-8 reproducible wheel"]
+  SI9["SI-9 requires scope"]
   SI1 --> SI4
+  SI2 -.-> SI10["SI-10 add review · 3.0.0"]
+  SI6 -.-> SI10
 ```
 
-SI-1 first: it makes every downstream test deterministic. SI-5, SI-6, and SI-7 are independent of the
-rest and of each other, so they can run in parallel from the start.
+SI-1 first: it makes every downstream test deterministic. SI-5 through SI-9 are independent of the
+rest and of each other, so they can run in parallel from the start. SI-10 is dashed because it is not
+part of this release at all — it inherits `--expect` from SI-2 and the help text from SI-6 when the
+major opens.
 
 ## Release shape
 
-Additive: one new reconciliation status, one new flag on existing commands, three refusals that were
-previously accepted or mis-typed. No protocol, schema, or format revision. That is a **minor** —
-`2.2.0`, contract v10 — with the same "no registry precondition" property as `2.1.0`.
+**`2.2.0`, contract v10** — SI-1 through SI-9. Additive: one new reconciliation status, one new flag
+on existing commands, three refusals that were previously accepted or mis-typed, and a build that
+reproduces. No protocol, schema, or format revision, and the same "no registry precondition" property
+as `2.1.0`.
 
 The three refusals are the part to be honest about in the release notes: a registry whose two
 identity documents disagree, and two resolution cases that used to be reported as a missing artifact,
 now fail differently. No registry that passes `registry validate --strict --frozen` is affected.
 
-## Out of scope, by decision
-
-Design §7's three open questions — byte-reproducible wheels (`LAF-30`), cross-registry `requires`
-(`LAF-38`), and `source add`'s missing review (`LAF-39`) — are not in this plan. They need a
-maintainer decision first, and two of the three would change a contract rather than fix a defect.
+**`3.0.0`** — SI-10, plus whatever else the next major accumulates. Its compatibility matrix names
+`source add` as a changed contract, in the removed-and-changed-commands table that
+`compatibility-v8.md` established and `LAF-29` showed is easy to leave incomplete.

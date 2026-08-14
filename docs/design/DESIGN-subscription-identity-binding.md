@@ -179,23 +179,66 @@ be safe.
 - It does not touch the protocol, the schemas, the store layouts, or any on-disk format. `LAS-31`
   showed `2.0.0` ↔ `2.1.0` interoperate; this work keeps that true. `identity-changed` is a computed
   status, not a stored one.
-- It does not address `LAF-30` (byte-reproducible wheels), `LAF-38` (cross-registry `requires`), or
-  `LAF-39` (`source add` without `--yes`). Those three are `question` findings: they need a decision
-  from the maintainer, not a fix, and §7 states what the decision is about.
+- It does not fold `LAF-30`, `LAF-38`, and `LAF-39` into the four attractors. They are separate
+  decisions, taken in §7, and they land as their own work packages — one of them in the next major.
 - It does not address `LAF-17` (teardown litter) structurally — that one is small and independent,
   and the plan carries it as a standalone package rather than pretending it belongs to an attractor.
 
-## 7. Three decisions this design deliberately leaves open
+## 7. Three decisions, taken
 
-1. **`LAF-30` — byte-reproducible wheels.** Setting `SOURCE_DATE_EPOCH` from the commit date would
-   make a rebuild at the tag reproduce the published digest. The question is whether the project
-   wants to promise that, since it constrains the build for good.
-2. **`LAF-38` — cross-registry dependencies.** `requires` is intra-registry only, and the marketplace
-   federates at consumption. Either the restriction is documented as deliberate, or `requires` grows
-   an optional source qualifier. The second is a protocol change and belongs to a major.
-3. **`LAF-39` — `source add` without `--yes`.** It is the only lifecycle verb that mutates on first
-   invocation, and it is the first command a new operator runs. Either the asymmetry is documented at
-   the family level, or `add` gains a review like its three siblings.
+The run left three `question` findings — behaviour that is defensible but undocumented, needing a
+decision rather than a fix. All three were decided by the maintainer on 2026-08-14, and the reasoning
+is recorded here so it outlives the conversation.
+
+### 7.1 `LAF-30` — the published wheel becomes byte-reproducible
+
+**Decision: do it.** `scripts/build_wheel.py` derives zip entry timestamps from the tagged commit's
+date rather than from build time, so rebuilding at the tag reproduces the published archive digest
+exactly, not merely its contents.
+
+The reason is what AART is: a tool that installs other people's files into other people's projects.
+"You can verify the published artefact yourself" is worth more here than freedom in the build. The
+cost is that it becomes a standing promise — every later packaging change has to keep it — which is
+accepted deliberately and held by a test rather than by intent.
+
+### 7.2 `LAF-38` — dependencies stay inside one registry, and it is written down
+
+**Decision: document the restriction as deliberate; do not extend `requires`.**
+
+A cross-registry dependency is an artifact that breaks when a *different* maintainer changes
+something in a registry its author does not control. That is a coupling AART should not make easy to
+express. The workaround Registry B already used — vendor the dependency into the same registry — is
+the honest form of the same intent: it puts the dependency, and its provenance, under one
+maintainer's control.
+
+What was actually wrong is that nothing said so. The rule becomes explicit in three places: the
+registry protocol document, `registry` help, and the build refusal itself, which today reports
+`skill/x requires missing skill/y` as though the artifact were merely absent rather than out of
+scope. Federation at consumption and locality at publication are both intended, and they are now
+stated together instead of being discovered one build failure at a time.
+
+### 7.3 `LAF-39` — `source add` gains a review, in the next major
+
+**Decision: add the review. It cannot ship in a minor.**
+
+The value is not safety — `add` does nothing destructive. It is that "without `--yes` nothing
+happens" becomes a rule with no exceptions, and a rule with no exceptions is the one operators
+actually learn. Today the single verb that breaks it is the first one a new operator runs.
+
+But `aart source add --alias … --kind … --location …` currently *adds*. Making it review instead is a
+silent behaviour change for every script, tutorial, and registry CI workflow that already calls it:
+they would keep exiting `0` and quietly stop configuring anything. That is precisely the "the report
+states the opposite of the effect" shape this project keeps filing as a defect (v1 `LAF-11`), and no
+amount of release-note prose makes it safe.
+
+It is therefore a breaking change to a public command's contract — a **major** under the criterion
+`compatibility-v8.md` applied to the nine removed verbs — and it is planned as `SI-10`, gated on
+`3.0.0`. There is deliberately **no deprecation window**: `2.0.0` removed nine commands outright
+rather than warning first, and a release in which `add` warns but still mutates would leave the rule
+broken for longer while teaching nobody.
+
+The part that can ship now is the documentation of the asymmetry at the family level, so that until
+`3.0.0` an operator reading `aart source --help` is told which verb reviews and which does not.
 
 ## 8. Acceptance criteria
 
@@ -216,3 +259,9 @@ be safe.
    command; `source resubscribe --expect <from>:<to>` refuses an origin that moved after review.
 9. No source operation writes beneath a project directory — the existing isolation proof still
    passes, unmodified.
+10. Rebuilding the wheel at the release tag reproduces the published archive digest, not only its
+    member contents.
+11. The intra-registry scope of `requires` is stated in the protocol document and in `registry` help,
+    and the build refusal says the dependency is out of scope rather than merely missing.
+12. `aart source --help` states which verbs review and which mutate immediately. (`source add`'s own
+    review is `SI-10`, and lands with `3.0.0`.)
