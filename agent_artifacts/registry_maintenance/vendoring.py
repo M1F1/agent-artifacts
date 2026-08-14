@@ -1,0 +1,254 @@
+"""Project a canonical package from foreign bytes (VN-2).
+
+`VN-1` takes a subtree out of a repository that knows nothing about AART. This turns that subtree
+into an ordinary owned registry package: the taken bytes become `payload/`, the maintainer's authored
+`artifact.json` gives it an identity, and `provenance.json` records verifiably where the bytes came
+from and with what options.
+
+The result is deliberately not a new kind of thing (design §2). It is an owned package that happens
+to carry `provenance.json`, so the index projection, the security baseline's cross-check, and the
+installer's credential-free-origin check all already apply to it, and a `2.0.0` consumer reads it.
+
+What this module refuses is the package that would not load. A projection whose payload does not
+satisfy its declared kind is refused here, naming the document the kind requires, rather than
+emitted for `registry validate` to reject later against a manifest the maintainer did not write by
+hand.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import cast
+
+from agent_artifacts.domain.diagnostics import Diagnostic, Severity, SourceLocation
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest
+from agent_artifacts.domain.result import Err, Ok, Result
+from agent_artifacts.protocol.codes import ARTIFACT_INVALID
+from agent_artifacts.protocol.hashing import json_digest
+from agent_artifacts.protocol.json import JsonObject, canonical_json_bytes
+from agent_artifacts.protocol.native_models import (
+    INSTALL_EFFECTS_BY_TYPE,
+    PAYLOAD_FORMAT_BY_TYPE,
+    ArtifactManifest,
+    CanonicalArtifactType,
+    CompatibilitySpec,
+    ImporterProvenance,
+    InstallMode,
+    InstallScope,
+    InstallSpec,
+    OriginProvenance,
+    PayloadSpec,
+    Provenance,
+    SetupReference,
+)
+from agent_artifacts.protocol.native_schema import (
+    artifact_manifest_to_json,
+    provenance_to_json,
+)
+from agent_artifacts.protocol.native_tree import SnapshotEntryKind
+from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.sources.subtree import TakenSubtree
+
+VENDOR_IMPORTER_ID = "registry-vendor-v1"
+_PAYLOAD_ROOT = "payload"
+# The one document each kind's payload cannot load without.  A vendored subtree rarely contains it,
+# because the upstream repository was never shaped for AART — supplying it is the maintainer's
+# wrapper, and it is authored, reviewed, and assessed like any other file they add.
+_REQUIRED_PAYLOAD_DOCUMENT = {
+    "skill": "payload/SKILL.md",
+    "mcp": "payload/mcp.json",
+    "hook": "payload/hook.json",
+}
+_ALLOWED_AUTHORED_ROOTS = frozenset({"README.md", "SETUP.md", "payload", "setup"})
+# Canonical package content the projection writes itself.  Refusing these by name rather than as
+# "not canonical content" matters: they are canonical, and the maintainer who passes one is trying
+# to override the two documents whose whole purpose is to be derived from the vendoring inputs.
+_PROJECTED_ROOTS = frozenset({"artifact.json", "provenance.json"})
+
+
+def _error(message: str, path: str | None = None) -> Err:
+    return Err((Diagnostic(ARTIFACT_INVALID, Severity.ERROR, message, SourceLocation(path=path)),))
+
+
+@dataclass(frozen=True, slots=True)
+class VendorOrigin:
+    """Where the bytes came from, exactly as the acquisition resolved it."""
+
+    url: str
+    ref: str
+    resolved_commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class VendorOptions:
+    """What the maintainer authors, because the upstream repository declares none of it."""
+
+    identity: ArtifactIdentity
+    version: SemVer
+    summary: str
+    profiles: tuple[str, ...]
+    platforms: tuple[str, ...]
+    scopes: tuple[str, ...]
+    modes: tuple[str, ...]
+    setup_recipe: SafeRelativePath | None = None
+    setup_platforms: tuple[str, ...] = ()
+    authored: tuple[tuple[str, bytes, bool], ...] = ()
+    warnings: tuple[str, ...] = field(default=())
+
+
+@dataclass(frozen=True, slots=True)
+class VendoredPackage:
+    """One owned package, ready to be written as ordinary registry content."""
+
+    base: str
+    files: tuple[tuple[str, bytes, bool], ...]
+    manifest: ArtifactManifest
+    provenance: Provenance
+
+
+def acquisition_options_digest(origin: VendorOrigin, subtree: TakenSubtree) -> ObjectDigest:
+    """Digest every input that decides which bytes were taken.
+
+    Two vendorings of one upstream state must be comparable, so this covers the origin URL, the
+    requested ref, and the taken path. The ref is included even though it moves: a tag and a branch
+    that happen to resolve to one commit are two different standing instructions, and `VN-5`'s drift
+    check compares instructions, not only outcomes.
+    """
+
+    return json_digest(
+        JsonObject(
+            (
+                ("path", str(subtree.path)),
+                ("ref", origin.ref),
+                ("url", origin.url),
+            )
+        )
+    )
+
+
+def _authored_files(
+    options: VendorOptions, taken: frozenset[str]
+) -> Result[tuple[tuple[str, bytes, bool], ...]]:
+    files: list[tuple[str, bytes, bool]] = []
+    seen: set[str] = set()
+    for raw, content, executable in options.authored:
+        parsed = parse_relative_path(raw)
+        if isinstance(parsed, Err):
+            return _error(f"authored package path is unsafe: {raw!r}")
+        relative = str(parsed.value)
+        root = relative.split("/", 1)[0]
+        if root in _PROJECTED_ROOTS:
+            return _error(f"the vendoring writes {root}; it is not authored alongside the payload")
+        if root not in _ALLOWED_AUTHORED_ROOTS:
+            return _error(f"authored file is not canonical package content: {relative}")
+        if relative in seen:
+            return _error(f"authored file is given twice: {relative}")
+        # Never silently over-write a taken byte: the maintainer would be reviewing upstream content
+        # that is not the content their registry ships.
+        if relative in taken:
+            return _error(f"authored file collides with the taken subtree: {relative}")
+        seen.add(relative)
+        files.append((relative, content, executable))
+    return Ok(tuple(files))
+
+
+def project_vendored_package(
+    subtree: TakenSubtree,
+    origin: VendorOrigin,
+    options: VendorOptions,
+    *,
+    artifact_root: SafeRelativePath,
+    importer_version: SemVer,
+) -> Result[VendoredPackage]:
+    """Build the package a `registry vendor` would write, without writing anything.
+
+    `importer_version` is the AART that did the vendoring: the importer is this executable, so the
+    provenance records which one produced the copy. It is passed rather than read, so the projection
+    stays a pure function of its inputs.
+    """
+
+    kind = options.identity.kind
+    if kind not in PAYLOAD_FORMAT_BY_TYPE:
+        return _error(f"unsupported artifact type for vendoring: {kind}")
+    taken_files = {
+        f"{_PAYLOAD_ROOT}/{entry.path}": entry
+        for entry in subtree.snapshot.entries
+        if entry.kind is SnapshotEntryKind.FILE
+    }
+    authored = _authored_files(options, frozenset(taken_files))
+    if isinstance(authored, Err):
+        return authored
+    payload_paths = set(taken_files) | {
+        path for path, _content, _executable in authored.value if path.startswith("payload/")
+    }
+    required = _REQUIRED_PAYLOAD_DOCUMENT.get(kind)
+    if required is not None and required not in payload_paths:
+        return _error(
+            f"a vendored {kind} needs {required}; the taken subtree does not contain it, "
+            "so the maintainer supplies it"
+        )
+    if kind in {"guideline", "memory"} and (
+        len(payload_paths) != 1 or not next(iter(payload_paths)).endswith(".md")
+    ):
+        return _error(
+            f"a vendored {kind} carries exactly one Markdown document; "
+            f"the taken subtree contributes {len(payload_paths)} payload files"
+        )
+    canonical_kind = cast(CanonicalArtifactType, kind)
+    setup = None
+    if options.setup_recipe is not None:
+        setup = SetupReference(options.setup_recipe, options.setup_platforms or options.platforms)
+    manifest = ArtifactManifest(
+        1,
+        options.identity,
+        options.version,
+        options.summary,
+        PayloadSpec(_path(_PAYLOAD_ROOT), PAYLOAD_FORMAT_BY_TYPE[canonical_kind]),
+        CompatibilitySpec(options.profiles, options.platforms),
+        InstallSpec(
+            cast(tuple[InstallScope, ...], options.scopes),
+            cast(tuple[InstallMode, ...], options.modes),
+            tuple(sorted(INSTALL_EFFECTS_BY_TYPE[canonical_kind])),
+        ),
+        setup,
+    )
+    provenance = Provenance(
+        1,
+        OriginProvenance(
+            "git",
+            origin.url,
+            origin.resolved_commit,
+            subtree.path,
+            subtree.input_digest,
+        ),
+        ImporterProvenance(
+            VENDOR_IMPORTER_ID,
+            importer_version,
+            acquisition_options_digest(origin, subtree),
+        ),
+        # Acquisition warnings travel with the artifact rather than with the run that produced it:
+        # the baseline surfaces them as `importer-warning`, so a second reviewer sees what the first
+        # was told.
+        tuple(sorted(set(options.warnings))),
+    )
+    base = f"{artifact_root}/{kind}/{options.identity.name}"
+    files: list[tuple[str, bytes, bool]] = [
+        (f"{base}/artifact.json", canonical_json_bytes(artifact_manifest_to_json(manifest)), False),
+        (f"{base}/provenance.json", canonical_json_bytes(provenance_to_json(provenance)), False),
+    ]
+    files.extend(
+        (f"{base}/{relative}", entry.content, entry.executable)
+        for relative, entry in taken_files.items()
+    )
+    files.extend(
+        (f"{base}/{relative}", content, executable)
+        for relative, content, executable in authored.value
+    )
+    return Ok(VendoredPackage(base, tuple(sorted(files)), manifest, provenance))
+
+
+def _path(raw: str) -> SafeRelativePath:
+    parsed = parse_relative_path(raw)
+    assert isinstance(parsed, Ok), raw
+    return parsed.value

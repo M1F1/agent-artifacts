@@ -108,6 +108,38 @@ limitation in the command's help rather than let it surface as an acquisition er
 it carries `IndexProvenance` matching `provenance.json`; the baseline raises no
 `provenance-index-mismatch`; `registry validate --strict --frozen` passes.
 
+**What the plan did not anticipate** (`agent_artifacts/registry_maintenance/vendoring.py`,
+`tests/registry_vendoring_projection_test.py`):
+
+- **The taken subtree alone almost never makes a loadable payload, so the projection refuses and
+  names what is missing.** `_validate_primary_payload` requires `payload/SKILL.md` for a skill and
+  `payload/mcp.json` / `payload/hook.json` for an mcp or hook. An upstream repository was never
+  shaped for AART, so it contains none of them. That document is the maintainer's wrapper — it is
+  authored, and it is reviewed and assessed like any other file they add. Refusing at projection
+  time names the document; emitting the package instead would fail later inside `registry validate`,
+  against a manifest the maintainer never wrote by hand.
+- **`guideline` and `memory` are vendorable only from a single Markdown document.** The loader
+  requires exactly one payload file and that it be `.md`, so the projection applies the same rule
+  with a message about what the subtree contributed. This is a real narrowing of what "vendor a
+  subtree" means for those two kinds, not an implementation detail.
+- **`artifact.json` and `provenance.json` are refused as authored input by name.** They are the two
+  documents the projection derives from its inputs; a maintainer passing one is trying to override
+  the evidence. Refusing them as "not canonical package content" would have been wrong — they are
+  canonical — so they refuse with their own message.
+- **Everything else authored is bounded to the loader's own allowed roots** (`README.md`, `SETUP.md`,
+  `payload/`, `setup/`) and may not collide with a taken byte. A silent overwrite would mean the
+  maintainer reviews upstream content their registry does not ship.
+- **`options_digest` includes the ref, deliberately, even though a ref moves.** A tag and a branch
+  that happen to resolve to one commit are two different standing instructions, and `VN-5`'s drift
+  check compares instructions rather than only outcomes.
+- **`importer_version` is passed in, not read from `runtime_contract`.** The projection stays a pure
+  function of its inputs; the caller (`VN-3`) supplies `EXECUTABLE_VERSION`.
+- **`validate --strict --frozen` is not reachable on its own.** It sets `require_compiled`, so the
+  test must run `lock --yes` and `build --yes` first, and every registry mutation refuses without a
+  writable local Git checkout — the test `git init`s a temporary registry. It builds a fresh registry
+  rather than adding the vendored package to the `registry-v1` fixture, whose `entries/mcp/` native
+  reference would have to be acquired during `lock`. `VN-3`'s tests inherit all of this.
+
 **Exit:** design §2. Depends on `VN-1`.
 
 ## VN-3 — `registry vendor`, review-first
