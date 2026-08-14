@@ -33,7 +33,11 @@ REGISTRY_WORKSPACE_APPLY_FAILED = DiagnosticCode("registry-workspace-apply-faile
 _ROOT_FILES = frozenset(
     {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json"}
 )
-_ROOT_DIRECTORIES = frozenset({"entries", "artifacts", "collections"})
+# `security/` holds committed assessment evidence.  The reader has to see it for two reasons: a
+# plan that writes an attestation is verified against a re-read snapshot, and `registry audit` reads
+# `security/index.json` out of that same snapshot — a root it could not see was a root whose
+# evidence it could never report.
+_ROOT_DIRECTORIES = frozenset({"entries", "artifacts", "collections", "security"})
 _GITHUB_DIRECTORIES = frozenset({".github", ".github/workflows", ".github/ISSUE_TEMPLATE"})
 _GITHUB_FILES = frozenset(
     {

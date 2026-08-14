@@ -12,6 +12,7 @@ from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.security.model import SecurityAssessment
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -151,7 +152,9 @@ def _managed_path(path: SafeRelativePath) -> bool:
         ".github/workflows/aart-usage-validate.yml",
     }:
         return True
-    return path.parts[0] in {"entries", "artifacts", "collections"}
+    # `security/` carries committed assessment evidence.  It is not a registry input — the inputs
+    # digest ignores it — so a plan may write evidence without making the lock and index stale.
+    return path.parts[0] in {"entries", "artifacts", "collections", "security"}
 
 
 def registry_workspace_review_digest(
@@ -226,6 +229,25 @@ class RegistryWorkspacePlan:
     @property
     def changed_paths(self) -> int:
         return sum(item.kind is not WorkspaceChangeKind.UNCHANGED for item in self.changes)
+
+
+@dataclass(frozen=True, slots=True)
+class VendoredArtifactPlan:
+    """A vendoring plan and the assessment of the exact bytes it would write.
+
+    They travel together because the review presents both, and recomputing the assessment at render
+    time would let the two drift: the maintainer would approve a digest covering one thing while
+    reading another.
+    """
+
+    plan: RegistryWorkspacePlan
+    assessment: SecurityAssessment
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.plan, RegistryWorkspacePlan) or not isinstance(
+            self.assessment, SecurityAssessment
+        ):
+            raise ValueError("vendored artifact plan is invalid")
 
 
 @dataclass(frozen=True, slots=True)

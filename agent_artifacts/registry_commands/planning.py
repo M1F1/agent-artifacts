@@ -73,6 +73,7 @@ from agent_artifacts.registry_maintenance.planning import (
 from agent_artifacts.registry_maintenance.vendoring import (
     VendorOptions,
     VendorOrigin,
+    assess_vendored_package,
     project_vendored_package,
 )
 from agent_artifacts.security.application import verify_security_index
@@ -89,6 +90,7 @@ from .model import (
     RegistryQualityReport,
     RegistryWorkspaceChange,
     RegistryWorkspacePlan,
+    VendoredArtifactPlan,
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
@@ -497,7 +499,7 @@ def plan_artifact_vendor(
     path: SafeRelativePath,
     review: ReviewRecord,
     importer_version: SemVer,
-) -> Result[RegistryWorkspacePlan]:
+) -> Result[VendoredArtifactPlan]:
     """Plan the owned package a reviewed vendoring would write, writing nothing.
 
     The approved review record is the same gate `plan_native_promotion` applies: a vendoring is the
@@ -538,7 +540,20 @@ def plan_artifact_vendor(
                 return _error(
                     f"the declared setup recipe requires {required}, which is not present"
                 )
-    return _plan(RegistryOperation.VENDOR, snapshot, projected.value.files)
+    # The assessment runs over the projected object, so the review reports what the baseline found
+    # in the exact bytes this vendoring writes — the maintainer's own wrapper as much as the copied
+    # payload — and the evidence is committed beside the package for the next reader.
+    assessed = assess_vendored_package(projected.value, source_id=source.value.source_id)
+    if isinstance(assessed, Err):
+        return assessed
+    planned = _plan(
+        RegistryOperation.VENDOR,
+        snapshot,
+        (*projected.value.files, (assessed.value.document_path, assessed.value.document, False)),
+    )
+    if isinstance(planned, Err):
+        return planned
+    return Ok(VendoredArtifactPlan(planned.value, assessed.value.assessment))
 
 
 def plan_registry_format(snapshot: SourceSnapshot) -> Result[RegistryWorkspacePlan]:

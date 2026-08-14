@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import cast
 
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, SourceLocation
-from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.codes import ARTIFACT_INVALID
 from agent_artifacts.protocol.hashing import json_digest
@@ -45,10 +45,33 @@ from agent_artifacts.protocol.native_schema import (
     artifact_manifest_to_json,
     provenance_to_json,
 )
-from agent_artifacts.protocol.native_tree import SnapshotEntryKind
+from agent_artifacts.protocol.native_tree import (
+    SnapshotEntry,
+    SnapshotEntryKind,
+    compile_native_package,
+)
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.protocol.registry_index import index_artifact_from_package
 from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.security.attestation_schema import attestation_bytes
+from agent_artifacts.security.attestations import (
+    EMPTY_CACHE_INPUT_DIGEST,
+    AssessmentCacheKey,
+    AttestationOrigin,
+    AttestationOriginKind,
+    SecurityAttestation,
+    attestation_digest,
+)
+from agent_artifacts.security.baseline import (
+    BASELINE_PROVIDER_ID,
+    BASELINE_PROVIDER_VERSION,
+    BASELINE_RULES_DIGEST,
+    BaselineScanRequest,
+    assess_installation_risk,
+)
+from agent_artifacts.security.model import SecurityAssessment
 from agent_artifacts.sources.subtree import TakenSubtree
+from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
 VENDOR_IMPORTER_ID = "registry-vendor-v1"
 _PAYLOAD_ROOT = "payload"
@@ -246,6 +269,85 @@ def project_vendored_package(
         for relative, content, executable in authored.value
     )
     return Ok(VendoredPackage(base, tuple(sorted(files)), manifest, provenance))
+
+
+@dataclass(frozen=True, slots=True)
+class VendorAssessment:
+    """What the baseline found in the exact bytes this vendoring would write."""
+
+    candidate: ObjectCandidate
+    assessment: SecurityAssessment
+    attestation: SecurityAttestation
+    document_path: str
+    document: bytes
+
+
+def _package_entries(package: VendoredPackage) -> tuple[SnapshotEntry, ...]:
+    prefix = f"{package.base}/"
+    return tuple(
+        SnapshotEntry(
+            _path(relative.removeprefix(prefix)), SnapshotEntryKind.FILE, content, executable
+        )
+        for relative, content, executable in package.files
+    )
+
+
+def assess_vendored_package(
+    package: VendoredPackage,
+    *,
+    source_id: SourceId,
+) -> Result[VendorAssessment]:
+    """Assess the projected package before a byte of it is written.
+
+    The object assessed is the whole package, so the maintainer's own wrapper — the `mcp.json` they
+    authored, the `install.sh` they added — is scanned with the copied payload rather than exempted
+    from it (design §3). The result is canonical local attestation evidence: it names the exact
+    object digest it describes, so a reader can tell whether it still applies.
+    """
+
+    entries = _package_entries(package)
+    candidate = make_object_candidate(entries)
+    if isinstance(candidate, Err):
+        return candidate
+    compiled = compile_native_package(entries, expected_identity=package.manifest.identity)
+    if isinstance(compiled, Err):
+        return compiled
+    indexed = index_artifact_from_package(
+        compiled.value,
+        source_id=source_id,
+        object_digest=candidate.value.digest,
+    )
+    assessment = assess_installation_risk(BaselineScanRequest(candidate.value, indexed))
+    try:
+        attestation = SecurityAttestation(
+            1,
+            AssessmentCacheKey(
+                1,
+                candidate.value.digest,
+                BASELINE_PROVIDER_ID,
+                BASELINE_PROVIDER_VERSION,
+                BASELINE_RULES_DIGEST,
+                EMPTY_CACHE_INPUT_DIGEST,
+                EMPTY_CACHE_INPUT_DIGEST,
+            ),
+            # Local, not `registry-ci`: this ran on the maintainer's machine, and a registry-CI
+            # origin would have to name a resolved registry revision that does not exist until the
+            # vendoring is committed.
+            AttestationOrigin(AttestationOriginKind.LOCAL),
+            assessment,
+        )
+    except ValueError as error:
+        return _error(str(error))
+    digest = attestation_digest(attestation)
+    return Ok(
+        VendorAssessment(
+            candidate.value,
+            assessment,
+            attestation,
+            f"security/attestations/{digest.value}.json",
+            attestation_bytes(attestation),
+        )
+    )
 
 
 def _path(raw: str) -> SafeRelativePath:

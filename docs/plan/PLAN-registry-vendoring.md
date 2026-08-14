@@ -1,7 +1,8 @@
 # Plan: registry vendoring
 
-Status: **not started.** Implements
-[the design](../design/DESIGN-registry-vendoring.md).
+Status: **`VN-1` … `VN-4` landed; `VN-5` … `VN-9` open.** Implements
+[the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
+"What the plan did not anticipate" section; those sections, not this line, are the run record.
 
 Target release: **`2.3.0`, contract v11.** Additive — two new registry verbs, two new audit findings,
 one removed dead module. No protocol, schema, or on-disk format revision (design §2), so the same
@@ -222,6 +223,41 @@ accepts. When `VN-5` lands `revendor`, that refusal should name it.
 `shell-pipe-to-interpreter` — proving the maintainer's own wrapper is assessed, not only the payload;
 a committed credential in the upstream subtree appears as `embedded-credential`; an unpinned install
 appears as `unpinned-package-install`; the rendered review contains no word claiming safety.
+
+**What the plan did not anticipate**
+
+- **The assessment cannot live in `provenance.json`.** The obvious home is circular: the assessment
+  names the object digest of the package, and `provenance.json` is one of the package's files, so
+  writing the assessment into it changes the digest the assessment describes. The evidence is
+  therefore written as its own canonical document at `security/attestations/<attestation-digest>.json`
+  — the exact path `SecurityIndexEntry` already requires — with `AttestationOriginKind.LOCAL`,
+  because this ran on the maintainer's machine and a `registry-ci` origin would have to name a
+  resolved registry revision that does not exist until the vendoring is committed.
+- **It is deliberately not written into `security/index.json`.** That index binds the compiled
+  `registry_inputs_digest`, which does not exist until `build` runs, and `registry audit` demands
+  evidence coverage for *every* compiled object once an index is present — so writing one here would
+  make audit fail for any registry that already has other artifacts, breaking design acceptance 4. A
+  loose attestation document is additive: `security/` is excluded from `registry_inputs_digest`, so
+  committed evidence cannot make the lock or index read as stale. A test holds that.
+- **`FilesystemRegistryWorkspace` could not see `security/` at all.** Its managed roots were
+  `entries`, `artifacts`, `collections`. A plan writing an attestation therefore failed apply
+  *verification* — the file was written and the re-read snapshot did not contain it. Adding
+  `security` to the reader's roots (and to `_managed_path`) fixes a second, pre-existing defect in
+  passing: `audit_registry_workspace` reads `security/index.json` out of that same snapshot, so
+  until now its security-evidence branch was unreachable from `registry audit` on a real checkout.
+- **A finding does not refuse the vendor.** The `vendor-assessment` check passes when the assessment
+  *ran to completion*, not when it found nothing: an assessment that completed and reported a
+  critical credential has done its job, and design §3 gives the decision to the maintainer. Refusing
+  here would have converted evidence into a policy AART does not own.
+- **VN-3's own wording had to change.** Its warning said "a clean vendor reports what was found";
+  with an assessment in the review that reads as a verdict, so it now says "a successful vendor
+  reports what was copied". The test asserts no `safe|verified|trusted|secure|vetted` token appears
+  in either rendering.
+- **The maintainer's wrapper is assessed because it is part of the object, not by a special case.**
+  The test authors a declared custom setup entrypoint (`setup/installer.json` +
+  `setup/install.sh`), which the loader requires to be executable and to carry the manual-setup
+  header — an unexpected gate that is correct: an entrypoint no one can find from `SETUP.md` is
+  exactly what should not be adopted silently.
 
 **Exit:** design §3. Depends on `VN-3`.
 

@@ -64,6 +64,7 @@ from agent_artifacts.registry_maintenance.planning import (
 )
 from agent_artifacts.registry_maintenance.vendoring import VendorOptions
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
+from agent_artifacts.security.model import AssessmentStatus, SecurityAssessment
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.model import (
     GitSnapshotRequest,
@@ -475,6 +476,29 @@ class LocalCurationService:
             ),
         )
 
+    def _vendor_assessment_check(self, assessment: SecurityAssessment) -> CurationCheck:
+        """Report what the baseline found in the bytes this vendoring would write.
+
+        The check passes when the assessment ran to completion, not when it found nothing: a
+        scan that completed and reported three findings did its job, and the maintainer decides
+        whether those findings are acceptable.  Nothing here calls the package safe.
+        """
+
+        details = [
+            f"installation risk: {assessment.installation_risk.value}",
+            f"findings: {len(assessment.findings)}",
+        ]
+        details.extend(
+            f"{finding.rule_id} ({finding.severity.value}): {finding.message}"
+            + ("" if finding.path is None else f" [{finding.path}]")
+            for finding in assessment.findings
+        )
+        return CurationCheck(
+            "vendor-assessment",
+            assessment.status is AssessmentStatus.COMPLETE,
+            tuple(details),
+        )
+
     def _prepare_vendor(self, request: CurationRequest) -> Result[PreparedCuration]:
         if (
             request.kind is None
@@ -531,11 +555,17 @@ class LocalCurationService:
         return Ok(
             self._workspace_review(
                 request,
-                planned.value,
-                checks=(self._vendor_review_check(request, acquired.value, planned.value),),
+                planned.value.plan,
+                checks=(
+                    self._vendor_review_check(request, acquired.value, planned.value.plan),
+                    self._vendor_assessment_check(planned.value.assessment),
+                ),
                 warnings=(
                     "Vendoring copies upstream bytes into this registry and pins them to a commit; "
-                    "a clean vendor reports what was found, and is not a safety claim.",
+                    "a successful vendor reports what was copied, and is not a safety claim.",
+                    # Verbatim from the `security` command's own description: the vendor review is
+                    # the same evidence under a different verb, and must not read as stronger.
+                    "Assessments reduce uncertainty; they are not safety guarantees.",
                     "This registry now owns the copy: upstream fixes do not reach consumers until "
                     "it is vendored again.",
                 ),

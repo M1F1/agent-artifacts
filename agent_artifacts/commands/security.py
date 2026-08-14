@@ -13,11 +13,12 @@ from agent_artifacts.io.security_analyzers import resolve_executable
 from agent_artifacts.io.security_cache import write_cached_attestation
 from agent_artifacts.marketplace.model import TrustClass
 from agent_artifacts.model import Request
-from agent_artifacts.protocol.hashing import json_digest, parse_sha256
+from agent_artifacts.protocol.hashing import parse_sha256
 from agent_artifacts.protocol.json import JsonArray, JsonObject, canonical_json_bytes
 from agent_artifacts.protocol.registry_schema import parse_registry_index, parse_registry_lock
 from agent_artifacts.security.attestation_schema import parse_attestation
 from agent_artifacts.security.attestations import (
+    EMPTY_CACHE_INPUT_DIGEST,
     AssessmentCacheKey,
     AttestationOrigin,
     AttestationOriginKind,
@@ -28,6 +29,8 @@ from agent_artifacts.security.attestations import (
     resolve_attestation,
 )
 from agent_artifacts.security.baseline import (
+    BASELINE_PROVIDER_ID,
+    BASELINE_PROVIDER_VERSION,
     BASELINE_RULES_DIGEST,
     BaselineScanRequest,
     assess_installation_risk,
@@ -43,7 +46,7 @@ from agent_artifacts.store.model import parse_object_candidate
 
 _MAX_OBJECT_BYTES = 150 * 1024 * 1024
 _MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
-_EMPTY_DIGEST = json_digest(JsonObject(()))
+_EMPTY_DIGEST = EMPTY_CACHE_INPUT_DIGEST
 
 
 def _failure(message: str) -> int:
@@ -194,8 +197,8 @@ def _scan(request: Request) -> int:
     cache_key = AssessmentCacheKey(
         1,
         candidate.value.digest,
-        "aart-baseline",
-        "1",
+        BASELINE_PROVIDER_ID,
+        BASELINE_PROVIDER_VERSION,
         BASELINE_RULES_DIGEST,
         _EMPTY_DIGEST,
         _EMPTY_DIGEST,

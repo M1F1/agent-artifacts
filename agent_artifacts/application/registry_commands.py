@@ -15,6 +15,7 @@ from agent_artifacts.registry_commands.model import (
     RegistryApplyReceipt,
     RegistryInitOptions,
     RegistryWorkspacePlan,
+    VendoredArtifactPlan,
 )
 from agent_artifacts.registry_commands.planning import (
     plan_artifact_scaffold,
@@ -67,7 +68,7 @@ def prepare_artifact_vendor(
     review: ReviewRecord,
     importer_version: SemVer,
     output: RegistryWorkspacePort,
-) -> Result[RegistryWorkspacePlan]:
+) -> Result[VendoredArtifactPlan]:
     current = output.current()
     if isinstance(current, Err):
         return current
