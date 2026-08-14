@@ -77,6 +77,11 @@ _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozense
         frozenset({"image", "official_url"}),
         frozenset({"image"}),
     ),
+    "docker.build@1": (
+        "docker",
+        frozenset({"context", "dockerfile"}),
+        frozenset({"context"}),
+    ),
     "command.verify@1": (
         "process",
         frozenset({"argv", "timeout", "cwd"}),
@@ -181,6 +186,42 @@ def _package_relative_source(value: object, label: str) -> str:
     ):
         raise _Invalid(f"{label} must be a relative name directly below the package root")
     return normalized
+
+
+def _context_relative_file(value: object, label: str) -> str:
+    """A file inside a materialized build context, named relative to the context root."""
+
+    path = _single_line(value, label)
+    normalized = os.path.normpath(path)
+    if (
+        os.path.isabs(path)
+        or normalized != path
+        or normalized == "."
+        or any(part == ".." for part in normalized.split(os.sep))
+    ):
+        raise _Invalid(f"{label} must be a relative file inside the build context")
+    return normalized
+
+
+def image_tag(item: "SetupQueueItem") -> str:
+    """The one tag a locally built image may carry, derived from identity and version.
+
+    A build has no digest to pin before it runs and two machines building one context get two image
+    ids, so the tag cannot be evidence.  What it can be is unambiguous: derived rather than
+    authored, so two versions of one artifact cannot collide, so a descriptor can name the image
+    before the build exists, and so rollback knows exactly what it is allowed to remove.
+    """
+
+    return f"aart/{item.artifact_type}/{item.artifact_name}:{item.artifact_version}"
+
+
+def build_context_source(item: "SetupQueueItem") -> str:
+    """Resolve the single build context this recipe declares, or the empty string for none."""
+
+    for step in item.installer.steps:
+        if step.use == "docker.build@1":
+            return resolve_package_source(item, str(step.config["context"]))
+    return ""
 
 
 def resolve_package_source(item: "SetupQueueItem", path: str) -> str:
@@ -291,6 +332,7 @@ def _validate_step(
     step_ids: set[str],
     secret_ids: set[str],
     capabilities: set[str],
+    required_tools: Sequence[str],
 ) -> SetupStep:
     if not isinstance(raw, dict):
         raise _Invalid("steps entries must be objects")
@@ -369,6 +411,17 @@ def _validate_step(
         for required_cap in ("network", "process"):
             if required_cap not in capabilities:
                 raise _Invalid(f"step {step_id!r} requires undeclared capability {required_cap!r}")
+    elif use == "docker.build@1":
+        _package_relative_source(config["context"], f"step {step_id}.context")
+        if "dockerfile" in config:
+            _context_relative_file(config["dockerfile"], f"step {step_id}.dockerfile")
+        for required_cap in ("network", "process"):
+            if required_cap not in capabilities:
+                raise _Invalid(f"step {step_id!r} requires undeclared capability {required_cap!r}")
+        if "docker" not in required_tools:
+            # A build that cannot find the tool must fail as a missing prerequisite, before any
+            # consent is asked for, rather than as a build error halfway through the recipe.
+            raise _Invalid(f"step {step_id!r} requires 'docker' in required_tools")
     elif use == "command.verify@1":
         argv = config["argv"]
         if not isinstance(argv, list) or not argv:
@@ -497,9 +550,14 @@ def parse_installer(
                 step_ids=step_ids,
                 secret_ids=input_ids,
                 capabilities=set(capabilities),
+                required_tools=required_tools,
             )
             for entry in steps_raw
         )
+        if sum(step.use == "docker.build@1" for step in steps) > 1:
+            # One recipe, one build context: it is materialized once for the run and every step
+            # that contributes a file contributes to that one copy.
+            raise _Invalid("a recipe may declare at most one docker.build@1 step")
         custom_entrypoint = None
         custom_hash = None
         if "custom_entrypoint" in data:
@@ -543,6 +601,7 @@ def build_queue(
     source_label: str,
     source_root: str,
     source_url: str = "",
+    artifact_version: str = "",
 ) -> Tuple[SetupQueueItem, ...]:
     """Create a stable, de-duplicated queue from selected setup-capable artifacts."""
 
@@ -566,6 +625,7 @@ def build_queue(
                     source_root=source_root,
                     installer=artifact.setup,
                     source_url=source_url,
+                    artifact_version=artifact_version,
                 )
             )
     return tuple(out)
@@ -599,7 +659,11 @@ def _shell_block(item: SetupQueueItem, variables: Mapping[str, object]) -> str:
 
 
 def _effect_for_step(
-    item: SetupQueueItem, step: SetupStep, target_root: str, home_root: str
+    item: SetupQueueItem,
+    step: SetupStep,
+    target_root: str,
+    home_root: str,
+    context_source: str = "",
 ) -> SetupEffect:
     config = step.config
     capability = _MODULES[step.use][0]
@@ -671,6 +735,18 @@ def _effect_for_step(
         target = str(config["image"])
         argv = ("docker", "pull", target)
         summary = f"Pull digest-pinned Docker image {target}"
+    elif step.use == "docker.build@1":
+        target = image_tag(item)
+        dockerfile = str(config.get("dockerfile", "Dockerfile"))
+        # The context is a working copy whose path exists only once the run opens, so the reviewed
+        # argv names the Dockerfile and `.`, and the run makes that `.` the materialized copy.
+        argv = ("docker", "build", "--tag", target, "--file", dockerfile, ".")
+        planned_config.update({"dockerfile": dockerfile, "context_source": context_source})
+        reversible = True
+        summary = (
+            f"Build local Docker image {target} from a copy of {context_source} "
+            f"using {dockerfile}; the image is never pushed anywhere"
+        )
     elif step.use == "command.verify@1":
         raw_argv = config["argv"]
         assert isinstance(raw_argv, tuple)
@@ -750,9 +826,23 @@ def plan_setup(
             f"setup supports {', '.join(item.installer.platforms)}; current platform is {platform}"
         )
         effects = ()
+    elif not item.artifact_version and any(
+        step.use == "docker.build@1" for step in item.installer.steps
+    ):
+        # The tag is derived from identity and version, so a record that carries no version cannot
+        # be reviewed: there is nothing to show, and nothing rollback could later claim to own.
+        status = "prerequisite_missing"
+        detail = "a locally built image is tagged from the artifact version, which is not recorded"
+        effects = ()
     else:
         effects = tuple(
-            _effect_for_step(item, step, resolved_target_root, resolved_home_root)
+            _effect_for_step(
+                item,
+                step,
+                resolved_target_root,
+                resolved_home_root,
+                build_context_source(item),
+            )
             for step in item.installer.steps
         )
         if item.installer.custom_entrypoint is not None:
@@ -880,6 +970,7 @@ def _effect_identity(effect: SetupEffect) -> str:
         "json.managed-merge@1": "Merge an owned JSON value",
         "directory.create@1": "Create a directory",
         "docker.pull@1": "Pull a digest-pinned Docker image",
+        "docker.build@1": "Build a local Docker image from this package",
         "command.verify@1": "Run a verification command",
         "restart.notice@1": "Show a restart notice",
         "custom.install@1": "Run reviewed custom setup protocol",
@@ -897,6 +988,14 @@ def _effect_details(effect: SetupEffect) -> str:
         return "managed JSON value is withheld from review"
     if effect.module == "docker.pull@1":
         return "required tool: docker"
+    if effect.module == "docker.build@1":
+        # A build is not a pull. It executes the Dockerfile's instructions, and `RUN` is arbitrary
+        # code with network access, so the review says that in those words rather than in a tag.
+        return (
+            f"required tool: docker; runs the instructions in "
+            f"{effect.config.get('dockerfile', 'Dockerfile')} with network access, from a copy of "
+            f"{effect.config.get('context_source', '')}; the image stays on this machine"
+        )
     if effect.module == "command.verify@1":
         return "reviewed command arguments are withheld from review"
     if effect.module == "custom.install@1":
@@ -1116,6 +1215,8 @@ def receipt_matches_plan(receipt: Mapping[str, object], plan: SetupPlan) -> bool
         return receipt.get("path") == effect.target
     if effect.module == "docker.pull@1":
         return receipt.get("image") == effect.target
+    if effect.module == "docker.build@1":
+        return receipt.get("tag") == effect.target
     if effect.module == "custom.install@1":
         run_dir = str(receipt.get("run_dir", ""))
         expected_runs = os.path.join(plan.run_root, ".agent-artifacts", "setup-runs")

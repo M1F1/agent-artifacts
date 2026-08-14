@@ -366,6 +366,75 @@ def _docker_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, boo
     }, True
 
 
+@dataclass(slots=True)
+class _RunWorkspace:
+    """The one working copy a run may build in, opened on demand and removed with the run."""
+
+    run_dir: Optional[str] = None
+    context: Optional[str] = None
+
+    def open(self, plan: SetupPlan, source: str) -> str:
+        if self.context is None:
+            self.run_dir = new_run_directory(plan)
+            try:
+                self.context = materialize_build_context(source, self.run_dir)
+            except (OSError, RuntimeError):
+                self.close()
+                raise
+        return self.context
+
+    def close(self) -> None:
+        if self.run_dir is not None:
+            shutil.rmtree(self.run_dir, ignore_errors=True)
+        self.run_dir = None
+        self.context = None
+
+
+def _docker_build_apply(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
+    """Build one local image from a working copy of the package, and own only what it created."""
+
+    tag = effect.target
+    env = _minimal_env(runtime)
+    inspect = runtime.process(
+        ("docker", "image", "inspect", tag),
+        env=env,
+        cwd=None,
+        timeout=30,
+        capture=True,
+    )
+    preexisting = inspect.returncode == 0
+    context = workspace.open(plan, str(effect.config["context_source"]))
+    digest = context_digest(context)
+    built = runtime.process(effect.argv, env=env, cwd=context, timeout=1800, capture=True)
+    if built.returncode != 0:
+        detail = redact_text(built.stderr or built.stdout or "docker build failed")
+        raise RuntimeError(detail[:512])
+    identified = runtime.process(
+        ("docker", "image", "inspect", "--format", "{{.Id}}", tag),
+        env=env,
+        cwd=None,
+        timeout=30,
+        capture=True,
+    )
+    return {
+        "module": effect.module,
+        "tag": tag,
+        "context_digest": f"sha256:{digest}",
+        "image_id": identified.stdout.strip() if identified.returncode == 0 else "",
+        "preexisting": preexisting,
+        "recovery": (
+            "The tag existed before this run and is left alone; remove it manually if it is yours."
+            if preexisting
+            else "Rollback removes this tag, which only this run created."
+        ),
+    }, True
+
+
 def _command_verify(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, bool]:
     cwd = effect.config.get("cwd")
     raw_timeout = effect.config.get("timeout", 30)
@@ -820,7 +889,12 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
     }, True
 
 
-def _apply_effect(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -> tuple[dict, bool]:
+def _apply_effect(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
     if effect.module == "macos-keychain.store@1":
         return _keychain_apply(effect, runtime)
     if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
@@ -831,6 +905,8 @@ def _apply_effect(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         return _directory_apply(effect)
     if effect.module == "docker.pull@1":
         return _docker_apply(effect, runtime)
+    if effect.module == "docker.build@1":
+        return _docker_build_apply(effect, runtime, plan, workspace)
     if effect.module == "command.verify@1":
         return _command_verify(effect, runtime)
     if effect.module == "restart.notice@1":
@@ -952,6 +1028,19 @@ def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> b
         return False
     if module == "docker.pull@1":
         return receipt.get("preexisting") is True
+    if module == "docker.build@1":
+        if receipt.get("preexisting") is True:
+            # The tag named an image before this run; removing it would take away something the
+            # run never gave, which is the same care `docker.pull@1` takes with a shared image.
+            return True
+        result = runtime.process(
+            ("docker", "image", "rm", str(receipt["tag"])),
+            env=_minimal_env(runtime),
+            cwd=None,
+            timeout=120,
+            capture=True,
+        )
+        return result.returncode == 0
     # Docker images may be shared and are never removed automatically; verify/notices mutate
     # nothing. Other changed modules are handled above with ownership-aware compensation.
     return module in ("restart.notice@1", "command.verify@1") or not bool(
@@ -1070,6 +1159,23 @@ def apply_setup_plan(
             finished=runtime.clock(),
         )
     receipts: list[Mapping[str, object]] = []
+    workspace = _RunWorkspace()
+    try:
+        return _apply_effects(plan, runtime, consent, receipts, workspace, started)
+    finally:
+        # The working copy belongs to the run, not to the recipe: it goes whether the run
+        # configured, declined, or failed, and it leaves the package it was copied from alone.
+        workspace.close()
+
+
+def _apply_effects(
+    plan: SetupPlan,
+    runtime: SetupRuntime,
+    consent: Consent,
+    receipts: list[Mapping[str, object]],
+    workspace: _RunWorkspace,
+    started: str,
+) -> SetupStateRecord:
     changed = False
     for effect in plan.effects:
         try:
@@ -1088,7 +1194,7 @@ def apply_setup_plan(
                 receipts=() if rolled_back else receipts,
             )
         try:
-            receipt, effect_changed = _apply_effect(effect, runtime, plan)
+            receipt, effect_changed = _apply_effect(effect, runtime, plan, workspace)
             receipt = {"step_id": effect.step_id, **receipt}
             receipts.append(receipt)
             changed = changed or effect_changed

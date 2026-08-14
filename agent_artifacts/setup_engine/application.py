@@ -404,6 +404,7 @@ def _prepare_setup_object(
                 stored.root,
                 installer,
                 _manual_source_url(record.source),
+                str(record.artifact.version),
             ),
         )
     )

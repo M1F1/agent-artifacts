@@ -159,6 +159,10 @@ class SetupQueueItem:
     # Either a verified commit-pinned web root or empty. Rendering falls back to the contained
     # absolute local path; a moving branch URL is never emitted as setup provenance.
     source_url: str = ""
+    # The installed artifact's own version, carried because a locally built image is tagged from
+    # identity and version rather than from anything the recipe may author. Empty only where a
+    # queue item is built outside an installation record, which no build step may plan against.
+    artifact_version: str = ""
 
 
 @dataclass(frozen=True, slots=True)

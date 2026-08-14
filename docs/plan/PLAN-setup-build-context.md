@@ -226,6 +226,32 @@ machine.
   under one subdirectory. That suits the acceptance artifact, whose context is `payload`, and
   widening it later is additive; narrowing it later would not be.
 
+### SBC-2
+
+- **The queue item did not know the artifact's version.** The tag is `aart/<type>/<name>:<version>`
+  and `SetupQueueItem` carried no version at all — the catalog's `Artifact` has none either; the
+  version lives in the installed record's `ArtifactEvidence`. So the item gained
+  `artifact_version`, sourced from `record.artifact.version` where the real queue is built. A record
+  without one cannot be planned: the preflight reports `prerequisite_missing`, because a tag that
+  cannot be derived is a review that cannot be shown and an image rollback could not claim to own.
+- **The context belongs to the run, not to the build step.** The plan has `docker.build@1`
+  materialize its own context, but `trust-store.export-certificates@1` has to write into that
+  context *before* the build runs. So materialization moved up: one working copy per run, opened by
+  the first effect that needs it and removed in a `finally` that covers configured, declined, and
+  failed alike. That in turn forces **one build step per recipe**, now refused at parse time — it is
+  what makes "the context" a definite article.
+- **The reviewed argv cannot contain the context path**, because that path exists only once the run
+  opens. The argv is `docker build --tag … --file Dockerfile .` and the run makes `.` the
+  materialized copy, so what is reviewed is exactly what executes.
+- **`required_tools` must name `docker`.** The plan wanted a missing tool reported as a missing
+  prerequisite rather than a build failure; the tool check reads the author's `required_tools`, so a
+  build step that does not declare `docker` is now refused at parse time rather than trusted to
+  fail well later.
+- **A build under `_minimal_env` works.** Design §9 warned that no `HOME` might strand the Docker
+  CLI. Probed directly with `env -i PATH=… docker build`: buildx resolves its plugin system-wide
+  and builds on the `desktop-linux` instance without `HOME`. The limitation is narrower than the
+  design stated — it is about *registry credentials*, not about building at all.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
