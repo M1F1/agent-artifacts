@@ -391,6 +391,136 @@ def _file_hash(path: str) -> str:
     return digest.hexdigest()
 
 
+CONTEXT_DIRECTORY = "context"
+_CONTEXT_MAX_FILES = 4096
+_CONTEXT_MAX_BYTES = 64 * 1024 * 1024
+
+
+def new_run_directory(plan: SetupPlan) -> str:
+    """Create the one private directory this run may write in, outside the object store."""
+
+    runs_root = os.path.join(
+        plan.run_root,
+        ".agent-artifacts",
+        "setup-runs",
+    )
+    os.makedirs(runs_root, mode=0o700, exist_ok=True)
+    os.chmod(runs_root, 0o700)
+    run_dir = tempfile.mkdtemp(prefix=f"{plan.plan_hash[:16]}-", dir=runs_root)
+    os.chmod(run_dir, 0o700)
+    return run_dir
+
+
+@dataclass(slots=True)
+class _CopyBudget:
+    files: int = 0
+    total_bytes: int = 0
+
+    def take(self, size: int, relative: str) -> None:
+        self.files += 1
+        self.total_bytes += size
+        if self.files > _CONTEXT_MAX_FILES:
+            raise RuntimeError(f"build context exceeds {_CONTEXT_MAX_FILES} files at {relative}")
+        if self.total_bytes > _CONTEXT_MAX_BYTES:
+            raise RuntimeError(f"build context exceeds {_CONTEXT_MAX_BYTES} bytes at {relative}")
+
+
+def _regular_files(root: str, prefix: str = "") -> list[tuple[str, str]]:
+    """Every regular file below one directory, ordered, refusing anything that is not one."""
+
+    found: list[tuple[str, str]] = []
+    with os.scandir(root) as entries:
+        for entry in sorted(entries, key=lambda item: item.name):
+            relative = f"{prefix}{entry.name}"
+            if entry.is_symlink():
+                raise RuntimeError(f"refusing a symlink in a build context: {relative}")
+            if entry.is_dir(follow_symlinks=False):
+                found.extend(_regular_files(entry.path, f"{relative}/"))
+            elif entry.is_file(follow_symlinks=False):
+                found.append((relative, entry.path))
+            else:
+                raise RuntimeError(
+                    f"build context may hold only regular files and directories: {relative}"
+                )
+    return found
+
+
+def _copy_regular(source: str, destination: str, relative: str, budget: _CopyBudget) -> None:
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise RuntimeError(f"build context entry is not a regular file: {relative}")
+        budget.take(info.st_size, relative)
+        with open(destination, "wb") as stream:
+            for chunk in iter(lambda: os.read(descriptor, 65536), b""):
+                stream.write(chunk)
+    finally:
+        os.close(descriptor)
+    os.chmod(destination, 0o700 if info.st_mode & 0o111 else 0o600)
+
+
+def _copy_context(source: str, destination: str, prefix: str, budget: _CopyBudget) -> None:
+    os.makedirs(destination, mode=0o700)
+    with os.scandir(source) as entries:
+        for entry in sorted(entries, key=lambda item: item.name):
+            relative = f"{prefix}{entry.name}"
+            if entry.is_symlink():
+                raise RuntimeError(f"refusing a symlink in a build context: {relative}")
+            target = os.path.join(destination, entry.name)
+            if entry.is_dir(follow_symlinks=False):
+                _copy_context(entry.path, target, f"{relative}/", budget)
+            elif entry.is_file(follow_symlinks=False):
+                _copy_regular(entry.path, target, relative, budget)
+            else:
+                raise RuntimeError(
+                    f"build context may hold only regular files and directories: {relative}"
+                )
+
+
+def materialize_build_context(source: str, run_dir: str) -> str:
+    """Copy one declared package subtree into the run directory, so a step may write beside it.
+
+    The package a recipe ships in is read-only by construction: the object store recomputes an
+    object's digest on every read, and a vendored payload is compared with the upstream subtree it
+    was taken from.  A build that needs a file next to its `Dockerfile` therefore cannot get one by
+    writing into the package.  It gets a working copy instead, which AART owns, which lives beside
+    the run's other scratch, and which is removed with the run.
+
+    The copy carries file modes and nothing else: no symlink, no device, no socket, so nothing in
+    the copy can reach back out of it.
+    """
+
+    if os.path.islink(source) or not os.path.isdir(source):
+        raise RuntimeError(f"build context source is not a directory: {source}")
+    destination = os.path.join(run_dir, CONTEXT_DIRECTORY)
+    if os.path.exists(destination):
+        raise RuntimeError("build context already materialized for this run")
+    try:
+        _copy_context(source, destination, "", _CopyBudget())
+    except (OSError, RuntimeError):
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    return destination
+
+
+def context_digest(root: str) -> str:
+    """Name the bytes a build ran on: every regular file's path, executable bit, and content.
+
+    A local build has no output digest to pin — two machines building one context get two image
+    ids — so the receipt pins the input instead.  Empty directories are deliberately invisible
+    here: nothing is built from a directory's existence, and including it would make the digest
+    depend on how the copy was walked.
+    """
+
+    digest = hashlib.sha256()
+    for relative, path in _regular_files(root):
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(b"x" if os.stat(path, follow_symlinks=False).st_mode & 0o111 else b"-")
+        digest.update(_file_hash(path).encode("ascii") + b"\0")
+    return digest.hexdigest()
+
+
 def _read_custom_entrypoint(path: str, expected_hash: object) -> bytes:
     """Read one executable without following links and bind the bytes before copying."""
 
@@ -531,15 +661,7 @@ def _custom_receipt(
 
 
 def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -> tuple[dict, bool]:
-    runs_root = os.path.join(
-        plan.run_root,
-        ".agent-artifacts",
-        "setup-runs",
-    )
-    os.makedirs(runs_root, mode=0o700, exist_ok=True)
-    os.chmod(runs_root, 0o700)
-    run_dir = tempfile.mkdtemp(prefix=f"{plan.plan_hash[:16]}-", dir=runs_root)
-    os.chmod(run_dir, 0o700)
+    run_dir = new_run_directory(plan)
     source_script = effect.target
     try:
         content = _read_custom_entrypoint(source_script, effect.config["script_hash"])

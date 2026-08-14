@@ -158,6 +158,51 @@ def _relative_setup_entrypoint(value: object) -> str:
     return normalized
 
 
+def _package_relative_source(value: object, label: str) -> str:
+    """Validate a name for something a recipe *reads* out of the package it ships in.
+
+    Every other path in a recipe is a destination, resolved against the consumer's home or their
+    project.  This is the one kind that points the other way, at the package itself, so it is
+    validated separately and with its own error text: a failure here means a maintainer named
+    something to read, not somewhere to write, and the two are diagnosed differently.
+
+    The rule is `custom_entrypoint`'s — one relative name directly below its root, no separator, no
+    `..`, nothing an author could steer at the rest of the store.
+    """
+
+    path = _single_line(value, label)
+    normalized = os.path.normpath(path)
+    if (
+        os.path.isabs(path)
+        or normalized in ("..", ".")
+        or normalized.startswith(".." + os.sep)
+        or os.sep in normalized
+        or normalized != path
+    ):
+        raise _Invalid(f"{label} must be a relative name directly below the package root")
+    return normalized
+
+
+def resolve_package_source(item: "SetupQueueItem", path: str) -> str:
+    """Resolve one validated package-relative name against the package this recipe belongs to.
+
+    Resolution happens at plan time, never at apply time, so the review already names exactly what
+    will be read.  The containment check is redundant against a validated name and is kept anyway:
+    it is the boundary that keeps the object store readable-only-here if the validator ever widens.
+    """
+
+    root = os.path.abspath(
+        os.path.join(
+            os.path.abspath(item.source_root),
+            os.path.dirname(os.path.dirname(os.path.normpath(item.installer.descriptor_path))),
+        )
+    )
+    candidate = os.path.abspath(os.path.join(root, path))
+    if candidate == root or os.path.commonpath((root, candidate)) != root:
+        raise _Invalid(f"package source {path!r} escapes the package root")
+    return candidate
+
+
 def custom_entrypoint_name(raw: bytes) -> Result:
     """Read only the optional custom filename, without accepting the recipe as valid."""
 

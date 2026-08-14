@@ -204,6 +204,28 @@ machine.
 
 *Amended after each package lands.*
 
+### SBC-1
+
+- **The per-run directory was not a primitive; it was four statements inside `_custom_apply`.** The
+  plan says "the existing per-run directory" as though something owned it. Nothing did. Extracting
+  `new_run_directory` was a prerequisite, not a refactor, and it is now the one place the run root's
+  `0o700` is decided.
+- **Two run directories, two lifetimes.** The plan asks that the directory be gone after both a
+  successful and a failed run. That is right for a build context and wrong for a custom entrypoint:
+  a custom run directory deliberately survives, because `_rollback_receipt` writes
+  `custom-receipt.json` back into it and calls the script's `rollback` phase there. So removal is
+  the *context*'s contract, not the run directory's, and `materialize_build_context` returns a
+  subdirectory rather than taking the run directory over.
+- **`context_digest` had to land here, not in SBC-2.** The plan puts the context digest in the
+  build's receipt, but the store-is-never-written claim is not testable without it, and a test that
+  compares file trees by hand proves less than one digest that must not move. It ignores empty
+  directories on purpose: nothing is built from a directory's existence, and counting them would
+  make the digest depend on how the walk was written.
+- **A one-segment name is stricter than "no traversal".** Reusing `custom_entrypoint`'s rule means a
+  context must sit *directly* below the package root, so a package cannot group several contexts
+  under one subdirectory. That suits the acceptance artifact, whose context is `payload`, and
+  widening it later is additive; narrowing it later would not be.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,

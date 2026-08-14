@@ -31,7 +31,7 @@
 
 | ID | Work package | Status | Evidence / next action |
 |---|---|---|---|
-| SBC-1 | A recipe can name the package, and AART hands it a copy | not started | Package-relative source paths plus build-context materialization into the per-run directory; the object store stays read-only, held by a digest test rather than by review |
+| SBC-1 | A recipe can name the package, and AART hands it a copy | done | Package-relative source paths plus build-context materialization into the per-run directory; the object store stays read-only, held by a digest test rather than by review |
 | SBC-2 | `docker.build@1` | not started | Tag derived as `aart/<type>/<name>:<version>`; receipt records context digest, tag, local image id; rollback removes only a tag this run created |
 | SBC-3 | `trust-store.export-certificates@1` and the `trust-store` capability | not started | Reads public certificates only, writes into the materialized context only, refused without one; a distinct capability so the review does not inflate it to credential-store access |
 | SBC-4 | A Dockerfile is assessed | not started | `_text_like` currently skips a file named `Dockerfile` entirely — AART would execute bytes the baseline never read |
