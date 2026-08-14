@@ -264,6 +264,27 @@ audit; a declared server does not; an empty `server` object does; the message na
 tutorial contains no `payload/` path inside an example MCP command and no `mcpServers` key inside an
 example descriptor, so neither mistake can regress.
 
+**What the plan did not anticipate:**
+
+- **The test asserts through the checker, not against a string.** `tests/vendoring_docs_test.py`
+  extracts every JSON fence from the tutorial that is an MCP descriptor and feeds it to
+  `describe_delivery` with a payload holding the tutorial's own upstream files. A documented example
+  that would fail the vendor review fails the test, which is a stronger statement than "the word
+  `payload/` does not appear" and does not go stale when the wording changes.
+- **A guard was needed against the test passing vacuously.** If the fence pattern ever stops matching
+  the tutorial, every per-descriptor assertion passes over an empty list; one test asserts that at
+  least one descriptor was found.
+- **The transcript in the tutorial had to change too, not only the example.** It is a review of the
+  vendoring the tutorial performs, so it now carries the `vendor-delivery` check with the real
+  wording and the real withheld count (four of five files), and the paragraph that read "four things
+  worth reading slowly" reads five.
+- **`LAF-41` and `LAF-42` needed tutorial paragraphs the plan had assigned to nothing.** The plan gave
+  this package only `LAF-46`'s documentation, but a maintainer who patches a vendored payload in
+  place learns it fails `validate` from a message, with no document saying so; the same for the two
+  differing commits under `up-to-date`. Both are now written where the tutorial performs those steps.
+- **The protocol delivery table is checked, loosely.** The docs test asserts the section exists and
+  has a row per type, so deleting the table fails; the prose in it is not asserted.
+
 ## VI-7 — the `2.4.0` release commit
 
 **Files:** `pyproject.toml`, `agent_artifacts/__init__.py` or wherever `version.py set` writes,

@@ -36,6 +36,22 @@ who published it. Licensing is part of that responsibility: the copy carries wha
 the upstream licence imposes, `artifact.json`'s `license` records what this registry publishes it
 under, and `aart registry audit` reports a vendored artifact that records none.
 
+**The copy is verified against the record it carries.** `origin.input_digest` is the digest of the
+taken subtree, and it is recomputable from the package alone: the payload files not listed in
+`aart.vendor.authored` are exactly the copied ones. `aart registry validate --strict` and
+`aart registry audit` recompute it, and `aart registry revendor` recomputes it before it reaches the
+network. A vendored payload edited after vendoring therefore fails, offline, without upstream being
+contacted — a package that claims an origin must still match it. This is a consistency check, not an
+authentication: it proves the package agrees with its own record, not that the record is true.
+
+**Assessed bytes and delivered bytes are not the same set for `mcp`.** The vendor assessment covers
+the whole copied subtree, because this registry is redistributing it; installation applies the
+effects the type declares, and for `mcp` that is the `server` object from `payload/mcp.json` and
+nothing else. `mcp` is the only type where the two differ, and the review says so beside the
+assessment rather than leaving a reader to infer that a finding in a copied script is a finding in
+something no consumer of that artifact runs. The per-type delivery table is in
+[the native source protocol](native-source-v1.md).
+
 ## Authored inputs
 
 `aart-registry.json` declares protocol compatibility, required compiler capabilities, a default
