@@ -627,6 +627,89 @@ def build_parser() -> argparse.ArgumentParser:
     _add_registry_finalize(p_promote)
     _add_json(p_promote)
 
+    p_vendor = registry_sub.add_parser(
+        "vendor",
+        help="review and copy one foreign subtree in as an artifact this registry owns",
+        description=(
+            "Copy a subtree of any Git repository into this registry as an owned package pinned "
+            "to a resolved commit, with provenance recording where the bytes came from. The "
+            "upstream needs no AART markers. This registry then owns the copy: it declares the "
+            "version, and upstream fixes reach consumers only when it is vendored again. A clean "
+            "vendor reports what was found; it is not a safety claim. A repository containing a "
+            "symlink anywhere cannot be acquired, and a symlink inside the subtree is refused."
+        ),
+    )
+    _add_registry_source(p_vendor)
+    p_vendor.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_vendor.add_argument("names", nargs=1, metavar="NAME")
+    p_vendor.add_argument(
+        "--url", dest="native_url", required=True, metavar="URL", help="credential-free Git URL"
+    )
+    p_vendor.add_argument(
+        "--ref", default="main", metavar="REF", help="Git ref to resolve (default: main)"
+    )
+    p_vendor.add_argument(
+        "--path",
+        dest="native_path",
+        required=True,
+        metavar="DIR",
+        help="subtree to copy, relative to the repository root",
+    )
+    p_vendor.add_argument(
+        # Upstream declares no version AART can trust, and deriving one would be a guess presented
+        # as a fact.  The registry owns the version, so the maintainer states it.
+        "--artifact-version",
+        required=True,
+        metavar="VERSION",
+        help="version this registry publishes the copy under",
+    )
+    p_vendor.add_argument(
+        "--summary", required=True, metavar="TEXT", help="one-line artifact description"
+    )
+    p_vendor.add_argument(
+        "--profile",
+        action="append",
+        required=True,
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
+    p_vendor.add_argument(
+        "--platform",
+        action="append",
+        required=True,
+        metavar="PLATFORM",
+        help="supported platform (repeatable)",
+    )
+    p_vendor.add_argument(
+        "--install-scope",
+        action="append",
+        choices=_INSTALL_SCOPES,
+        dest="registry_scopes",
+        default=[],
+        help="supported install scope (repeatable; default: project)",
+    )
+    p_vendor.add_argument(
+        "--install-mode",
+        action="append",
+        choices=("copy", "symlink"),
+        dest="registry_modes",
+        default=[],
+        help="supported install mode (repeatable; default: copy)",
+    )
+    p_vendor.add_argument(
+        "--setup-recipe",
+        metavar="PATH",
+        help="package-relative setup recipe you have already authored beside the payload",
+    )
+    p_vendor.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    _add_registry_finalize(p_vendor)
+    _add_json(p_vendor)
+
     p_refresh = registry_sub.add_parser(
         "refresh-native",
         help="review a new immutable snapshot for one existing native reference",
@@ -854,6 +937,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         ref=getattr(args, "ref", None),
         native_url=getattr(args, "native_url", None),
         native_path=getattr(args, "native_path", None),
+        setup_recipe=getattr(args, "setup_recipe", None),
         review_policy=getattr(args, "review_policy", None),
         registry_action=getattr(args, "registry_action", None),
         check=bool(getattr(args, "check", False)),

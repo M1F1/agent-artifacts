@@ -412,6 +412,9 @@ class Request:
     # before its registry entry is allowed to name it.
     native_url: Optional[str] = None
     native_path: Optional[str] = None
+    # A package-relative setup recipe declared while vendoring, when the maintainer has authored
+    # one beside the copied payload.
+    setup_recipe: Optional[str] = None
     review_policy: Optional[str] = None
     registry_action: Optional[str] = None
     check: bool = False

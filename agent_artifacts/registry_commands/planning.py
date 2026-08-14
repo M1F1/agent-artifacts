@@ -45,7 +45,12 @@ from agent_artifacts.protocol.registry_index import (
     build_registry_index,
     index_artifact_from_package,
 )
-from agent_artifacts.protocol.registry_models import LockedArtifact, RegistryLock, RegistryManifest
+from agent_artifacts.protocol.registry_models import (
+    LockedArtifact,
+    RegistryLock,
+    RegistryManifest,
+    ReviewRecord,
+)
 from agent_artifacts.protocol.registry_schema import (
     parse_registry_entry,
     parse_registry_index,
@@ -65,10 +70,16 @@ from agent_artifacts.registry_maintenance.planning import (
     registry_native_content,
     resolve_native_acquisition,
 )
+from agent_artifacts.registry_maintenance.vendoring import (
+    VendorOptions,
+    VendorOrigin,
+    project_vendored_package,
+)
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
 from agent_artifacts.security.model import InstallationRisk
 from agent_artifacts.sources.model import source_snapshot_digest
+from agent_artifacts.sources.subtree import take_subtree
 
 from .model import (
     ArtifactScaffoldOptions,
@@ -453,6 +464,81 @@ def plan_artifact_scaffold(
             *payload,
         ),
     )
+
+
+def _adopted_authored(
+    files: dict[str, SnapshotEntry],
+    base: str,
+) -> tuple[tuple[str, bytes, bool], ...]:
+    """Whatever the maintainer already wrote inside the target package.
+
+    A foreign subtree almost never satisfies its kind's payload contract on its own, and no flag can
+    carry file bytes. So `vendor` adopts the files the maintainer has already placed at the target
+    path — the `payload/mcp.json` wrapper, a `SETUP.md`, a `setup/` recipe — and projects them
+    alongside the taken bytes, where `VN-2`'s refusals judge them. `artifact.json` and
+    `provenance.json` are excluded because the projection derives them.
+    """
+
+    prefix = f"{base}/"
+    return tuple(
+        (raw.removeprefix(prefix), item.content, item.executable)
+        for raw, item in sorted(files.items())
+        if raw.startswith(prefix)
+        and item.kind is SnapshotEntryKind.FILE
+        and raw.removeprefix(prefix) not in {"artifact.json", "provenance.json"}
+    )
+
+
+def plan_artifact_vendor(
+    snapshot: SourceSnapshot,
+    acquisition: NativeReferenceAcquisition,
+    options: VendorOptions,
+    *,
+    path: SafeRelativePath,
+    review: ReviewRecord,
+    importer_version: SemVer,
+) -> Result[RegistryWorkspacePlan]:
+    """Plan the owned package a reviewed vendoring would write, writing nothing.
+
+    The approved review record is the same gate `plan_native_promotion` applies: a vendoring is the
+    moment foreign bytes become this registry's responsibility, and it does not happen unreviewed.
+    """
+
+    if review.status != "approved":
+        return _error("vendoring requires an approved review record")
+    files = _files(snapshot)
+    if isinstance(files, Err):
+        return files
+    source = _source_manifest(files.value)
+    if isinstance(source, Err):
+        return source
+    root = source.value.artifact_roots[0]
+    identity = options.identity
+    base = f"{root}/{identity.kind}/{identity.name}"
+    # An existing manifest is an existing package: adopting the maintainer's authored wrapper is the
+    # point, so their `payload/` and `setup/` files must not read as one.
+    if f"{base}/artifact.json" in files.value:
+        return _error(f"artifact package already exists: {identity.kind}/{identity.name}")
+    taken = take_subtree(acquisition.snapshot, path)
+    if isinstance(taken, Err):
+        return taken
+    projected = project_vendored_package(
+        taken.value,
+        VendorOrigin(acquisition.url, acquisition.requested_ref, acquisition.resolved_commit),
+        replace(options, authored=_adopted_authored(files.value, base)),
+        artifact_root=root,
+        importer_version=importer_version,
+    )
+    if isinstance(projected, Err):
+        return projected
+    written = {relative for relative, _content, _executable in projected.value.files}
+    if options.setup_recipe is not None:
+        for required in (f"{base}/{options.setup_recipe}", f"{base}/SETUP.md"):
+            if required not in written:
+                return _error(
+                    f"the declared setup recipe requires {required}, which is not present"
+                )
+    return _plan(RegistryOperation.VENDOR, snapshot, projected.value.files)
 
 
 def plan_registry_format(snapshot: SourceSnapshot) -> Result[RegistryWorkspacePlan]:

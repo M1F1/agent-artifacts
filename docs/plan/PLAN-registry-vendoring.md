@@ -161,6 +161,51 @@ it carries `IndexProvenance` matching `provenance.json`; the baseline raises no
 approved review refuses; the emitted registry passes `validate`/`lock`/`build`/`audit`; an upstream
 with no AART markers succeeds where `promote-native` refuses — the same fixture proving both.
 
+**What the plan did not anticipate** (`registry_commands/planning.py:plan_artifact_vendor`,
+`curation/runtime.py:_prepare_vendor`, `tests/registry_vendor_command_test.py`):
+
+- **`vendor` is a workspace operation, not a registry mutation, despite reading as
+  `promote-native`'s sibling.** `RegistryMutationPlan` allows exactly three path shapes —
+  `aart.lock.json`, `aart.index.json`, and `entries/<kind>/<name>.json` — so it cannot carry payload
+  bytes under `artifacts/`, nor an executable bit. The vendor plan is a `RegistryWorkspacePlan` with
+  a new `RegistryOperation.VENDOR`, the same machinery `scaffold` uses. It follows that a vendor
+  leaves the lock and index stale, so `CurationAction.VENDOR` joins `INIT`/`SCAFFOLD` in
+  `_follow_up`: the review points at `lock` and `build` before `validate --strict`, which would
+  otherwise fail and send the maintainer looking for a fault in the copy.
+- **No flag can carry file bytes, so `vendor` adopts what the maintainer has already authored at the
+  target path.** `VN-2` refuses a projection whose payload lacks the kind's required document, and a
+  foreign subtree essentially never contains it. Everything already present under
+  `artifacts/<kind>/<name>/` except `artifact.json` and `provenance.json` is adopted as authored
+  content and projected with the taken bytes, where `VN-2`'s collision and canonical-root refusals
+  judge it. A vendor over an existing `artifact.json` refuses, so adoption can never overwrite a
+  package. The same mechanism is what makes `--setup-recipe` usable: the recipe and its `SETUP.md`
+  are authored beside the payload, and the plan refuses when a declared recipe is not present.
+- **The approved review record gates the plan and is not persisted.** `plan_native_promotion` stores
+  its record in the `entries/` document it writes; an owned package has none, and
+  `index_artifact_from_package` projects `review=None` for owned content. So the gate is real at
+  plan time and invisible afterwards — the baseline reports `review-missing` for a vendored
+  artifact. **Recorded residue, owned by `VN-4`:** that package already has to persist the
+  assessment with the artifact, and the review decision belongs in the same place.
+- **The review's origin statement is a `CurationCheck` named `vendor-origin`.** `CurationReview`
+  carries changes, checks, and warnings, and only those are covered by the review digest — there is
+  no free-text field to state origin, ref, resolved commit, subtree, target, declared version, and
+  payload file count. Putting them in a check means the maintainer approves a digest that includes
+  them. The license finding is absent from those details until `VN-6`.
+- **`--version` is spelled `--artifact-version`,** matching `scaffold`. Design §4 requires that the
+  maintainer supply the version, not that the flag be spelled `--version`, which at that parser
+  level would read as the executable's own version flag.
+- **Two warnings, not one.** Besides design §3's "not a safety claim", the review states that this
+  registry now owns the copy and that upstream fixes reach consumers only when it is vendored again
+  — the consequence a maintainer is most likely to discover later.
+- **A new registry verb fails `tests/registry_cli_test.py` until it is listed there.** That test
+  asserts the registry subparser's action set exactly, which is the guard that a verb cannot be
+  added without a command boundary; it had to be extended, not worked around.
+
+**Recorded residue, not fixed here:** `vendor` is create-only — a second vendor of the same identity
+refuses with `artifact package already exists`, and that message does not name the command that does
+adopt upstream movement, because `SI-6` requires every command AART names to be one the executable
+accepts. When `VN-5` lands `revendor`, that refusal should name it.
+
 **Exit:** design §1 and §8. Depends on `VN-2`.
 
 ## VN-4 — the assessment is part of the review

@@ -33,6 +33,7 @@ class CurationAction(str, Enum):
     FORMAT = "format"
     PROMOTE_NATIVE = "promote-native"
     REFRESH_NATIVE = "refresh-native"
+    VENDOR = "vendor"
     LOCK = "lock"
     BUILD = "build"
     VALIDATE = "validate"
@@ -71,6 +72,10 @@ class CurationRequest:
     url: str | None = None
     ref: str = "main"
     path: str | None = None
+    # A package-relative recipe path, declared only when the maintainer has authored a setup
+    # recipe beside the vendored payload.  It names content, so it is validated as a path fragment
+    # rather than trusted from the flag.
+    setup_recipe: str | None = None
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
@@ -93,6 +98,7 @@ class CurationRequest:
                 for value in (
                     self.url,
                     self.path,
+                    self.setup_recipe,
                     self.source_id,
                     self.display_name,
                 )

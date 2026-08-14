@@ -156,9 +156,11 @@ def _emit_curation_finalization(
 
 
 def _curation_request(request: Request, action: CurationAction) -> Result[CurationRequest]:
-    if action in {CurationAction.PROMOTE_NATIVE, CurationAction.REFRESH_NATIVE} and (
-        request.artifact_kind is None or len(request.names) != 1
-    ):
+    if action in {
+        CurationAction.PROMOTE_NATIVE,
+        CurationAction.REFRESH_NATIVE,
+        CurationAction.VENDOR,
+    } and (request.artifact_kind is None or len(request.names) != 1):
         return _error(f"{action.value} requires an exact artifact kind and name")
     try:
         return Ok(
@@ -176,6 +178,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 url=request.native_url,
                 ref=request.ref or "main",
                 path=request.native_path,
+                setup_recipe=request.setup_recipe,
                 review_policy=request.review_policy or "manual-review-v1",
                 source_id=request.source_id,
                 display_name=request.display_name,
@@ -331,6 +334,8 @@ def run(request: Request) -> int:
         return _run_curation(request, CurationAction.PROMOTE_NATIVE)
     if action == "refresh-native":
         return _run_curation(request, CurationAction.REFRESH_NATIVE)
+    if action == "vendor":
+        return _run_curation(request, CurationAction.VENDOR)
     if action in {"lock", "build"}:
         return _run_curation(request, CurationAction(action))
     if action == "validate":

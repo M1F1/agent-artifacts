@@ -6,6 +6,8 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.capabilities import Capability
+from agent_artifacts.protocol.paths import SafeRelativePath
+from agent_artifacts.protocol.registry_models import ReviewRecord
 from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_commands.model import (
     ArtifactScaffoldOptions,
@@ -16,6 +18,7 @@ from agent_artifacts.registry_commands.model import (
 )
 from agent_artifacts.registry_commands.planning import (
     plan_artifact_scaffold,
+    plan_artifact_vendor,
     plan_registry_build,
     plan_registry_format,
     plan_registry_init,
@@ -24,6 +27,7 @@ from agent_artifacts.registry_commands.planning import (
 )
 from agent_artifacts.registry_commands.ports import RegistryWorkspacePort
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
+from agent_artifacts.registry_maintenance.vendoring import VendorOptions
 
 REGISTRY_REVIEW_MISMATCH = DiagnosticCode("registry-review-mismatch")
 REGISTRY_APPLY_MISMATCH = DiagnosticCode("registry-apply-mismatch")
@@ -53,6 +57,28 @@ def prepare_artifact_scaffold(
     if isinstance(current, Err):
         return current
     return plan_artifact_scaffold(current.value, options)
+
+
+def prepare_artifact_vendor(
+    acquisition: NativeReferenceAcquisition,
+    options: VendorOptions,
+    *,
+    path: SafeRelativePath,
+    review: ReviewRecord,
+    importer_version: SemVer,
+    output: RegistryWorkspacePort,
+) -> Result[RegistryWorkspacePlan]:
+    current = output.current()
+    if isinstance(current, Err):
+        return current
+    return plan_artifact_vendor(
+        current.value,
+        acquisition,
+        options,
+        path=path,
+        review=review,
+        importer_version=importer_version,
+    )
 
 
 def prepare_registry_format(*, output: RegistryWorkspacePort) -> Result[RegistryWorkspacePlan]:

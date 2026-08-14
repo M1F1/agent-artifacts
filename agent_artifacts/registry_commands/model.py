@@ -44,6 +44,11 @@ class RegistryOperation(str, Enum):
     LOCK = "lock"
     BUILD = "build"
     MIGRATE = "migrate"
+    # Vendoring writes payload bytes under `artifacts/`, which the registry-input mutation plan
+    # cannot carry — its allowed paths are the lock, the index, and `entries/`.  So a vendor is a
+    # workspace operation like `scaffold`, not a mutation like `promote-native`, even though the two
+    # commands read as siblings.
+    VENDOR = "vendor"
 
 
 class WorkspaceChangeKind(str, Enum):

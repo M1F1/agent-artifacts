@@ -7,11 +7,12 @@ import os
 import shlex
 import tempfile
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable, Protocol, cast
 
 from agent_artifacts.application.registry_commands import (
     finalize_registry_workspace,
     prepare_artifact_scaffold,
+    prepare_artifact_vendor,
     prepare_registry_build,
     prepare_registry_init,
     prepare_registry_lock,
@@ -19,11 +20,13 @@ from agent_artifacts.application.registry_commands import (
 from agent_artifacts.application.registry_maintenance import finalize_registry_mutation
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
+from agent_artifacts.protocol.native_models import CanonicalArtifactType
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
-from agent_artifacts.protocol.registry_models import RegistryEntry
+from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.protocol.registry_models import RegistryEntry, ReviewRecord
 from agent_artifacts.protocol.registry_schema import parse_registry_entry
 from agent_artifacts.protocol.semver import SemVer, parse_semver
 from agent_artifacts.registry_commands.model import (
@@ -59,6 +62,7 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
+from agent_artifacts.registry_maintenance.vendoring import VendorOptions
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.model import (
@@ -171,6 +175,10 @@ def _follow_up(
     if action in {
         CurationAction.INIT,
         CurationAction.SCAFFOLD,
+        # A vendored package is new owned content, so the lock and index are stale until they are
+        # rebuilt: `validate --strict` alone would fail and send the maintainer looking for a fault
+        # in the copy.
+        CurationAction.VENDOR,
     }:
         return (
             diff,
@@ -331,6 +339,7 @@ class LocalCurationService:
         request: CurationRequest,
         plan: RegistryWorkspacePlan,
         *,
+        checks: tuple[CurationCheck, ...] = (),
         warnings: tuple[str, ...] = (),
     ) -> PreparedCuration:
         changes = _workspace_changes(plan)
@@ -342,6 +351,7 @@ class LocalCurationService:
                 plan.review_digest,
                 plan.expected_snapshot_digest,
                 changes,
+                checks=checks,
                 warnings=warnings,
                 follow_up_commands=_follow_up(self.root, changes, request.action),
             ),
@@ -429,6 +439,106 @@ class LocalCurationService:
                 request,
                 planned.value,
                 warnings=("Review and complete the generated starter payload before publication.",),
+            )
+        )
+
+    def _vendor_review_check(
+        self,
+        request: CurationRequest,
+        acquisition: NativeReferenceAcquisition,
+        plan: RegistryWorkspacePlan,
+    ) -> CurationCheck:
+        """State what is being copied, from where, and at which commit.
+
+        The maintainer approves a copy of somebody else's bytes, so the review has to say whose,
+        which revision, and how much — none of which the diff alone makes legible once the payload
+        is more than a couple of files.
+        """
+
+        base = next(
+            str(item.path).removesuffix("/artifact.json")
+            for item in plan.changes
+            if str(item.path).endswith("/artifact.json")
+        )
+        payload = sum(1 for item in plan.changes if str(item.path).startswith(f"{base}/payload/"))
+        return CurationCheck(
+            "vendor-origin",
+            True,
+            (
+                f"origin: {acquisition.url}",
+                f"ref: {acquisition.requested_ref}",
+                f"resolved commit: {acquisition.resolved_commit}",
+                f"subtree: {request.path}",
+                f"target: {base}",
+                f"declared version: {request.artifact_version}",
+                f"payload files: {payload}",
+            ),
+        )
+
+    def _prepare_vendor(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if (
+            request.kind is None
+            or request.name is None
+            or request.summary is None
+            or request.url is None
+            or request.path is None
+            or not request.profiles
+            or not request.platforms
+        ):
+            return _error(
+                "vendoring requires kind, name, summary, URL, subtree path, profiles, and platforms"
+            )
+        version = _semver(request.artifact_version, "artifact version")
+        if isinstance(version, Err):
+            return version
+        path = parse_relative_path(request.path)
+        if isinstance(path, Err):
+            return _error(f"vendored subtree path is unsafe: {request.path}")
+        recipe: SafeRelativePath | None = None
+        if request.setup_recipe is not None:
+            parsed = parse_relative_path(request.setup_recipe)
+            if isinstance(parsed, Err):
+                return _error(f"setup recipe path is unsafe: {request.setup_recipe}")
+            recipe = parsed.value
+        try:
+            options = VendorOptions(
+                ArtifactIdentity(cast(CanonicalArtifactType, request.kind), request.name),
+                version.value,
+                request.summary,
+                request.profiles,
+                request.platforms,
+                request.scopes,
+                request.modes,
+                recipe,
+            )
+        except ValueError as error:
+            return _error(str(error))
+        acquired = self.native_acquirer(request.url, request.ref)
+        if isinstance(acquired, Err):
+            return acquired
+        planned = prepare_artifact_vendor(
+            acquired.value,
+            options,
+            path=path.value,
+            # The record the maintainer is being asked to approve.  It gates the plan and is not
+            # persisted: an owned package has no `entries/` document to carry a review.
+            review=ReviewRecord("approved", request.review_policy),
+            importer_version=_VERSION,
+            output=self.workspace,
+        )
+        if isinstance(planned, Err):
+            return planned
+        return Ok(
+            self._workspace_review(
+                request,
+                planned.value,
+                checks=(self._vendor_review_check(request, acquired.value, planned.value),),
+                warnings=(
+                    "Vendoring copies upstream bytes into this registry and pins them to a commit; "
+                    "a clean vendor reports what was found, and is not a safety claim.",
+                    "This registry now owns the copy: upstream fixes do not reach consumers until "
+                    "it is vendored again.",
+                ),
             )
         )
 
@@ -639,6 +749,7 @@ class LocalCurationService:
             CurationAction.FORMAT,
             CurationAction.PROMOTE_NATIVE,
             CurationAction.REFRESH_NATIVE,
+            CurationAction.VENDOR,
             CurationAction.LOCK,
             CurationAction.BUILD,
         }
@@ -652,6 +763,8 @@ class LocalCurationService:
             return self._prepare_scaffold(request)
         if request.action is CurationAction.FORMAT:
             return self._prepare_format(request)
+        if request.action is CurationAction.VENDOR:
+            return self._prepare_vendor(request)
         if request.action is CurationAction.PROMOTE_NATIVE:
             return self._prepare_promote(request)
         if request.action is CurationAction.REFRESH_NATIVE:
