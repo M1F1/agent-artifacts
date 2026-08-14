@@ -974,6 +974,7 @@ def prepare_install(
     resolved = resolve_artifact(
         catalog,
         ArtifactQuery(request.identity, request.source, request.version),
+        offline=request.offline,
     )
     if isinstance(resolved, Err):
         return resolved

@@ -64,6 +64,22 @@ finalizes; `resubscribe --expect` refuses an origin that moved after the review;
 uninstall does; each of the four causes produces its own code; the cold-cache offline case reports
 `source-not-synchronized` (closes v1 `LAF-19`).
 
+**Two things found while building it, both recorded rather than assumed:**
+
+- Resolution was not the only gate. `no-source-configured` fires in `load_configuration` *before*
+  any resolution, so removing the last subscription refused uninstall even once the manifest could
+  plan it. Uninstall now loads its service with `content_required=False`. This is the one refusal
+  the release loosens, and only for uninstall, because uninstall is not a content operation — it
+  reads what the project already has. Every other lifecycle action keeps the contract.
+- Collections still resolve through the catalog on uninstall. A collection is a registry-side
+  grouping the manifest never records, so there is nothing to expand it from. Naming the members
+  works after the source is gone; naming the collection does not.
+
+**Known gap, deliberately not closed here:** the TUI builds its uninstall list from catalog rows, so
+an installed artifact whose source was removed is absent from that list rather than misreported. It
+fails closed, and the row source is what `SI-4` revisits when it teaches both renderers a new
+reconciliation status.
+
 **Exit:** design §3 and attractor A1.
 
 ## SI-4 — `identity-changed` reconciliation

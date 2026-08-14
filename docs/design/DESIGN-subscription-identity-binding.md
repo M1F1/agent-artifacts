@@ -92,6 +92,14 @@ recorded effects, digests, and destinations — and nothing else. Resolution is 
 uninstall path entirely, which makes `source remove`'s review honest: uninstalling really is a valid
 exit after the subscription is gone.
 
+Two consequences fall out of that sentence, and both are load-bearing. First, uninstall stops being
+a *content operation*: the `no-source-configured` precondition, which fires before resolution and
+demands at least one enabled subscription, does not apply to removing what a project already holds.
+It is the only refusal this release loosens, and only here. Second, collections are the exception
+that proves the rule — a collection is a grouping the registry publishes and the manifest never
+records, so expanding one still needs a catalog. Naming the members remains the route that works
+after the subscription is gone.
+
 **Resolution failure names the layer that failed**, and each layer carries its own remediation:
 
 | Cause | Diagnostic | Remediation names |

@@ -40,6 +40,8 @@ from .model import (
 MARKETPLACE_INVALID = DiagnosticCode("marketplace-invalid")
 ARTIFACT_AMBIGUOUS = DiagnosticCode("artifact-ambiguous")
 ARTIFACT_NOT_FOUND = DiagnosticCode("artifact-not-found")
+SOURCE_UNAVAILABLE = DiagnosticCode("source-unavailable")
+SOURCE_NOT_SYNCHRONIZED = DiagnosticCode("source-not-synchronized")
 _MAX_SOURCES = 1_000
 _MAX_ITEMS = 100_000
 
@@ -49,6 +51,7 @@ def _error(
     message: str,
     *,
     alias: SourceAlias | None = None,
+    remediation: tuple[str, ...] = (),
     details: tuple[tuple[str, str], ...] = (),
 ) -> Diagnostic:
     return Diagnostic(
@@ -56,6 +59,7 @@ def _error(
         Severity.ERROR,
         redact_text(message),
         None if alias is None else SourceLocation(source=alias),
+        remediation=remediation,
         details=details,
     )
 
@@ -267,9 +271,72 @@ def build_marketplace(
     )
 
 
+def _resolution_failure(
+    catalog: MarketplaceCatalog,
+    query: ArtifactQuery,
+    *,
+    offline: bool,
+) -> Diagnostic:
+    """Name the layer that failed, not the artifact — the one part of the request never wrong.
+
+    A request can fail three ways before the artifact name is even consulted: the alias is not
+    configured, it is configured but nothing has been synchronized from it, or a cold cache is being
+    read offline.  Reporting all of them as ``artifact-not-found`` sends an operator to look for a
+    name that was correct.
+    """
+
+    scope = (
+        catalog.sources
+        if query.source is None
+        else tuple(source for source in catalog.sources if source.alias == query.source)
+    )
+    if not scope:
+        message = (
+            f"no source is configured to resolve {query.identity} from"
+            if query.source is None
+            else f"source {query.source} is not configured, so {query.identity} cannot be resolved"
+        )
+        alias = "<alias>" if query.source is None else str(query.source)
+        return _error(
+            SOURCE_UNAVAILABLE,
+            message,
+            remediation=(
+                f"aart source add --alias {alias} --location <url>",
+                "aart marketplace uninstall, if you are removing what this source installed",
+            ),
+        )
+    if all(source.snapshot_digest is None for source in scope):
+        aliases = ", ".join(source.alias.value for source in scope)
+        if offline:
+            return _error(
+                SOURCE_NOT_SYNCHRONIZED,
+                f"nothing is cached for {aliases}, and --offline forbids fetching it",
+                remediation=(
+                    "re-run without --offline",
+                    f"aart source sync --alias {scope[0].alias}, while connected",
+                ),
+            )
+        return _error(
+            SOURCE_NOT_SYNCHRONIZED,
+            f"no snapshot has been synchronized from {aliases}",
+            remediation=(f"aart source sync --alias {scope[0].alias}",),
+        )
+    qualification = "" if query.source is None else f" in source {query.source}"
+    listing = "aart marketplace list" + (
+        "" if query.source is None else f" --source {query.source}"
+    )
+    return _error(
+        ARTIFACT_NOT_FOUND,
+        f"artifact {query.identity}{qualification} was not found",
+        remediation=(listing,),
+    )
+
+
 def resolve_artifact(
     catalog: MarketplaceCatalog,
     query: ArtifactQuery,
+    *,
+    offline: bool = False,
 ) -> Result[MarketplaceItem]:
     matches = tuple(
         item
@@ -280,15 +347,7 @@ def resolve_artifact(
         and (query.version is None or item.coordinate.version == query.version)
     )
     if not matches:
-        qualification = "" if query.source is None else f" in source {query.source}"
-        return Err(
-            (
-                _error(
-                    ARTIFACT_NOT_FOUND,
-                    f"artifact {query.identity}{qualification} was not found",
-                ),
-            )
-        )
+        return Err((_resolution_failure(catalog, query, offline=offline),))
     if len(matches) > 1:
         coordinates = tuple(sorted(str(item.coordinate) for item in matches))
         return Err(

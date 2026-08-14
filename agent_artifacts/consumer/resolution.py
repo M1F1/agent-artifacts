@@ -11,7 +11,8 @@ from __future__ import annotations
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ArtifactCoordinate
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.marketplace.catalog import resolve_artifact
+from agent_artifacts.install_state.model import InstallationRecord
+from agent_artifacts.marketplace.catalog import ARTIFACT_AMBIGUOUS, resolve_artifact
 from agent_artifacts.marketplace.model import ArtifactQuery, MarketplaceCatalog
 
 from .coordinates import ArtifactSelector
@@ -19,6 +20,7 @@ from .coordinates import ArtifactSelector
 COLLECTION_NOT_FOUND = DiagnosticCode("collection-not-found")
 COLLECTION_AMBIGUOUS = DiagnosticCode("collection-ambiguous")
 DEPENDENCY_UNAVAILABLE = DiagnosticCode("dependency-unavailable")
+INSTALLATION_NOT_FOUND = DiagnosticCode("installation-not-found")
 
 
 def _resolve_collection(
@@ -61,6 +63,8 @@ def _resolve_collection(
 def resolve_selectors(
     catalog: MarketplaceCatalog,
     selectors: tuple[ArtifactSelector, ...],
+    *,
+    offline: bool = False,
 ) -> Result[tuple[ArtifactCoordinate, ...]]:
     """Resolve every selector, collecting all failures rather than stopping at the first."""
 
@@ -73,6 +77,7 @@ def resolve_selectors(
             artifact = resolve_artifact(
                 catalog,
                 ArtifactQuery(selector.identity, selector.source, selector.version),
+                offline=offline,
             )
             resolved = artifact if isinstance(artifact, Err) else Ok((artifact.value.coordinate,))
         if isinstance(resolved, Err):
@@ -82,6 +87,80 @@ def resolve_selectors(
     if diagnostics:
         return Err(tuple(diagnostics))
     return _dependency_closure(catalog, tuple(sorted(set(coordinates), key=str)))
+
+
+def resolve_installed_selectors(
+    records: tuple[InstallationRecord, ...],
+    selectors: tuple[ArtifactSelector, ...],
+    catalog: MarketplaceCatalog,
+) -> Result[tuple[ArtifactCoordinate, ...]]:
+    """Resolve an uninstall selection against the installation manifest, not the marketplace.
+
+    Removing an installation needs the recorded effects, digests, and destinations — all of which
+    live in the manifest.  Resolving through the catalog first made uninstall fail for artifacts the
+    project had a complete record of, whenever the subscription they came from was gone.  Uninstall
+    is exactly the operation an operator reaches for after removing a source, so it must not depend
+    on that source still being configured or synchronized.
+
+    Collections are the one exception, and deliberately so: a collection is a registry-side grouping
+    that the manifest never records, so expanding one still needs the catalog.
+    """
+
+    coordinates: list[ArtifactCoordinate] = []
+    diagnostics: list[Diagnostic] = []
+    for selector in selectors:
+        if selector.identity.kind == "collection":
+            resolved = _resolve_collection(catalog, selector)
+            if isinstance(resolved, Err):
+                diagnostics.extend(resolved.diagnostics)
+                continue
+            coordinates.extend(resolved.value)
+            continue
+        matches = tuple(
+            record
+            for record in records
+            if record.coordinate.artifact == selector.identity
+            and (selector.source is None or record.coordinate.source == selector.source)
+            and (selector.version is None or str(record.artifact.version) == selector.version)
+        )
+        installed = tuple(
+            sorted(
+                {
+                    ArtifactCoordinate(
+                        record.coordinate.source,
+                        record.coordinate.artifact,
+                        str(record.artifact.version),
+                    )
+                    for record in matches
+                },
+                key=str,
+            )
+        )
+        if not installed:
+            diagnostics.append(
+                Diagnostic(
+                    INSTALLATION_NOT_FOUND,
+                    Severity.ERROR,
+                    f"{selector} is not installed in this scope",
+                    remediation=("aart marketplace status",),
+                )
+            )
+            continue
+        if len({(item.source, item.artifact) for item in installed}) > 1:
+            rendered = ", ".join(str(item) for item in installed)
+            diagnostics.append(
+                Diagnostic(
+                    ARTIFACT_AMBIGUOUS,
+                    Severity.ERROR,
+                    f"{selector} is ambiguous; installed coordinates: {rendered}",
+                    details=(("coordinates", ",".join(str(item) for item in installed)),),
+                )
+            )
+            continue
+        coordinates.extend(installed)
+    if diagnostics:
+        return Err(tuple(sorted(diagnostics, key=lambda item: item.message)))
+    return Ok(tuple(sorted(set(coordinates), key=str)))
 
 
 def _dependency_closure(
@@ -159,4 +238,4 @@ def _dependency_closure(
     return Ok(tuple(sorted(closure.values(), key=str)))
 
 
-__all__ = ["resolve_selectors"]
+__all__ = ["resolve_installed_selectors", "resolve_selectors"]

@@ -468,10 +468,24 @@ def _lifecycle(request: Request, action: str) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
+        # Uninstall is not a content operation: it removes what the manifest records.  Requiring an
+        # enabled source here would refuse the exact exit `source remove` tells operators to take.
+        content_required=action != "uninstall",
     )
     if isinstance(service, Err):
         return _emit_error(request, service, operation)
-    coordinates = resolve_selectors(service.value.context.catalog, selection.value)
+    if action == "uninstall":
+        # Uninstall resolves against the manifest, never through the source: the project has a
+        # complete record of what it installed, and removing a subscription must not strand it.
+        coordinates = service.value.resolve_uninstall(
+            selection.value,
+            scope=request.scope,
+            profiles=tuple(request.profiles),
+        )
+    else:
+        coordinates = resolve_selectors(
+            service.value.context.catalog, selection.value, offline=request.offline
+        )
     if isinstance(coordinates, Err):
         return _emit_error(request, coordinates, operation)
     prepared = service.value.prepare(_action_request(request, action, coordinates.value))
