@@ -301,6 +301,21 @@ example descriptor, so neither mistake can regress.
 **Publication is the maintainer's.** This package prepares the commit; it does not tag, push, or
 release.
 
+**What the plan did not anticipate:**
+
+- **The freeze proved the claim the release makes about itself.** `schema-freeze-v12.json` differs
+  from v11 in exactly two inputs — `docs/protocol/registry-v1.md` and
+  `docs/protocol/native-source-v1.md` — with identical `protocol_versions`. Neither is a parsed
+  field, so the machine-checked statement is that a release which adds three refusals moved no
+  protocol boundary.
+- **The upgrade note is three cases, not one.** The plan expected only the edited-payload case;
+  `VI-5` and `VI-4` each add a way for a registry that passed `2.3.0` to fail `2.4.0`. All three are
+  registries that were already broken and were not being told, and consumers are unaffected in all
+  three — which is what keeps this minor rather than major.
+- **`release.py check` cannot pass here, by construction.** It requires a clean worktree, a commit
+  proven merged into `origin/main`, and a clean public reference registry. `schema-freeze`,
+  `system-matrix`, and `package` pass now; the rest is the maintainer's at publication.
+
 ## Dependency graph
 
 ```
