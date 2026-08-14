@@ -183,6 +183,27 @@ re-vendor review and fails the audit; one naming `npx` passes; one naming `./scr
 not in the payload passes; a `skill` and a `guideline` produce no delivery finding; the withheld
 count is what the payload holds minus the delivered document.
 
+**What the plan did not anticipate:**
+
+- **The finding had to travel with the plan, not be recomputed at render time.** `VendoredArtifactPlan`
+  and `VendoredArtifactCheck` gained an optional `delivery`, for the reason the assessment already
+  travels with them: recomputing it in the runtime would let the maintainer approve a digest covering
+  one set of bytes while reading a statement about another.
+- **`None` is the answer for four types, and it is not an error.** The finding is absent where the
+  payload reaches the consumer whole, so the review simply has no `vendor-delivery` check for a
+  `skill`. An empty finding rendering as "nothing is withheld" would have added a line to every
+  review to say that nothing is wrong.
+- **The withheld count is reported even when nothing is referenced.** The check passes and still
+  states what installing delivers, because the misunderstanding `LAF-46` records is not "my command
+  is wrong" but "I assumed my consumers get what I copied". A check that only spoke when it refused
+  would leave that assumption in place.
+- **A copied file the descriptor references is an error in `audit`, unlike the licence warning.** It
+  is not a fact about the world a maintainer may accept: the artifact cannot start on any consumer
+  machine.
+- **The acceptance registry still audits clean.** Both vendored `mcp` artifacts there launch through
+  `npx`/`uvx`, so the narrowness of the match is confirmed against real descriptors rather than only
+  against fixtures.
+
 ## VI-5 — the tutorial's example runs, and delivery is written down
 
 **Files:** `docs/tutorials/vendoring-v1.md`, `docs/protocol/native-source-v1.md`,

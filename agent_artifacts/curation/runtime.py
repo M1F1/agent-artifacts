@@ -70,6 +70,7 @@ from agent_artifacts.registry_maintenance.planning import (
     project_registry_mutation,
 )
 from agent_artifacts.registry_maintenance.vendoring import (
+    DeliveryFinding,
     LicenseFinding,
     VendorOptions,
     copy_integrity_message,
@@ -511,6 +512,30 @@ class LocalCurationService:
         )
         return CurationCheck("vendor-license", True, tuple(details))
 
+    def _vendor_delivery_check(
+        self,
+        identity: ArtifactIdentity,
+        finding: DeliveryFinding,
+    ) -> CurationCheck:
+        """Say what installing this artifact delivers, and refuse a config that cannot run.
+
+        Vendoring copies a subtree into the registry; installing an `mcp` merges one JSON object and
+        copies nothing. A descriptor whose command names a file inside the payload names one that
+        will not exist on any consumer machine, and a review that reported the copy while staying
+        silent about that would be describing a package nobody can start (`LAF-46`, design §7).
+        """
+
+        details = [finding.note]
+        if finding.withheld:
+            details.append(
+                "the assessment above covers the copied bytes, including the ones no consumer of "
+                "this artifact receives"
+            )
+        details.extend(
+            f"descriptor names a withheld payload file: {item}" for item in finding.referenced
+        )
+        return CurationCheck("vendor-delivery", not finding.referenced, tuple(details))
+
     def _vendor_assessment_check(self, assessment: SecurityAssessment) -> CurationCheck:
         """Report what the baseline found in the bytes this vendoring would write.
 
@@ -598,6 +623,13 @@ class LocalCurationService:
                     self._vendor_review_check(request, acquired.value, planned.value.plan),
                     self._vendor_license_check(request, planned.value.license),
                     self._vendor_assessment_check(planned.value.assessment),
+                    *(
+                        ()
+                        if planned.value.delivery is None
+                        else (
+                            self._vendor_delivery_check(options.identity, planned.value.delivery),
+                        )
+                    ),
                 ),
                 warnings=(
                     "Vendoring copies upstream bytes into this registry and pins them to a commit; "
@@ -795,6 +827,11 @@ class LocalCurationService:
                 checks=(
                     drift,
                     self._vendor_assessment_check(checked.value.assessment),
+                    *(
+                        ()
+                        if checked.value.delivery is None
+                        else (self._vendor_delivery_check(identity, checked.value.delivery),)
+                    ),
                 ),
                 warnings=(
                     "Re-vendoring replaces the copied bytes and re-pins the commit; "

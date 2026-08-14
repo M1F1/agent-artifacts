@@ -77,10 +77,14 @@ from agent_artifacts.registry_maintenance.planning import (
 from agent_artifacts.registry_maintenance.vendoring import (
     VENDOR_IMPORTER_ID,
     CopyIntegrity,
+    DeliveryFinding,
+    VendoredPackage,
     VendorOptions,
     VendorOrigin,
     assess_vendored_package,
     copy_integrity_message,
+    delivery_reference_message,
+    describe_delivery,
     project_vendored_package,
     read_vendor_record,
     verify_vendored_copy,
@@ -601,7 +605,26 @@ def plan_artifact_vendor(
     if isinstance(planned, Err):
         return planned
     return Ok(
-        VendoredArtifactPlan(planned.value, assessed.value.assessment, projected.value.license)
+        VendoredArtifactPlan(
+            planned.value,
+            assessed.value.assessment,
+            projected.value.license,
+            _package_delivery(projected.value),
+        )
+    )
+
+
+def _package_delivery(package: VendoredPackage) -> DeliveryFinding | None:
+    """What a consumer receives from the package this plan would write (design §7)."""
+
+    prefix = f"{package.base}/"
+    return describe_delivery(
+        package.manifest.identity.kind,
+        {
+            relative.removeprefix(prefix): content
+            for relative, content, _executable in package.files
+            if relative.startswith(f"{prefix}{package.manifest.payload.root}/")
+        },
     )
 
 
@@ -837,7 +860,12 @@ def plan_artifact_revendor(
     if isinstance(planned, Err):
         return planned
     return Ok(
-        replace(drifted, plan=planned.value, assessment=assessed.value.assessment),
+        replace(
+            drifted,
+            plan=planned.value,
+            assessment=assessed.value.assessment,
+            delivery=_package_delivery(projected.value),
+        ),
     )
 
 
@@ -1223,6 +1251,30 @@ def vendored_copy_diagnostics(
     return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
 
 
+def vendored_delivery_diagnostics(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> tuple[Diagnostic, ...]:
+    """Report a vendored descriptor that launches a file consumers never receive (VI-4).
+
+    An error rather than a warning: unlike a missing licence, this is not a fact about the world the
+    maintainer may accept. It is an artifact that cannot start on any consumer machine.
+    """
+
+    prefix = f"{vendored.base}/{vendored.manifest.payload.root}/"
+    finding = describe_delivery(
+        vendored.manifest.identity.kind,
+        {
+            raw.removeprefix(f"{vendored.base}/"): entry.content
+            for raw, entry in files.items()
+            if raw.startswith(prefix) and entry.kind is SnapshotEntryKind.FILE
+        },
+    )
+    if finding is None or not finding.referenced:
+        return ()
+    return (_diagnostic(delivery_reference_message(vendored.manifest.identity, finding)),)
+
+
 def verify_vendored_artifact(
     snapshot: SourceSnapshot,
     vendored: VendoredArtifactOrigin,
@@ -1449,6 +1501,7 @@ def audit_registry_workspace(
                     # The copy against the record, before anything is said about upstream: a copy
                     # that is not the copy cannot be discussed as current or behind (design §5).
                     diagnostics.extend(vendored_copy_diagnostics(files.value, vendored))
+                    diagnostics.extend(vendored_delivery_diagnostics(files.value, vendored))
         if manifest.value.license is None:
             diagnostics.append(
                 _diagnostic(

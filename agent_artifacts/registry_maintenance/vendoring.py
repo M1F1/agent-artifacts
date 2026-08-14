@@ -26,7 +26,12 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, S
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.codes import ARTIFACT_INVALID
 from agent_artifacts.protocol.hashing import json_digest
-from agent_artifacts.protocol.json import JsonArray, JsonObject, canonical_json_bytes
+from agent_artifacts.protocol.json import (
+    JsonArray,
+    JsonObject,
+    canonical_json_bytes,
+    parse_json,
+)
 from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
@@ -341,6 +346,85 @@ def verify_vendored_copy(
     if isinstance(digest, Err):
         return digest
     return Ok(CopyIntegrity(recorded, digest.value, taken))
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryFinding:
+    """What installing this artifact actually delivers, for a type where that is not all of it.
+
+    Vendoring copies a subtree into the registry; installing applies the effects the type declares.
+    For `mcp` those effects touch one file of the payload, so the copied bytes and the delivered
+    bytes are different sets — and a descriptor naming a file inside the payload names one that will
+    not be on the consumer's machine (`LAF-46`, design §7).
+    """
+
+    withheld: int
+    referenced: tuple[str, ...]
+    note: str
+
+
+def _names_payload_file(raw: str, payload: Mapping[str, bytes]) -> bool:
+    """Does this descriptor string name a file inside the copied payload?
+
+    Deliberately narrow: only a string that resolves to a file actually present under `payload/`
+    counts. Refusing anything that merely looks like a path would be refusing for a guess, and an
+    MCP server legitimately launched from an absolute path outside the package is none of AART's
+    business.
+    """
+
+    candidate = raw.removeprefix("./")
+    return candidate in payload or f"{_PAYLOAD_ROOT}/{candidate}" in payload
+
+
+def describe_delivery(kind: str, payload: Mapping[str, bytes]) -> DeliveryFinding | None:
+    """What a consumer receives from this payload, or `None` where they receive all of it.
+
+    `skill` and `hook` copy the payload tree; `guideline` and `memory` write the one document that
+    is the whole payload. `mcp` merges the `server` object out of `payload/mcp.json` and copies
+    nothing, which is the case worth reporting.
+    """
+
+    if kind != "mcp":
+        return None
+    document = payload.get(f"{_PAYLOAD_ROOT}/mcp.json")
+    withheld = sum(1 for path in payload if path != f"{_PAYLOAD_ROOT}/mcp.json")
+    note = (
+        "installing this artifact merges the server entry from payload/mcp.json into the "
+        f"profile's MCP file and copies nothing; {withheld} copied payload "
+        f"{'file is' if withheld == 1 else 'files are'} not delivered to consumers"
+    )
+    if document is None:
+        return DeliveryFinding(withheld, (), note)
+    parsed = parse_json(document)
+    if isinstance(parsed, Err) or not isinstance(parsed.value, JsonObject):
+        # An unparsable descriptor is refused by the loader that reads it; saying so twice, in
+        # different words, would send the maintainer looking for two faults.
+        return DeliveryFinding(withheld, (), note)
+    server = parsed.value.get("server")
+    values: list[str] = []
+    if isinstance(server, JsonObject):
+        command = server.get("command")
+        if isinstance(command, str):
+            values.append(command)
+        arguments = server.get("args")
+        if isinstance(arguments, JsonArray):
+            values.extend(item for item in arguments.items if isinstance(item, str))
+    return DeliveryFinding(
+        withheld,
+        tuple(sorted({item for item in values if _names_payload_file(item, payload)})),
+        note,
+    )
+
+
+def delivery_reference_message(identity: ArtifactIdentity, finding: DeliveryFinding) -> str:
+    """The one sentence for a configuration that cannot work on any consumer machine."""
+
+    named = ", ".join(finding.referenced)
+    return (
+        f"vendored mcp descriptor names a copied payload file consumers never receive: "
+        f"{identity} launches {named}, and installing this artifact writes only the server entry "
+        "from payload/mcp.json. State a command the consumer's machine already resolves"
+    )
 
 
 def copy_integrity_message(identity: ArtifactIdentity, integrity: CopyIntegrity) -> str:
