@@ -57,6 +57,7 @@ from agent_artifacts.setup import (
     manual_reference,
     parse_setup_state,
     plan_setup,
+    planned_capabilities,
     receipt_matches_plan,
 )
 from agent_artifacts.setup import (
@@ -256,24 +257,9 @@ def _manual_source_url(source: SourceEvidence) -> str:
 
 
 def _planned_capabilities(installer: SetupInstaller) -> tuple[Capability, ...]:
-    values: set[str] = set()
-    for step in installer.steps:
-        if step.use == "macos-keychain.store@1":
-            values.add("keychain")
-        elif step.use in {
-            "shell.env-from-keychain@1",
-            "file.managed-block@1",
-            "json.managed-merge@1",
-            "directory.create@1",
-        }:
-            values.add("managed-file")
-        elif step.use == "docker.pull@1":
-            values.update(("docker-pull", "network"))
-        elif step.use == "command.verify@1":
-            values.add("verify-command")
-    if installer.custom_entrypoint is not None:
-        values.add("custom-code")
-    return tuple(Capability(value) for value in sorted(values))
+    """The recipe's capability need, typed. The mapping itself lives beside the module catalog."""
+
+    return tuple(Capability(value) for value in planned_capabilities(installer))
 
 
 def _policy_allows(
@@ -404,6 +390,7 @@ def _prepare_setup_object(
                 stored.root,
                 installer,
                 _manual_source_url(record.source),
+                str(record.artifact.version),
             ),
         )
     )

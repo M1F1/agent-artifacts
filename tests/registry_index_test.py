@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import unittest
 from dataclasses import replace
+from types import MappingProxyType
 
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.model import SetupCapability, SetupInstaller
+from agent_artifacts.model import SetupCapability, SetupInstaller, SetupStep
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_models import CollectionManifest
@@ -111,8 +112,11 @@ def _configured_package() -> NativeArtifactPackage:
     return NativeArtifactPackage(manifest.value, provenance.value, _digest("1"), _digest("2"))
 
 
-def _installer(capabilities: tuple[SetupCapability, ...]) -> SetupInstaller:
-    """The compiled recipe reduced to the one field the index has to carry across."""
+def _installer(
+    capabilities: tuple[SetupCapability, ...],
+    steps: tuple[SetupStep, ...] = (),
+) -> SetupInstaller:
+    """The compiled recipe reduced to the fields the index has to carry across."""
 
     return SetupInstaller(
         schema_version=2,
@@ -124,7 +128,7 @@ def _installer(capabilities: tuple[SetupCapability, ...]) -> SetupInstaller:
         required_tools=(),
         capabilities=capabilities,
         inputs=(),
-        steps=(),
+        steps=steps,
         descriptor_path="setup/installer.json",
         descriptor_hash="b" * 64,
         manual_path="SETUP.md",
@@ -178,13 +182,30 @@ class RegistryIndexTest(unittest.TestCase):
         self.assertEqual(record.provenance.resolved_commit, "a" * 40)
 
     def test_setup_capabilities_are_published_from_the_compiled_recipe(self) -> None:
-        # The recipe declares what its steps need; the manifest only points at it.  An empty
-        # published set would make the consumer-side capability gate inert, so every artifact
-        # would look installable-and-runnable regardless of what its setup actually requires.
+        # An empty published set would make the consumer-side capability gate inert, so every
+        # artifact would look installable-and-runnable regardless of what its setup requires.
+        # What is published is what the *steps* need, in the vocabulary a policy speaks — not the
+        # author's declaration, which the consumer never recomputes and could not compare against.
         package = _configured_package()
         compiled = replace(
             package,
-            setup_installer=_installer(("docker", "keychain", "process")),
+            setup_installer=_installer(
+                ("docker", "keychain", "filesystem"),
+                steps=(
+                    SetupStep(
+                        id="image",
+                        use="docker.build@1",
+                        config=MappingProxyType({"context": "payload"}),
+                    ),
+                    SetupStep(
+                        id="token",
+                        use="macos-keychain.store@1",
+                        config=MappingProxyType(
+                            {"input": "api_token", "service": "s", "account": "a"}
+                        ),
+                    ),
+                ),
+            ),
         )
 
         record = index_artifact_from_package(
@@ -196,8 +217,25 @@ class RegistryIndexTest(unittest.TestCase):
         assert record.setup is not None
         self.assertEqual(
             tuple(str(item) for item in record.setup.capabilities),
-            ("docker", "keychain", "process"),
+            ("docker-build", "keychain", "network", "process"),
         )
+
+    def test_a_recipe_that_declares_much_and_does_nothing_publishes_nothing(self) -> None:
+        """The declaration is the author's; the evidence is the steps'."""
+
+        compiled = replace(
+            _configured_package(),
+            setup_installer=_installer(("docker", "keychain", "process")),
+        )
+
+        record = index_artifact_from_package(
+            compiled,
+            source_id=SourceId("company-registry"),
+            object_digest=_digest("3"),
+        )
+
+        assert record.setup is not None
+        self.assertEqual(record.setup.capabilities, ())
 
     def test_index_output_is_byte_identical_across_input_order(self) -> None:
         first = index_artifact_from_package(

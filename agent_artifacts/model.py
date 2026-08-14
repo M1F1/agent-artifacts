@@ -50,7 +50,18 @@ Result = Union[Ok, Err]  # conceptually Result[T]
 # --------------------------------------------------------------------------- #
 # Catalog (source side)                                                        #
 # --------------------------------------------------------------------------- #
-SetupCapability = Literal["keychain", "filesystem", "docker", "network", "process", "custom-code"]
+SetupCapability = Literal[
+    "keychain",
+    "filesystem",
+    "docker",
+    "network",
+    "process",
+    "custom-code",
+    # Reading the machine's public certificate list is a materially smaller claim than reaching
+    # into its credential store, and a review that called both "keychain" would teach the reader
+    # to discount the word.
+    "trust-store",
+]
 SetupTerminalStatus = Literal[
     "configured",
     "already_configured",
@@ -159,6 +170,10 @@ class SetupQueueItem:
     # Either a verified commit-pinned web root or empty. Rendering falls back to the contained
     # absolute local path; a moving branch URL is never emitted as setup provenance.
     source_url: str = ""
+    # The installed artifact's own version, carried because a locally built image is tagged from
+    # identity and version rather than from anything the recipe may author. Empty only where a
+    # queue item is built outside an installation record, which no build step may plan against.
+    artifact_version: str = ""
 
 
 @dataclass(frozen=True, slots=True)

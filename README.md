@@ -113,7 +113,8 @@ reviewed subscriptions and updates easy without adapting a foreign legacy layout
 A package lives at `<artifact-root>/<type>/<name>/` and contains `artifact.json` and `payload/`.
 Its manifest defines SemVer, compatibility, installation, optional `setup`, `requires_aart`, and
 `requires`. When it declares setup, `setup/installer.json` must be v2 and `SETUP.md` must be at
-the package root. An invalid hook, setup, dependency, symlink, or unknown file fails compilation
+the package root; the modules a recipe may use are listed in the
+[setup recipe reference](docs/protocol/setup-recipe-v2.md). An invalid hook, setup, dependency, symlink, or unknown file fails compilation
 before lock, index, or installation.
 
 ```json

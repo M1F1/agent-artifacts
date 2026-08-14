@@ -55,6 +55,14 @@ overrides and before any write/network performer. An override that conflicts wit
 an effective configuration outside the source/reporting allow-list returns
 `source-policy-denied`.
 
+`allowed_setup_capabilities` is written in the **policy vocabulary**, which is not the vocabulary a
+recipe author declares. An author says a recipe touches `filesystem` or `docker`; an organization
+decides whether it allows `managed-file`, `docker-pull`, or `docker-build`. The values a recipe can
+produce are `keychain`, `managed-file`, `docker-pull`, `docker-build`, `trust-store`, `network`,
+`process`, `verify-command`, and `custom-code`; the mapping from module to capability is the table
+in [`setup-recipe-v2.md`](../protocol/setup-recipe-v2.md). A registry index publishes the same
+values, so a policy can refuse an artifact's setup without reading its recipe.
+
 An exact company-reviewed identity is independent of the local alias and default-registry choice.
 Only the marketplace trust overlay combines it with a valid approved registry entry; source
 self-claims, aliases, and ranking cannot grant reviewed trust. Setup and minimum-installation-trust

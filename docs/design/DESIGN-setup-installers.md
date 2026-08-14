@@ -2,6 +2,11 @@
 
 Status: implemented for issue #20
 
+The per-module reference — every module's fields, capability, what the review shows, and the command
+that reaches the same result by hand — is
+[`setup-recipe-v2.md`](../protocol/setup-recipe-v2.md). This document is why the protocol is shaped
+as it is; that one is what a maintainer writes a recipe from.
+
 ## 1. Context and decisions
 
 Copying an artifact can leave a harness unusable when credentials, Keychain entries, shell

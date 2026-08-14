@@ -57,9 +57,29 @@ def run_process(
     cwd: Optional[str],
     timeout: int,
     capture: bool,
+    stdout_path: Optional[str] = None,
 ) -> ProcessResult:
-    """Run a fixed argv without a shell or broad inherited environment."""
+    """Run a fixed argv without a shell or broad inherited environment.
 
+    Captured output is truncated because it exists to be shown to a person.  A tool whose output is
+    *data* — a certificate bundle is the only one today — writes to `stdout_path` instead, so the
+    bytes go to the file they were asked for and never through a field sized for a message.
+    """
+
+    if stdout_path is not None:
+        with open(stdout_path, "wb") as sink:
+            completed = subprocess.run(
+                tuple(argv),
+                shell=False,
+                check=False,
+                env=dict(env),
+                cwd=cwd,
+                timeout=timeout,
+                text=True,
+                stdout=sink,
+                stderr=subprocess.PIPE,
+            )
+        return ProcessResult(completed.returncode, "", (completed.stderr or "")[:4096])
     completed = subprocess.run(
         tuple(argv),
         shell=False,
@@ -366,6 +386,139 @@ def _docker_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, boo
     }, True
 
 
+@dataclass(slots=True)
+class _RunWorkspace:
+    """The one working copy a run may build in, opened on demand and removed with the run."""
+
+    run_dir: Optional[str] = None
+    context: Optional[str] = None
+
+    def open(self, plan: SetupPlan, source: str) -> str:
+        if self.context is None:
+            self.run_dir = new_run_directory(plan)
+            try:
+                self.context = materialize_build_context(source, self.run_dir)
+            except (OSError, RuntimeError):
+                self.close()
+                raise
+        return self.context
+
+    def close(self) -> None:
+        if self.run_dir is not None:
+            shutil.rmtree(self.run_dir, ignore_errors=True)
+        self.run_dir = None
+        self.context = None
+
+
+def _docker_build_apply(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
+    """Build one local image from a working copy of the package, and own only what it created."""
+
+    tag = effect.target
+    env = _minimal_env(runtime)
+    inspect = runtime.process(
+        ("docker", "image", "inspect", tag),
+        env=env,
+        cwd=None,
+        timeout=30,
+        capture=True,
+    )
+    preexisting = inspect.returncode == 0
+    context = workspace.open(plan, str(effect.config["context_source"]))
+    digest = context_digest(context)
+    built = runtime.process(effect.argv, env=env, cwd=context, timeout=1800, capture=True)
+    if built.returncode != 0:
+        detail = redact_text(built.stderr or built.stdout or "docker build failed")
+        raise RuntimeError(detail[:512])
+    identified = runtime.process(
+        ("docker", "image", "inspect", "--format", "{{.Id}}", tag),
+        env=env,
+        cwd=None,
+        timeout=30,
+        capture=True,
+    )
+    return {
+        "module": effect.module,
+        "tag": tag,
+        "context_digest": f"sha256:{digest}",
+        "image_id": identified.stdout.strip() if identified.returncode == 0 else "",
+        "preexisting": preexisting,
+        "recovery": (
+            "The tag existed before this run and is left alone; remove it manually if it is yours."
+            if preexisting
+            else "Rollback removes this tag, which only this run created."
+        ),
+    }, True
+
+
+_PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
+_PEM_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _trust_store_apply(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
+    """Write the matching public certificates into the build context, and only there.
+
+    A corporate root CA is public by nature — it is what the interception proxy presents to every
+    machine on the network — so this is not the secret machinery and does not prompt anyone for
+    anything.  `security find-certificate` exports certificates and never private keys.
+    """
+
+    context = workspace.open(plan, str(effect.config["context_source"]))
+    output = str(effect.config["output"])
+    destination = os.path.abspath(os.path.join(context, output))
+    if os.path.commonpath((context, destination)) != context:
+        raise RuntimeError(f"certificate output escapes the build context: {output}")
+    if os.path.lexists(destination):
+        # The package already ships a file by this name. Overwriting it would silently replace
+        # something a maintainer chose to include, and the assessment already read.
+        raise RuntimeError(f"certificate output would overwrite a package file: {output}")
+    os.makedirs(os.path.dirname(destination), mode=0o700, exist_ok=True)
+    result = runtime.process(
+        effect.argv,
+        env=_minimal_env(runtime),
+        cwd=None,
+        timeout=120,
+        capture=True,
+        stdout_path=destination,
+    )
+    subject = str(effect.config["subject_contains"])
+    try:
+        if result.returncode != 0:
+            raise RuntimeError(redact_text(result.stderr or "certificate export failed")[:512])
+        size = os.path.getsize(destination)
+        if size > _PEM_MAX_BYTES:
+            raise RuntimeError("exported certificate bundle is implausibly large")
+        bundle = fs.read_text(destination)
+        certificates = bundle.count(_PEM_BEGIN)
+        if certificates == 0:
+            # An empty bundle builds an image without the CA, which fails much later inside `pip`
+            # with a TLS error nobody can trace back to here.
+            raise RuntimeError(f"no certificate name contains {subject!r}")
+    except (OSError, RuntimeError, UnicodeDecodeError):
+        try:
+            os.unlink(destination)
+        except OSError:
+            pass
+        raise
+    os.chmod(destination, 0o600)
+    return {
+        "module": effect.module,
+        "output": output,
+        "subject_contains": subject,
+        "certificates": certificates,
+        "recovery": "",
+    }, False
+
+
 def _command_verify(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, bool]:
     cwd = effect.config.get("cwd")
     raw_timeout = effect.config.get("timeout", 30)
@@ -388,6 +541,136 @@ def _file_hash(path: str) -> str:
     with open(path, "rb") as stream:
         for chunk in iter(lambda: stream.read(65536), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+CONTEXT_DIRECTORY = "context"
+_CONTEXT_MAX_FILES = 4096
+_CONTEXT_MAX_BYTES = 64 * 1024 * 1024
+
+
+def new_run_directory(plan: SetupPlan) -> str:
+    """Create the one private directory this run may write in, outside the object store."""
+
+    runs_root = os.path.join(
+        plan.run_root,
+        ".agent-artifacts",
+        "setup-runs",
+    )
+    os.makedirs(runs_root, mode=0o700, exist_ok=True)
+    os.chmod(runs_root, 0o700)
+    run_dir = tempfile.mkdtemp(prefix=f"{plan.plan_hash[:16]}-", dir=runs_root)
+    os.chmod(run_dir, 0o700)
+    return run_dir
+
+
+@dataclass(slots=True)
+class _CopyBudget:
+    files: int = 0
+    total_bytes: int = 0
+
+    def take(self, size: int, relative: str) -> None:
+        self.files += 1
+        self.total_bytes += size
+        if self.files > _CONTEXT_MAX_FILES:
+            raise RuntimeError(f"build context exceeds {_CONTEXT_MAX_FILES} files at {relative}")
+        if self.total_bytes > _CONTEXT_MAX_BYTES:
+            raise RuntimeError(f"build context exceeds {_CONTEXT_MAX_BYTES} bytes at {relative}")
+
+
+def _regular_files(root: str, prefix: str = "") -> list[tuple[str, str]]:
+    """Every regular file below one directory, ordered, refusing anything that is not one."""
+
+    found: list[tuple[str, str]] = []
+    with os.scandir(root) as entries:
+        for entry in sorted(entries, key=lambda item: item.name):
+            relative = f"{prefix}{entry.name}"
+            if entry.is_symlink():
+                raise RuntimeError(f"refusing a symlink in a build context: {relative}")
+            if entry.is_dir(follow_symlinks=False):
+                found.extend(_regular_files(entry.path, f"{relative}/"))
+            elif entry.is_file(follow_symlinks=False):
+                found.append((relative, entry.path))
+            else:
+                raise RuntimeError(
+                    f"build context may hold only regular files and directories: {relative}"
+                )
+    return found
+
+
+def _copy_regular(source: str, destination: str, relative: str, budget: _CopyBudget) -> None:
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise RuntimeError(f"build context entry is not a regular file: {relative}")
+        budget.take(info.st_size, relative)
+        with open(destination, "wb") as stream:
+            for chunk in iter(lambda: os.read(descriptor, 65536), b""):
+                stream.write(chunk)
+    finally:
+        os.close(descriptor)
+    os.chmod(destination, 0o700 if info.st_mode & 0o111 else 0o600)
+
+
+def _copy_context(source: str, destination: str, prefix: str, budget: _CopyBudget) -> None:
+    os.makedirs(destination, mode=0o700)
+    with os.scandir(source) as entries:
+        for entry in sorted(entries, key=lambda item: item.name):
+            relative = f"{prefix}{entry.name}"
+            if entry.is_symlink():
+                raise RuntimeError(f"refusing a symlink in a build context: {relative}")
+            target = os.path.join(destination, entry.name)
+            if entry.is_dir(follow_symlinks=False):
+                _copy_context(entry.path, target, f"{relative}/", budget)
+            elif entry.is_file(follow_symlinks=False):
+                _copy_regular(entry.path, target, relative, budget)
+            else:
+                raise RuntimeError(
+                    f"build context may hold only regular files and directories: {relative}"
+                )
+
+
+def materialize_build_context(source: str, run_dir: str) -> str:
+    """Copy one declared package subtree into the run directory, so a step may write beside it.
+
+    The package a recipe ships in is read-only by construction: the object store recomputes an
+    object's digest on every read, and a vendored payload is compared with the upstream subtree it
+    was taken from.  A build that needs a file next to its `Dockerfile` therefore cannot get one by
+    writing into the package.  It gets a working copy instead, which AART owns, which lives beside
+    the run's other scratch, and which is removed with the run.
+
+    The copy carries file modes and nothing else: no symlink, no device, no socket, so nothing in
+    the copy can reach back out of it.
+    """
+
+    if os.path.islink(source) or not os.path.isdir(source):
+        raise RuntimeError(f"build context source is not a directory: {source}")
+    destination = os.path.join(run_dir, CONTEXT_DIRECTORY)
+    if os.path.exists(destination):
+        raise RuntimeError("build context already materialized for this run")
+    try:
+        _copy_context(source, destination, "", _CopyBudget())
+    except (OSError, RuntimeError):
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    return destination
+
+
+def context_digest(root: str) -> str:
+    """Name the bytes a build ran on: every regular file's path, executable bit, and content.
+
+    A local build has no output digest to pin — two machines building one context get two image
+    ids — so the receipt pins the input instead.  Empty directories are deliberately invisible
+    here: nothing is built from a directory's existence, and including it would make the digest
+    depend on how the copy was walked.
+    """
+
+    digest = hashlib.sha256()
+    for relative, path in _regular_files(root):
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(b"x" if os.stat(path, follow_symlinks=False).st_mode & 0o111 else b"-")
+        digest.update(_file_hash(path).encode("ascii") + b"\0")
     return digest.hexdigest()
 
 
@@ -531,15 +814,7 @@ def _custom_receipt(
 
 
 def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -> tuple[dict, bool]:
-    runs_root = os.path.join(
-        plan.run_root,
-        ".agent-artifacts",
-        "setup-runs",
-    )
-    os.makedirs(runs_root, mode=0o700, exist_ok=True)
-    os.chmod(runs_root, 0o700)
-    run_dir = tempfile.mkdtemp(prefix=f"{plan.plan_hash[:16]}-", dir=runs_root)
-    os.chmod(run_dir, 0o700)
+    run_dir = new_run_directory(plan)
     source_script = effect.target
     try:
         content = _read_custom_entrypoint(source_script, effect.config["script_hash"])
@@ -698,7 +973,12 @@ def _custom_apply(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
     }, True
 
 
-def _apply_effect(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -> tuple[dict, bool]:
+def _apply_effect(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
     if effect.module == "macos-keychain.store@1":
         return _keychain_apply(effect, runtime)
     if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
@@ -709,6 +989,10 @@ def _apply_effect(effect: SetupEffect, runtime: SetupRuntime, plan: SetupPlan) -
         return _directory_apply(effect)
     if effect.module == "docker.pull@1":
         return _docker_apply(effect, runtime)
+    if effect.module == "docker.build@1":
+        return _docker_build_apply(effect, runtime, plan, workspace)
+    if effect.module == "trust-store.export-certificates@1":
+        return _trust_store_apply(effect, runtime, plan, workspace)
     if effect.module == "command.verify@1":
         return _command_verify(effect, runtime)
     if effect.module == "restart.notice@1":
@@ -830,11 +1114,27 @@ def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> b
         return False
     if module == "docker.pull@1":
         return receipt.get("preexisting") is True
+    if module == "docker.build@1":
+        if receipt.get("preexisting") is True:
+            # The tag named an image before this run; removing it would take away something the
+            # run never gave, which is the same care `docker.pull@1` takes with a shared image.
+            return True
+        result = runtime.process(
+            ("docker", "image", "rm", str(receipt["tag"])),
+            env=_minimal_env(runtime),
+            cwd=None,
+            timeout=120,
+            capture=True,
+        )
+        return result.returncode == 0
     # Docker images may be shared and are never removed automatically; verify/notices mutate
     # nothing. Other changed modules are handled above with ownership-aware compensation.
-    return module in ("restart.notice@1", "command.verify@1") or not bool(
-        receipt.get("changed", False)
-    )
+    return module in (
+        "restart.notice@1",
+        "command.verify@1",
+        # The bundle was written into a working copy that the run already deleted.
+        "trust-store.export-certificates@1",
+    ) or not bool(receipt.get("changed", False))
 
 
 def _record(
@@ -948,6 +1248,23 @@ def apply_setup_plan(
             finished=runtime.clock(),
         )
     receipts: list[Mapping[str, object]] = []
+    workspace = _RunWorkspace()
+    try:
+        return _apply_effects(plan, runtime, consent, receipts, workspace, started)
+    finally:
+        # The working copy belongs to the run, not to the recipe: it goes whether the run
+        # configured, declined, or failed, and it leaves the package it was copied from alone.
+        workspace.close()
+
+
+def _apply_effects(
+    plan: SetupPlan,
+    runtime: SetupRuntime,
+    consent: Consent,
+    receipts: list[Mapping[str, object]],
+    workspace: _RunWorkspace,
+    started: str,
+) -> SetupStateRecord:
     changed = False
     for effect in plan.effects:
         try:
@@ -966,7 +1283,7 @@ def apply_setup_plan(
                 receipts=() if rolled_back else receipts,
             )
         try:
-            receipt, effect_changed = _apply_effect(effect, runtime, plan)
+            receipt, effect_changed = _apply_effect(effect, runtime, plan, workspace)
             receipt = {"step_id": effect.step_id, **receipt}
             receipts.append(receipt)
             changed = changed or effect_changed

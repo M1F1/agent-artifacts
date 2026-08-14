@@ -289,3 +289,44 @@ aart registry audit --source . --check-upstream
 It then reports every vendored artifact that is behind its origin, and reports an unreachable origin
 as unknown. Neither finding fails the audit — being behind upstream is a fact about the world, not a
 defect in the registry — but both are printed, and a registry that never looks will never know.
+
+## 8. When the copied bytes are the thing that must run
+
+Step 3 said an `mcp` descriptor cannot launch a file from `payload/`, because installing an `mcp`
+merges JSON and copies nothing. That is a real constraint, and it has a second answer besides
+"publish the server somewhere a consumer can fetch it": build the payload into a local image during
+setup, and have the descriptor start *that*.
+
+```json
+{
+  "name": "atlassian",
+  "server": {"command": "docker", "args": ["run", "--rm", "-i", "aart/mcp/atlassian:1.0.0"]}
+}
+```
+
+The tag is not invented here. `docker.build@1` derives it as `aart/<type>/<name>:<version>` from the
+package's own identity, so you can write it into the descriptor before the image exists:
+
+```json
+{
+  "id": "image",
+  "use": "docker.build@1",
+  "with": {"context": "payload", "dockerfile": "Dockerfile"}
+}
+```
+
+`context` names one directory inside the package to *read* — the only such path in a recipe. AART
+copies that subtree into a private working directory, builds there, and deletes it. Your `payload/`
+is never written to, which matters more here than usual: a vendored payload is checked against the
+upstream subtree it was taken from, so a build that wrote a certificate into it would fail the next
+`validate --strict`.
+
+That is also how a file that must exist at build time but must not exist in the registry gets there.
+`trust-store.export-certificates@1` writes the machine's own corporate CA into the working copy
+beside the `Dockerfile`, so `COPY company-ca.pem` resolves on a consumer's machine and nothing about
+one company's network is committed to a registry others read.
+
+Both modules, their fields, what the review shows, and the equivalent commands for `SETUP.md` are in
+the [setup recipe reference](../protocol/setup-recipe-v2.md). An artifact that uses either must
+declare `requires_aart` `min_inclusive: "2.5.0"`; an older executable refuses an unknown module by
+name, which fails closed but still fails.

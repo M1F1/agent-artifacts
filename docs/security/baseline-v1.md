@@ -45,6 +45,13 @@ The fixed v1 categories are:
    deletion, dynamic evaluation, and unpinned Python package installation;
 8. plaintext HTTP and related transport/pinning observations in text-like content.
 
+A file is text-like when it carries a known suffix, the executable bit, or a shebang — and also when
+it is named `Dockerfile`, `Containerfile`, or `*.dockerfile`. Container build files have none of the
+first three and were therefore never opened; a setup recipe can execute one, so its `RUN`
+instructions are rejoined across continuations and read by the shell rules. Instructions other than
+`RUN` describe the resulting container rather than what installation executes, and are read only as
+ordinary text.
+
 Review, effects, and capabilities are reported even when no content heuristic matches. A completed
 scan therefore means the documented rules ran within bounds, not that nothing else can happen at
 runtime.
