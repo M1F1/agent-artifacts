@@ -503,6 +503,10 @@ def _operation_json(operation: InstallOperation) -> JsonObject:
 
 
 def _plan_review_value(plan: InstallPlan) -> JsonObject:
+    # Every entry must be stable while the world is: a review digest is consent a human carries to a
+    # later finalize. ``source_health`` and ``source_age_seconds`` are deliberately absent — both are
+    # read off the wall clock, and including them made the digest change on an untouched workspace.
+    # Freshness belongs in the rendered review, not in the identity of the plan.
     request = plan.request
     return JsonObject(
         (
@@ -526,8 +530,6 @@ def _plan_review_value(plan: InstallPlan) -> JsonObject:
             ("source_origin", plan.source.origin),
             ("resolved_commit", plan.source.resolved_commit),
             ("subscription_ref", plan.source.subscription_ref),
-            ("source_health", plan.source_health),
-            ("source_age_seconds", plan.source_age_seconds),
             ("source_snapshot_digest", str(plan.source_snapshot_digest)),
             ("artifact_version", str(plan.artifact.version)),
             ("manifest_digest", str(plan.artifact.manifest_digest)),

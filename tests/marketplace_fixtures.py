@@ -15,6 +15,7 @@ from agent_artifacts.configuration.policy import (
     RuntimeOverrides,
     apply_configuration,
 )
+from agent_artifacts.domain.diagnostics import Diagnostic
 from agent_artifacts.domain.identifiers import (
     ArtifactIdentity,
     ObjectDigest,
@@ -86,6 +87,7 @@ def source_state(
     max_age: int = 30,
     content: bytes = b"source",
     resolved_revision: str | None = None,
+    diagnostics: tuple[Diagnostic, ...] = (),
 ) -> MarketplaceSourceState:
     origin = (
         SnapshotOrigin.LOCAL
@@ -119,7 +121,9 @@ def source_state(
         published_at,
         f"/managed/{source.alias}/snapshot",
     )
-    health = assess_source_health(current, now=now, max_age_seconds=max_age)
+    health = assess_source_health(
+        current, now=now, max_age_seconds=max_age, diagnostics=diagnostics
+    )
     return MarketplaceSourceState(source, health, display_order)
 
 

@@ -329,6 +329,23 @@ def consumer_review_value(review: ConsumerReview) -> JsonObject:
     return _review_value(review)
 
 
+def review_source_freshness(review: ConsumerReview) -> tuple[tuple[str, str, int], ...]:
+    """Per-source ``(alias, health, age_seconds)`` as this review saw them.
+
+    Deliberately outside ``_review_value``: freshness is read off the wall clock, so digesting it
+    would make a reviewed decision expire by itself while nothing about the plan had changed. An
+    operator still wants to know how old the snapshot they are installing from is, so it is reported
+    beside the digest rather than inside it.
+    """
+
+    readings: dict[str, tuple[str, int]] = {}
+    for item in review.items:
+        plan = item.plan.install_plan if isinstance(item.plan, UpdatePlan) else item.plan
+        if isinstance(plan, InstallPlan):
+            readings[plan.source.alias.value] = (plan.source_health, plan.source_age_seconds)
+    return tuple((alias, health, age) for alias, (health, age) in sorted(readings.items()))
+
+
 def render_consumer_review(review: ConsumerReview) -> tuple[str, ...]:
     request = review.request
     lines: tuple[str, ...] = (
@@ -338,6 +355,10 @@ def render_consumer_review(review: ConsumerReview) -> tuple[str, ...]:
         f"  Requested mode: {request.mode}",
         f"  Selected targets: {len(review.items)}",
         f"  Review digest: {review.review_digest}",
+    )
+    lines += tuple(
+        f"  Source freshness: {alias} is {health}; snapshot published {age}s ago"
+        for alias, health, age in review_source_freshness(review)
     )
     for item in review.items:
         modes = ", ".join(sorted({effect.actual_mode for effect in item.effects})) or "none"
@@ -390,4 +411,5 @@ __all__ = [
     "consumer_review_value",
     "render_consumer_outcome",
     "render_consumer_review",
+    "review_source_freshness",
 ]

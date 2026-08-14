@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -323,6 +324,25 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
             self.assertEqual(code, 0, payload)
             self.assertFalse(payload["finalized"])
             self.assertEqual(list(env.project.iterdir()), [], "review must not touch the project")
+
+    def test_two_reviews_seconds_apart_produce_one_digest_to_authorize(self) -> None:
+        # The review digest is consent a human carries to a later ``--yes``.  This runs the real CLI
+        # twice across a real second boundary: the workspace is untouched between them, so the
+        # digest must not move.  Freshness still reaches the operator, beside the digest.
+        with _environment() as env:
+            _, first = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+            time.sleep(1.2)
+            _, second = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+
+            self.assertEqual(first["review_digest"], second["review_digest"])
+            self.assertEqual(first["review"], second["review"])
+            ages = [
+                reading["age_seconds"]
+                for payload in (first, second)
+                for reading in payload["source_freshness"]
+            ]
+            self.assertEqual(len(ages), 2)
+            self.assertGreater(ages[1], ages[0], "the clock must actually have advanced")
 
     def test_uninstall_removes_the_installed_payload(self) -> None:
         with _environment() as env:

@@ -32,6 +32,7 @@ from agent_artifacts.consumer.model import (
     consumer_review_value,
     render_consumer_outcome,
     render_consumer_review,
+    review_source_freshness,
 )
 from agent_artifacts.consumer.resolution import resolve_selectors
 from agent_artifacts.consumer.runtime import load_local_consumer_service, load_read_only_marketplace
@@ -482,6 +483,12 @@ def _lifecycle(request: Request, action: str) -> int:
             "finalized": False,
             "review_digest": str(review.review_digest),
             "review": review_data,
+            # A sibling of ``review``, never a member of it: ``review`` is the exact value the
+            # digest is computed over, and freshness is a clock reading.
+            "source_freshness": [
+                {"alias": alias, "health": health, "age_seconds": age}
+                for alias, health, age in review_source_freshness(review)
+            ],
         }
         setup_lines: tuple[str, ...] = ()
         if action == "setup":

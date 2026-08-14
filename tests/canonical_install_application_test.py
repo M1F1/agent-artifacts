@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_artifacts.configuration.model import OrganizationPolicy, SourceKind
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ArtifactIdentity, SourceAlias
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.install_state.schema import parse_install_state
@@ -58,6 +59,8 @@ def _fixture(
     kind: str,
     *,
     requires_aart: VersionBounds | None = None,
+    now: int = 100,
+    source_diagnostics: tuple[Diagnostic, ...] = (),
 ):
     payloads = {
         "skill": (("payload/SKILL.md", b"# Installed\n", False),),
@@ -136,7 +139,15 @@ def _fixture(
     catalog_result = build_marketplace(
         graph((source, "direct-source", (indexed,))),
         effective,
-        (source_state(source, "direct-source", display_order=0),),
+        (
+            source_state(
+                source,
+                "direct-source",
+                display_order=0,
+                now=now,
+                diagnostics=source_diagnostics,
+            ),
+        ),
     )
     assert isinstance(catalog_result, Ok)
     project = root / "project"
@@ -258,6 +269,61 @@ class CanonicalInstallApplicationTest(unittest.TestCase):
             assert isinstance(current, Ok), current
             self.assertEqual(current.value.status, InstallStatus.CURRENT)
             self.assertEqual(current.value.changed, 0)
+
+    def test_finalize_survives_the_reviewed_source_ageing_past_its_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            project, paths, location, request, catalog, effective = _fixture(
+                Path(raw), "skill", now=130
+            )
+            adapter = LocalInstallAdapter()
+            planned = prepare_install(
+                request, catalog, effective, builtin()["claude"], location, paths, adapter
+            )
+            assert isinstance(planned, Ok), planned
+            self.assertEqual(planned.value.source_health, "stale")
+
+            # The same plan as it was reviewed, while the pinned snapshot still read fresh. Nothing
+            # about the effect changed — only how long ago the snapshot was published.
+            reviewed = replace(planned.value, source_health="healthy", source_age_seconds=10)
+            self.assertEqual(reviewed.review_digest, planned.value.review_digest)
+
+            outcome = finalize_install(
+                reviewed, reviewed.review_digest, catalog, effective, adapter
+            )
+
+            assert isinstance(outcome, Ok), outcome
+            self.assertEqual(outcome.value.status, InstallStatus.APPLIED)
+            self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
+
+    def test_finalize_refuses_a_source_that_degraded_after_review(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            project, paths, location, request, catalog, effective = _fixture(Path(raw), "skill")
+            adapter = LocalInstallAdapter()
+            planned = prepare_install(
+                request, catalog, effective, builtin()["claude"], location, paths, adapter
+            )
+            assert isinstance(planned, Ok), planned
+            self.assertEqual(planned.value.source_health, "healthy")
+            with tempfile.TemporaryDirectory() as second:
+                _, _, _, _, degraded, _ = _fixture(
+                    Path(second),
+                    "skill",
+                    source_diagnostics=(
+                        Diagnostic(
+                            DiagnosticCode("source-unavailable"),
+                            Severity.ERROR,
+                            "origin refused the connection",
+                        ),
+                    ),
+                )
+
+            outcome = finalize_install(
+                planned.value, planned.value.review_digest, degraded, effective, adapter
+            )
+
+            assert isinstance(outcome, Ok), outcome
+            self.assertEqual(outcome.value.status, InstallStatus.CONFLICTED)
+            self.assertFalse((project / ".claude/skills/review").exists())
 
     def test_finalize_rejects_stale_review_without_overwriting_new_content(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
