@@ -55,6 +55,38 @@ scope — no format revision, no consumer change, and `2.0.0` reads the result.
 `../` and absolute targets refuse; a typo'd path refuses as empty rather than succeeding; executable
 bits survive; the same commit and path yield the same input digest twice.
 
+**What the plan did not anticipate:**
+
+- **A contained symlink had to be refused too, and for a different reason.** Item 2 refuses a link
+  whose target *leaves* the subtree, which reads as though a link staying inside is carried. It
+  cannot be: `tree_digest` knows files and directories only (`EntryKind`), and
+  `source_snapshot_digest` refuses any other kind outright, so there is no representation for a
+  symlink in the package tree or in the digest that binds it. Carrying one is a format revision,
+  which this release explicitly does not make. Both cases refuse, with different messages, because
+  reporting an escape that did not happen would send the maintainer looking for the wrong thing.
+- **The escape check is relative to the link, not to the subtree root.** A link at
+  `lib/up.js` targeting `../../other` escapes while `../index.js` does not; judging both against the
+  root would accept the first. It is judged in the subtree's own coordinate space, after re-rooting,
+  because that is the tree the maintainer reviews and the one the package will contain.
+- **A `--path` naming a file is refused as a path, not as emptiness.** Taking a file's "subtree"
+  yields nothing under `path/`, so the empty rule would have covered it with a message about
+  emptiness that hides the actual mistake.
+- **The origin is required to be immutable Git.** `OriginProvenance` binds a resolved commit and a
+  local tree has none, so a local snapshot is refused here rather than at the point where the
+  provenance cannot be written.
+- **Limits bound the taken subtree, and a test holds the other half of that.** A repository far past
+  `max_total_bytes` still yields a small subtree — refusing it for the size of content nobody asked
+  for would be the wrong boundary — and depth is measured after re-rooting, so a package taken from
+  deep inside a monorepo is shallow.
+
+**Recorded residue, not fixed here:** a repository containing *any* symlink cannot be acquired at
+all, so it cannot reach this step. `git.py` accepts only modes `100644`/`100755` and `local.py`
+refuses `S_ISLNK` outright, both repository-wide. Foreign repositories — the ones vendoring exists
+for — routinely contain symlinks somewhere, so this bounds the feature more than design §5's rule
+does. Widening it means teaching the snapshot digest a third entry kind, which is a format change
+and belongs to whichever release takes that decision, not to `VN-1`. `VN-3` should state the
+limitation in the command's help rather than let it surface as an acquisition error.
+
 **Exit:** design §5. Everything else depends on this.
 
 ## VN-2 — projecting a canonical package from foreign bytes
