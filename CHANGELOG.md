@@ -3,6 +3,64 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.3.0 — 2026-08-14
+
+Registry vendoring. `2.2.0` left four residues open; this release answers the one with no small fix
+— a promoted native reference is not a `requires` target — by giving a registry a way to own foreign
+content instead of referencing it. Minor and additive: two maintainer commands, two audit findings,
+one flag, one unreferenced module removed. The v11 schema freeze carries protocol versions identical
+to v10 and differs in two inputs, both of them protocol prose, neither a parsed field.
+
+### Added
+
+- `aart registry vendor`: copies a subtree of any Git repository into this registry as an owned
+  package pinned to a resolved commit, with `provenance.json` recording the origin. The upstream
+  needs no AART markers. A vendored artifact is an ordinary owned package — no new document format,
+  no protocol revision, and a valid `requires` target because the registry owns it. The subtree is
+  taken whole or not at all: a repository containing a symlink anywhere cannot be acquired, and a
+  symlink inside the subtree is refused. A wrapper authored beside the copy is adopted, not
+  overwritten.
+- `aart registry revendor`: re-resolves the ref the copy was taken at and reports `up-to-date`,
+  `changed`, or `unreachable`. **An upstream that cannot be read is never reported as up-to-date.**
+  `--check` writes nothing and exits non-zero on drift. Applying a movement requires the version the
+  maintainer states, because upstream declares no version this registry can trust.
+- The security assessment runs over the exact bytes a vendoring would write — copied payload and
+  authored wrapper alike — and its findings are rendered in the review before Finalize, with the
+  attestation committed beside the package. Findings do not block the action; the review states that
+  a successful vendor reports what was copied and is not a safety claim.
+- Licence discovery: a licence file at the subtree root pre-fills the manifest's `license` where the
+  text settles the SPDX identifier. The GNU family is recognised but `-only`/`-or-later` is never
+  guessed. `--license` states one explicitly, wins over the discovered value, and survives
+  re-vendoring instead of being erased when upstream moves.
+- Two `aart registry audit` findings: a vendored artifact recording no licence, and — under the new
+  `--check-upstream` — vendored artifacts behind their origin, with unreachable origins reported as
+  unknown. Neither fails the audit. Without the flag the audit reaches no network, so it stays a
+  pure function of the committed snapshot. A hand-edited `aart.vendor` record does fail it.
+- `vendor` and `revendor` as canonical maintainer actions in the text front-end, producing the same
+  request value as flag mode and rendering the same review, asserted by test over one fixture.
+- `docs/tutorials/vendoring-v1.md`, a worked vendoring from a marker-less monorepo through the
+  assessment to re-vendoring when upstream moves.
+
+### Changed
+
+- `registry vendor`, `revendor`, `promote-native`, and `refresh-native` each name their counterpart
+  in `--help`: the choice between referencing a package and copying it is the decision that matters.
+- `docs/protocol/registry-v1.md` tabulates the three delivery modes — authored here, referenced,
+  vendored — against who the consumer reaches, who owns the version, who can change delivered bytes,
+  whether upstream must speak AART, and whether the identity is a `requires` target, and states in
+  the protocol that vendoring moves the trust boundary into the registry.
+- `docs/protocol/native-source-v1.md` states what a vendored package is on disk, including the
+  namespaced `aart.vendor` extension holding the ref and the authored file list, verified against
+  `importer.options_digest`.
+
+### Removed
+
+- `agent_artifacts/io/net.py`, an unreferenced GitHub-API helper reading `GITHUB_TOKEN` and
+  `GITHUB_API_URL`. AART holds no credentials of its own and reaches remotes by running system Git;
+  nothing shipped imported the module. The `validate` gate now refuses any package file naming
+  either variable. The fact itself, true since `2.0.0`, is recorded in
+  `docs/release/compatibility-v10-addendum.md`.
+
 ## 2.2.0 — 2026-08-14
 
 Live acceptance v2 ran forty scenarios against `2.1.0` and filed thirteen residues; this release
