@@ -1,6 +1,6 @@
 # Plan: registry vendoring
 
-Status: **`VN-1` … `VN-6` landed; `VN-7` … `VN-9` open.** Implements
+Status: **`VN-1` … `VN-7` landed; `VN-8` and `VN-9` open.** Implements
 [the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
 "What the plan did not anticipate" section; those sections, not this line, are the run record.
 
@@ -417,6 +417,43 @@ distinguishes behind-upstream from unreachable.
    private hosts through system Git's own configuration.
 
 **Tests:** the guard fails on a planted mention. Independent of every other package.
+
+**What the plan did not anticipate**
+
+- **The test file was not only that module's test.** `tests/net_test.py` also covered
+  `agent_artifacts/io/cache.py`, the immutable snapshot cache. Deleting it wholesale would have left
+  a live module with no test at all, so the two cache tests moved to `tests/snapshot_cache_test.py`
+  and lost the HTTP fixture with the client: the cache takes a `fetch` callable and never knew where
+  the bytes came from, so an in-memory tarball is the whole setup it needs.
+- **`io/cache.py` itself is now imported by nothing** — it is the other half of the removed
+  importer, and design §9 names only `net.py`, because `net.py` is the one advertising a capability
+  the product does not have. A dead module that promises nothing false is a different defect, and
+  removing it was not this package's licence to grant. Recorded below.
+- **The guard lives in the `validate` gate, not in a test.** A test asserts; a gate refuses. It is
+  the same place `non_stdlib_imports` already keeps the zero-dependency promise, which is the same
+  kind of promise — something true of every module, enforced once, rather than remembered. The unit
+  test drives the gate's function over a planted file, so both exist for their own reasons.
+- **`.github/workflows/release.yml` still names `GITHUB_TOKEN` and is deliberately untouched.** That
+  is GitHub Actions authenticating to GitHub to publish a release, not AART reading a credential.
+  The guard scans `agent_artifacts/` only, so the distinction is enforced rather than hoped for.
+- **The compatibility record was written as an addendum to `v10`, not as `v11`.** The `2.3.0`
+  compatibility document does not exist until the release commit, and the fact this package records
+  — AART holds no credentials of its own; Git authenticates — has been true since `2.0.0`. So
+  `compatibility-v10-addendum.md` states the rule and names what `2.3.0` removes, following the
+  precedent `compatibility-v8-addendum.md` set: written during a later release, changing nothing
+  about the one it names. It is linked from `compatibility-v10.md`, or nobody would find it.
+- **Only the two designs the plan named were marked.** Their companion plans
+  (`PLAN-upstream-import.md`, `PLAN-upstream-github-hosts.md`) are dated implementation records of
+  work that happened; the designs are what a reader takes as current intent. Banner-marking the
+  plans as well would blur that distinction across a dozen historical documents.
+
+**Residues found, recorded against the package that will own them:**
+
+- No package owns these; they are findings for the maintainer, not defects this release created.
+  `agent_artifacts/io/cache.py` is now unreferenced by shipping code (a GitHub-tarball cache for a
+  catalog model that no longer exists), and `docs/design/DESIGN-upstream.md` — the parent of both
+  superseded documents, describing the `aart upstream` verb `2.0.0` removed — carries no banner,
+  because this plan named two documents and marking a third was not its call.
 
 ## VN-8 — the protocol says what a vendored artifact is
 

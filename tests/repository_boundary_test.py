@@ -63,6 +63,37 @@ class RepositoryBoundaryTest(unittest.TestCase):
             ("repository contains embedded operational catalog path: skills",),
         )
 
+    def test_the_package_promises_no_credential_it_does_not_hold(self) -> None:
+        """AART reaches Git through system Git; nothing in it reads a token (vendoring design §9)."""
+
+        validate = _load_script("validate")
+
+        self.assertEqual(
+            validate.credential_promise_diagnostics(REPOSITORY_ROOT / "agent_artifacts"), ()
+        )
+
+    def test_validation_gate_rejects_a_planted_credential_promise(self) -> None:
+        validate = _load_script("validate")
+        with tempfile.TemporaryDirectory() as temporary:
+            package = pathlib.Path(temporary) / "agent_artifacts"
+            (package / "io").mkdir(parents=True)
+            (package / "io" / "net.py").write_text(
+                'API = os.environ.get("GITHUB_API_URL")\nTOKEN = os.environ["GITHUB_TOKEN"]\n',
+                encoding="utf-8",
+            )
+
+            diagnostics = validate.credential_promise_diagnostics(package)
+
+        self.assertEqual(
+            diagnostics,
+            (
+                "agent_artifacts/io/net.py: names GITHUB_API_URL, "
+                "but AART holds no credentials of its own",
+                "agent_artifacts/io/net.py: names GITHUB_TOKEN, "
+                "but AART holds no credentials of its own",
+            ),
+        )
+
     def test_validation_gate_rejects_canonical_source_or_registry_markers(self) -> None:
         validate = _load_script("validate")
         with tempfile.TemporaryDirectory() as temporary:
