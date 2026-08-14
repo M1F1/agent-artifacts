@@ -39,7 +39,9 @@ from .model import (
 
 BASELINE_PROVIDER_ID = "aart-baseline"
 BASELINE_PROVIDER_VERSION = "1"
-_RULESET_REVISION = "baseline-v1.0"
+# Bumped when the rules or their reach change: a recorded assessment made under the old revision
+# has a different rules digest and is reported stale rather than silently reused.
+_RULESET_REVISION = "baseline-v1.1"
 _MAX_SCANNED_FILE_BYTES = 1024 * 1024
 _MAX_AST_NODES = 50_000
 _MAX_SHELL_LINES = 20_000
@@ -220,6 +222,18 @@ _RULES = (
         FindingSeverity.HIGH,
         "Setup requests a container image pull.",
         "Require an immutable image digest and approved network access.",
+    ),
+    _Rule(
+        "setup-capability-docker-build",
+        FindingSeverity.HIGH,
+        "Setup builds a container image from artifact bytes.",
+        "Read the build file: its instructions execute with network access during installation.",
+    ),
+    _Rule(
+        "setup-capability-trust-store",
+        FindingSeverity.MEDIUM,
+        "Setup reads the machine's public certificate list.",
+        "Review the subject filter; certificates are public and no private key is exported.",
     ),
     _Rule(
         "setup-capability-network",
@@ -588,6 +602,8 @@ _CAPABILITY_RULE = {
     "managed-file": "setup-capability-managed-file",
     "docker": "setup-capability-docker",
     "docker-pull": "setup-capability-docker-pull",
+    "docker-build": "setup-capability-docker-build",
+    "trust-store": "setup-capability-trust-store",
     "network": "setup-capability-network",
     "process": "setup-capability-process",
     "custom-code": "setup-capability-custom-code",
@@ -641,6 +657,7 @@ def _declared_findings(
 
 _TEXT_SUFFIXES = (
     ".cfg",
+    ".dockerfile",
     ".env",
     ".ini",
     ".js",
@@ -655,6 +672,9 @@ _TEXT_SUFFIXES = (
     ".yml",
     ".zsh",
 )
+# Suffixless build files, named by convention rather than extension. `*.dockerfile` is covered by
+# the suffix list; these are the whole-name spellings the tooling accepts.
+_TEXT_NAMES = frozenset({"dockerfile", "containerfile"})
 _SECRET_PREFIX = re.compile(
     r"(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{16,})"
 )
@@ -673,8 +693,22 @@ def _text(entry: SnapshotEntry) -> tuple[str | None, str | None]:
 
 
 def _text_like(entry: SnapshotEntry) -> bool:
+    """Whether a file is one the rules can read at all.
+
+    A container build file has no suffix, no executable bit, and no shebang, so it fell through all
+    three tests and was never scanned.  That was tolerable while AART only redistributed it, and is
+    not once a setup recipe executes it: `RUN` is arbitrary code with network access, and an
+    artifact must not run bytes the assessment never looked at.
+    """
+
     raw = str(entry.path).lower()
-    return raw.endswith(_TEXT_SUFFIXES) or entry.executable or entry.content.startswith(b"#!")
+    name = raw.rsplit("/", 1)[-1]
+    return (
+        raw.endswith(_TEXT_SUFFIXES)
+        or name in _TEXT_NAMES
+        or entry.executable
+        or entry.content.startswith(b"#!")
+    )
 
 
 def _placeholder(value: str) -> bool:
@@ -874,6 +908,35 @@ def _json_findings(
     return tuple(findings), tuple(skipped)
 
 
+_RUN_INSTRUCTION = re.compile(r"^\s*RUN\s+(.*)$", re.IGNORECASE)
+
+
+def _container_build_commands(lines: list[str]) -> list[tuple[int, str]]:
+    """The shell a container build file executes, numbered by the line it starts on.
+
+    A build file is not a shell script, but `RUN` is a shell command inside one, and a trailing
+    backslash carries it across lines.  Rejoining before the shell rules read it is the difference
+    between seeing `curl … | sh` and seeing two halves of it.
+    """
+
+    commands: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        match = _RUN_INSTRUCTION.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        start = index + 1
+        parts = [match.group(1).strip()]
+        while parts[-1].endswith("\\") and index + 1 < len(lines):
+            parts[-1] = parts[-1][:-1].strip()
+            index += 1
+            parts.append(lines[index].strip())
+        commands.append((start, " ".join(part for part in parts if part)))
+        index += 1
+    return commands
+
+
 def _shell_findings(
     entries: tuple[SnapshotEntry, ...],
 ) -> tuple[tuple[SecurityFinding, ...], tuple[str, ...]]:
@@ -884,7 +947,8 @@ def _shell_findings(
         is_shell = raw.endswith((".sh", ".bash", ".zsh")) or entry.content.startswith(
             (b"#!/bin/sh", b"#!/bin/bash", b"#!/usr/bin/env bash", b"#!/usr/bin/env zsh")
         )
-        if entry.kind is not SnapshotEntryKind.FILE or not is_shell:
+        is_build_file = raw.rsplit("/", 1)[-1] in _TEXT_NAMES or raw.endswith(".dockerfile")
+        if entry.kind is not SnapshotEntryKind.FILE or not (is_shell or is_build_file):
             continue
         content, reason = _text(entry)
         if reason is not None:
@@ -897,7 +961,10 @@ def _shell_findings(
             findings.append(_finding("file-scan-limit", path=entry.path))
             skipped.append(f"shell:{entry.path}:lines")
             lines = lines[:_MAX_SHELL_LINES]
-        for number, line_text in enumerate(lines, start=1):
+        numbered = (
+            _container_build_commands(lines) if is_build_file else list(enumerate(lines, start=1))
+        )
+        for number, line_text in numbered:
             findings.extend(_shell_line_findings(line_text, path=entry.path, line=number))
             if len(findings) >= _RAW_FINDING_LIMIT:
                 skipped.append("shell:findings")

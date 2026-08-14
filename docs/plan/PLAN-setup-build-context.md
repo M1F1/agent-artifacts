@@ -277,6 +277,30 @@ machine.
   `company-ca.pem` would be replaced by whatever the machine's trust store held, silently, after the
   assessment had already read the shipped one.
 
+### SBC-4
+
+- **Text-like was only half the gate.** Making a build file readable let the *credential* and
+  *transport* rules see it, and left the shell rules blind: `_shell_findings` has its own test —
+  shell suffix or shell shebang — which a Dockerfile also fails. So `RUN` instructions are now
+  extracted and rejoined across `\` continuations before the shell rules read them, which is the
+  difference between seeing `curl … | sh` and seeing two halves of it. Everything that is not `RUN`
+  describes the resulting container, not what installation executes, and stays ordinary text.
+- **The new capabilities had no rules and no policy vocabulary.** `_CAPABILITY_RULE` would have
+  reported both as `setup-capability-unknown` (high) — which would have thrown away exactly the
+  distinction SBC-3 exists to draw. They now have their own rules:
+  `setup-capability-docker-build` is high and says the build file's instructions execute with
+  network access; `setup-capability-trust-store` is medium and says the certificates are public and
+  no private key is exported.
+- **The ruleset revision is now `baseline-v1.1`.** The rules changed and their reach changed, so the
+  rules digest changes, and an assessment recorded under the old one is reported stale rather than
+  reused. That is the mechanism the evidence contract already specifies; it just had to be triggered
+  honestly.
+- **The acceptance artifact's Dockerfile is not clean, and the finding is correct.** The plan
+  expected it to raise nothing. It raises `unpinned-package-install` on
+  `pip install --no-cache-dir -r requirements.txt`: the pins live in `requirements.txt`, which the
+  scanner is not reading at that line, and `--require-hashes` is the remediation. Weakening the rule
+  to accept `-r` would have been the wrong fix, so the test asserts the finding instead.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
