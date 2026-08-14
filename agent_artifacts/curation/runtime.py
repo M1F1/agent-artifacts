@@ -74,6 +74,7 @@ from agent_artifacts.registry_maintenance.vendoring import (
     LicenseFinding,
     VendorOptions,
     copy_integrity_message,
+    mcp_descriptor_message,
 )
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.security.model import AssessmentStatus, SecurityAssessment
@@ -534,7 +535,13 @@ class LocalCurationService:
         details.extend(
             f"descriptor names a withheld payload file: {item}" for item in finding.referenced
         )
-        return CurationCheck("vendor-delivery", not finding.referenced, tuple(details))
+        if finding.starts_nothing:
+            details.append(mcp_descriptor_message(identity))
+        return CurationCheck(
+            "vendor-delivery",
+            not finding.referenced and not finding.starts_nothing,
+            tuple(details),
+        )
 
     def _vendor_assessment_check(self, assessment: SecurityAssessment) -> CurationCheck:
         """Report what the baseline found in the bytes this vendoring would write.

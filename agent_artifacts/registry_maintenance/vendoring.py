@@ -361,6 +361,9 @@ class DeliveryFinding:
     withheld: int
     referenced: tuple[str, ...]
     note: str
+    # True when the descriptor declares no `server` object at all: the merge still runs and writes
+    # an empty entry, so the artifact installs successfully and starts nothing.
+    starts_nothing: bool = False
 
 
 def _names_payload_file(raw: str, payload: Mapping[str, bytes]) -> bool:
@@ -413,6 +416,20 @@ def describe_delivery(kind: str, payload: Mapping[str, bytes]) -> DeliveryFindin
         withheld,
         tuple(sorted({item for item in values if _names_payload_file(item, payload)})),
         note,
+        # An `aart-mcp-v1` descriptor is `{"name": …, "server": {…}}`.  A document shaped like the
+        # harness file it ends up in — `{"mcpServers": {…}}` — parses, loads, installs, and merges
+        # an empty object: the artifact is delivered and starts nothing (VI-5).
+        starts_nothing=not isinstance(server, JsonObject) or not server.entries,
+    )
+
+
+def mcp_descriptor_message(identity: ArtifactIdentity) -> str:
+    """The one sentence for a descriptor that installs successfully and starts nothing."""
+
+    return (
+        f"vendored mcp descriptor declares no server, so installing it writes an empty entry: "
+        f'{identity} needs payload/mcp.json shaped {{"name": …, "server": {{"command": …}}}}; '
+        "a document shaped like the harness file it merges into installs and starts nothing"
     )
 
 

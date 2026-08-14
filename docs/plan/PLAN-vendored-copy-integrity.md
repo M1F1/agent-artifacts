@@ -204,14 +204,55 @@ count is what the payload holds minus the delivered document.
   `npx`/`uvx`, so the narrowness of the match is confirmed against real descriptors rather than only
   against fixtures.
 
-## VI-5 — the tutorial's example runs, and delivery is written down
+## VI-5 — a descriptor that starts nothing is said to start nothing
+
+**Files:** `agent_artifacts/registry_maintenance/vendoring.py`,
+`agent_artifacts/curation/runtime.py`, `agent_artifacts/registry_commands/planning.py`,
+`tests/registry_vendoring_projection_test.py`
+
+Inserted after `VI-4` landed, from a defect found while writing its tests. A `payload/mcp.json`
+shaped `{"mcpServers": {"atlassian": {…}}}` — the shape of the file the entry is merged *into*, not
+the `aart-mcp-v1` descriptor shape `{"name": …, "server": {…}}` — parses, loads, validates, installs,
+and merges `{"mcpServers": {"atlassian": {}}}` into the consumer's config: an entry that starts
+nothing, reported by every gate as success. The `2.3.0` tutorial teaches this shape, this
+repository's own vendoring fixtures used it, and so does the acceptance registry.
+
+1. `DeliveryFinding` gains `starts_nothing`: `descriptor["server"]` is absent, not an object, or
+   empty.
+2. The `vendor-delivery` check fails on it, and `registry audit` reports it as an error for vendored
+   packages — `installing it writes an empty entry`.
+3. `mcp_descriptor_message` names the shape the descriptor should have, so the message repairs the
+   mistake rather than only naming it.
+4. Correct this repository's `_MCP_JSON` fixture to the canonical shape, with a comment saying why.
+
+**Tests:** the harness-shaped document reports `starts_nothing` and fails both the review and the
+audit; a declared server does not; an empty `server` object does; the message names `"server"`.
+
+**What the plan did not anticipate:**
+
+- **The loader is not where this is refused.** Making `compile_native_package` reject the wrong shape
+  would be a protocol-level break: every registry already carrying such a file becomes unloadable,
+  on the consumer's side too, on upgrade. The refusal therefore lives where a maintainer is being
+  asked to approve something — the vendor review and `audit` — and the consumer keeps loading what
+  they already have.
+- **The repository's own fixture was wrong, and eight tests depended on it being wrong.** The
+  correction failed `registry_vendor_command_test`, `registry_vendor_license_test`, and
+  `registry_vendoring_projection_test`, each of which had encoded the harness shape as normal. That
+  is the strongest evidence available that the shape is the mistake everyone makes.
+- **`JsonObject` exposes `entries`, not `items`.** Only `JsonArray` has `items`; the first predicate
+  was written against the wrong one and passed type-checking by way of `Mapping`.
+- **Non-vendored owned `mcp` packages are still unchecked** — recorded as a residue below rather than
+  widened into here, because the check hangs off the vendoring delivery finding.
+
+## VI-6 — the tutorial's example runs, and delivery is written down
 
 **Files:** `docs/tutorials/vendoring-v1.md`, `docs/protocol/native-source-v1.md`,
 `docs/protocol/registry-v1.md`
 
 1. Replace the tutorial's `{"command": "node", "args": ["payload/index.js"]}` with a command a
    consumer can actually run, and say in one paragraph why the first one cannot: installing an `mcp`
-   artifact merges one JSON object and copies nothing.
+   artifact merges one JSON object and copies nothing. The same example is wrongly shaped
+   (`VI-5`) — the corrected one shows `{"name": …, "server": {…}}`.
 2. Add the delivery table (design §7) to the native source protocol document, beside the payload
    formats it already defines: type, effects, what reaches the consumer, whether the payload can be
    referenced.
@@ -220,9 +261,10 @@ count is what the payload holds minus the delivered document.
 4. The vendoring tutorial links the new design document where it describes what the copy claims.
 
 **Tests:** the docs gate; the release-check `REQUIRED_PERSISTENT_DOCS` list; a test asserting the
-tutorial contains no `payload/` path inside an example MCP command, so the example cannot regress.
+tutorial contains no `payload/` path inside an example MCP command and no `mcpServers` key inside an
+example descriptor, so neither mistake can regress.
 
-## VI-6 — the `2.4.0` release commit
+## VI-7 — the `2.4.0` release commit
 
 **Files:** `pyproject.toml`, `agent_artifacts/__init__.py` or wherever `version.py set` writes,
 `scripts/release.py`, `docs/release/`, `CHANGELOG.md`, `PROGRESS.md`
@@ -230,8 +272,9 @@ tutorial contains no `payload/` path inside an example MCP command, so the examp
 1. `python scripts/version.py set 2.4.0`; `EXPECTED_VERSION` and `RELEASE_CONTRACT_VERSION = 12`.
 2. `docs/release/compatibility-v12.md`, `release-checklist-v12.md`, `github-release-v2.4.0.md`, and
    the v12 schema freeze written by `scripts/release.py freeze --write`.
-3. The compatibility matrix states the one upgrade note: a registry whose vendored payload was edited
-   after vendoring fails validate and audit on this release having passed on `2.3.0` (design §9).
+3. The compatibility matrix states the two upgrade notes: a registry whose vendored payload was edited
+   after vendoring fails validate and audit on this release having passed on `2.3.0` (design §9), and
+   a vendored `mcp` whose descriptor is wrongly shaped now fails `audit` (`VI-5`).
 4. `CHANGELOG.md` and `PROGRESS.md` record the three findings closed and the residues left open.
 
 **Publication is the maintainer's.** This package prepares the commit; it does not tag, push, or
@@ -240,14 +283,15 @@ release.
 ## Dependency graph
 
 ```
-VI-1 ──┬── VI-2 ──┐
-       └── VI-3 ──┼── VI-6
-VI-4 ── VI-5 ─────┘
+VI-1 ──┬── VI-2 ──────────┐
+       └── VI-3 ──────────┼── VI-7
+VI-4 ── VI-5 ── VI-6 ─────┘
 ```
 
 `VI-1` is the only package everything else waits on. `VI-4` is independent of `VI-1`…`VI-3` but
-touches the same two files as `VI-3`, so it is sequenced after it rather than in parallel. `VI-5`
-documents what `VI-4` enforces and must not land before it.
+touches the same two files as `VI-3`, so it is sequenced after it rather than in parallel. `VI-5` was
+inserted after `VI-4` landed, from a defect its tests exposed, and extends the same finding. `VI-6`
+documents what `VI-4` and `VI-5` enforce and must not land before them.
 
 ## Residues this plan records and does not own
 
@@ -260,5 +304,9 @@ documents what `VI-4` enforces and must not land before it.
   symlink refusal can be rehearsed live. It bounds what this plan's live re-test can cover, and
   widening it is a separate decision.
 - **`LAF-49`** — the allowlisted Git environment drops `https_proxy`, undocumented.
+- **An owned, non-vendored `mcp` package with a wrongly-shaped descriptor is still not checked.**
+  `VI-5` hangs its refusal off the vendoring delivery finding, so an artifact authored in place gets
+  no warning. Closing it means either a check in `validate` for every `mcp` package or the
+  loader-level refusal `VI-5` rejected as a protocol break; both are wider decisions than this plan.
 - `commands/registry.py` stamps dead `1.0.0`/`2.0.0` AART bounds on every non-`init` curation
   request, carried from `VN-9`.

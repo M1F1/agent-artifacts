@@ -181,6 +181,28 @@ The check is deliberately narrow. It fires only on a string that resolves to a f
 `payload/` — not on any relative-looking path — because a false positive on an argument that happens
 to look like a path would be a refusal for a guess.
 
+### The descriptor that merges nothing
+
+*Amended after `VI-4` landed; found while testing it.* The delivered object is `descriptor["server"]`,
+so a `payload/mcp.json` that has no `server` key delivers `{}` — a named entry in the consumer's
+`.mcp.json` that starts no process. The shape that produces it is not exotic. It is
+`{"mcpServers": {"<name>": {"command": …}}}`: the shape of the file the entry is merged *into*, which
+everyone has seen and nobody has been told is not the artifact format. `aart-mcp-v1` wants
+`{"name": …, "server": {"command": …, "args": [...]}}`. The wrong one parses as valid JSON, satisfies
+the descriptor schema's required keys by having none of them contradicted, loads, builds, validates,
+and installs — every gate green, nothing runs.
+
+The refusal belongs in the review and in `audit`, not in the loader. Rejecting the shape in
+`compile_native_package` would make every registry that already contains such a file unloadable on
+upgrade, on the consumer's side as well as the maintainer's — a break taken for a defect that harms
+nobody who has not yet tried to start the server. So the vendor review fails its `vendor-delivery`
+check and `audit` errors, both saying what the descriptor should look like; a registry that already
+has one keeps loading and is told.
+
+This narrows to vendored packages, because that is where the delivery finding is computed. An owned
+`mcp` package authored in place with the same mistake is still unchecked, and is recorded as a
+residue rather than fixed by widening `validate` in this release.
+
 ### The assessment scans what the consumer will not run
 
 For `mcp`, the vendor review's assessment covers the whole copied subtree while the install delivers

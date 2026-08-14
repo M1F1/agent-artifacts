@@ -85,6 +85,7 @@ from agent_artifacts.registry_maintenance.vendoring import (
     copy_integrity_message,
     delivery_reference_message,
     describe_delivery,
+    mcp_descriptor_message,
     project_vendored_package,
     read_vendor_record,
     verify_vendored_copy,
@@ -1270,9 +1271,15 @@ def vendored_delivery_diagnostics(
             if raw.startswith(prefix) and entry.kind is SnapshotEntryKind.FILE
         },
     )
-    if finding is None or not finding.referenced:
+    if finding is None:
         return ()
-    return (_diagnostic(delivery_reference_message(vendored.manifest.identity, finding)),)
+    identity = vendored.manifest.identity
+    diagnostics: list[Diagnostic] = []
+    if finding.referenced:
+        diagnostics.append(_diagnostic(delivery_reference_message(identity, finding)))
+    if finding.starts_nothing:
+        diagnostics.append(_diagnostic(mcp_descriptor_message(identity)))
+    return tuple(diagnostics)
 
 
 def verify_vendored_artifact(

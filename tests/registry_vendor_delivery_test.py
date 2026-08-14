@@ -28,6 +28,7 @@ from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisitio
 from agent_artifacts.registry_maintenance.vendoring import (
     delivery_reference_message,
     describe_delivery,
+    mcp_descriptor_message,
 )
 from tests.registry_vendoring_projection_test import _COMMIT, _URL, _foreign_repository
 
@@ -97,6 +98,32 @@ class DeliveryDescriptionTest(unittest.TestCase):
         for kind in ("skill", "guideline", "memory", "hook"):
             with self.subTest(kind=kind):
                 self.assertIsNone(describe_delivery(kind, _payload(_descriptor("node"))))
+
+    def test_a_descriptor_shaped_like_the_harness_file_starts_nothing(self) -> None:
+        """VI-5: `{"mcpServers": …}` parses, loads, installs, and merges an empty entry.
+
+        It is the shape of the file the entry is merged *into*, which is why it is the mistake
+        everyone makes — this repository's own vendoring fixtures made it, and so does the `2.3.0`
+        tutorial.
+        """
+
+        document = json.dumps({"mcpServers": {"atlassian": {"command": "npx"}}}).encode() + b"\n"
+        finding = describe_delivery("mcp", _payload(document))
+        assert finding is not None
+        self.assertTrue(finding.starts_nothing)
+        message = mcp_descriptor_message(ArtifactIdentity("mcp", "atlassian"))
+        self.assertIn('"server"', message)
+
+    def test_a_declared_server_is_not_reported_as_starting_nothing(self) -> None:
+        finding = describe_delivery("mcp", _payload(_descriptor("npx", "-y", "@example/srv")))
+        assert finding is not None
+        self.assertFalse(finding.starts_nothing)
+
+    def test_an_empty_server_object_starts_nothing_too(self) -> None:
+        document = json.dumps({"name": "atlassian", "server": {}}).encode() + b"\n"
+        finding = describe_delivery("mcp", _payload(document))
+        assert finding is not None
+        self.assertTrue(finding.starts_nothing)
 
     def test_the_message_names_the_command_and_what_is_actually_installed(self) -> None:
         finding = describe_delivery("mcp", _payload(_descriptor("node", "payload/index.js")))
@@ -206,6 +233,18 @@ class VendorDeliveryReviewTest(unittest.TestCase):
 
             self.assertEqual(code, 1, output)
             self.assertIn("names a copied payload file consumers never receive", output)
+
+    def test_a_harness_shaped_descriptor_fails_the_review_and_the_audit(self) -> None:
+        document = json.dumps({"mcpServers": {"atlassian": {"command": "npx"}}}).encode() + b"\n"
+        with self._vendored(document) as root:
+            _code, output = self._vendor(root)
+
+            delivery = _checks(json.loads(output))["vendor-delivery"]
+            self.assertFalse(delivery["passed"])
+            self.assertIn("declares no server", " ".join(delivery["details"]))
+            code, audited = _run("registry", "audit", "--source", str(root))
+            self.assertEqual(code, 1, audited)
+            self.assertIn("installing it writes an empty entry", audited)
 
     def test_audit_passes_for_a_command_the_consumer_resolves(self) -> None:
         with self._vendored(_descriptor("npx", "-y", "@example/srv")) as root:

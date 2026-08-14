@@ -50,8 +50,13 @@ from agent_artifacts.store.model import make_object_candidate
 _CAPABILITIES = EXECUTABLE_CAPABILITIES
 _COMMIT = "f" * 40
 _URL = "https://github.com/example/atlassian-mcp.git"
+# An `aart-mcp-v1` descriptor: `name` and a `server` object.  It was written here as
+# `{"mcpServers": …}` — the shape of the harness file the entry is merged *into* — which parses,
+# loads, installs, and starts nothing, because `server` is absent and the merge writes `{}` (VI-5).
 _MCP_JSON = (
-    json.dumps({"mcpServers": {"atlassian": {"command": "node", "args": ["index.js"]}}}).encode()
+    json.dumps(
+        {"name": "atlassian", "server": {"command": "npx", "args": ["-y", "@example/atlassian"]}}
+    ).encode()
     + b"\n"
 )
 
