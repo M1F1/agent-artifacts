@@ -136,6 +136,25 @@ around it.
 **Tests:** a fixture registry with disagreeing identities is refused by `source sync` and by
 `source add`; a registry carrying only `aart-source.json` is unaffected.
 
+**What the plan did not anticipate:**
+
+- **Half the check already existed, on the path that did not need it.** `validate_registry_source_candidate`
+  compared the two identities for `SourceKind.REGISTRY_GIT` only, with the message
+  "registry and source identities differ" — naming neither value nor either file. The gap was the
+  direct/local path, which is how `LAF-37` was reproduced. Both paths now share one comparison and
+  one diagnostic.
+- **Presence is judged on parseability, not on the filename.** A snapshot has an agreement to check
+  only when both markers are regular files that each parse as their own protocol document. A source
+  publishing `aart-source.json` alone is not a registry; that case is explicitly covered by a test,
+  because a check that turned every native source into a registry would be the wrong fix.
+
+**Recorded residue, not fixed here:** a snapshot carrying a *malformed* `aart-registry.json` skips
+this check, because there is no `registry_id` to compare against. On the registry path the workspace
+validation refuses first, so the gap is confined to a direct/local subscription to something shaped
+like a registry. Closing it means adding a new refusal — "a root `aart-registry.json` must parse" —
+which is broader than design §2 authorizes, and worth taking as its own decision rather than as a
+side effect of this package.
+
 **Exit:** design §2's second half, `LAF-37`. Independent of SI-3/SI-4.
 
 ## SI-6 — remediation reaches the operator
