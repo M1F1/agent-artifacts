@@ -3,6 +3,51 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.4.0 — 2026-08-14
+
+Vendored copy integrity. The `2.3.0` live acceptance run found that AART verified the vendoring
+*instruction* — URL, ref, subtree path, all covered by `importer.options_digest` — and verified the
+*result* nowhere: `origin.input_digest` was written by every vendoring and read by nothing. This
+release reads it. Minor, and every behavioural change is a refusal added: no command, flag, field,
+document format, or install effect changes. The v12 schema freeze carries protocol versions
+identical to v11 and differs in two inputs, both protocol prose, neither a parsed field.
+
+### Added
+
+- The vendored copy is checked against the origin it records. The digest of the taken subtree is
+  recomputed from the package on disk — the payload files not listed in `aart.vendor.authored` are
+  exactly the copied ones — and compared with `origin.input_digest`. `registry validate --strict`
+  and `registry audit` fail on a mismatch, offline, and re-locking or rebuilding does not clear it.
+  It is a consistency check, not an authentication: a payload edited *and* re-digested is a
+  consistent lie only the network can catch, and the release says so rather than implying more.
+- `registry revendor` runs the same check **before** it opens a connection, in `--check` and `--yes`
+  alike. A copy that no longer matches its record is refused with upstream never contacted and no
+  drift computed from bytes already known to be untrustworthy.
+- `vendor-delivery`, a check in the vendor and re-vendor review for `mcp`: installing merges the
+  `server` object from `payload/mcp.json` and copies nothing, so the check states how many copied
+  files are not delivered and that the assessment covered bytes no consumer of this artifact
+  receives. It **fails**, and `registry audit` errors, when the descriptor's `command` or `args`
+  names a file present under `payload/`, and when the descriptor declares no `server` — the shape
+  `{"mcpServers": {…}}`, which parsed, loaded, installed, and merged an empty entry on `2.3.0`. The
+  match is narrow by construction: only a string resolving to a file actually in the payload counts.
+- `docs/design/DESIGN-vendored-copy-integrity.md` and
+  `docs/plan/PLAN-vendored-copy-integrity.md`, the design and work-package record for this release.
+
+### Changed
+
+- `revendor`'s `up-to-date` disposition prints the line that reconciles a recorded and a resolved
+  commit that differ — the normal result of vendoring one directory out of a monorepo — and says so
+  differently where the ref itself has not moved. Two commits no longer sit under `up-to-date` with
+  nothing to explain them.
+- `docs/protocol/native-source-v1.md` tabulates, per type, the install effects, what reaches the
+  consumer, and whether the payload may be referenced.
+- `docs/protocol/registry-v1.md` states that a vendored copy is verified against the record it
+  carries, and that `mcp` is the one type where the assessed set and the delivered set differ.
+- `docs/tutorials/vendoring-v1.md`: the worked `payload/mcp.json` was wrong in both ways this
+  release detects — the harness shape, launching a payload file consumers never receive — and is
+  corrected. A test feeds every JSON fence in that tutorial to the function the review uses, so a
+  documented example that would fail the review fails the suite.
+
 ## 2.3.0 — 2026-08-14
 
 Registry vendoring. `2.2.0` left four residues open; this release answers the one with no small fix

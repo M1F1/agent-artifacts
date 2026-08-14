@@ -76,11 +76,19 @@ from agent_artifacts.registry_maintenance.planning import (
 )
 from agent_artifacts.registry_maintenance.vendoring import (
     VENDOR_IMPORTER_ID,
+    CopyIntegrity,
+    DeliveryFinding,
+    VendoredPackage,
     VendorOptions,
     VendorOrigin,
     assess_vendored_package,
+    copy_integrity_message,
+    delivery_reference_message,
+    describe_delivery,
+    mcp_descriptor_message,
     project_vendored_package,
     read_vendor_record,
+    verify_vendored_copy,
 )
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
@@ -598,7 +606,26 @@ def plan_artifact_vendor(
     if isinstance(planned, Err):
         return planned
     return Ok(
-        VendoredArtifactPlan(planned.value, assessed.value.assessment, projected.value.license)
+        VendoredArtifactPlan(
+            planned.value,
+            assessed.value.assessment,
+            projected.value.license,
+            _package_delivery(projected.value),
+        )
+    )
+
+
+def _package_delivery(package: VendoredPackage) -> DeliveryFinding | None:
+    """What a consumer receives from the package this plan would write (design §7)."""
+
+    prefix = f"{package.base}/"
+    return describe_delivery(
+        package.manifest.identity.kind,
+        {
+            relative.removeprefix(prefix): content
+            for relative, content, _executable in package.files
+            if relative.startswith(f"{prefix}{package.manifest.payload.root}/")
+        },
     )
 
 
@@ -743,11 +770,25 @@ def plan_artifact_revendor(
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
+    # The copy against its own record, before upstream is mentioned at all: a copy that is not the
+    # copy cannot be discussed as current or as behind, and re-vendoring it would overwrite a
+    # difference the maintainer has not seen yet (design §5).
+    integrity = verify_vendored_copy(
+        files.value,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    if isinstance(integrity, Err):
+        return integrity
+    if not integrity.value.matches:
+        return _error(copy_integrity_message(vendored.manifest.identity, integrity.value))
     taken = take_subtree(acquisition.snapshot, vendored.path)
     if isinstance(taken, Err):
         return taken
     added, changed, removed = _drift_counts(files.value, vendored, taken.value)
-    if taken.value.input_digest == vendored.input_digest:
+    if taken.value.input_digest == integrity.value.recomputed:
         return Ok(
             VendoredArtifactCheck(
                 NativeReferenceDisposition.UP_TO_DATE,
@@ -820,7 +861,12 @@ def plan_artifact_revendor(
     if isinstance(planned, Err):
         return planned
     return Ok(
-        replace(drifted, plan=planned.value, assessment=assessed.value.assessment),
+        replace(
+            drifted,
+            plan=planned.value,
+            assessment=assessed.value.assessment,
+            delivery=_package_delivery(projected.value),
+        ),
     )
 
 
@@ -1080,9 +1126,15 @@ def validate_registry_workspace(
     if isinstance(parsed, Err):
         diagnostics.extend(parsed.diagnostics)
         return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
-    registry, _source, entries = parsed.value
+    registry, source, entries = parsed.value
     files = _files(snapshot)
     assert isinstance(files, Ok)
+    # A package that contradicts its own provenance is malformed, and this is where well-formedness
+    # is decided.  It costs no network: the copy is checked against the record it carries (VI-2).
+    vendored, unreadable = _vendored_packages(files.value, source)
+    diagnostics.extend(unreadable)
+    for package in vendored:
+        diagnostics.extend(vendored_copy_diagnostics(files.value, package))
     native = registry_native_content(
         snapshot,
         files.value,
@@ -1174,8 +1226,142 @@ def validate_registry_workspace(
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
 
 
+def vendored_copy_diagnostics(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> tuple[Diagnostic, ...]:
+    """Check one vendored copy against the origin it records (VI-2, design §4).
+
+    A pure function of the committed snapshot: no network, no store, and the same answer in
+    `validate`, in `audit`, and before a re-vendor. The mismatch is an error rather than a warning
+    because it is a defect in the registry, not a fact about the world like being behind upstream —
+    what this registry publishes is not what it says it publishes.
+    """
+
+    integrity = verify_vendored_copy(
+        files,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    if isinstance(integrity, Err):
+        return integrity.diagnostics
+    if integrity.value.matches:
+        return ()
+    return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
+
+
+def vendored_delivery_diagnostics(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> tuple[Diagnostic, ...]:
+    """Report a vendored descriptor that launches a file consumers never receive (VI-4).
+
+    An error rather than a warning: unlike a missing licence, this is not a fact about the world the
+    maintainer may accept. It is an artifact that cannot start on any consumer machine.
+    """
+
+    prefix = f"{vendored.base}/{vendored.manifest.payload.root}/"
+    finding = describe_delivery(
+        vendored.manifest.identity.kind,
+        {
+            raw.removeprefix(f"{vendored.base}/"): entry.content
+            for raw, entry in files.items()
+            if raw.startswith(prefix) and entry.kind is SnapshotEntryKind.FILE
+        },
+    )
+    if finding is None:
+        return ()
+    identity = vendored.manifest.identity
+    diagnostics: list[Diagnostic] = []
+    if finding.referenced:
+        diagnostics.append(_diagnostic(delivery_reference_message(identity, finding)))
+    if finding.starts_nothing:
+        diagnostics.append(_diagnostic(mcp_descriptor_message(identity)))
+    return tuple(diagnostics)
+
+
+def verify_vendored_artifact(
+    snapshot: SourceSnapshot,
+    vendored: VendoredArtifactOrigin,
+) -> Result[CopyIntegrity]:
+    """The same check over a whole workspace, for a caller holding one artifact's record."""
+
+    files = _files(snapshot)
+    if isinstance(files, Err):
+        return files
+    return verify_vendored_copy(
+        files.value,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+
+
+def _shipped_digest(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> ObjectDigest:
+    """The digest of the bytes this registry actually ships (design §5).
+
+    Drift is a statement about the copy, not about the record: comparing upstream with
+    `origin.input_digest` answers for a package that may no longer exist. A copy that cannot be
+    reconstructed at all falls back to the recorded value, because that case is already an error in
+    the offline part of the same command and adding a second phrasing of it here would report one
+    defect twice.
+    """
+
+    integrity = verify_vendored_copy(
+        files,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    return vendored.input_digest if isinstance(integrity, Err) else integrity.value.recomputed
+
+
+def _vendored_packages(
+    files: dict[str, SnapshotEntry],
+    source: SourceManifest,
+) -> tuple[tuple[VendoredArtifactOrigin, ...], tuple[Diagnostic, ...]]:
+    """Every vendored package the snapshot declares, and what refused to be read as one."""
+
+    roots = tuple(f"{root}/" for root in source.artifact_roots)
+    packages: list[VendoredArtifactOrigin] = []
+    diagnostics: list[Diagnostic] = []
+    for path, item in sorted(files.items()):
+        if (
+            item.kind is not SnapshotEntryKind.FILE
+            or not path.endswith("/artifact.json")
+            or not any(path.startswith(root) for root in roots)
+        ):
+            continue
+        base = path.removesuffix("/artifact.json")
+        provenance = files.get(f"{base}/provenance.json")
+        if provenance is None or provenance.kind is not SnapshotEntryKind.FILE:
+            continue
+        parsed = parse_provenance(provenance.content, path=f"{base}/provenance.json")
+        if isinstance(parsed, Err) or parsed.value.importer.id != VENDOR_IMPORTER_ID:
+            # A provenance that does not parse is already reported by the checks that parse it, and
+            # one written by another importer describes a reference, which ships no bytes to verify.
+            continue
+        manifest = parse_artifact_manifest(item.content, path=path)
+        if isinstance(manifest, Err):
+            continue
+        read = read_vendored_package(files, base, manifest.value)
+        if isinstance(read, Err):
+            diagnostics.extend(read.diagnostics)
+            continue
+        packages.append(read.value)
+    return tuple(packages), tuple(diagnostics)
+
+
 def _vendored_upstream_findings(
     acquirer: NativeAcquirer,
+    files: dict[str, SnapshotEntry],
     vendored: VendoredArtifactOrigin,
 ) -> tuple[Diagnostic, ...]:
     """Report whether one vendored copy still matches upstream, and never guess when it cannot.
@@ -1187,6 +1373,7 @@ def _vendored_upstream_findings(
     """
 
     identity = vendored.manifest.identity
+    shipped = _shipped_digest(files, vendored)
     acquired = acquirer(vendored.url, vendored.ref)
     if isinstance(acquired, Err):
         return (
@@ -1205,7 +1392,7 @@ def _vendored_upstream_findings(
                 warning=True,
             ),
         )
-    if taken.value.input_digest == vendored.input_digest:
+    if taken.value.input_digest == shipped:
         return ()
     return (
         _diagnostic(
@@ -1318,6 +1505,10 @@ def audit_registry_workspace(
                     diagnostics.extend(read.diagnostics)
                 else:
                     vendored = read.value
+                    # The copy against the record, before anything is said about upstream: a copy
+                    # that is not the copy cannot be discussed as current or behind (design §5).
+                    diagnostics.extend(vendored_copy_diagnostics(files.value, vendored))
+                    diagnostics.extend(vendored_delivery_diagnostics(files.value, vendored))
         if manifest.value.license is None:
             diagnostics.append(
                 _diagnostic(
@@ -1331,7 +1522,9 @@ def audit_registry_workspace(
                 )
             )
         if vendored is not None and upstream_acquirer is not None:
-            diagnostics.extend(_vendored_upstream_findings(upstream_acquirer, vendored))
+            diagnostics.extend(
+                _vendored_upstream_findings(upstream_acquirer, files.value, vendored)
+            )
         if manifest.value.setup is not None:
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)

@@ -120,6 +120,30 @@ Legend: `pass` · `fail` (finding filed) · `blocked` · `deferred`.
 | `LAF-48` | minor | `LA3-T-02` | `LAS-41` | `tui.py` maintainer wizard | Two warts in the vendoring path of the text front-end: the stage is labelled **"Native reference details"** while a vendoring is being described — vendoring is precisely *not* a native reference — and declining at `Finalize exact reviewed action? [y/N]` returns to the same stage and re-renders the whole review, re-fetching the upstream over the network to do it. `VN-9` reused the existing stage rather than adding one; that decision is recorded in the plan, its label was not | drive `aart` in a registry checkout, action `vendor`, answer `n` at Finalize | nothing |
 | `LAF-49` | question | `LA3-X-02` | `LAS-39` | `io/git._safe_environment` | AART runs Git with an allowlisted environment, so `https_proxy`/`HTTP_PROXY` never reach it. Deliberate — a proxy URL is a place credentials hide — and it means that on a network whose only egress is a proxy, every source sync and every vendoring fails, with the transport error and no hint that the proxy was dropped. `~/.gitconfig`'s `http.proxy` still works, because `HOME` is passed, so the workaround exists and nothing names it. Whether to document it, or to pass a credential-free proxy URL through, is the decision | set `https_proxy` to a live proxy on a network without direct egress; run `registry vendor` | egress-restricted networks |
 
+### Closed by `2.4.0`
+
+Composed response:
+[DESIGN-vendored-copy-integrity.md](../design/DESIGN-vendored-copy-integrity.md) and
+[PLAN-vendored-copy-integrity.md](../plan/PLAN-vendored-copy-integrity.md).
+
+| Finding | How it is closed | Verified against |
+|---|---|---|
+| `LAF-41` | The copied subtree's digest is recomputed from the package on disk — payload minus `aart.vendor.authored` — and compared with `origin.input_digest`. `validate --strict` and `audit` fail on a mismatch, offline; re-locking and rebuilding do not clear it | `registry-drift`: `validate --strict` and `audit` both exit 1 naming `mcp/mcp-git`, with both digests printed. `registry-a` still validates clean |
+| `LAF-42` | `revendor` verifies the copy **before** it opens a connection, so a tampered copy is refused with upstream never contacted; `up-to-date` now prints the line reconciling a recorded and a resolved commit that differ, or says the ref has not moved | the reproduction in `LAS-45` no longer reaches the network; unit and CLI tests hold both `up-to-date` renderings |
+| `LAF-46` | The `vendor-delivery` check states what installing an `mcp` delivers and that the assessment covered bytes the consumer never receives; it fails on a descriptor naming a withheld payload file, and `audit` errors. The per-type delivery table is in the native source protocol, and the tutorial's example is one the checks pass | the corrected tutorial descriptor is fed to the review's own function by `tests/vendoring_docs_test.py` |
+| `LAF-50` *(below)* | The same check fails a descriptor that declares no `server` | `registry-a`: `audit` exits 1 on both `mcp/mcp-filesystem` and `mcp/mcp-git` |
+
+**`LAF-50` | major | found while fixing `LAF-46`, not during the run | `aart-mcp-v1` descriptor shape.** A
+`payload/mcp.json` shaped `{"mcpServers": {"<name>": {…}}}` — the shape of the harness file the entry
+is merged *into*, not the artifact's `{"name": …, "server": {…}}` — parses, loads, validates,
+installs, and merges `{"mcpServers": {"<name>": {}}}`: a named server that starts no process, with
+every gate reporting success. The `2.3.0` tutorial teaches that shape, this repository's vendoring
+fixtures used it, and **both vendored `mcp` artifacts in this run's `registry-a` were written that
+way** — which is how the finding was confirmed against something other than a fixture. Refusing it in
+the loader was considered and rejected: it would make every registry already carrying one unloadable
+on upgrade, consumers included. An owned, non-vendored `mcp` package with the same mistake is still
+unchecked and stays a residue.
+
 ### Verified against the prior runs
 
 | Prior finding | Prior symptom | v3 result |
@@ -143,3 +167,8 @@ path, against `options_digest` — and does not verify the *result*: no gate com
 the bytes on disk, so a copy that has drifted from its own record is consistent with every gate and,
 worse, is compared against upstream as though it had not (`LAF-41`, `LAF-42`). That is the residue
 this run hands to whatever comes next.
+
+`2.4.0` is what came next, and it closed that residue along with `LAF-46` and the descriptor-shape
+defect found while fixing it. The strongest thing this run produced was not a transcript: it was the
+registry the run itself built. Both of its vendored `mcp` artifacts, written by following the `2.3.0`
+tutorial, install an entry that starts nothing — and `2.4.0`'s audit says so.

@@ -4,11 +4,13 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.3.0`
-- **Execution status:** `2.3.0` adds registry vendoring on top of the released `2.0.0` contract,
-  closing the last live-acceptance-v2 residue that needed a feature rather than a fix; both
-  registries are published on that contract and need no re-authoring, and the consumer project
-  reconciles against them in CI
+- **Current code version:** `2.4.0`
+- **Execution status:** `2.4.0` closes three live-acceptance-v3 findings against the vendoring
+  surface `2.3.0` shipped — the copy is now verified against the origin digest it records, drift is
+  measured from the bytes on disk, and the review states what a consumer of an `mcp` artifact
+  actually receives. Still the released `2.0.0` contract: no command, field, or install effect
+  changes, both registries need no re-authoring, and the consumer project reconciles against them in
+  CI
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-14
@@ -23,6 +25,17 @@ tracked in its own ledger so it does not mix with this release record:
 its composed response is
 [DESIGN-subscription-identity-binding.md](docs/design/DESIGN-subscription-identity-binding.md) and
 [PLAN-subscription-identity-binding.md](docs/plan/PLAN-subscription-identity-binding.md).
+
+The third run, against released `2.3.0` and its vendoring surface, is
+[docs/testing/PROGRESS-live-acceptance-v3.md](docs/testing/PROGRESS-live-acceptance-v3.md). Its
+composed response is
+[DESIGN-vendored-copy-integrity.md](docs/design/DESIGN-vendored-copy-integrity.md) and
+[PLAN-vendored-copy-integrity.md](docs/plan/PLAN-vendored-copy-integrity.md), released as `2.4.0`:
+`LAF-41` (the shipped payload was verified against nothing), `LAF-42` (`up-to-date` was read from
+the record, not the bytes, and printed two commits it did not reconcile), and `LAF-46` (a vendored
+`mcp` payload never reaches the consumer, undocumented and taught wrongly). Residues left open there
+are listed at the end of the plan and in
+[docs/release/release-checklist-v12.md](docs/release/release-checklist-v12.md).
 
 ## Post-v1.0.0 catalog-boundary follow-up
 

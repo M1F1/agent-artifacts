@@ -330,6 +330,80 @@ class RevendorTest(unittest.TestCase):
                 re.search(r"\b(safe|verified|trusted|secure|vetted)\b", warnings), warnings
             )
 
+    def test_an_unmoved_ref_says_so_rather_than_leaving_two_commits_unexplained(self) -> None:
+        """`LAF-42`: two differing commits under `up-to-date` is the healthy monorepo case."""
+
+        with self._registry(_foreign_repository(), commit=_MOVED_COMMIT) as root:
+            _code, output = _run(
+                "registry", "revendor", "--source", str(root), "mcp", "atlassian", "--json"
+            )
+
+            details = _checks(json.loads(output))["vendor-drift"]["details"]
+            self.assertIn(f"recorded commit: {_COMMIT}", details)
+            self.assertIn(f"resolved commit: {_MOVED_COMMIT}", details)
+            self.assertIn(
+                "the ref moved, and nothing under servers/atlassian changed; "
+                "the copy stays pinned to the recorded commit",
+                details,
+            )
+
+    def test_a_ref_that_has_not_moved_at_all_is_said_differently(self) -> None:
+        with self._registry(_foreign_repository(), commit=_COMMIT) as root:
+            _code, output = _run(
+                "registry", "revendor", "--source", str(root), "mcp", "atlassian", "--json"
+            )
+
+            details = _checks(json.loads(output))["vendor-drift"]["details"]
+            self.assertIn("the ref has not moved since this copy was taken", details)
+
+    def test_a_copy_that_no_longer_matches_its_record_is_refused_before_the_network(self) -> None:
+        """`LAF-41`/`LAF-42`: drift is a statement about the bytes on disk, or it is nothing.
+
+        Upstream is never contacted, because nothing it could say makes this copy the copy its
+        provenance describes — and re-vendoring over the difference would erase it unseen.
+        """
+
+        with self._registry(_foreign_repository(), commit=_COMMIT) as root:
+            (root / _PACKAGE / "payload/index.js").write_bytes(b"console.log('exfiltrate');\n")
+            reached: list[str] = []
+            service = LocalCurationService(
+                str(root),
+                native_acquirer=lambda url, _ref: (
+                    reached.append(url)
+                    or Ok(
+                        NativeReferenceAcquisition(_URL, "v1.4.0", _COMMIT, _foreign_repository())
+                    )
+                ),
+            )
+            with patch(
+                "agent_artifacts.commands.registry.load_local_curation_service",
+                return_value=Ok(service),
+            ):
+                code, output = _run(
+                    "registry", "revendor", "--source", str(root), "mcp", "atlassian", "--check"
+                )
+                _yes_code, _yes_output = _run(
+                    "registry",
+                    "revendor",
+                    "--source",
+                    str(root),
+                    "mcp",
+                    "atlassian",
+                    "--yes",
+                    "--json",
+                )
+
+            self.assertEqual(code, 1, output)
+            self.assertEqual(reached, [])
+            self.assertIn("vendor-copy-integrity: failed", output)
+            self.assertIn("no longer matches the origin it records", output)
+            self.assertNotIn("disposition:", output)
+            self.assertEqual(json.loads(_yes_output)["outcome"]["status"], "failed")
+            self.assertEqual(
+                (root / _PACKAGE / "payload/index.js").read_bytes(),
+                b"console.log('exfiltrate');\n",
+            )
+
     def test_a_hand_edited_ref_is_refused_by_the_recorded_options_digest(self) -> None:
         with self._registry(_foreign_repository(), commit=_COMMIT) as root:
             document = root / _PACKAGE / "provenance.json"

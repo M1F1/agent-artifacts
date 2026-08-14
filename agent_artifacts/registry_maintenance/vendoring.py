@@ -17,6 +17,7 @@ hand.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -25,7 +26,12 @@ from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, S
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.protocol.codes import ARTIFACT_INVALID
 from agent_artifacts.protocol.hashing import json_digest
-from agent_artifacts.protocol.json import JsonArray, JsonObject, canonical_json_bytes
+from agent_artifacts.protocol.json import (
+    JsonArray,
+    JsonObject,
+    canonical_json_bytes,
+    parse_json,
+)
 from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
@@ -48,6 +54,8 @@ from agent_artifacts.protocol.native_schema import (
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
+    SnapshotOrigin,
+    SourceSnapshot,
     compile_native_package,
 )
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
@@ -70,6 +78,7 @@ from agent_artifacts.security.baseline import (
     assess_installation_risk,
 )
 from agent_artifacts.security.model import SecurityAssessment
+from agent_artifacts.sources.model import source_snapshot_digest
 from agent_artifacts.sources.subtree import TakenSubtree
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
@@ -262,6 +271,195 @@ def read_vendor_record(provenance: Provenance) -> Result[VendorRecord]:
             "provenance.json has been edited by hand"
         )
     return Ok(VendorRecord(ref, paths))
+
+
+@dataclass(frozen=True, slots=True)
+class CopyIntegrity:
+    """What the copy's own record says, and what the copy says (VI-1).
+
+    Both digests are carried rather than a boolean, because every caller renders them: a maintainer
+    told only that something mismatched has no way to record which copy of which package it was.
+    """
+
+    recorded: ObjectDigest
+    recomputed: ObjectDigest
+    files: int
+
+    @property
+    def matches(self) -> bool:
+        return self.recorded == self.recomputed
+
+
+def verify_vendored_copy(
+    files: Mapping[str, SnapshotEntry],
+    base: str,
+    payload_root: SafeRelativePath,
+    authored: tuple[str, ...],
+    recorded: ObjectDigest,
+) -> Result[CopyIntegrity]:
+    """Recompute `origin.input_digest` from the package on disk (design §3).
+
+    The taken subtree is recoverable from the copy, so the claim vendoring makes has a gate that
+    needs no network and no new field. Two properties make the inverse of `project_vendored_package`
+    exact: `_authored_files` refuses an authored path that collides with a taken one, so subtracting
+    the recorded list leaves precisely the taken files; and `take_subtree` carries only files and
+    directories out of a Git tree, which holds no empty directory, so the taken directories are
+    exactly the ancestors of the taken files.
+
+    A package that cannot be reconstructed at all is refused rather than reported as a mismatch. A
+    payload with nothing in it but the maintainer's own wrapper is a malformed package, and calling
+    that drift would name the wrong defect.
+    """
+
+    prefix = f"{base}/{payload_root}/"
+    excluded = {f"{base}/{relative}" for relative in authored}
+    entries: list[SnapshotEntry] = []
+    directories: set[str] = set()
+    for raw in sorted(files):
+        entry = files[raw]
+        if (
+            not raw.startswith(prefix)
+            or raw in excluded
+            or entry.kind is not SnapshotEntryKind.FILE
+        ):
+            continue
+        parsed = parse_relative_path(raw.removeprefix(prefix))
+        if isinstance(parsed, Err):
+            return _error(f"the vendored payload holds an unsafe path: {raw}", path=raw)
+        parts = parsed.value.parts
+        directories.update("/".join(parts[:index]) for index in range(1, len(parts)))
+        entries.append(
+            SnapshotEntry(parsed.value, SnapshotEntryKind.FILE, entry.content, entry.executable)
+        )
+    if not entries:
+        return _error(
+            f"the vendored package holds no copied payload file under {prefix}; "
+            "it cannot be checked against the origin it records",
+            path=base,
+        )
+    taken = len(entries)
+    entries.extend(
+        SnapshotEntry(_path(relative), SnapshotEntryKind.DIRECTORY) for relative in directories
+    )
+    entries.sort(key=lambda item: str(item.path))
+    digest = source_snapshot_digest(SourceSnapshot(SnapshotOrigin.IMMUTABLE_GIT, tuple(entries)))
+    if isinstance(digest, Err):
+        return digest
+    return Ok(CopyIntegrity(recorded, digest.value, taken))
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryFinding:
+    """What installing this artifact actually delivers, for a type where that is not all of it.
+
+    Vendoring copies a subtree into the registry; installing applies the effects the type declares.
+    For `mcp` those effects touch one file of the payload, so the copied bytes and the delivered
+    bytes are different sets — and a descriptor naming a file inside the payload names one that will
+    not be on the consumer's machine (`LAF-46`, design §7).
+    """
+
+    withheld: int
+    referenced: tuple[str, ...]
+    note: str
+    # True when the descriptor declares no `server` object at all: the merge still runs and writes
+    # an empty entry, so the artifact installs successfully and starts nothing.
+    starts_nothing: bool = False
+
+
+def _names_payload_file(raw: str, payload: Mapping[str, bytes]) -> bool:
+    """Does this descriptor string name a file inside the copied payload?
+
+    Deliberately narrow: only a string that resolves to a file actually present under `payload/`
+    counts. Refusing anything that merely looks like a path would be refusing for a guess, and an
+    MCP server legitimately launched from an absolute path outside the package is none of AART's
+    business.
+    """
+
+    candidate = raw.removeprefix("./")
+    return candidate in payload or f"{_PAYLOAD_ROOT}/{candidate}" in payload
+
+
+def describe_delivery(kind: str, payload: Mapping[str, bytes]) -> DeliveryFinding | None:
+    """What a consumer receives from this payload, or `None` where they receive all of it.
+
+    `skill` and `hook` copy the payload tree; `guideline` and `memory` write the one document that
+    is the whole payload. `mcp` merges the `server` object out of `payload/mcp.json` and copies
+    nothing, which is the case worth reporting.
+    """
+
+    if kind != "mcp":
+        return None
+    document = payload.get(f"{_PAYLOAD_ROOT}/mcp.json")
+    withheld = sum(1 for path in payload if path != f"{_PAYLOAD_ROOT}/mcp.json")
+    note = (
+        "installing this artifact merges the server entry from payload/mcp.json into the "
+        f"profile's MCP file and copies nothing; {withheld} copied payload "
+        f"{'file is' if withheld == 1 else 'files are'} not delivered to consumers"
+    )
+    if document is None:
+        return DeliveryFinding(withheld, (), note)
+    parsed = parse_json(document)
+    if isinstance(parsed, Err) or not isinstance(parsed.value, JsonObject):
+        # An unparsable descriptor is refused by the loader that reads it; saying so twice, in
+        # different words, would send the maintainer looking for two faults.
+        return DeliveryFinding(withheld, (), note)
+    server = parsed.value.get("server")
+    values: list[str] = []
+    if isinstance(server, JsonObject):
+        command = server.get("command")
+        if isinstance(command, str):
+            values.append(command)
+        arguments = server.get("args")
+        if isinstance(arguments, JsonArray):
+            values.extend(item for item in arguments.items if isinstance(item, str))
+    return DeliveryFinding(
+        withheld,
+        tuple(sorted({item for item in values if _names_payload_file(item, payload)})),
+        note,
+        # An `aart-mcp-v1` descriptor is `{"name": …, "server": {…}}`.  A document shaped like the
+        # harness file it ends up in — `{"mcpServers": {…}}` — parses, loads, installs, and merges
+        # an empty object: the artifact is delivered and starts nothing (VI-5).
+        starts_nothing=not isinstance(server, JsonObject) or not server.entries,
+    )
+
+
+def mcp_descriptor_message(identity: ArtifactIdentity) -> str:
+    """The one sentence for a descriptor that installs successfully and starts nothing."""
+
+    return (
+        f"vendored mcp descriptor declares no server, so installing it writes an empty entry: "
+        f'{identity} needs payload/mcp.json shaped {{"name": …, "server": {{"command": …}}}}; '
+        "a document shaped like the harness file it merges into installs and starts nothing"
+    )
+
+
+def delivery_reference_message(identity: ArtifactIdentity, finding: DeliveryFinding) -> str:
+    """The one sentence for a configuration that cannot work on any consumer machine."""
+
+    named = ", ".join(finding.referenced)
+    return (
+        f"vendored mcp descriptor names a copied payload file consumers never receive: "
+        f"{identity} launches {named}, and installing this artifact writes only the server entry "
+        "from payload/mcp.json. State a command the consumer's machine already resolves"
+    )
+
+
+def copy_integrity_message(identity: ArtifactIdentity, integrity: CopyIntegrity) -> str:
+    """One sentence, said the same way by validate, audit, and re-vendor.
+
+    It states what is wrong and stops: the copy is not the copy its provenance describes. Who changed
+    it is not knowable from here — a local patch, a checkout that translated line endings, and a
+    substitution are indistinguishable in the bytes — so the message names all three and the one
+    route AART supports, rather than diagnosing.
+    """
+
+    return (
+        f"vendored artifact no longer matches the origin it records: {identity} "
+        f"({integrity.files} copied payload files digest to {integrity.recomputed}, "
+        f"provenance records {integrity.recorded}). The copy was edited after vendoring, "
+        "translated on checkout, or replaced; AART has no patched-copy record, so a copy that "
+        "must differ from upstream is vendored from a fork that contains the difference"
+    )
 
 
 def _is_license_name(relative: str) -> bool:

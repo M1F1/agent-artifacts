@@ -39,6 +39,26 @@ omitting it adds no restriction, and maintainers raise it only when the artifact
 on newer executable behavior. A routine AART release never changes it automatically. Optional
 authors, license, and HTTPS homepage fields are informational only and never assign trust.
 
+## What installation delivers
+
+A package is not shipped to the consumer; the effects its type declares are applied. For four types
+the whole payload arrives, and for one it does not:
+
+| Type | Effects | What reaches the consumer | May the payload be referenced? |
+|---|---|---|---|
+| `skill` | `copy-tree` | the whole payload tree | yes, it is on disk |
+| `guideline` | `write-file` | the one Markdown document | that is the whole payload |
+| `memory` | `write-file`, `managed-block` | the one Markdown document | that is the whole payload |
+| `hook` | `copy-tree`, `merge-json` | the whole payload tree, plus the merged entry | yes — `${SCRIPT_DIR}` resolves to where it was copied |
+| `mcp` | `merge-json` | the `server` object from `payload/mcp.json`, and nothing else | no |
+
+`aart-mcp-v1` is `{"name": …, "server": {…}}`, and only `server` is merged into the profile's MCP
+configuration. Two consequences follow. A descriptor whose `command` or `args` names a path inside
+`payload/` names a file no consumer will have. And a document shaped like the harness file it is
+merged into — `{"mcpServers": {…}}` — has no `server` key, so it delivers an empty entry that starts
+nothing. Registry curation reports both (`aart registry vendor`, `aart registry audit`); the loader
+accepts what it always accepted.
+
 ## Provenance and collections
 
 Imported or curated content may include `provenance.json`. It binds the canonical copy to a

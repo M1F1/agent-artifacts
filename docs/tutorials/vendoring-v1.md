@@ -51,12 +51,30 @@ artifacts/mcp/atlassian/
   setup/installer.json
 ```
 
-`payload/mcp.json` is the `aart-mcp-v1` payload the type requires; it points at the copied entry
-point:
+`payload/mcp.json` is the `aart-mcp-v1` payload the type requires. It names one server and the
+command that starts it:
 
 ```json
-{"mcpServers": {"atlassian": {"command": "node", "args": ["payload/index.js"]}}}
+{"name": "atlassian", "server": {"command": "npx", "args": ["-y", "@example/atlassian-mcp"]}}
 ```
+
+Two things about that document are easy to get wrong, and AART now says so rather than letting you
+find out at runtime.
+
+**It is not shaped like `.mcp.json`.** The harness file this entry ends up in is
+`{"mcpServers": {"atlassian": {…}}}`; the *artifact* is `{"name": …, "server": {…}}`. Installing
+delivers `server` and nothing else, so a descriptor written in the harness shape has no `server` at
+all and merges an empty entry — a named server that starts no process. `aart registry vendor` and
+`aart registry audit` fail on it.
+
+**It cannot launch a copied file.** Installing an `mcp` artifact merges one JSON object into the
+profile's MCP configuration and copies nothing; `payload/index.js` stays in your registry and never
+reaches the consumer's machine. `{"command": "node", "args": ["payload/index.js"]}` therefore names
+a file that will not be there, and the vendor review refuses it. Launch the server the way a
+consumer can resolve it — `npx`, `uvx`, `docker`, an absolute path — or, if the bytes themselves must
+travel, vendor them as a `skill` or a `hook`, which do copy their payload. What each type delivers is
+tabulated in [the native source protocol](../protocol/native-source-v1.md), and why this asymmetry
+exists is in [the copy-integrity design](../design/DESIGN-vendored-copy-integrity.md).
 
 `setup/installer.json` is a setup recipe v2 declaring what the server needs before it runs — here,
 an API token in the macOS keychain. **The path must be exactly `setup/installer.json`**: a v2 recipe
@@ -106,6 +124,9 @@ Review canonical Maintainer action: vendor
       setup-capability-filesystem (medium): Setup requests filesystem mutation authority.
       setup-capability-keychain (high): Setup requests credential-store access.
       shell-pipe-to-interpreter (critical): Shell content pipes downloaded bytes directly to an interpreter. [payload/install.sh]
+  - check vendor-delivery: passed
+      installing this artifact merges the server entry from payload/mcp.json into the profile's MCP file and copies nothing; 4 copied payload files are not delivered to consumers
+      the assessment above covers the copied bytes, including the ones no consumer of this artifact receives
   - check vendor-license: passed
       discovered: LICENSE: MIT
       recorded: MIT
@@ -123,7 +144,7 @@ Review canonical Maintainer action: vendor
   AART will not commit or push; review the working-tree diff afterward.
 ```
 
-Four things in it are worth reading slowly.
+Five things in it are worth reading slowly.
 
 **The path list is the whole change.** Nothing outside those paths is touched, and the three
 `unchanged:` lines are the files you authored: the vendoring recognises them and leaves them alone.
@@ -134,6 +155,12 @@ a URL and pipes it into a shell. That finding does not block the vendoring, and 
 decision is yours. What you do with it is a maintainer's judgement — drop the file from the copy by
 vendoring a narrower subtree, keep it and say so in `SETUP.md`, or decline the upstream. Deciding
 nothing is also a decision, and `review-missing` is AART recording that you have not attached one.
+
+**`vendor-delivery` is the gap between what you copied and what anyone gets.** Four of the five
+copied files are not delivered — and `install.sh`, the file the critical finding is about, is one of
+them. That does not make the finding uninteresting: your registry is redistributing those bytes, and
+somebody may read them. It does mean no consumer of *this artifact* executes it. The check states
+both, because a maintainer reading `critical` above should know which risk they are looking at.
 
 **`vendor-license` is the copy's licensing.** `discovered:` is what AART read at the subtree root;
 `recorded:` is what your `artifact.json` will publish it under. AART only reports a licence where
@@ -184,6 +211,15 @@ document does not otherwise carry: the ref the copy was taken at, and which file
 than copied. It is verified against `importer.options_digest`, so a hand-edited record is refused
 rather than believed — editing `ref` there to point somewhere else fails `aart registry audit`.
 
+`origin.input_digest` is the digest of the subtree that was taken, and the copy on disk is checked
+against it. Recomputing it needs nothing but the package: the files under `payload/` that are not
+listed in `authored` are exactly the ones that were copied. So editing a vendored payload by hand —
+patching upstream in place, deleting a file you would rather not redistribute — fails
+`aart registry validate --strict` and `aart registry audit`, on a registry that was green before the
+edit, and re-locking or rebuilding does not make it green again. The supported way to change copied
+bytes is to change them upstream, or in a fork you vendor from, and vendor again; a copy that says
+where it came from has to be that.
+
 Commit the working tree yourself. AART never commits and never pushes.
 
 ## 6. When upstream moves
@@ -211,6 +247,24 @@ The tag moved under you — which is exactly why the commit, not the ref, is wha
 
 There are three dispositions and the third matters: an upstream that cannot be reached reports
 `unreachable`, never `up-to-date`. Silence is not evidence that nothing changed.
+
+The healthy answer is the one worth recognising, because in a monorepo it prints two different
+commits:
+
+```
+  - check vendor-drift: passed
+      disposition: up-to-date
+      recorded commit: 4d9f2c1b7a3e5f80d6c4b2a19e8f7c6d5b4a3e21
+      resolved commit: 9b1c7e4a2f6d8035c1a9b7e6d4f2c0a8b6d4e2f1
+      the ref moved, and nothing under packages/atlassian-mcp changed; the copy stays pinned to the recorded commit
+```
+
+That is not a contradiction. Upstream's default branch moved; your subtree did not, so there is
+nothing to re-vendor and the copy keeps the commit it was taken at. Where the ref itself has not
+moved, the last line says that instead. And `up-to-date` is a statement about the bytes in your
+registry, not only about the record: `revendor` recomputes the copy's digest before it opens a
+connection, and a copy that has been edited since it was vendored is refused without upstream being
+contacted at all.
 
 Applying the movement requires the version you state for it. Upstream declares no version AART can
 trust — that is the price of owning the copy — so there is no default and no inference:
