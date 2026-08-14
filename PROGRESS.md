@@ -15,6 +15,31 @@
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-14
 
+## Setup build context (`2.5.0`, in progress)
+
+- **Design:** [docs/design/DESIGN-setup-build-context.md](docs/design/DESIGN-setup-build-context.md)
+- **Plan:** [docs/plan/PLAN-setup-build-context.md](docs/plan/PLAN-setup-build-context.md)
+- **Branch:** `feat/setup-build-context`
+- **Acceptance case:** one real artifact, `mcp/company-atlassian` — two vendored files, an authored
+  `Dockerfile`, a corporate CA that exists only on the consumer's machine, and an image built
+  locally and never published. Verified against `2.4.0`: the package is expressible **except** for
+  the two steps this work adds, and its maintainer's workaround is a shell script run by hand from a
+  clone of the registry.
+- **Root cause:** a recipe can name where to write and cannot name what to read. The package sits in
+  neither of the setup model's two address spaces, and even the custom entrypoint is executed from a
+  temporary copy with no path to the package in its environment.
+
+| ID | Work package | Status | Evidence / next action |
+|---|---|---|---|
+| SBC-1 | A recipe can name the package, and AART hands it a copy | not started | Package-relative source paths plus build-context materialization into the per-run directory; the object store stays read-only, held by a digest test rather than by review |
+| SBC-2 | `docker.build@1` | not started | Tag derived as `aart/<type>/<name>:<version>`; receipt records context digest, tag, local image id; rollback removes only a tag this run created |
+| SBC-3 | `trust-store.export-certificates@1` and the `trust-store` capability | not started | Reads public certificates only, writes into the materialized context only, refused without one; a distinct capability so the review does not inflate it to credential-store access |
+| SBC-4 | A Dockerfile is assessed | not started | `_text_like` currently skips a file named `Dockerfile` entirely — AART would execute bytes the baseline never read |
+| SBC-5 | The review says what a build does | not started | Neither module may fall through to the generic effect line; the manual alternative still renders before consent |
+| SBC-6 | The worked artifact, and the documentation that makes it copyable | not started | Module reference, worked section, the three limits from design §9, and a test that every module in `_MODULES` is documented |
+| SBC-7 | Live acceptance: both routes, on a real machine | not started | **Completion condition for the plan.** Route A guided, route B by hand from `SETUP.md`, then compared: same tag, image, keychain entry, shell block, `.mcp.json`. Dummy API token under a rehearsal-only service; synthetic CA by default, real company CA only as a separately approved pass; the agent types no secret |
+| SBC-8 | The `2.5.0` release commit | not started | Contract v13; publication is the maintainer's |
+
 ## Live acceptance run
 
 Live (non-hermetic) acceptance testing against real GitHub registries and a real consumer repo is
