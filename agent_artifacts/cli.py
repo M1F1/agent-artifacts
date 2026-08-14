@@ -667,6 +667,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary", required=True, metavar="TEXT", help="one-line artifact description"
     )
     p_vendor.add_argument(
+        # Discovery fills the silence; it never overrules the maintainer.  AART reads an upstream
+        # licence file, it does not adjudicate the grant, so the registry states what it publishes.
+        "--license",
+        dest="artifact_license",
+        metavar="SPDX",
+        help="license this registry records for the copy (default: read from the taken subtree)",
+    )
+    p_vendor.add_argument(
         "--profile",
         action="append",
         required=True,
@@ -772,6 +780,14 @@ def build_parser() -> argparse.ArgumentParser:
         "audit", help="audit review, provenance, setup, and available security metadata"
     )
     _add_registry_source(p_audit)
+    p_audit.add_argument(
+        "--check-upstream",
+        action="store_true",
+        help=(
+            "resolve each vendored artifact's origin and report the ones behind upstream; "
+            "unreachable origins are reported as unknown, and neither finding fails the audit"
+        ),
+    )
     _add_json(p_audit)
 
     p_test = registry_sub.add_parser("test", help="run a compatibility validation fixture")
@@ -969,12 +985,14 @@ def _to_request(args: argparse.Namespace) -> Request:
         review_policy=getattr(args, "review_policy", None),
         registry_action=getattr(args, "registry_action", None),
         check=bool(getattr(args, "check", False)),
+        check_upstream=bool(getattr(args, "check_upstream", False)),
         strict=bool(getattr(args, "strict", False)),
         frozen=bool(getattr(args, "frozen", False)),
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
         summary=getattr(args, "summary", None),
         artifact_version=getattr(args, "artifact_version", None),
+        artifact_license=getattr(args, "artifact_license", None),
         minimum_version=getattr(args, "minimum_version", None),
         maximum_version=getattr(args, "maximum_version", None),
         latest_version=getattr(args, "latest_version", None),

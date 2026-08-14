@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
 from agent_artifacts.domain.identifiers import ObjectDigest
+from agent_artifacts.domain.result import Result
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
@@ -60,6 +62,12 @@ class NativeReferenceAcquisition:
             or self.snapshot.origin is not SnapshotOrigin.IMMUTABLE_GIT
         ):
             raise ValueError("native reference acquisition must be immutable pinned Git content")
+
+
+# Resolving one `(url, ref)` against a real upstream, injected wherever a check needs the network.
+# Declared beside the acquisition it produces so that a pure planner can accept one without
+# importing the runtime that builds Git snapshots.
+NativeAcquirer = Callable[[str, str], Result[NativeReferenceAcquisition]]
 
 
 @dataclass(frozen=True, slots=True, order=True)

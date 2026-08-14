@@ -89,6 +89,36 @@ _REQUIRED_PAYLOAD_DOCUMENT = {
     "hook": "payload/hook.json",
 }
 _ALLOWED_AUTHORED_ROOTS = frozenset({"README.md", "SETUP.md", "payload", "setup"})
+# File names that carry a licence grant rather than mention one.  `NOTICE` and `COPYRIGHT` are
+# deliberately absent: they accompany a licence, and treating them as one would report a finding
+# where there is no grant to record.
+_LICENSE_NAMES = frozenset(
+    {"license", "licence", "copying", "license-mit", "license-apache", "unlicense"}
+)
+_LICENSE_SUFFIXES = ("", ".md", ".txt", ".rst")
+# SPDX identifiers a licence file determines by itself.  Ordered, first match wins, because the
+# markers are not disjoint: every BSD-3-Clause text contains the whole BSD-2-Clause text.
+_LICENSE_TEXTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Apache-2.0", ("apache license", "version 2.0")),
+    ("MPL-2.0", ("mozilla public license", "version 2.0")),
+    ("ISC", ("permission to use, copy, modify, and/or distribute this software",)),
+    ("MIT", ("permission is hereby granted, free of charge",)),
+    (
+        "BSD-3-Clause",
+        ("redistribution and use in source and binary forms", "endorse or promote products"),
+    ),
+    ("BSD-2-Clause", ("redistribution and use in source and binary forms",)),
+    ("Unlicense", ("this is free and unencumbered software released into the public domain",)),
+)
+# The GPL family names its version in the text but not its grant: `-only` and `-or-later` are chosen
+# by the work that applies the licence, not by the licence document.  Recognising the family and
+# refusing to complete the identifier is the honest answer; the maintainer states the rest.
+_LICENSE_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("gnu affero general public license", "GNU Affero General Public License"),
+    ("gnu lesser general public license", "GNU Lesser General Public License"),
+    ("gnu general public license", "GNU General Public License"),
+)
+_LICENSE_PREFIX_BYTES = 4096
 # Canonical package content the projection writes itself.  Refusing these by name rather than as
 # "not canonical content" matters: they are canonical, and the maintainer who passes one is trying
 # to override the two documents whose whole purpose is to be derived from the vendoring inputs.
@@ -123,6 +153,23 @@ class VendorOptions:
     setup_platforms: tuple[str, ...] = ()
     authored: tuple[tuple[str, bytes, bool], ...] = ()
     warnings: tuple[str, ...] = field(default=())
+    # What the maintainer states, which always wins: a licence read out of a file is a reading of
+    # somebody else's document, and the registry publishes what it is prepared to stand behind.
+    license: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LicenseFinding:
+    """What the taken subtree says about its own licence, and what it leaves unsettled.
+
+    Vendoring redistributes somebody else's work, so the omission has to be visible (design §7).
+    `identifier` is filled only where the licence file settles the SPDX identifier on its own;
+    everything else is reported in `note` for a human to resolve, and refuses nothing.
+    """
+
+    paths: tuple[str, ...]
+    identifier: str | None
+    note: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +180,7 @@ class VendoredPackage:
     files: tuple[tuple[str, bytes, bool], ...]
     manifest: ArtifactManifest
     provenance: Provenance
+    license: LicenseFinding
 
 
 def vendor_options_digest(url: str, ref: str, path: SafeRelativePath) -> ObjectDigest:
@@ -216,6 +264,78 @@ def read_vendor_record(provenance: Provenance) -> Result[VendorRecord]:
     return Ok(VendorRecord(ref, paths))
 
 
+def _is_license_name(relative: str) -> bool:
+    name = relative.rsplit("/", 1)[-1].lower()
+    return any(
+        name.endswith(suffix) and name.removesuffix(suffix) in _LICENSE_NAMES
+        for suffix in _LICENSE_SUFFIXES
+    )
+
+
+def _identify(content: bytes) -> tuple[str | None, str | None]:
+    """Read one licence file as (SPDX identifier, recognised family); either may be absent.
+
+    Only the opening of the file is read, and only for phrases that appear in the licence's own
+    preamble. This identifies a text; it does not adjudicate a grant, and an unrecognised file is
+    reported as unrecognised rather than guessed at.
+    """
+
+    text = " ".join(content[:_LICENSE_PREFIX_BYTES].decode("utf-8", "replace").lower().split())
+    for marker, family in _LICENSE_FAMILIES:
+        if marker in text:
+            return None, family
+    for identifier, markers in _LICENSE_TEXTS:
+        if all(marker in text for marker in markers):
+            return identifier, None
+    return None, None
+
+
+def discover_license(subtree: TakenSubtree) -> LicenseFinding:
+    """Look for the licence covering the taken work, and say what was and was not settled.
+
+    Only a file at the subtree root can be pre-filled from. A `LICENSE` further down covers whatever
+    sits beside it — a bundled dependency, a sample — and adopting it as the artifact's licence would
+    record a claim nobody made. Those are reported, never used.
+    """
+
+    files = {
+        str(entry.path): entry
+        for entry in subtree.snapshot.entries
+        if entry.kind is SnapshotEntryKind.FILE
+    }
+    found = tuple(sorted(path for path in files if _is_license_name(path)))
+    root = tuple(path for path in found if "/" not in path)
+    if not found:
+        return LicenseFinding((), None, "no license file in the taken subtree")
+    listed = ", ".join(found)
+    if not root:
+        return LicenseFinding(
+            found,
+            None,
+            "license files were found only below the subtree root, where they cover what sits "
+            f"beside them rather than the taken work: {listed}",
+        )
+    if len(root) > 1:
+        return LicenseFinding(
+            found,
+            None,
+            f"several license files at the subtree root, so none was adopted: {listed}",
+        )
+    identifier, family = _identify(files[root[0]].content)
+    if identifier is not None:
+        return LicenseFinding(found, identifier, f"{root[0]}: {identifier}")
+    if family is not None:
+        return LicenseFinding(
+            found,
+            None,
+            f"{root[0]}: {family}, whose text does not say whether the grant is -only or "
+            "-or-later; state the identifier with --license",
+        )
+    return LicenseFinding(
+        found, None, f"{root[0]}: text not recognised; state the identifier with --license"
+    )
+
+
 def _authored_files(
     options: VendorOptions, taken: frozenset[str]
 ) -> Result[tuple[tuple[str, bytes, bool], ...]]:
@@ -285,6 +405,7 @@ def project_vendored_package(
             f"the taken subtree contributes {len(payload_paths)} payload files"
         )
     canonical_kind = cast(CanonicalArtifactType, kind)
+    license_finding = discover_license(subtree)
     setup = None
     if options.setup_recipe is not None:
         setup = SetupReference(options.setup_recipe, options.setup_platforms or options.platforms)
@@ -301,6 +422,10 @@ def project_vendored_package(
             tuple(sorted(INSTALL_EFFECTS_BY_TYPE[canonical_kind])),
         ),
         setup,
+        (),
+        # Stated wins over discovered; discovered fills the silence rather than leaving a copy of
+        # somebody else's work in this registry with no licence recorded at all.
+        options.license or license_finding.identifier,
     )
     provenance = Provenance(
         1,
@@ -345,7 +470,7 @@ def project_vendored_package(
         (f"{base}/{relative}", content, executable)
         for relative, content, executable in authored.value
     )
-    return Ok(VendoredPackage(base, tuple(sorted(files)), manifest, provenance))
+    return Ok(VendoredPackage(base, tuple(sorted(files)), manifest, provenance, license_finding))
 
 
 @dataclass(frozen=True, slots=True)

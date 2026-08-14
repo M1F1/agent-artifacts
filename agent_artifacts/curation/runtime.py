@@ -7,7 +7,7 @@ import os
 import shlex
 import tempfile
 from dataclasses import dataclass
-from typing import Callable, Protocol, cast
+from typing import Protocol, cast
 
 from agent_artifacts.application.registry_commands import (
     finalize_registry_workspace,
@@ -52,6 +52,7 @@ from agent_artifacts.registry_commands.planning import (
     validate_registry_workspace,
 )
 from agent_artifacts.registry_maintenance.model import (
+    NativeAcquirer,
     NativeReferenceAcquisition,
     NativeReferenceDisposition,
     RegistryMutationPlan,
@@ -67,7 +68,7 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
-from agent_artifacts.registry_maintenance.vendoring import VendorOptions
+from agent_artifacts.registry_maintenance.vendoring import LicenseFinding, VendorOptions
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.security.model import AssessmentStatus, SecurityAssessment
 from agent_artifacts.sources.git import acquire_git_snapshot
@@ -94,8 +95,6 @@ _VERSION = EXECUTABLE_VERSION
 _CAPABILITIES = EXECUTABLE_CAPABILITIES
 CURATION_INVALID = DiagnosticCode("curation-invalid")
 CURATION_STALE = DiagnosticCode("curation-stale")
-
-NativeAcquirer = Callable[[str, str], Result[NativeReferenceAcquisition]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +230,7 @@ def _candidate(
         )
 
 
-def _default_native_acquirer(url: str, ref: str) -> Result[NativeReferenceAcquisition]:
+def default_native_acquirer(url: str, ref: str) -> Result[NativeReferenceAcquisition]:
     acquired = _candidate(url, ref, alias="curation-native", allow_local_transport=False)
     if isinstance(acquired, Err):
         return acquired
@@ -327,7 +326,7 @@ class LocalCurationService:
         self,
         workspace: str,
         *,
-        native_acquirer: NativeAcquirer = _default_native_acquirer,
+        native_acquirer: NativeAcquirer = default_native_acquirer,
     ):
         if not os.path.isabs(workspace) or os.path.normpath(workspace) != workspace:
             raise ValueError("curation workspace must be normalized and absolute")
@@ -484,6 +483,29 @@ class LocalCurationService:
             ),
         )
 
+    def _vendor_license_check(
+        self,
+        request: CurationRequest,
+        finding: LicenseFinding,
+    ) -> CurationCheck:
+        """Say what the subtree claims about its licence, and what this registry will record.
+
+        It always passes. AART is not qualified to adjudicate a licence, and a maintainer vendoring
+        their own company's code has nothing to record; the obligation is to make the omission
+        visible rather than to block on it (design §7).
+        """
+
+        recorded = request.artifact_license or finding.identifier
+        details = [f"discovered: {finding.note}"]
+        if request.artifact_license is not None:
+            details.append(f"stated: {request.artifact_license}")
+        details.append(
+            f"recorded: {recorded}"
+            if recorded is not None
+            else "recorded: none; state one with --license, or registry audit will report it"
+        )
+        return CurationCheck("vendor-license", True, tuple(details))
+
     def _vendor_assessment_check(self, assessment: SecurityAssessment) -> CurationCheck:
         """Report what the baseline found in the bytes this vendoring would write.
 
@@ -544,6 +566,7 @@ class LocalCurationService:
                 request.scopes,
                 request.modes,
                 recipe,
+                license=request.artifact_license,
             )
         except ValueError as error:
             return _error(str(error))
@@ -568,6 +591,7 @@ class LocalCurationService:
                 planned.value.plan,
                 checks=(
                     self._vendor_review_check(request, acquired.value, planned.value.plan),
+                    self._vendor_license_check(request, planned.value.license),
                     self._vendor_assessment_check(planned.value.assessment),
                 ),
                 warnings=(

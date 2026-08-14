@@ -13,6 +13,7 @@ from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_maintenance.model import NativeReferenceDisposition
+from agent_artifacts.registry_maintenance.vendoring import LicenseFinding
 from agent_artifacts.security.model import SecurityAssessment
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -262,10 +263,13 @@ class VendoredArtifactPlan:
 
     plan: RegistryWorkspacePlan
     assessment: SecurityAssessment
+    license: LicenseFinding
 
     def __post_init__(self) -> None:
-        if not isinstance(self.plan, RegistryWorkspacePlan) or not isinstance(
-            self.assessment, SecurityAssessment
+        if (
+            not isinstance(self.plan, RegistryWorkspacePlan)
+            or not isinstance(self.assessment, SecurityAssessment)
+            or not isinstance(self.license, LicenseFinding)
         ):
             raise ValueError("vendored artifact plan is invalid")
 

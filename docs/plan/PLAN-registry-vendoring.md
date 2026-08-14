@@ -1,6 +1,6 @@
 # Plan: registry vendoring
 
-Status: **`VN-1` … `VN-5` landed; `VN-6` … `VN-9` open.** Implements
+Status: **`VN-1` … `VN-6` landed; `VN-7` … `VN-9` open.** Implements
 [the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
 "What the plan did not anticipate" section; those sections, not this line, are the run record.
 
@@ -350,6 +350,56 @@ not defects.
 **Tests:** a subtree with `LICENSE` pre-fills and reports it; two license files report ambiguity and
 pre-fill nothing; audit lists the unlicensed vendored artifact and still exits successfully; audit
 distinguishes behind-upstream from unreachable.
+
+**What the plan did not anticipate**
+
+- **"Unambiguous" had to be defined twice.** One licence file settles nothing by existing: the
+  identifier has to come out of the text. So a subtree is unambiguous when exactly one licence file
+  sits at its root *and* that file's opening matches one of a short table of SPDX texts — MIT, ISC,
+  Apache-2.0, MPL-2.0, BSD-2/3-Clause, Unlicense. The table is ordered and first-match-wins because
+  the markers are not disjoint: every BSD-3-Clause text contains the whole BSD-2-Clause text.
+- **The GPL family is recognised and deliberately not completed.** Its text names the version but
+  not the grant — `-only` and `-or-later` are chosen by the work that applies the licence, not by
+  the licence document — so the review names the family and asks for `--license`. Filling in one of
+  the two would be a guess presented as this registry's own statement about what it redistributes.
+- **A licence below the subtree root is reported and never adopted.** A `LICENSE` beside a bundled
+  dependency covers the dependency; adopting it would record a claim nobody made.
+- **`--license` had to exist, or the audit finding was unactionable.** The plan asks the audit to
+  report a vendored artifact with no recorded licence, and nothing else in the release lets a
+  maintainer record one: the manifest is derived, not authored. A stated licence always wins over a
+  discovered one, and the review shows both.
+- **Re-vendoring was silently dropping the licence.** `plan_artifact_revendor` rebuilds
+  `VendorOptions` from the stored manifest, and the new field would have defaulted to `None` — every
+  upstream movement would have turned a licensed copy into an unlicensed one. The recorded value is
+  carried through rather than re-derived: it is this registry's statement, not upstream's.
+- **The generic audit finding already existed.** `registry audit` warned "owned package has no
+  declared license" for every owned package. A vendored one now gets its own wording, because
+  redistributing somebody else's bytes with no licence recorded is a different fact from a
+  first-party package that never filled the field in — and emitting both would be noise.
+- **Upstream resolution in `audit` is opt-in, via `--check-upstream`.** Design §6 says the audit
+  gains the check "in read-only form"; it does not say the audit starts using the network. Making it
+  unconditional would break every offline run and make a green CI depend on somebody else's uptime,
+  so the acquirer is injected and absent by default — without the flag the audit stays a pure
+  function of the snapshot. With it, findings still only report: behind-upstream and unreachable are
+  both warnings, and unreachable is worded as unknown, never as drift.
+- **A hand-edited vendoring record now fails the audit.** Reading the `aart.vendor` extension to
+  find the origin means verifying it against `importer.options_digest`, and a record that fails that
+  check is tampering with the input of the next re-vendor — an error, not a warning. This is the one
+  finding in this package that is not merely reported.
+- **`read_vendored_artifact` was split.** It resolved a package by identity under the first artifact
+  root; the audit walks every root by path, so the reading half became `read_vendored_package`,
+  taking a located package. Resolving the identity again would have looked in the wrong place in a
+  registry that declares more than one root.
+- **`NativeAcquirer` moved to `registry_maintenance/model.py`.** It lived in `curation/runtime.py`,
+  which a pure planner must not import; declaring it beside the acquisition it produces lets the
+  audit accept one without dragging in the Git runtime. `_default_native_acquirer` lost its
+  underscore for the same reason: it is now called from `commands/registry.py`.
+
+**Residues found, recorded against the package that will own them:**
+
+- `VN-8`: the `registry vendor --help` text still says "A clean vendor reports what was found" while
+  the review says "a successful vendor reports what was copied" (carried over from `VN-5`), and
+  `--license` and `--check-upstream` are new surfaces the protocol text and tutorial do not mention.
 
 **Exit:** design §6 and §7. Depends on `VN-5`.
 

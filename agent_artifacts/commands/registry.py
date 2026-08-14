@@ -14,7 +14,10 @@ from agent_artifacts.curation.model import (
     render_curation_outcome,
     render_curation_review,
 )
-from agent_artifacts.curation.runtime import load_local_curation_service
+from agent_artifacts.curation.runtime import (
+    default_native_acquirer,
+    load_local_curation_service,
+)
 from agent_artifacts.domain.diagnostics import (
     Diagnostic,
     DiagnosticCode,
@@ -178,6 +181,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                     if action is CurationAction.REVENDOR
                     else request.artifact_version or "1.0.0"
                 ),
+                artifact_license=request.artifact_license,
                 profiles=request.profiles,
                 platforms=request.registry_platforms,
                 scopes=request.registry_scopes or ("project",),
@@ -284,6 +288,9 @@ def _run_audit(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
         current.value,
         executable_version=_VERSION,
         available_capabilities=_CAPABILITIES,
+        # The audit reads the committed workspace and nothing else unless asked: `--check-upstream`
+        # is what turns it into a command that resolves vendored origins, and it still only reports.
+        upstream_acquirer=default_native_acquirer if request.check_upstream else None,
     )
     if isinstance(checked, Err):
         return _emit_error(request, "audit", checked)

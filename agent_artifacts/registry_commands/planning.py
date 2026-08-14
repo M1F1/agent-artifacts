@@ -66,6 +66,7 @@ from agent_artifacts.protocol.registry_tree import (
 )
 from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.registry_maintenance.model import (
+    NativeAcquirer,
     NativeReferenceAcquisition,
     NativeReferenceDisposition,
 )
@@ -74,6 +75,7 @@ from agent_artifacts.registry_maintenance.planning import (
     resolve_native_acquisition,
 )
 from agent_artifacts.registry_maintenance.vendoring import (
+    VENDOR_IMPORTER_ID,
     VendorOptions,
     VendorOrigin,
     assess_vendored_package,
@@ -595,7 +597,9 @@ def plan_artifact_vendor(
     )
     if isinstance(planned, Err):
         return planned
-    return Ok(VendoredArtifactPlan(planned.value, assessed.value.assessment))
+    return Ok(
+        VendoredArtifactPlan(planned.value, assessed.value.assessment, projected.value.license)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,18 +634,32 @@ def read_vendored_artifact(
         return source
     base = f"{source.value.artifact_roots[0]}/{identity.kind}/{identity.name}"
     manifest_entry = files.value.get(f"{base}/artifact.json")
-    provenance_entry = files.value.get(f"{base}/provenance.json")
     if manifest_entry is None:
         return _error(f"registry has no artifact package {identity.kind}/{identity.name}")
-    if provenance_entry is None:
-        return _error(
-            f"{identity.kind}/{identity.name} records no provenance, so it was not vendored; "
-            "refresh-native updates a native reference"
-        )
     manifest = parse_artifact_manifest(manifest_entry.content, path=f"{base}/artifact.json")
-    provenance = parse_provenance(provenance_entry.content, path=f"{base}/provenance.json")
     if isinstance(manifest, Err):
         return manifest
+    return read_vendored_package(files.value, base, manifest.value)
+
+
+def read_vendored_package(
+    files: dict[str, SnapshotEntry],
+    base: str,
+    manifest: ArtifactManifest,
+) -> Result[VendoredArtifactOrigin]:
+    """The same read from a package already located, for callers walking every artifact root.
+
+    `registry audit` visits packages by path rather than by identity, and a registry may declare
+    more than one artifact root; resolving the identity again would look only under the first.
+    """
+
+    provenance_entry = files.get(f"{base}/provenance.json")
+    if provenance_entry is None:
+        return _error(
+            f"{manifest.identity} records no provenance, so it was not vendored; "
+            "refresh-native updates a native reference"
+        )
+    provenance = parse_provenance(provenance_entry.content, path=f"{base}/provenance.json")
     if isinstance(provenance, Err):
         return provenance
     record = read_vendor_record(provenance.value)
@@ -656,7 +674,7 @@ def read_vendored_artifact(
             origin.path,
             origin.resolved_commit,
             origin.input_digest,
-            manifest.value,
+            manifest,
             record.value.authored,
         )
     )
@@ -770,6 +788,11 @@ def plan_artifact_revendor(
         None if manifest.setup is None else manifest.setup.recipe,
         () if manifest.setup is None else manifest.setup.platforms,
         tuple(authored),
+        (),
+        # The recorded licence is carried, not re-derived: it is the registry's own statement about
+        # what it publishes, and a re-vendor that silently dropped it would turn every upstream
+        # movement into an unlicensed copy.
+        license=manifest.license,
     )
     projected = project_vendored_package(
         taken.value,
@@ -1151,12 +1174,64 @@ def validate_registry_workspace(
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
 
 
+def _vendored_upstream_findings(
+    acquirer: NativeAcquirer,
+    vendored: VendoredArtifactOrigin,
+) -> tuple[Diagnostic, ...]:
+    """Report whether one vendored copy still matches upstream, and never guess when it cannot.
+
+    Read-only by construction: it resolves and compares, and no caller can turn the answer into a
+    write. An upstream that cannot be read is reported as unknown rather than as drift, because a
+    maintainer who has lost access to an origin has a different problem from one who is behind it,
+    and neither of them is told their copy is current (design §6).
+    """
+
+    identity = vendored.manifest.identity
+    acquired = acquirer(vendored.url, vendored.ref)
+    if isinstance(acquired, Err):
+        return (
+            _diagnostic(
+                f"vendored artifact upstream could not be read, so drift is unknown: {identity} "
+                f"({vendored.url} at {vendored.ref})",
+                warning=True,
+            ),
+        )
+    taken = take_subtree(acquired.value.snapshot, vendored.path)
+    if isinstance(taken, Err):
+        return (
+            _diagnostic(
+                f"vendored artifact is behind upstream: {identity} was taken from "
+                f"{vendored.path}, which {vendored.ref} no longer provides",
+                warning=True,
+            ),
+        )
+    if taken.value.input_digest == vendored.input_digest:
+        return ()
+    return (
+        _diagnostic(
+            f"vendored artifact is behind upstream: {identity} copies {vendored.path} at "
+            f"{vendored.recorded_commit[:12]}, and {vendored.ref} now resolves to "
+            f"{acquired.value.resolved_commit[:12]}",
+            warning=True,
+        ),
+    )
+
+
 def audit_registry_workspace(
     snapshot: SourceSnapshot,
     *,
     executable_version: SemVer,
     available_capabilities: tuple[Capability, ...],
+    upstream_acquirer: NativeAcquirer | None = None,
 ) -> Result[RegistryQualityReport]:
+    """Audit committed registry content, optionally resolving vendored origins.
+
+    `upstream_acquirer` is absent by default, which keeps the audit a pure function of the snapshot:
+    a command that silently reached the network would make every offline run a failure and every CI
+    run dependent on somebody else's uptime. A caller that wants the drift report supplies one, and
+    gets findings that report rather than refuse.
+    """
+
     parsed = _registry_inputs(snapshot)
     if isinstance(parsed, Err):
         return Ok(RegistryQualityReport((RegistryQualityCheck("audit", parsed.diagnostics),)))
@@ -1220,6 +1295,7 @@ def audit_registry_workspace(
         base = path.removesuffix("/artifact.json")
         provenance_path = f"{base}/provenance.json"
         provenance = files.value.get(provenance_path)
+        vendored: VendoredArtifactOrigin | None = None
         if provenance is None:
             diagnostics.append(
                 _diagnostic(
@@ -1233,13 +1309,29 @@ def audit_registry_workspace(
             parsed_provenance = parse_provenance(provenance.content, path=provenance_path)
             if isinstance(parsed_provenance, Err):
                 diagnostics.extend(parsed_provenance.diagnostics)
+            elif parsed_provenance.value.importer.id == VENDOR_IMPORTER_ID:
+                # A vendored package's own record of how the copy was made is checked against the
+                # options digest written with it, so a hand-edited `provenance.json` is an audit
+                # failure rather than the silent basis of the next re-vendor.
+                read = read_vendored_package(files.value, base, manifest.value)
+                if isinstance(read, Err):
+                    diagnostics.extend(read.diagnostics)
+                else:
+                    vendored = read.value
         if manifest.value.license is None:
             diagnostics.append(
                 _diagnostic(
-                    f"owned package has no declared license: {manifest.value.identity}",
+                    # Vendoring redistributes somebody else's work, so the omission is named as
+                    # what it is rather than folded into the generic finding (design §7).
+                    f"vendored artifact redistributes upstream bytes with no declared license: "
+                    f"{manifest.value.identity}"
+                    if vendored is not None
+                    else f"owned package has no declared license: {manifest.value.identity}",
                     warning=True,
                 )
             )
+        if vendored is not None and upstream_acquirer is not None:
+            diagnostics.extend(_vendored_upstream_findings(upstream_acquirer, vendored))
         if manifest.value.setup is not None:
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)

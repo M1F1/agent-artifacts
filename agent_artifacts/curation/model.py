@@ -69,6 +69,9 @@ class CurationRequest:
     # movement without a stated version is reported, never applied (design §4), and a default would
     # silently answer the one question the command exists to ask.
     artifact_version: str | None = "1.0.0"
+    # The licence the registry records for a vendored copy.  `None` means the maintainer did not
+    # state one, which is not the same as none existing: the taken subtree may settle it.
+    artifact_license: str | None = None
     profiles: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
     scopes: tuple[str, ...] = ("project",)
@@ -102,6 +105,7 @@ class CurationRequest:
                 for value in (
                     self.url,
                     self.path,
+                    self.artifact_license,
                     self.setup_recipe,
                     self.source_id,
                     self.display_name,
