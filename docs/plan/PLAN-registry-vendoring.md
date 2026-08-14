@@ -15,6 +15,15 @@ Sequenced by boundary. Every work package ends with stdlib/`unittest` coverage a
 `SI-9` names vendoring as the supported route for foreign content and would otherwise document a
 command that does not exist (design §8).
 
+**`VN-1` … `VN-3` are not glue.** The receiving half of vendoring already exists — the
+`provenance.json` format, its index projection, four baseline cross-check rules, the installer's
+credential-free-origin check, and a passing end-to-end test at
+`tests/canonical_install_planning_test.py:415`. That inventory (design §2, "What exists, and what
+this design has to build") makes the shape of the work easy to misjudge in the other direction: none
+of the *producing* half exists. Subtree extraction, package projection from foreign bytes, and the
+command itself are written from nothing. What the existing half buys is not implementation, it is
+scope — no format revision, no consumer change, and `2.0.0` reads the result.
+
 ## Guardrails
 
 - **Vendoring never claims safety.** No surface reports a vendored artifact as verified, trusted, or

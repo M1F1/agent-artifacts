@@ -59,12 +59,42 @@ Everything downstream of it is already wired:
   (`installation/application.py:1148`)
 
 So a vendored artifact is not a new kind of thing. **It is an owned package that carries
-`provenance.json`.** What is missing is the command that produces one from a repository that does
-not speak AART.
+`provenance.json`.**
 
-This is why the release is a minor and why the compatibility story is short: a registry containing
-vendored artifacts is a registry containing owned artifacts, readable by any AART that reads owned
-artifacts today.
+### What exists, and what this design has to build
+
+"The protocol already supports this" is easy to misread as "this is nearly done". It is not. What
+exists is the *receiving* half — everything that happens to a vendored artifact once one exists. What
+is missing is the *producing* half, and that is real implementation, not a CLI wrapper over working
+logic.
+
+| | Status | Where |
+|---|---|---|
+| **Receiving half** | | |
+| The `provenance.json` format and its parser | exists | `Provenance`, `protocol/native_models.py:117` |
+| Protocol text describing a canonical copy bound to an origin | exists | `docs/protocol/native-source-v1.md` |
+| Index projection of package provenance | exists | `index_artifact_from_package`, `protocol/registry_index.py:29` |
+| Security cross-check of package against index | exists | `_provenance_findings`, `security/baseline.py:525` |
+| Installer refusing non-credential-free provenance origins | exists | `installation/application.py:1148` |
+| End-to-end coverage of a package carrying provenance | exists | `tests/canonical_install_planning_test.py:415` |
+| **Producing half** | | |
+| Subtree extraction from an acquired snapshot, failing closed | to build | `VN-1` |
+| Package projection from foreign bytes + authored `artifact.json` | to build | `VN-2` |
+| `registry vendor`, review-first | to build | `VN-3` |
+| Assessment rendered in the review | to build | `VN-4` |
+| `registry revendor` and drift dispositions | to build | `VN-5` |
+| License capture and audit findings | to build | `VN-6` |
+
+The receiving half is a residue of the removed `aart upstream import` (§9), which did exactly this
+job over the GitHub REST API with a token in the environment. The producer was deleted; the format
+and every validation downstream of it were kept.
+
+Three consequences follow, and they are the reason this split is worth stating rather than glossing:
+
+1. **No protocol, schema, or format revision** — so `2.3.0` is a minor, not a major.
+2. **The consumer side needs no change at all**, and is already covered by tests.
+3. **Any AART from `2.0.0` reads a registry containing vendored artifacts**, because they are owned
+   packages.
 
 ## 3. What vendoring moves, and who becomes responsible
 
