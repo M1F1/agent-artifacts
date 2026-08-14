@@ -313,6 +313,20 @@ machine.
   the *details* of the new modules, but `restart.notice@1` genuinely runs nothing and saying so is
   not a fall-through. The test distinguishes the two rather than forcing prose onto a notice.
 
+### SBC-6
+
+- **The reference is also the first place the capability list is written down.** The plan asked for
+  the ten modules; the seven capabilities had the same problem — named in `_CAPABILITIES`, explained
+  nowhere a maintainer would look — so the coverage test asserts both, and neither can grow silently.
+- **The worked recipe is parsed, not just printed.** A documented example that no longer validates
+  is worse than no example, so the test extracts the JSON block out of the reference and feeds it to
+  the same parser a consumer uses.
+- **The tutorial gained the answer to a question it had been raising since `2.4.0`.** It tells a
+  maintainer that an `mcp` descriptor cannot launch a copied file, and until now the only answers
+  were "publish the server somewhere" or "vendor it as a skill instead". Building the payload into a
+  local image and starting *that* is the third, and it is the reason the derived tag has to be
+  predictable: the descriptor names the image before the image exists.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
