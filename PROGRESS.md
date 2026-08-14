@@ -4,13 +4,13 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.1.0`
-- **Execution status:** `2.1.0` closes the source subscription lifecycle on top of the released
-  `2.0.0` contract; both registries are published on that contract and need no re-authoring, and the
-  consumer project reconciles against them in CI
+- **Current code version:** `2.2.0`
+- **Execution status:** `2.2.0` answers live acceptance v2 on top of the released `2.0.0` contract —
+  nine of its thirteen residues closed; both registries are published on that contract and need no
+  re-authoring, and the consumer project reconciles against them in CI
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
-- **Last updated:** 2026-08-13
+- **Last updated:** 2026-08-14
 
 ## Live acceptance run
 
@@ -1812,3 +1812,32 @@ None.
   `2.0.0` ↔ `2.1.0` data roots interoperate in both directions with no migration, concurrent source
   operations are safe, and both new Sources actions drive correctly through the text front-end.
 - Still human-gated, unchanged: the curses passes and the MCP credential pass.
+
+### 2026-08-14 — subscription identity binding; 2.2.0 release contract
+
+- **`SI-1`..`SI-9` all landed**, closing nine of live acceptance v2's thirteen residues. Design and
+  plan in `docs/design/DESIGN-subscription-identity-binding.md` and
+  `docs/plan/PLAN-subscription-identity-binding.md`; each package's section records what the plan
+  did not anticipate, which is where the interesting part of this release is written down.
+- **The criticality finding `LAF-33` is closed by splitting one value in two.** An installation
+  record conflated the subscription it resolves through with the identity that subscription's origin
+  declared. Split apart, an intact subscription declaring a different identity is `identity-changed`,
+  and `marketplace update` rebinds the record in the project that owns it — never from the source
+  command, which cannot know which projects exist.
+- **Review-first now binds a decision rather than a process.** `--expect` was only possible once the
+  review digest stopped being a clock (`LAF-16`/`LAF-35`), which is why `SI-1` ran first.
+- **The remediation guard grew past `Diagnostic`.** Every user-visible `aart …` mention in the
+  package is parsed by the real CLI parser, and the compatibility tables' removal records are what
+  make a removed command legible to it — so a release document is part of a test gate.
+- **Two residues were closed by deleting litter rather than adding code:** teardown reclaims what it
+  emptied (`LAF-17`, failed by hand in both live acceptance runs), and the wheel reproduces from the
+  tagged commit rather than the build clock (`LAF-30`).
+- **Four residues are deliberately open**, each recorded against the package that will own it:
+  `marketplace status` under a removed sole subscription, a malformed `aart-registry.json` skipping
+  the identity comparison, no CLI surface reversing a completed setup, and a promoted artifact not
+  being a `requires` target — which `2.3.0` answers with `registry vendor`.
+- **Contract v10.** `schema-freeze-v10.json` carries protocol versions identical to v9 and differs in
+  two inputs, neither a parsed field: the text of a rendered command, and a protocol document
+  section stating a rule the compiler already enforced. No registry precondition.
+- Still human-gated, unchanged: the curses passes, the MCP credential pass, and the publication
+  itself.
