@@ -79,8 +79,10 @@ from agent_artifacts.registry_maintenance.vendoring import (
     VendorOptions,
     VendorOrigin,
     assess_vendored_package,
+    copy_integrity_message,
     project_vendored_package,
     read_vendor_record,
+    verify_vendored_copy,
 )
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
@@ -1080,9 +1082,15 @@ def validate_registry_workspace(
     if isinstance(parsed, Err):
         diagnostics.extend(parsed.diagnostics)
         return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
-    registry, _source, entries = parsed.value
+    registry, source, entries = parsed.value
     files = _files(snapshot)
     assert isinstance(files, Ok)
+    # A package that contradicts its own provenance is malformed, and this is where well-formedness
+    # is decided.  It costs no network: the copy is checked against the record it carries (VI-2).
+    vendored, unreadable = _vendored_packages(files.value, source)
+    diagnostics.extend(unreadable)
+    for package in vendored:
+        diagnostics.extend(vendored_copy_diagnostics(files.value, package))
     native = registry_native_content(
         snapshot,
         files.value,
@@ -1172,6 +1180,68 @@ def validate_registry_workspace(
         if parsed_index.collections != native.value[1]:
             diagnostics.append(_diagnostic("compiled index collections differ from source"))
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
+
+
+def vendored_copy_diagnostics(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> tuple[Diagnostic, ...]:
+    """Check one vendored copy against the origin it records (VI-2, design §4).
+
+    A pure function of the committed snapshot: no network, no store, and the same answer in
+    `validate`, in `audit`, and before a re-vendor. The mismatch is an error rather than a warning
+    because it is a defect in the registry, not a fact about the world like being behind upstream —
+    what this registry publishes is not what it says it publishes.
+    """
+
+    integrity = verify_vendored_copy(
+        files,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    if isinstance(integrity, Err):
+        return integrity.diagnostics
+    if integrity.value.matches:
+        return ()
+    return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
+
+
+def _vendored_packages(
+    files: dict[str, SnapshotEntry],
+    source: SourceManifest,
+) -> tuple[tuple[VendoredArtifactOrigin, ...], tuple[Diagnostic, ...]]:
+    """Every vendored package the snapshot declares, and what refused to be read as one."""
+
+    roots = tuple(f"{root}/" for root in source.artifact_roots)
+    packages: list[VendoredArtifactOrigin] = []
+    diagnostics: list[Diagnostic] = []
+    for path, item in sorted(files.items()):
+        if (
+            item.kind is not SnapshotEntryKind.FILE
+            or not path.endswith("/artifact.json")
+            or not any(path.startswith(root) for root in roots)
+        ):
+            continue
+        base = path.removesuffix("/artifact.json")
+        provenance = files.get(f"{base}/provenance.json")
+        if provenance is None or provenance.kind is not SnapshotEntryKind.FILE:
+            continue
+        parsed = parse_provenance(provenance.content, path=f"{base}/provenance.json")
+        if isinstance(parsed, Err) or parsed.value.importer.id != VENDOR_IMPORTER_ID:
+            # A provenance that does not parse is already reported by the checks that parse it, and
+            # one written by another importer describes a reference, which ships no bytes to verify.
+            continue
+        manifest = parse_artifact_manifest(item.content, path=path)
+        if isinstance(manifest, Err):
+            continue
+        read = read_vendored_package(files, base, manifest.value)
+        if isinstance(read, Err):
+            diagnostics.extend(read.diagnostics)
+            continue
+        packages.append(read.value)
+    return tuple(packages), tuple(diagnostics)
 
 
 def _vendored_upstream_findings(
@@ -1318,6 +1388,9 @@ def audit_registry_workspace(
                     diagnostics.extend(read.diagnostics)
                 else:
                     vendored = read.value
+                    # The copy against the record, before anything is said about upstream: a copy
+                    # that is not the copy cannot be discussed as current or behind (design §5).
+                    diagnostics.extend(vendored_copy_diagnostics(files.value, vendored))
         if manifest.value.license is None:
             diagnostics.append(
                 _diagnostic(

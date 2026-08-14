@@ -94,6 +94,27 @@ tampered registry still fails, which is the exact `LAF-41` reproduction; an owne
 provenance, a `promote-native` provenance, and a vendored package with a hand-edited `aart.vendor`
 each behave as they did on `2.3.0`.
 
+**What the plan did not anticipate:**
+
+- **Validate had no package walk to hook into.** `audit_registry_workspace` already visits every
+  `artifact.json` under the declared roots; `validate_registry_workspace` does not visit packages at
+  all — it reads the markers, the lock, and the index. `_vendored_packages` is that walk, written
+  once and used by validate, while audit calls the per-package check inside the loop it already has.
+  Two walks would have been two definitions of "a vendored package".
+- **Validate now reports a record it could not read, which audit already did.** A package whose
+  provenance names `registry-vendor-v1` but whose `aart.vendor` does not verify is refused by
+  validate on this release, having passed on `2.3.0`. It is the same defect audit named live
+  (`LA3-A-02`), and leaving validate silent about it would have left the hole open: tamper the
+  payload *and* the record, and the integrity check would never run. The compatibility note in
+  `VI-6` states it.
+- **Item 3's "one helper" is two.** `vendored_copy_diagnostics` takes one already-read package —
+  which is what audit has — and `_vendored_packages` finds them, which is what validate needs. One
+  function doing both would have forced audit to read every package twice and report the read
+  failures twice with it.
+- **Verified against the registries that produced the finding.** `registry validate` on the
+  reconstructed drift registry from the acceptance sandbox now fails, naming `mcp/mcp-git` and both
+  digests; the untouched registry beside it passes both gates unchanged.
+
 ## VI-3 — drift is measured against the bytes on disk
 
 **Files:** `agent_artifacts/registry_commands/planning.py`, `agent_artifacts/curation/runtime.py`
