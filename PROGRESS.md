@@ -9,14 +9,15 @@
   build context, `docker.build@1`, `trust-store.export-certificates@1` — and, after the live
   acceptance run showed the guided route had never run for *any* recipe beyond a keychain-only one,
   reconciles the two capability vocabularies so it does. Still the released `2.0.0` contract: no
-  command, field, or install effect changes, and both registries need no re-authoring, though a
-  registry should re-run `registry build`. The commit is prepared locally; tagging and publication
-  are the maintainer's
+  command, field, or install effect changes, and no registry needs re-authoring — but every registry
+  must re-run `registry build` and move the AART ref its CI pins, because a committed index now
+  validates under `2.5.0` or under `≤2.4.0` and never both. Released: tag `v2.5.0`, wheel
+  `sha256:a9a04ad4…`, all eleven release-check gates green against the rebuilt reference registry
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-14
 
-## Setup build context (`2.5.0`, complete — unpublished)
+## Setup build context (`2.5.0`, released)
 
 - **Design:** [docs/design/DESIGN-setup-build-context.md](docs/design/DESIGN-setup-build-context.md)
 - **Plan:** [docs/plan/PLAN-setup-build-context.md](docs/plan/PLAN-setup-build-context.md)
@@ -40,7 +41,8 @@
 | SBC-6 | The worked artifact, and the documentation that makes it copyable | done | Module reference, worked section, the three limits from design §9, and a test that every module in `_MODULES` is documented |
 | SBC-7 | Live acceptance: both routes, on a real machine | done | Both routes walked and diffed on a real daemon and a real keychain: [`PROGRESS-live-acceptance-setup-build.md`](docs/testing/PROGRESS-live-acceptance-setup-build.md). Ten findings (`LAF-51`..`LAF-60`) in five clusters; `LAF-51` makes the guided route unreachable as shipped and had to be worked around to observe anything else. Contents agree between routes; image identity does not |
 | SBC-9 | The guided route actually runs | done | One table decides what a recipe needs; the index publishes it and the consumer recomputes it, so the gate compares like with like. `LAF-51` closed and the acceptance scenarios re-walked unpatched; `LAF-56` and `LAF-60` fixed in the reference |
-| SBC-8 | The `2.5.0` release commit | done | Version `2.5.0`, contract v13: [compatibility](docs/release/compatibility-v13.md), [checklist](docs/release/release-checklist-v13.md), [notes](docs/release/github-release-v2.5.0.md), and a freeze that differs from v12 in one input and no protocol version. The matrix carries the two upgrade obligations — rebuild the index, do not publish a new-module artifact ahead of consumer upgrades — and the eight findings shipping open. **Not tagged, not pushed, not published: that is the maintainer's** |
+| SBC-8 | The `2.5.0` release commit | done | Version `2.5.0`, contract v13: [compatibility](docs/release/compatibility-v13.md), [checklist](docs/release/release-checklist-v13.md), [notes](docs/release/github-release-v2.5.0.md), and a freeze that differs from v12 in one input and no protocol version. The matrix carries the two upgrade obligations — rebuild the index, do not publish a new-module artifact ahead of consumer upgrades — and the eight findings shipping open. Published as [v2.5.0](https://github.com/M1F1/agent-artifacts/releases/tag/v2.5.0) from `b0b0253`, wheel `sha256:a9a04ad4…`, reproducible across two builds |
+| SBC-10 | The reference registry moves with the release | done | `release-check` failed three registry gates on the tag: a not-yet-rebuilt index disagrees with what `2.5.0` recomputes. Rebuilt on `2.5.0` and the CI pin moved with it ([registry#7](https://github.com/M1F1/agent-artifacts-registry/pull/7)); measured in both directions — the rebuilt index fails the same gate under `2.4.0` and `2.0.0`, and consumers are untouched either way. The upgrade note now says which side a registry is on ([#87](https://github.com/M1F1/agent-artifacts/pull/87)) |
 
 ## Live acceptance run
 
