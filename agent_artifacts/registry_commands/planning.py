@@ -76,6 +76,7 @@ from agent_artifacts.registry_maintenance.planning import (
 )
 from agent_artifacts.registry_maintenance.vendoring import (
     VENDOR_IMPORTER_ID,
+    CopyIntegrity,
     VendorOptions,
     VendorOrigin,
     assess_vendored_package,
@@ -745,11 +746,25 @@ def plan_artifact_revendor(
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
+    # The copy against its own record, before upstream is mentioned at all: a copy that is not the
+    # copy cannot be discussed as current or as behind, and re-vendoring it would overwrite a
+    # difference the maintainer has not seen yet (design §5).
+    integrity = verify_vendored_copy(
+        files.value,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    if isinstance(integrity, Err):
+        return integrity
+    if not integrity.value.matches:
+        return _error(copy_integrity_message(vendored.manifest.identity, integrity.value))
     taken = take_subtree(acquisition.snapshot, vendored.path)
     if isinstance(taken, Err):
         return taken
     added, changed, removed = _drift_counts(files.value, vendored, taken.value)
-    if taken.value.input_digest == vendored.input_digest:
+    if taken.value.input_digest == integrity.value.recomputed:
         return Ok(
             VendoredArtifactCheck(
                 NativeReferenceDisposition.UP_TO_DATE,
@@ -1208,6 +1223,47 @@ def vendored_copy_diagnostics(
     return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
 
 
+def verify_vendored_artifact(
+    snapshot: SourceSnapshot,
+    vendored: VendoredArtifactOrigin,
+) -> Result[CopyIntegrity]:
+    """The same check over a whole workspace, for a caller holding one artifact's record."""
+
+    files = _files(snapshot)
+    if isinstance(files, Err):
+        return files
+    return verify_vendored_copy(
+        files.value,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+
+
+def _shipped_digest(
+    files: dict[str, SnapshotEntry],
+    vendored: VendoredArtifactOrigin,
+) -> ObjectDigest:
+    """The digest of the bytes this registry actually ships (design §5).
+
+    Drift is a statement about the copy, not about the record: comparing upstream with
+    `origin.input_digest` answers for a package that may no longer exist. A copy that cannot be
+    reconstructed at all falls back to the recorded value, because that case is already an error in
+    the offline part of the same command and adding a second phrasing of it here would report one
+    defect twice.
+    """
+
+    integrity = verify_vendored_copy(
+        files,
+        vendored.base,
+        vendored.manifest.payload.root,
+        vendored.authored,
+        vendored.input_digest,
+    )
+    return vendored.input_digest if isinstance(integrity, Err) else integrity.value.recomputed
+
+
 def _vendored_packages(
     files: dict[str, SnapshotEntry],
     source: SourceManifest,
@@ -1246,6 +1302,7 @@ def _vendored_packages(
 
 def _vendored_upstream_findings(
     acquirer: NativeAcquirer,
+    files: dict[str, SnapshotEntry],
     vendored: VendoredArtifactOrigin,
 ) -> tuple[Diagnostic, ...]:
     """Report whether one vendored copy still matches upstream, and never guess when it cannot.
@@ -1257,6 +1314,7 @@ def _vendored_upstream_findings(
     """
 
     identity = vendored.manifest.identity
+    shipped = _shipped_digest(files, vendored)
     acquired = acquirer(vendored.url, vendored.ref)
     if isinstance(acquired, Err):
         return (
@@ -1275,7 +1333,7 @@ def _vendored_upstream_findings(
                 warning=True,
             ),
         )
-    if taken.value.input_digest == vendored.input_digest:
+    if taken.value.input_digest == shipped:
         return ()
     return (
         _diagnostic(
@@ -1404,7 +1462,9 @@ def audit_registry_workspace(
                 )
             )
         if vendored is not None and upstream_acquirer is not None:
-            diagnostics.extend(_vendored_upstream_findings(upstream_acquirer, vendored))
+            diagnostics.extend(
+                _vendored_upstream_findings(upstream_acquirer, files.value, vendored)
+            )
         if manifest.value.setup is not None:
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)

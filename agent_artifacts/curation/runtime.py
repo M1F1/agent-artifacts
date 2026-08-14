@@ -50,6 +50,7 @@ from agent_artifacts.registry_commands.planning import (
     audit_registry_workspace,
     plan_registry_format,
     validate_registry_workspace,
+    verify_vendored_artifact,
 )
 from agent_artifacts.registry_maintenance.model import (
     NativeAcquirer,
@@ -68,7 +69,11 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
-from agent_artifacts.registry_maintenance.vendoring import LicenseFinding, VendorOptions
+from agent_artifacts.registry_maintenance.vendoring import (
+    LicenseFinding,
+    VendorOptions,
+    copy_integrity_message,
+)
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
 from agent_artifacts.security.model import AssessmentStatus, SecurityAssessment
 from agent_artifacts.sources.git import acquire_git_snapshot
@@ -655,6 +660,16 @@ class LocalCurationService:
         ]
         if checked.resolved_commit is not None:
             details.append(f"resolved commit: {checked.resolved_commit}")
+        if checked.disposition is NativeReferenceDisposition.UP_TO_DATE:
+            # Two differing commits under `up-to-date` is the *normal* result of vendoring one
+            # directory out of a monorepo, and it reads as a contradiction.  The line that
+            # reconciles them is printed where they are, not left in a docstring (`LAF-42`).
+            details.append(
+                "the ref has not moved since this copy was taken"
+                if checked.resolved_commit == checked.recorded_commit
+                else f"the ref moved, and nothing under {vendored.path} changed; "
+                "the copy stays pinned to the recorded commit"
+            )
         if checked.disposition is NativeReferenceDisposition.CHANGED:
             details.extend(
                 (
@@ -690,6 +705,34 @@ class LocalCurationService:
             if isinstance(parsed, Err):
                 return parsed
             version = parsed.value
+        integrity = verify_vendored_artifact(current.value, vendored.value)
+        if isinstance(integrity, Err):
+            return integrity
+        if not integrity.value.matches:
+            # Before the network, deliberately: nothing upstream says can make this copy the copy
+            # its provenance describes, and re-vendoring over the difference would erase evidence
+            # the maintainer has not seen yet (design §5).
+            return self._informational_review(
+                request,
+                current.value,
+                (
+                    CurationCheck(
+                        "vendor-copy-integrity",
+                        False,
+                        (
+                            f"recorded: {integrity.value.recorded}",
+                            f"copy: {integrity.value.recomputed}",
+                            f"copied payload files: {integrity.value.files}",
+                            copy_integrity_message(identity, integrity.value),
+                        ),
+                    ),
+                ),
+                (
+                    "The copy no longer matches the origin it records; upstream was not contacted.",
+                    "Nothing was written, and no drift was computed: a copy that is not the copy "
+                    "cannot be reported as current or as behind.",
+                ),
+            )
         acquired = self.native_acquirer(vendored.value.url, vendored.value.ref)
         if isinstance(acquired, Err):
             # An upstream that cannot be read is a disposition, not a crash: the maintainer needs to

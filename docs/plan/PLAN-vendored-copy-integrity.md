@@ -137,6 +137,29 @@ attempted; upstream unchanged and copy unchanged still reports `up-to-date`; ups
 `changed` with counts; an `up-to-date` result whose resolved commit differs from the recorded one
 carries the reconciling line, and one whose commits agree does not; `unreachable` is unaffected.
 
+**What the plan did not anticipate:**
+
+- **The check is in both places, and that is not redundancy.** Item 3 puts it in the runtime, before
+  the network; item 1 puts it in `plan_artifact_revendor`, which is a library boundary any caller
+  can reach with a snapshot and a record. The runtime's copy exists for the *report* — a failing
+  check with both digests, the shape `unreachable` already uses — and the planner's exists so the
+  rule cannot be skipped by a caller that does not know about it.
+- **A "matching" case still has two digests, and the comparison uses the recomputed one.** For a
+  healthy copy `recorded == recomputed`, so item 1 reads like a no-op. It is not: the point is that
+  the drift answer no longer *depends* on the record being true, and it is written as
+  `taken.input_digest == integrity.recomputed` so a future edit cannot quietly restore the old
+  reading.
+- **The third case of item 4 was already covered, so there are two new lines, not three.** `changed`
+  already prints its counts, which reconcile the commits by themselves. What was missing was the
+  `up-to-date` pair: one line for a ref that has not moved, one for a ref that moved over content
+  the subtree does not contain.
+- **`--yes` on a mismatched copy reports `failed` and writes nothing**, because the review is
+  read-only and a read-only review with a failing check is a failed outcome. That fell out of the
+  `unreachable` shape rather than needing new plumbing, and a test pins it.
+- **Verified against the acceptance sandbox.** `revendor --check` on the reconstructed drift registry
+  now fails with `vendor-copy-integrity` and never contacts GitHub; the healthy registry beside it
+  reports `up-to-date` with `the ref has not moved since this copy was taken` under the two commits.
+
 ## VI-4 — the review says what a consumer will receive
 
 **Files:** `agent_artifacts/registry_maintenance/vendoring.py`,
