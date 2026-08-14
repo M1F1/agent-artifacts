@@ -14,9 +14,16 @@ caller processing a basket can preserve one terminal result per item even when a
 conflicts or fails.
 
 Terminal statuses are explicit: `current`, `update-available`, `changed`, `removed`,
-`removed-upstream`, `source-unavailable`, `missing`, `drifted`, `broken`, `retargeted`, `replaced`,
-`conflict`, `failed`, and `skipped`. A zero-change selection is represented by current/missing/
-source outcomes rather than an ambiguous successful return.
+`removed-upstream`, `source-unavailable`, `identity-changed`, `missing`, `drifted`, `broken`,
+`retargeted`, `replaced`, `conflict`, `failed`, and `skipped`. A zero-change selection is represented
+by current/missing/source outcomes rather than an ambiguous successful return.
+
+`source-unavailable` and `identity-changed` divide what used to be one status. The recorded
+subscription — alias, kind, origin, ref — is what resolution follows; the source identity the origin
+declares is evidence carried inside it. A subscription that is gone, disabled, unhealthy, or now
+points somewhere else is `source-unavailable`. A subscription that is intact while its origin
+declares a different identity than the installation was made under is `identity-changed`, and
+`update` acts on it: the review states both identities and finalizing rebinds the record.
 
 ## Status and check do not fetch
 

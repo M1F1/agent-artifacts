@@ -30,6 +30,7 @@ _ARTIFACT_OUTCOMES = frozenset(
         "removed",
         "removed-upstream",
         "source-unavailable",
+        "identity-changed",
         "missing",
         "drifted",
         "broken",

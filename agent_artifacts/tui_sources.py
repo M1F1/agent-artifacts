@@ -830,8 +830,12 @@ def render_source_resubscription_review(request: SourceResubscriptionRequest) ->
         f"  preserves: alias, kind, origin{ref and ', ref'}, and the default-registry flag",
         "  effect: publish the new snapshot and bind this alias to it",
         "  keeps: every installed artifact and every file in every project",
-        "  note: installed artifacts are not re-installed; they surface as update-available or "
-        "removed-upstream through the normal reconciliation",
+        # The precise statuses matter: this note is the promise `LAF-33` proved false, and it is
+        # only true because reconciliation now names an adopted identity change instead of
+        # reporting those installations as permanently source-unavailable.
+        "  note: installed artifacts are not re-installed; they surface as identity-changed, "
+        "update-available, or removed-upstream through the normal reconciliation, and "
+        "`aart marketplace update` in each project rebinds them",
     )
 
 

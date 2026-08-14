@@ -31,6 +31,7 @@ _TERMINAL_STATUSES = frozenset(
         "removed",
         "removed-upstream",
         "source-unavailable",
+        "identity-changed",
         "missing",
         "drifted",
         "broken",
@@ -150,6 +151,11 @@ class ConsumerReviewItem:
     setup: ConsumerSetupDeclaration | None
     plan_digest: ObjectDigest
     plan: ConsumerPlan
+    # ``<installed-under>:<now-declared>`` when finalizing this item rebinds the record to a new
+    # source identity, ``None`` otherwise.  Unlike source freshness this belongs *inside* the digest:
+    # it is a property of the plan, not a clock reading, and an operator who authorized a rebinding
+    # from A to B must not have a rebinding from A to C applied under the same consent.
+    identity_transition: str | None = None
 
     def __post_init__(self) -> None:
         expected_key = f"{self.coordinate}#{self.profile}/{self.scope}"
@@ -208,6 +214,7 @@ def _review_value(review: ConsumerReview) -> JsonObject:
                                     "setup_recipe",
                                     None if item.setup is None else item.setup.recipe,
                                 ),
+                                ("identity_transition", item.identity_transition),
                             )
                         )
                         for item in review.items
@@ -369,6 +376,13 @@ def render_consumer_review(review: ConsumerReview) -> tuple[str, ...]:
             f"    digests: manifest={item.manifest_digest}; object={item.object_digest}",
             f"    actual modes: {modes}",
         )
+        if item.identity_transition is not None:
+            installed_under, now_declares = item.identity_transition.split(":", 1)
+            lines += (
+                f"    source identity: installed under {installed_under}; "
+                f"the subscription now declares {now_declares}",
+                "    finalizing rebinds this installation record to the new identity",
+            )
         lines += tuple(f"    destination: {effect.destination}" for effect in item.effects)
         if item.setup is not None:
             lines += (

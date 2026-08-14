@@ -56,7 +56,11 @@ def _unwrap(result):
 class _Environment:
     """A real, isolated home/project/XDG environment with one synchronized local source."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, source_location: Path | None = None) -> None:
+        # ``source_location`` defaults to the shared read-only fixture.  Tests that need to mutate
+        # what the source publishes — a new identity, a withdrawn artifact — pass a writable copy;
+        # the fixture itself is never written to.
+        self.source_location = (source_location or _FIXTURE).resolve()
         self.root = root
         self.home = root / "home"
         self.project = root / "project"
@@ -81,7 +85,7 @@ class _Environment:
         self.source = ConfiguredSource(
             SourceAlias("reference"),
             SourceKind.SOURCE_LOCAL,
-            str(_FIXTURE.resolve()),
+            str(self.source_location),
             None,
             True,
         )
@@ -142,9 +146,9 @@ class _Environment:
 
 
 @contextlib.contextmanager
-def _environment():
+def _environment(source_location: Path | None = None):
     with tempfile.TemporaryDirectory() as raw:
-        yield _Environment(Path(raw).resolve())
+        yield _Environment(Path(raw).resolve(), source_location)
 
 
 class LifecycleCopyE2ETest(unittest.TestCase):

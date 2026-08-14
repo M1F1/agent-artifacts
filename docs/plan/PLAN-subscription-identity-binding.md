@@ -98,6 +98,31 @@ reconciliation status.
 reports `identity-changed`, review states both identities and changes nothing, `--yes` rebinds and
 the next `status` is `current`; nothing under the project changed during the `resubscribe` itself.
 
+**What the plan did not anticipate:**
+
+- **The review needed a new field, and it belongs in the digest.** "The review states both
+  identities" cannot be rendered from a `ConsumerReviewItem`, which carries no source identity at
+  all. `identity_transition` (`<installed-under>:<now-declared>`, `None` otherwise) is now a field on
+  the item and a member of `_review_value`. That is the opposite of SI-1's decision about freshness,
+  and deliberately so: freshness is a clock reading, a rebinding is a property of the plan. Inside
+  the digest, `--expect` protects it — consent read for a rebinding to `B` cannot apply a rebinding
+  to `C`. Additive to the review payload; `schema_version` stays 1.
+- **Finalize's prune precondition keeps the identity comparison.** Splitting
+  `_recorded_source_current` would otherwise have loosened it. A prune is reviewed as "the source
+  under identity X no longer publishes this artifact", so an identity change between Review and
+  Finalize invalidates that evidence exactly as a vanished subscription does. The call site now
+  spells out both halves.
+- **The resubscription review's note was the thing `LAF-33` falsified**, so it is rewritten here
+  rather than left for SI-6: it now names `identity-changed` and the command that acts on it.
+
+**Recorded residue, not fixed here:** `marketplace status` in a project whose *only* subscription was
+removed refuses with `no-source-configured` instead of reporting `source-unavailable` for its
+installations. SI-3 exempted uninstall from that gate because design §3 names uninstall; whether
+`status` — which is fully local and fetches nothing — is a content operation at all is a decision the
+design does not take, and taking it silently inside SI-4 would be wrong. It is visible in
+`tests/identity_change_reconciliation_test.py`, which keeps a second subscription alive to work
+around it.
+
 **Exit:** design §2 and the criticality finding `LAF-33`. Depends on SI-3 for the vocabulary.
 
 ## SI-5 — the consumer checks the identity agreement

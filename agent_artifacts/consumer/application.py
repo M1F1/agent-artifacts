@@ -361,6 +361,13 @@ def _review_item(
         assert isinstance(plan, (UpdatePlan, UninstallPlan))
         plan_digest = plan.review_digest
     security_status, installation_risk = _security(exact_coordinate, context.security)
+    # Only an update can rebind: install has no prior record, and uninstall builds no new one.
+    identity_transition = None
+    if record is not None and install is not None:
+        installed_under = record.source.declared_id
+        now_declares = install.source.declared_id
+        if installed_under != now_declares:
+            identity_transition = f"{installed_under}:{now_declares}"
     return ConsumerReviewItem(
         f"{exact_coordinate}#{profile}/{scope}",
         exact_coordinate,
@@ -378,6 +385,7 @@ def _review_item(
         _setup(item),
         plan_digest,
         plan,
+        identity_transition,
     )
 
 

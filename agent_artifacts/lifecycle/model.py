@@ -35,6 +35,7 @@ class LifecycleStatus(str, Enum):
     REMOVED = "removed"
     REMOVED_UPSTREAM = "removed-upstream"
     SOURCE_UNAVAILABLE = "source-unavailable"
+    IDENTITY_CHANGED = "identity-changed"
     MISSING = "missing"
     DRIFTED = "drifted"
     BROKEN = "broken"
