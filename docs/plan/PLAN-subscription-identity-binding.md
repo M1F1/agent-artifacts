@@ -152,7 +152,11 @@ digests, not member contents, so a regression cannot pass by being "content-iden
 
 1. State the rule in the protocol document: `requires` resolves inside one registry, deliberately,
    because a cross-registry dependency breaks when a maintainer who does not own the artifact changes
-   their own registry. Name vendoring as the supported way to depend on foreign content.
+   their own registry. Name the two routes that exist **in this release** for depending on foreign
+   content: own it here (`registry scaffold`) or reference it here (`registry promote-native`).
+   Do not name vendoring — [`PLAN-registry-vendoring.md`](PLAN-registry-vendoring.md) adds it in
+   `2.3.0`, and `VN-8` revises this same protocol text once the command exists. Documenting a route
+   before it ships is the defect shape this project files against itself.
 2. Say the same in one line of `registry` help.
 3. Change the build refusal from `skill/x requires missing skill/y` — which reads as "not published
    yet" — to a diagnostic that says the dependency must live in this registry, with remediation
