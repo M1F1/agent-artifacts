@@ -37,7 +37,7 @@
 | SBC-4 | A Dockerfile is assessed | done | `_text_like` currently skips a file named `Dockerfile` entirely — AART would execute bytes the baseline never read |
 | SBC-5 | The review says what a build does | done | Neither module may fall through to the generic effect line; the manual alternative still renders before consent |
 | SBC-6 | The worked artifact, and the documentation that makes it copyable | done | Module reference, worked section, the three limits from design §9, and a test that every module in `_MODULES` is documented |
-| SBC-7 | Live acceptance: both routes, on a real machine | not started | **Completion condition for the plan.** Route A guided, route B by hand from `SETUP.md`, then compared: same tag, image, keychain entry, shell block, `.mcp.json`. Dummy API token under a rehearsal-only service; synthetic CA by default, real company CA only as a separately approved pass; the agent types no secret |
+| SBC-7 | Live acceptance: both routes, on a real machine | done | Both routes walked and diffed on a real daemon and a real keychain: [`PROGRESS-live-acceptance-setup-build.md`](docs/testing/PROGRESS-live-acceptance-setup-build.md). Ten findings (`LAF-51`..`LAF-60`) in five clusters; `LAF-51` makes the guided route unreachable as shipped and had to be worked around to observe anything else. Contents agree between routes; image identity does not |
 | SBC-8 | The `2.5.0` release commit | not started | Contract v13; publication is the maintainer's |
 
 ## Live acceptance run

@@ -327,6 +327,32 @@ machine.
   local image and starting *that* is the third, and it is the reason the derived tag has to be
   predictable: the descriptor names the image before the image exists.
 
+### SBC-7
+
+- **The guided route had never been run end to end, by anyone.** `LAF-51`: the registry publishes a
+  recipe's *declared* capabilities and the consumer compares them against the *policy* vocabulary it
+  recomputes, so setup planning refuses every recipe that touches a file or a container. The plan
+  assumed the acceptance run would test this package's modules; the first thing it tested was whether
+  the setup engine can be reached at all, and it cannot. Every scenario after `LAB-A-01` ran against a
+  one-clause patch applied to the installed wheel, never to the repository.
+- **The review the plan spent `SBC-5` on is not printed by any CLI path.** `LAF-54`. The tests
+  asserted what `render_setup_review` *contains*; none asserted that a consumer ever sees it. A
+  review that exists only in `--json` is not consent.
+- **"Rolled back" is not a thing a consumer can ask for.** Plan step 4 says a rolled-back route A
+  leaves no tag, no keychain entry and no shell block. There is no such command: rollback happens
+  only inside a failing run, `marketplace uninstall` reports `setup skipped`, and every effect's
+  review line promises otherwise (`LAF-53`). The step could not be executed as written, and the
+  finding is the answer to it.
+- **The manual route breaks on its first command.** `LAF-56`: `cp -R` of a package out of the object
+  store copies its read-only modes, so the certificate cannot be written into the context. The
+  reference prescribes exactly that command. Route B existed on paper through three releases.
+- **Equivalence is about state, not about digests.** `LAF-57`: the two routes produce byte-identical
+  image *contents* and different image *ids* — mode bits, mtimes, and the hand build's attestation
+  manifest. Worth saying out loud before someone pins a built image by digest.
+- **A secret nobody types is stored as an empty string, successfully.** `LAF-55`. The guardrail that
+  kept the agent from typing a credential turned into the finding: any unattended install produces a
+  configured artifact with an empty token.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
