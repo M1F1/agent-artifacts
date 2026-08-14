@@ -234,6 +234,46 @@ family; the stale-lock message states the age.
 **Tests:** clean checkout → install → uninstall everything → `git status --porcelain` is empty; a
 pre-existing `.claude/skills` with foreign content survives.
 
+**What the plan did not anticipate:**
+
+- **Two lifetimes, not one.** "When the last installation for a scope is removed, remove … any
+  profile directories the install created and left empty" reads as one event, and taken literally it
+  closes only half of `LAF-17`: the *last* record's uninstall knows its own destinations and nothing
+  about the ones earlier uninstalls emptied, so a project holding a skill and a memory artifact
+  keeps an empty `.claude/skills` forever — the skill went first, and the memory record cannot name
+  it. Directories are therefore reclaimed by every uninstall, for the record it removes; the
+  manifest and its lock, which belong to the scope rather than to any record, are reclaimed only
+  when the last record leaves. `ScopeTeardown.reclaims_state` is the distinction.
+- **The harness root is never reclaimed.** `.claude` is the agent's own directory: it is shared with
+  the harness, and no installation record proves an install created it. `.claude/skills` and
+  `.tabnine/agent/skills` go, `.claude` and `.tabnine` stay. An empty harness root is invisible to
+  Git, so the run's assertion holds either way — this is a refusal to invent evidence, not a
+  shortcut.
+- **`rmdir` is the "never remove a non-empty directory" guard, not a check in front of one.** A
+  stat-then-remove would race a concurrent install; a bare `rmdir` refuses a non-empty directory
+  atomically, and refusing is the wanted outcome. The same rule then answered the user scope for
+  free: `<data-root>/state` also holds `object-references.json`, so it survives while its manifest
+  and lock go. That asymmetry with the project scope is the guard working, and is documented rather
+  than special-cased.
+- **Teardown cannot fail a proven uninstall.** It runs inside the scope lock, after the effects and
+  the replacement state have been applied and read back. Rolling a correct removal back because
+  litter could not be cleared would trade a correct result for an incorrect one, so what it cannot
+  reclaim is reported in the item's detail instead.
+- **The lock file is removed while its own lock is held.** The descriptor outlives the unlink, so
+  the exclusion this uninstall holds outlives the path; anything arriving afterwards finds no scope
+  and creates one from nothing. The alternative — release, then re-acquire to clean up — opens a
+  window in which a concurrent install's fresh manifest could be deleted.
+- **The teardown is not in the review digest.** It is a deterministic function of the record, the
+  scope roots, and the replacement state, all of which the digest already binds, and it renders
+  nothing new to the operator. Adding it would move every uninstall digest without changing what
+  `--expect` protects.
+
+**Recorded residue, not fixed here:** the last uninstall of a *merge* effect leaves the merge file
+behind — `.mcp.json` reduced to `{"mcpServers": {}}`, `CLAUDE.md` emptied of its managed block. That
+file is in the worktree the operator owns and may have been theirs before the install; deciding when
+AART may delete it is a different question from reclaiming AART's own directories, and
+`tests/canonical_lifecycle_test.py` pins the current behaviour for foreign keys.
+
 **Exit:** v1 `LAF-17`, unresolved across two runs.
 
 ## SI-8 — the published wheel is byte-reproducible

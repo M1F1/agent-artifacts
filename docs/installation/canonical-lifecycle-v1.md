@@ -85,6 +85,22 @@ object reference owner. Every mutation is read back before the next phase. A fil
 reference failure compensates changed effects and state and verifies the restoration; project and
 user state/reference owners remain isolated.
 
+## Teardown
+
+A proven uninstall also reclaims what it emptied, so a checkout that was clean before an install is
+clean again after removing everything:
+
+- each uninstall removes the harness directories its own effects emptied — `.claude/skills` once the
+  last skill under it is gone — while a directory holding anything else is left exactly as it is;
+- the harness root itself (`.claude`, `.tabnine`) is never removed: it is shared with the agent, and
+  no record proves an install created it; and
+- the uninstall that removes the last record in a scope also removes that scope's manifest, its
+  lock, and their directory when nothing else remains in it. The user scope keeps its state
+  directory, which it shares with the object-reference index.
+
+Teardown runs inside the scope lock, after the removal it belongs to has been proven. It cannot fail
+that removal: anything it cannot reclaim is reported in the item's detail and left in place.
+
 ## Merge identity evidence
 
 New canonical installs store immutable `identity_evidence` beside its matching `identity_digest` for

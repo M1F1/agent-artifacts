@@ -57,6 +57,7 @@ from .model import (
     UpdatePlan,
     absolute_effect_path,
     reference_owner,
+    scope_teardown,
     select_installations,
 )
 
@@ -684,6 +685,21 @@ def prepare_uninstall(
     replacement_state = InstallState(
         2, tuple(item for item in state.installations if item.key != record.key)
     )
+    # An uninstall reclaims the harness directories its own payload emptied; the last record out of
+    # a scope also takes the scope's own files with it. Both are the install's litter rather than
+    # the operator's state (LAF-17).
+    teardown = (
+        None
+        if conflicts
+        else scope_teardown(
+            record,
+            tuple(operations),
+            paths.destination_path,
+            paths.lock_path,
+            location,
+            reclaims_state=not replacement_state.installations,
+        )
+    )
     placeholder = sha256_bytes(b"unreviewed-uninstall-plan")
     try:
         return Ok(
@@ -703,6 +719,7 @@ def prepare_uninstall(
                 LifecycleStatus.CONFLICT if conflicts else None,
                 "; ".join(conflicts),
                 placeholder,
+                teardown,
             )
         )
     except ValueError as error:
