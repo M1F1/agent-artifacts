@@ -289,6 +289,33 @@ AART may delete it is a different question from reclaiming AART's own directorie
 the assertion the run's `LAF-30` probe failed by hand. A packaging test compares whole-archive
 digests, not member contents, so a regression cannot pass by being "content-identical".
 
+**What the plan did not anticipate:**
+
+- **The build cannot ask git for the date.** `scripts/packaging_check.py` builds from a throwaway
+  copy holding `agent_artifacts/`, `pyproject.toml`, `README.md` and the builder alone — no `.git`
+  — and that copy is the gate. The date therefore has to travel inside the source: `inject_commit.py`
+  now stamps `COMMIT_EPOCH` beside `COMMIT`, and the builder reads it out of `_commit.py` by regex
+  rather than importing the package it is packaging. An unstamped source (editable checkout, or that
+  copy) builds at the zip floor `1980-01-01T00:00:00Z`, so dev builds are reproducible too instead of
+  falling back to the clock.
+- **Timestamps were not the only thing varying with the machine.** `ZipFile.writestr(str, …)`
+  also derives `create_system` from `sys.platform` — 0 on Windows, 3 elsewhere — and takes its mode
+  from a zipfile default. Both are now written explicitly, along with compression and member order,
+  which is what "pin the archive so nothing else varies" turned out to require. Permissions stay at
+  the `0o600` zipfile always wrote: this package makes the wheel reproducible, it does not change
+  what it installs.
+- **`SOURCE_DATE_EPOCH` is deliberately not honoured.** It is the ecosystem's usual lever and it is
+  exactly what this package is removing: an environment variable that silently changes the published
+  bytes. The commit stamp is the single source of the date, and the refusal to read the environment
+  is stated in the builder's docstring and in `docs/release/wheel-reproducibility-v1.md`.
+- **The digest cannot be committed to the repository it describes.** It is a function of the tagged
+  commit, and the stamp inside the wheel is that commit's sha, so writing the digest into a tracked
+  file changes the commit that determines it. Item 2 is therefore a command —
+  `python scripts/release.py wheel-digest`, which stamps `HEAD` into a throwaway copy, builds, and
+  prints `sha256:<hex>  <wheel>` — plus `docs/release/wheel-reproducibility-v1.md`, which states the
+  promise, what is pinned, and how a verifier compares. Publishing the printed line beside the
+  release artifact is a checklist step from v10 onward, and the `2.2.0` release commit carries it.
+
 **Exit:** design §7.1. Independent of everything else.
 
 ## SI-9 — `requires` is intra-registry, and says so
