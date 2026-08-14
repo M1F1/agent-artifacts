@@ -24,6 +24,7 @@ registry should re-run `registry build`. The case is under *Upgrade notes*.
 | Setup recipe | v2 only | **two modules and one capability added**; no field, no version | setup parser and canonical setup tests |
 | Setup receipts | unchanged shape | two module receipts added | setup runtime tests |
 | Index setup evidence | unchanged shape | **capabilities now name what the steps need, not what the author declared** | index and vocabulary tests |
+| Registry maintainer gates | unchanged commands | **a committed index is valid under `2.5.0` or under `≤2.4.0`, not both** | registry validate/build gates |
 | Reporting | v1 | none | reporting tests |
 | Security assessment | v1, ruleset `baseline-v1.1` | **build files are read**; two rules added | security tests |
 | Install effects | unchanged | none | installation tests |
@@ -97,13 +98,28 @@ tabulated in [`setup-recipe-v2.md`](../protocol/setup-recipe-v2.md).
 
 ## Upgrade notes
 
-1. **Rebuild the registry index.** An index compiled by `2.4.0` or earlier carries declared-vocabulary
-   capabilities. A `2.5.0` consumer reading it refuses that artifact's setup with `compiled setup
-   recipe, platform, or capability evidence does not match the object` — which is exactly what it
-   did before the upgrade, for the same artifacts, so nothing that worked stops working. A
-   keychain-only recipe is unaffected either way, because both vocabularies agree there.
-   `aart registry build --source . --yes` on `2.5.0` republishes it, and setup then plans for
-   recipes that never could: `docker.pull@1`, `command.verify@1`, and every managed-file module.
+1. **Rebuild the registry index, and move the AART pin that validates it.** An index compiled by
+   `2.4.0` or earlier carries declared-vocabulary capabilities.
+   `aart registry build --source . --yes` on `2.5.0` republishes it, and setup then plans for recipes
+   that never could: `docker.pull@1`, `command.verify@1`, and every managed-file module. Two
+   consequences, and they differ by audience:
+
+   - **A registry maintainer must rebuild, and cannot straddle.** `registry validate --strict
+     --frozen` on `2.5.0` fails a not-yet-rebuilt index with `compiled index disagrees with owned
+     package <identity>` for every artifact whose recipe needs more than `keychain` — a registry that
+     passed on `2.4.0` fails here. Rebuilding fixes that and inverts it: the rebuilt index fails the
+     same check under `2.4.0` and under `2.0.0`. **A committed index is valid under one side or the
+     other, never both.** If your registry CI pins an AART ref, the rebuild and the pin must move in
+     one change.
+   - **A consumer is unaffected in both directions**, because a consumer recompiles the index from
+     the source snapshot rather than trusting the committed one. Verified: a `2.4.0` consumer adds a
+     `2.5.0`-rebuilt registry, syncs, lists every artifact `healthy`, and installs one — reaching the
+     same `Setup: planned=0, failures=1` it always reached on `2.4.0`. And a `2.5.0` consumer reading
+     a stale index refuses that artifact's *setup* with `compiled setup recipe, platform, or
+     capability evidence does not match the object`, which is exactly what it did before the upgrade,
+     for the same artifacts. Nothing that worked stops working for anyone installing artifacts.
+
+   A keychain-only recipe is unaffected everywhere, because both vocabularies agree there.
 2. **Publishing an artifact that uses the new modules withholds the whole registry from older
    consumers.** A recipe is parsed while a source snapshot is validated, before any artifact-level
    bound is read, so a `requires_aart` floor does not protect anyone. On `2.4.0`, `source add`

@@ -59,9 +59,11 @@ any before it, and that fix is the *Fixed* entry below.
   `docker-build`) and required equality. Both vocabularies remain, because they say different things;
   one function now decides what a recipe's steps need, the index publishes that, the consumer
   recomputes it from the same bytes, and the gate detects a tampered index instead of refusing
-  everything. Pre-existing in every release that had the check. **A registry should re-run
-  `registry build` on `2.5.0`**; nothing that worked stops working, because the affected artifacts
-  were the ones already being refused.
+  everything. Pre-existing in every release that had the check. **A registry must re-run
+  `registry build` on `2.5.0` and move the AART ref its CI pins in the same change**: a committed
+  index passes `registry validate --strict --frozen` under `2.5.0` or under `≤2.4.0` and never both.
+  Consumers are unaffected in both directions, because a consumer recompiles the index from the
+  source snapshot rather than trusting the committed one.
 
 ### Changed
 
