@@ -169,6 +169,40 @@ two routes are equivalent rather than merely both documented.
 **Exit condition:** both routes complete, the comparison in step 3 holds or every difference is filed,
 and the ledger records the failure paths from step 5 with their transcripts.
 
+## SBC-9 — the guided route actually runs · **added after `SBC-7`**
+
+`SBC-7` found that no recipe beyond a keychain-only one can be planned at all (`LAF-51`), which makes
+every module this plan added unreachable through any supported path. This package is what makes the
+release worth preparing; the remaining clusters stay recorded as residues.
+
+**Files:** `agent_artifacts/setup.py`, `agent_artifacts/setup_engine/application.py`,
+`agent_artifacts/protocol/registry_index.py`, `docs/protocol/setup-recipe-v2.md`,
+`docs/configuration/config-policy-v1.md`, `tests/setup_capability_vocabulary_test.py`,
+`docs/testing/PROGRESS-live-acceptance-setup-build.md`
+
+1. **One function decides what a recipe needs.** The step→capability mapping moves into
+   `agent_artifacts/setup.py` as `planned_capabilities`, and both the index compiler and the consumer
+   call it. The index stops publishing the author's declared list and publishes what the steps
+   actually need — the vocabulary policy already speaks (`allowed_setup_capabilities`), so an
+   organization can deny `docker-build` from the index alone, which was the point of publishing
+   capability evidence in the first place.
+2. **The gate stays, and starts meaning something.** `_prepare_setup_plan` still requires the
+   compiled evidence to equal the recomputed plan; with both sides in one vocabulary it now detects a
+   tampered index instead of refusing every artifact.
+3. **A test that would have caught it.** For a recipe using every module, the capabilities the index
+   publishes equal the capabilities the consumer recomputes. The two vocabularies are also asserted to
+   be *different*, so the next person reads why the bridge exists rather than deleting it.
+4. **The two documentation findings land here** because they are the same mistake as `LAF-51` —
+   something written down that nobody executed. `LAF-56`: the manual build needs `chmod -R u+w`,
+   because a consumer's package is read-only in the object store. `LAF-60`: an older executable
+   refuses the *whole source*, and the `requires_aart` floor is never consulted, so the reference must
+   say what actually happens to a subscriber.
+5. **Re-run `LAB-A-01`..`LAB-A-06` unpatched** and append the result to the acceptance ledger. The
+   run stands as written; the re-run is a new section, not an edit.
+
+**Exit condition:** the acceptance artifact installs and configures through the released code path
+with no patched wheel, and the ledger says so.
+
 ## SBC-8 — the `2.5.0` release commit
 
 **Files:** `pyproject.toml`, `agent_artifacts/__init__.py`, `agent_artifacts/runtime_contract.py`,
@@ -189,16 +223,17 @@ release.
 ## Dependency graph
 
 ```
-SBC-1 ──┬── SBC-2 ──┬── SBC-5 ── SBC-6 ── SBC-7 ── SBC-8
+SBC-1 ──┬── SBC-2 ──┬── SBC-5 ── SBC-6 ── SBC-7 ── SBC-9 ── SBC-8
         └── SBC-3 ──┘                      │
 SBC-4 ──────────────────────────────────────┘
 ```
 
 `SBC-1` is the primitive everything else waits on. `SBC-3` needs a context to write into, so it
 follows `SBC-1` and is independent of `SBC-2` until `SBC-5` renders both. `SBC-4` touches only the
-analyzer baseline and can land at any point before `SBC-7`. `SBC-7` is the live acceptance pass and
-gates `SBC-8`: the release is not prepared until both installation routes have been walked on a real
-machine.
+analyzer baseline and can land at any point before `SBC-7`. `SBC-7` is the live acceptance pass, and
+it found a defect that made every module here unreachable — so `SBC-9` was inserted between the
+acceptance run and the release, and the release is not prepared until the guided route runs on
+unpatched code.
 
 ## What the plan did not anticipate
 

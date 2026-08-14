@@ -106,6 +106,25 @@ _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozense
         frozenset({"message"}),
     ),
 }
+# What each module needs, in the vocabulary policy and the compiled index speak. It is deliberately
+# not the author's vocabulary above: an author declares that a recipe touches `filesystem`, while an
+# organization decides whether it will allow a `managed-file` write or a `docker-build`. Both the
+# index compiler and the consumer read this table, because publishing one vocabulary and recomputing
+# the other is how `LAF-51` made every non-trivial recipe unplannable.
+_PLANNED_CAPABILITIES: Mapping[str, Tuple[str, ...]] = {
+    "macos-keychain.store@1": ("keychain",),
+    "shell.env-from-keychain@1": ("managed-file",),
+    "file.managed-block@1": ("managed-file",),
+    "json.managed-merge@1": ("managed-file",),
+    "directory.create@1": ("managed-file",),
+    "docker.pull@1": ("docker-pull", "network"),
+    # A build reaches the network for its base image and its `RUN` lines, and runs a local process to
+    # do it. An organization that denies either must be able to deny this.
+    "docker.build@1": ("docker-build", "network", "process"),
+    "trust-store.export-certificates@1": ("trust-store",),
+    "command.verify@1": ("verify-command",),
+    "restart.notice@1": (),
+}
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _ARTIFACT_KEY = re.compile(r"^(skill|hook|mcp)/[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -214,6 +233,23 @@ def _context_relative_file(value: object, label: str) -> str:
     ):
         raise _Invalid(f"{label} must be a relative file inside the build context")
     return normalized
+
+
+def planned_capabilities(installer: SetupInstaller) -> Tuple[str, ...]:
+    """What this recipe's steps need, in the vocabulary policy and the compiled index speak.
+
+    The recipe's own `capabilities` field is the author's declaration and is checked against the
+    modules used.  This is the other side: what a consumer's organization is being asked to allow.
+    A registry publishes this so that a policy can refuse a build without first reading the recipe,
+    and a consumer recomputes it from the same bytes so that a tampered index does not decide.
+    """
+
+    values: set[str] = set()
+    for step in installer.steps:
+        values.update(_PLANNED_CAPABILITIES.get(step.use, ()))
+    if installer.custom_entrypoint is not None:
+        values.add("custom-code")
+    return tuple(sorted(values))
 
 
 def image_tag(item: "SetupQueueItem") -> str:

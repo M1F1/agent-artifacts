@@ -38,6 +38,7 @@
 | SBC-5 | The review says what a build does | done | Neither module may fall through to the generic effect line; the manual alternative still renders before consent |
 | SBC-6 | The worked artifact, and the documentation that makes it copyable | done | Module reference, worked section, the three limits from design §9, and a test that every module in `_MODULES` is documented |
 | SBC-7 | Live acceptance: both routes, on a real machine | done | Both routes walked and diffed on a real daemon and a real keychain: [`PROGRESS-live-acceptance-setup-build.md`](docs/testing/PROGRESS-live-acceptance-setup-build.md). Ten findings (`LAF-51`..`LAF-60`) in five clusters; `LAF-51` makes the guided route unreachable as shipped and had to be worked around to observe anything else. Contents agree between routes; image identity does not |
+| SBC-9 | The guided route actually runs | done | One table decides what a recipe needs; the index publishes it and the consumer recomputes it, so the gate compares like with like. `LAF-51` closed and the acceptance scenarios re-walked unpatched; `LAF-56` and `LAF-60` fixed in the reference |
 | SBC-8 | The `2.5.0` release commit | not started | Contract v13; publication is the maintainer's |
 
 ## Live acceptance run

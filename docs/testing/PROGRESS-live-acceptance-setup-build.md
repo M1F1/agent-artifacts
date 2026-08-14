@@ -8,9 +8,10 @@ copy that `docker.build@1` then builds. Methodology unchanged:
 [v3](PROGRESS-live-acceptance-v3.md) records are the prior runs this one is read against, and none of
 them is ever rewritten. Finding ids continue the shared register at `LAF-51`; stressors at `LAS-49`.
 
-**Status: agent scope complete.** Both routes were walked end to end and diffed. Ten findings, one of
-which — `LAF-51` — makes the guided route unreachable on the shipped code and had to be worked around
-to run anything else; the workaround is stated in full below. One comparison (`LAB-C-03`) is weakened
+**Status: agent scope complete; re-run after `SBC-9` is green.** Both routes were walked end to end
+and diffed. Eleven findings, one of which — `LAF-51` — made the guided route unreachable on the code
+as it stood and had to be worked around to run anything else; the workaround is stated in full below,
+and `SBC-9` has since closed it, with the affected scenarios re-walked on unpatched code. One comparison (`LAB-C-03`) is weakened
 rather than blocked, because the agent does not type secrets: a pass with a real typed token remains
 human-gated. Nothing found here was fixed during the run.
 
@@ -109,6 +110,7 @@ Every line here is restored by the end of the run; each is checked in `LAB-Z-01`
 | `LAF-58` | major | `LAB-R-02` | `LAS-53` | `setup_runtime._docker_build_apply` rollback | **`preexisting` protects the tag's name, not its meaning.** A build overwrites an existing tag, and rollback — reading `preexisting: true` — leaves it alone, i.e. leaves it pointing at the image this failed run produced. The consumer's `aart/mcp/company-atlassian:1.0.0`, which named `python:3.12-slim-bookworm` before the run, names a half-reviewed new image after it, and no receipt records what it used to point at. The review's `removes only changes created by this run` reads as a guarantee that the prior state survives | tag anything as `aart/<type>/<name>:<version>`, run a setup that fails after the build step, inspect the tag | any re-run over an existing tag: a second install of the same version, or a build that fails after a successful earlier one |
 | `LAF-59` | major | `LAB-X-04` | `LAS-54` | `setup_runtime._docker_build_apply` (`detail[:512]`) | **The build failure keeps the wrong end of the transcript.** `docker build` prints progress first and the error last; AART truncates to the first 512 characters, so a consumer whose build fails is shown `transferring dockerfile: 117B done` and never `process "/bin/sh -c …" did not complete successfully: exit code: 3`. The same head-truncation is applied to `command.verify@1` and to the certificate export, where it happens to be harmless because those tools fail in their first line | any recipe whose Dockerfile fails after the base image resolves | every failing build; the one moment the transcript is the only thing the consumer has |
 | `LAF-60` | major | `LAB-X-05` | `LAS-55` | source snapshot validation ↔ `requires_aart` | **A `requires_aart` floor cannot protect an older consumer from a new module, because the recipe is validated at source level.** `docs/protocol/setup-recipe-v2.md` says an artifact using the new modules should raise its floor to `2.5.0` so a consumer does not "discover" the requirement. The floor is never consulted: `2.4.0` refuses the whole registry at `source add` (`unknown or unsupported setup module 'docker.build@1'`), before any artifact-level compatibility check, and a subscribed `2.4.0` freezes at its last-known-good snapshot on `source sync` (`unknown capabilities: trust-store`). Publishing one such artifact therefore withholds *every* subsequent change to that registry from every older consumer. The graceful degradation is real and worth documenting; the advice in the reference is not | subscribe with `2.4.0`, publish a `docker.build@1` artifact, `source sync` | every registry that adopts the new modules before its consumers upgrade |
+| `LAF-61` | minor | re-run | `LAS-56` | `setup_runtime._RunWorkspace` | **A killed run leaves its working copy, and nothing ever sweeps it.** The copy is removed when a run completes and when a run fails; a run that is killed — `SIGKILL`, a timeout, a lost machine — leaves `…/setup-runs/<plan-hash>-<random>/context/` behind with the exported certificate bundle in it, and the next successful run makes its own directory beside it rather than cleaning up. The bytes are public certificates at mode `0600` under the data root, so this is untidiness rather than exposure; the design's "deleted when the run ends" has an exception it does not name. The same killed run also leaves the built image tag with no receipt that it exists | kill `marketplace setup` while it waits at the Keychain prompt; `ls …/.agent-artifacts/setup-runs/` | any interrupted setup; accumulates one directory per kill |
 | `LAF-52` | major | `LAB-A-01` | none — the ordinary path | `commands/marketplace` install summary | **A setup planning failure is reported as a number.** `marketplace install --yes` prints `Setup: planned=0, failures=1` and nothing else; `marketplace setup --yes` prints the same line. The detail, the artifact key, and the offered manual route are all present in the `--json` payload and none of them reach the human-readable output. A consumer who installs an MCP server this way is told a count, and is not told that the server will not work or that `SETUP.md` exists | any `marketplace install --yes` whose setup planning fails | every setup failure on the default output path |
 
 ## Results
@@ -209,6 +211,28 @@ for the run and not for the product**. Releasing `2.5.0` with `LAF-51` open woul
 capability that cannot be invoked through any supported path. The sequencing decision — fix cluster 1
 (and, in the same breath, decide clusters 2 and 3) before the release commit, or release and follow
 with `2.5.1` — is the maintainer's.
+
+## Re-run after `SBC-9`
+
+`SBC-9` reconciled the two vocabularies: the index now publishes what a recipe's *steps* need, the
+consumer recomputes the same table from the same bytes, and the equality gate compares like with
+like. The run above is not edited; this is what happened when the affected scenarios were walked
+again against a wheel built from the fixed branch, in a fresh sandbox `HOME` and a fresh consumer
+project, **with no patched executable anywhere**.
+
+| id | outcome | evidence |
+|---|---|---|
+| `LAB-A-01′` | pass | `registry build` republishes the index as `['docker-build', 'keychain', 'managed-file', 'network', 'process', 'trust-store']` — the policy vocabulary. `marketplace install --yes` succeeds; setup still reports `failures=1`, now for the correct reason: `setup from local requires explicit source authorization` (`LAF-52` is unchanged — the reason is still only in `--json`) |
+| `LAB-A-02′` | pass | With `--authorize-untrusted-source`, planning succeeds on shipped code and the five effects are planned in recipe order. `LAF-54` is unchanged: the review is still printed by no CLI path |
+| `LAB-A-03′` | pass | `configured`; `docker run … openssl x509` inside the image returns fingerprint `2A:D8:…:CF`, the same synthetic CA |
+| `LAB-A-06′` | pass | `context_digest: sha256:d7d44e24…` — **identical to both earlier runs**, across two different executables. Materialization is deterministic in the way the receipt claims |
+| `LAB-C-05′` | pass | `.mcp.json` and the `~/.zshrc` block are byte-identical to route A's first run |
+
+`LAF-51` is closed. `LAF-52`, `LAF-53`, `LAF-54`, `LAF-55`, `LAF-57`, `LAF-58` and `LAF-59` are
+unchanged and remain open; `LAF-56` and `LAF-60` are documentation fixes that landed with `SBC-9`.
+
+One new finding came out of the re-run, from an accident: a two-minute command timeout killed a run
+while it sat at the Keychain prompt.
 
 ### A methodology note
 

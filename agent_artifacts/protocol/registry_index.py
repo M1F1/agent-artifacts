@@ -7,6 +7,7 @@ from dataclasses import replace
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceId
 from agent_artifacts.domain.result import Err, Ok, Result
+from agent_artifacts.setup import planned_capabilities
 
 from .capabilities import Capability
 from .codes import REGISTRY_GRAPH_INVALID, REGISTRY_INDEX_INVALID
@@ -40,14 +41,14 @@ def index_artifact_from_package(
     if package.manifest.setup is not None:
         # The recipe is the authority on which capabilities its steps need; the manifest only
         # points at it.  Publishing an empty capability set would make the consumer-side gate
-        # inert — every artifact would look like it needs nothing to run its setup.
+        # inert — every artifact would look like it needs nothing to run its setup.  What is
+        # published is what the steps need, not what the author declared: the consumer recomputes
+        # the same thing from the same bytes and refuses the object if the two disagree, and a
+        # policy denying `docker-build` can act on the index without reading the recipe.
         capabilities: tuple[Capability, ...] = ()
         if package.setup_installer is not None:
             capabilities = tuple(
-                sorted(
-                    {Capability(item) for item in package.setup_installer.capabilities},
-                    key=str,
-                )
+                Capability(item) for item in planned_capabilities(package.setup_installer)
             )
         setup = IndexSetup(
             package.manifest.setup.recipe,

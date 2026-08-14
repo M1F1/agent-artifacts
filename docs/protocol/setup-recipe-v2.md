@@ -41,6 +41,27 @@ is not declared is refused, and a declared capability no step needs is still sho
 The capabilities are `keychain`, `filesystem`, `docker`, `network`, `process`, `trust-store`, and
 `custom-code`.
 
+### Two vocabularies, on purpose
+
+The declaration above is what an *author* says a recipe touches. What a consumer's *organization*
+allows is a finer thing — a policy that permits managed files may still refuse to execute a build —
+so each module also maps to a capability in the policy vocabulary. That second set is what a registry
+index publishes, what `allowed_setup_capabilities` is written in, and what the review reports:
+
+| module | declared | policy |
+|---|---|---|
+| `macos-keychain.store@1` | `keychain` | `keychain` |
+| `shell.env-from-keychain@1`, `file.managed-block@1`, `json.managed-merge@1`, `directory.create@1` | `filesystem` | `managed-file` |
+| `docker.pull@1` | `docker` | `docker-pull`, `network` |
+| `docker.build@1` | `docker` | `docker-build`, `network`, `process` |
+| `trust-store.export-certificates@1` | `trust-store` | `trust-store` |
+| `command.verify@1` | `process` | `verify-command` |
+| `restart.notice@1` | none | none |
+| `custom_entrypoint` | `custom-code`, `process` | `custom-code` |
+
+A consumer recomputes the second column from the recipe bytes and refuses the artifact if it differs
+from what the index published, so a tampered index cannot quietly widen what a setup may do.
+
 ## Modules
 
 ### `macos-keychain.store@1`
@@ -143,13 +164,20 @@ alone.
 The receipt records the digest of the context that was built, the tag, and the resulting local image
 id. The review states that the build file's instructions execute, with network access.
 
-By hand — copy the context somewhere writable first, because the package must not be modified:
+By hand — copy the context somewhere writable first, because the package must not be modified. An
+installed package lives in the object store, which is read-only by design, and `cp -R` reproduces
+those modes, so make the copy writable before anything writes into it:
 
 ```sh
-cp -R <package>/payload /tmp/aart-build && cd /tmp/aart-build
+cp -R <package>/payload /tmp/aart-build && chmod -R u+w /tmp/aart-build && cd /tmp/aart-build
 docker build --tag aart/<type>/<name>:<version> --file Dockerfile .
 rm -rf /tmp/aart-build
 ```
+
+The image a hand build produces has the same contents as the one AART builds and not the same
+digest: the working copy AART writes is mode `0600`, a shell redirect writes `0644`, each build
+stamps its own mtimes, and a hand build inherits whatever `buildx` defaults the machine has. The two
+routes agree on the machine state, not on an image id.
 
 ### `trust-store.export-certificates@1`
 
@@ -287,7 +315,13 @@ is reachable and the build itself works; only credentialed registry access does 
 pre-existing behaviour that already affects `docker.pull@1`, and the environment is narrow on
 purpose.
 
-**An artifact using `docker.build@1` or `trust-store.export-certificates@1` must raise its
-`requires_aart` floor** to `min_inclusive: "2.5.0"`. An older executable refuses the unknown module
-by name, which is the correct failure — closed, not silent — but it is still a failure, and the
-artifact should declare the requirement rather than let a consumer discover it.
+**Publishing one of these modules withholds the registry from every older consumer, and no
+`requires_aart` floor prevents it.** The floor is an artifact-level bound, and the refusal happens
+before any artifact is considered: a recipe is parsed while the source snapshot is validated. On
+`2.4.0`, `source add` refuses the whole registry — `unknown or unsupported setup module
+'docker.build@1'` — and a consumer already subscribed keeps their last-known-good snapshot, with
+`source sync` failing (`unknown capabilities: trust-store`) and everything they already had still
+installable. Closed rather than silent, and named precisely, which is the correct failure; it is
+still a failure, and it applies to *every* artifact in that registry rather than to the one using
+the module. Raise the floor to `min_inclusive: "2.5.0"` anyway — it is true — but plan the rollout
+around the consumers, not around the field.
