@@ -12,6 +12,9 @@ from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.registry_maintenance.model import NativeReferenceDisposition
+from agent_artifacts.registry_maintenance.vendoring import LicenseFinding
+from agent_artifacts.security.model import SecurityAssessment
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -44,12 +47,22 @@ class RegistryOperation(str, Enum):
     LOCK = "lock"
     BUILD = "build"
     MIGRATE = "migrate"
+    # Vendoring writes payload bytes under `artifacts/`, which the registry-input mutation plan
+    # cannot carry — its allowed paths are the lock, the index, and `entries/`.  So a vendor is a
+    # workspace operation like `scaffold`, not a mutation like `promote-native`, even though the two
+    # commands read as siblings.
+    VENDOR = "vendor"
+    REVENDOR = "revendor"
 
 
 class WorkspaceChangeKind(str, Enum):
     ADDED = "added"
     CHANGED = "changed"
     UNCHANGED = "unchanged"
+    # Only re-vendoring produces this: upstream deleted a file the registry copied, and keeping it
+    # would leave a package that is quietly no longer the thing that was vendored.  Every other
+    # registry operation writes a fixed set of derived documents and has nothing to remove.
+    REMOVED = "removed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,21 +121,30 @@ class RegistryWorkspaceChange:
     kind: WorkspaceChangeKind
     content: bytes
     before_digest: ObjectDigest | None
-    after_digest: ObjectDigest
+    # `None` only for a removal, where there is no resulting file to name.  Every other kind carries
+    # the digest of exactly the bytes it writes.
+    after_digest: ObjectDigest | None
     executable: bool = False
 
     def __post_init__(self) -> None:
+        removal = self.kind is WorkspaceChangeKind.REMOVED
         if (
             not isinstance(self.path, SafeRelativePath)
             or not _managed_path(self.path)
             or not isinstance(self.kind, WorkspaceChangeKind)
             or not isinstance(self.content, bytes)
             or not isinstance(self.executable, bool)
-            or not _valid_digest(self.after_digest)
-            or sha256_bytes(self.content) != self.after_digest
+            or (not removal and not _valid_digest(self.after_digest))
+            or (not removal and sha256_bytes(self.content) != self.after_digest)
             or (self.before_digest is not None and not _valid_digest(self.before_digest))
         ):
             raise ValueError("registry workspace change is invalid")
+        if removal and (
+            self.after_digest is not None
+            or self.content != b""
+            or not _valid_digest(self.before_digest)
+        ):
+            raise ValueError("removed workspace file names only what it removes")
         if self.kind is WorkspaceChangeKind.ADDED and self.before_digest is not None:
             raise ValueError("added workspace file cannot have a previous digest")
         if self.kind is WorkspaceChangeKind.CHANGED and (
@@ -146,7 +168,9 @@ def _managed_path(path: SafeRelativePath) -> bool:
         ".github/workflows/aart-usage-validate.yml",
     }:
         return True
-    return path.parts[0] in {"entries", "artifacts", "collections"}
+    # `security/` carries committed assessment evidence.  It is not a registry input — the inputs
+    # digest ignores it — so a plan may write evidence without making the lock and index stale.
+    return path.parts[0] in {"entries", "artifacts", "collections", "security"}
 
 
 def registry_workspace_review_digest(
@@ -165,7 +189,12 @@ def registry_workspace_review_digest(
                         tuple(
                             JsonObject(
                                 (
-                                    ("after_digest", str(item.after_digest)),
+                                    (
+                                        "after_digest",
+                                        None
+                                        if item.after_digest is None
+                                        else str(item.after_digest),
+                                    ),
                                     (
                                         "before_digest",
                                         None
@@ -221,6 +250,68 @@ class RegistryWorkspacePlan:
     @property
     def changed_paths(self) -> int:
         return sum(item.kind is not WorkspaceChangeKind.UNCHANGED for item in self.changes)
+
+
+@dataclass(frozen=True, slots=True)
+class VendoredArtifactPlan:
+    """A vendoring plan and the assessment of the exact bytes it would write.
+
+    They travel together because the review presents both, and recomputing the assessment at render
+    time would let the two drift: the maintainer would approve a digest covering one thing while
+    reading another.
+    """
+
+    plan: RegistryWorkspacePlan
+    assessment: SecurityAssessment
+    license: LicenseFinding
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.plan, RegistryWorkspacePlan)
+            or not isinstance(self.assessment, SecurityAssessment)
+            or not isinstance(self.license, LicenseFinding)
+        ):
+            raise ValueError("vendored artifact plan is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class VendoredArtifactCheck:
+    """What re-resolving one vendored artifact's upstream found.
+
+    The plan is present only when upstream moved *and* the maintainer supplied the version that
+    movement deserves (design §4). `up-to-date` has nothing to write, and `unreachable` must never
+    be able to write: a maintainer who lost access to an upstream is told that, not that their copy
+    is current.
+    """
+
+    disposition: NativeReferenceDisposition
+    resolved_commit: str | None
+    recorded_commit: str
+    added: int
+    changed: int
+    removed: int
+    plan: RegistryWorkspacePlan | None = None
+    assessment: SecurityAssessment | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.disposition, NativeReferenceDisposition)
+            or not isinstance(self.recorded_commit, str)
+            or any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                for value in (self.added, self.changed, self.removed)
+            )
+            or (self.plan is not None and not isinstance(self.plan, RegistryWorkspacePlan))
+            or (self.assessment is not None and not isinstance(self.assessment, SecurityAssessment))
+            or (self.plan is None) != (self.assessment is None)
+        ):
+            raise ValueError("vendored artifact check is invalid")
+        if self.disposition is not NativeReferenceDisposition.CHANGED and self.plan is not None:
+            raise ValueError("only a changed upstream may carry a plan")
+        if self.disposition is NativeReferenceDisposition.UNREACHABLE and (
+            self.resolved_commit is not None
+        ):
+            raise ValueError("an unreachable upstream resolved no commit")
 
 
 @dataclass(frozen=True, slots=True)

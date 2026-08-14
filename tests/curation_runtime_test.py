@@ -65,7 +65,7 @@ class CurationRuntimeTest(unittest.TestCase):
             "_candidate",
             return_value=native_candidate,
         ):
-            native = curation_runtime._default_native_acquirer(
+            native = curation_runtime.default_native_acquirer(
                 "https://github.com/example/reference-skills.git",
                 "main",
             )
@@ -74,7 +74,7 @@ class CurationRuntimeTest(unittest.TestCase):
 
         with mock.patch.object(curation_runtime, "_candidate", return_value=_failure()):
             self.assertIsInstance(
-                curation_runtime._default_native_acquirer(
+                curation_runtime.default_native_acquirer(
                     "https://github.com/example/reference-skills.git",
                     "main",
                 ),
@@ -93,7 +93,7 @@ class CurationRuntimeTest(unittest.TestCase):
             return_value=invalid_revision,
         ):
             self.assertIsInstance(
-                curation_runtime._default_native_acquirer(
+                curation_runtime.default_native_acquirer(
                     "https://github.com/example/reference-skills.git",
                     "main",
                 ),

@@ -33,6 +33,8 @@ class CurationAction(str, Enum):
     FORMAT = "format"
     PROMOTE_NATIVE = "promote-native"
     REFRESH_NATIVE = "refresh-native"
+    VENDOR = "vendor"
+    REVENDOR = "revendor"
     LOCK = "lock"
     BUILD = "build"
     VALIDATE = "validate"
@@ -63,7 +65,13 @@ class CurationRequest:
     kind: str | None = None
     name: str | None = None
     summary: str | None = None
-    artifact_version: str = "1.0.0"
+    # `None` means the maintainer did not state one.  Re-vendoring needs that distinction: upstream
+    # movement without a stated version is reported, never applied (design §4), and a default would
+    # silently answer the one question the command exists to ask.
+    artifact_version: str | None = "1.0.0"
+    # The licence the registry records for a vendored copy.  `None` means the maintainer did not
+    # state one, which is not the same as none existing: the taken subtree may settle it.
+    artifact_license: str | None = None
     profiles: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
     scopes: tuple[str, ...] = ("project",)
@@ -71,6 +79,10 @@ class CurationRequest:
     url: str | None = None
     ref: str = "main"
     path: str | None = None
+    # A package-relative recipe path, declared only when the maintainer has authored a setup
+    # recipe beside the vendored payload.  It names content, so it is validated as a path fragment
+    # rather than trusted from the flag.
+    setup_recipe: str | None = None
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
@@ -93,6 +105,8 @@ class CurationRequest:
                 for value in (
                     self.url,
                     self.path,
+                    self.artifact_license,
+                    self.setup_recipe,
                     self.source_id,
                     self.display_name,
                 )

@@ -99,6 +99,10 @@ Remediation reaches text mode. Per-source diagnostics rendered their remediation
 
 ## What did not change
 
+How AART reaches a remote did not change here, and has not changed since `2.0.0`: it runs system
+Git and holds no credentials of its own. That rule is stated in
+[`compatibility-v10-addendum.md`](compatibility-v10-addendum.md), added during `2.3.0`.
+
 No protocol revision, no schema, no store layout, no on-disk format, no consent semantics. Without
 `--yes` every action still stops after Review and changes nothing. `--json` remains a rendering that
 changes no effect. `2.2.0` writes nothing new: the added status is computed at reconciliation time

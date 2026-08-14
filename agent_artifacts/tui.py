@@ -192,6 +192,8 @@ CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("scaffold", "Scaffold one native artifact package for review"),
     ("promote-native", "Promote one reviewed native Git reference"),
     ("refresh-native", "Check and review one locked native reference update"),
+    ("vendor", "Copy one foreign subtree in as a package this registry owns"),
+    ("revendor", "Re-resolve one vendored copy's upstream and review what moved"),
     ("lock", "Resolve approved references into the committed lock"),
     ("build", "Build the payload-free marketplace index"),
     ("audit", "Audit review, provenance, setup, license, and security evidence"),
@@ -2706,6 +2708,120 @@ def _prompt_curation_request(
         if isinstance(name, WizardInput):
             return name
         return CurationRequest(action, workspace, kind=kind, name=name)
+
+    if action is CurationAction.VENDOR:
+        kind = value("Artifact kind (skill/guideline/mcp/hook/memory): ", "kind")
+        if isinstance(kind, WizardInput):
+            return kind
+        name = value("Artifact name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        url = value("Credential-free Git URL: ", "url")
+        if isinstance(url, WizardInput):
+            return url
+        ref = value("Git ref [main]: ", "ref", default="main")
+        if isinstance(ref, WizardInput):
+            return ref
+        path = value("Subtree path inside that repository: ", "path")
+        if isinstance(path, WizardInput):
+            return path
+        summary = value("One-line value description: ", "summary")
+        if isinstance(summary, WizardInput):
+            return summary
+        # This registry owns the copy, so it declares the version; upstream's is not AART's to
+        # trust (design §4).
+        version = value("Artifact version [1.0.0]: ", "artifact_version", default="1.0.0")
+        if isinstance(version, WizardInput):
+            return version
+        artifact_license = value(
+            "SPDX license (blank = use what the subtree settles): ",
+            "artifact_license",
+            required=False,
+        )
+        if isinstance(artifact_license, WizardInput):
+            return artifact_license
+        setup_recipe = value(
+            "Package-relative setup recipe (blank = none): ",
+            "setup_recipe",
+            required=False,
+        )
+        if isinstance(setup_recipe, WizardInput):
+            return setup_recipe
+        profiles = _prompt_wizard_csv(
+            read,
+            write,
+            "Harness profiles (comma-separated): ",
+            current=existing.profiles if existing else (),
+        )
+        if isinstance(profiles, WizardInput):
+            return profiles
+        platforms = _prompt_wizard_csv(
+            read,
+            write,
+            "Platforms (comma-separated): ",
+            current=existing.platforms if existing else (),
+        )
+        if isinstance(platforms, WizardInput):
+            return platforms
+        scopes = _prompt_wizard_csv(
+            read,
+            write,
+            "Install scopes [project]: ",
+            current=existing.scopes if existing else (),
+            default=("project",),
+        )
+        if isinstance(scopes, WizardInput):
+            return scopes
+        modes = _prompt_wizard_csv(
+            read,
+            write,
+            "Install modes [copy]: ",
+            current=existing.modes if existing else (),
+            default=("copy",),
+        )
+        if isinstance(modes, WizardInput):
+            return modes
+        return CurationRequest(
+            action,
+            workspace,
+            kind=kind,
+            name=name,
+            summary=summary,
+            artifact_version=version or "1.0.0",
+            artifact_license=artifact_license,
+            profiles=profiles,
+            platforms=platforms,
+            scopes=scopes,
+            modes=modes,
+            url=url,
+            ref=ref or "main",
+            path=path,
+            setup_recipe=setup_recipe,
+        )
+
+    if action is CurationAction.REVENDOR:
+        kind = value("Vendored artifact kind: ", "kind")
+        if isinstance(kind, WizardInput):
+            return kind
+        name = value("Vendored artifact name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        # Blank is an answer here, not a gap: it means "report what moved, plan nothing", which is
+        # what flag mode expresses by omitting `--artifact-version`.
+        version = value(
+            "New artifact version (blank = report what moved only): ",
+            "artifact_version",
+            required=False,
+        )
+        if isinstance(version, WizardInput):
+            return version
+        return CurationRequest(
+            action,
+            workspace,
+            kind=kind,
+            name=name,
+            artifact_version=version,
+        )
 
     return CurationRequest(action, workspace)
 

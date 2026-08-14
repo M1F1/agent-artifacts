@@ -14,7 +14,10 @@ from agent_artifacts.curation.model import (
     render_curation_outcome,
     render_curation_review,
 )
-from agent_artifacts.curation.runtime import load_local_curation_service
+from agent_artifacts.curation.runtime import (
+    default_native_acquirer,
+    load_local_curation_service,
+)
 from agent_artifacts.domain.diagnostics import (
     Diagnostic,
     DiagnosticCode,
@@ -156,9 +159,12 @@ def _emit_curation_finalization(
 
 
 def _curation_request(request: Request, action: CurationAction) -> Result[CurationRequest]:
-    if action in {CurationAction.PROMOTE_NATIVE, CurationAction.REFRESH_NATIVE} and (
-        request.artifact_kind is None or len(request.names) != 1
-    ):
+    if action in {
+        CurationAction.PROMOTE_NATIVE,
+        CurationAction.REFRESH_NATIVE,
+        CurationAction.VENDOR,
+        CurationAction.REVENDOR,
+    } and (request.artifact_kind is None or len(request.names) != 1):
         return _error(f"{action.value} requires an exact artifact kind and name")
     try:
         return Ok(
@@ -168,7 +174,14 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 kind=request.artifact_kind,
                 name=request.names[0] if len(request.names) == 1 else None,
                 summary=request.summary,
-                artifact_version=request.artifact_version or "1.0.0",
+                # Re-vendoring is the one action where an unstated version is an answer rather
+                # than a gap: it means "tell me what moved, plan nothing".
+                artifact_version=(
+                    request.artifact_version
+                    if action is CurationAction.REVENDOR
+                    else request.artifact_version or "1.0.0"
+                ),
+                artifact_license=request.artifact_license,
                 profiles=request.profiles,
                 platforms=request.registry_platforms,
                 scopes=request.registry_scopes or ("project",),
@@ -176,6 +189,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 url=request.native_url,
                 ref=request.ref or "main",
                 path=request.native_path,
+                setup_recipe=request.setup_recipe,
                 review_policy=request.review_policy or "manual-review-v1",
                 source_id=request.source_id,
                 display_name=request.display_name,
@@ -200,9 +214,13 @@ def _run_curation(request: Request, action: CurationAction) -> int:
     review = prepared.value.review
     if request.check:
         _emit_curation_review(request, review)
+        # A failed check counts as drift.  Without this, `revendor --check` against an unreachable
+        # upstream would exit zero for having written nothing, which is the one reading design §6
+        # forbids.
         return (
             _common.OK
             if all(item.status == "unchanged" for item in review.changes)
+            and all(item.passed for item in review.checks)
             else _common.ERROR
         )
     if not request.yes:
@@ -270,6 +288,9 @@ def _run_audit(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
         current.value,
         executable_version=_VERSION,
         available_capabilities=_CAPABILITIES,
+        # The audit reads the committed workspace and nothing else unless asked: `--check-upstream`
+        # is what turns it into a command that resolves vendored origins, and it still only reports.
+        upstream_acquirer=default_native_acquirer if request.check_upstream else None,
     )
     if isinstance(checked, Err):
         return _emit_error(request, "audit", checked)
@@ -331,6 +352,10 @@ def run(request: Request) -> int:
         return _run_curation(request, CurationAction.PROMOTE_NATIVE)
     if action == "refresh-native":
         return _run_curation(request, CurationAction.REFRESH_NATIVE)
+    if action == "vendor":
+        return _run_curation(request, CurationAction.VENDOR)
+    if action == "revendor":
+        return _run_curation(request, CurationAction.REVENDOR)
     if action in {"lock", "build"}:
         return _run_curation(request, CurationAction(action))
     if action == "validate":

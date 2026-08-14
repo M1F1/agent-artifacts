@@ -7,23 +7,28 @@ import os
 import shlex
 import tempfile
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol, cast
 
 from agent_artifacts.application.registry_commands import (
     finalize_registry_workspace,
+    prepare_artifact_revendor,
     prepare_artifact_scaffold,
+    prepare_artifact_vendor,
     prepare_registry_build,
     prepare_registry_init,
     prepare_registry_lock,
+    read_vendored_artifact_origin,
 )
 from agent_artifacts.application.registry_maintenance import finalize_registry_mutation
 from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
+from agent_artifacts.protocol.native_models import CanonicalArtifactType
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
-from agent_artifacts.protocol.registry_models import RegistryEntry
+from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.protocol.registry_models import RegistryEntry, ReviewRecord
 from agent_artifacts.protocol.registry_schema import parse_registry_entry
 from agent_artifacts.protocol.semver import SemVer, parse_semver
 from agent_artifacts.registry_commands.model import (
@@ -33,6 +38,7 @@ from agent_artifacts.registry_commands.model import (
     RegistryQualityReport,
     RegistryWorkspaceChange,
     RegistryWorkspacePlan,
+    VendoredArtifactCheck,
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
@@ -40,12 +46,15 @@ from agent_artifacts.registry_commands.model import (
     RegistryApplyCommand as WorkspaceApplyCommand,
 )
 from agent_artifacts.registry_commands.planning import (
+    VendoredArtifactOrigin,
     audit_registry_workspace,
     plan_registry_format,
     validate_registry_workspace,
 )
 from agent_artifacts.registry_maintenance.model import (
+    NativeAcquirer,
     NativeReferenceAcquisition,
+    NativeReferenceDisposition,
     RegistryMutationPlan,
 )
 from agent_artifacts.registry_maintenance.model import (
@@ -59,7 +68,9 @@ from agent_artifacts.registry_maintenance.planning import (
     plan_native_promotion,
     project_registry_mutation,
 )
+from agent_artifacts.registry_maintenance.vendoring import LicenseFinding, VendorOptions
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
+from agent_artifacts.security.model import AssessmentStatus, SecurityAssessment
 from agent_artifacts.sources.git import acquire_git_snapshot
 from agent_artifacts.sources.model import (
     GitSnapshotRequest,
@@ -84,8 +95,6 @@ _VERSION = EXECUTABLE_VERSION
 _CAPABILITIES = EXECUTABLE_CAPABILITIES
 CURATION_INVALID = DiagnosticCode("curation-invalid")
 CURATION_STALE = DiagnosticCode("curation-stale")
-
-NativeAcquirer = Callable[[str, str], Result[NativeReferenceAcquisition]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +180,11 @@ def _follow_up(
     if action in {
         CurationAction.INIT,
         CurationAction.SCAFFOLD,
+        # A vendored package is new owned content, so the lock and index are stale until they are
+        # rebuilt: `validate --strict` alone would fail and send the maintainer looking for a fault
+        # in the copy.
+        CurationAction.VENDOR,
+        CurationAction.REVENDOR,
     }:
         return (
             diff,
@@ -216,7 +230,7 @@ def _candidate(
         )
 
 
-def _default_native_acquirer(url: str, ref: str) -> Result[NativeReferenceAcquisition]:
+def default_native_acquirer(url: str, ref: str) -> Result[NativeReferenceAcquisition]:
     acquired = _candidate(url, ref, alias="curation-native", allow_local_transport=False)
     if isinstance(acquired, Err):
         return acquired
@@ -312,7 +326,7 @@ class LocalCurationService:
         self,
         workspace: str,
         *,
-        native_acquirer: NativeAcquirer = _default_native_acquirer,
+        native_acquirer: NativeAcquirer = default_native_acquirer,
     ):
         if not os.path.isabs(workspace) or os.path.normpath(workspace) != workspace:
             raise ValueError("curation workspace must be normalized and absolute")
@@ -331,6 +345,7 @@ class LocalCurationService:
         request: CurationRequest,
         plan: RegistryWorkspacePlan,
         *,
+        checks: tuple[CurationCheck, ...] = (),
         warnings: tuple[str, ...] = (),
     ) -> PreparedCuration:
         changes = _workspace_changes(plan)
@@ -342,6 +357,7 @@ class LocalCurationService:
                 plan.review_digest,
                 plan.expected_snapshot_digest,
                 changes,
+                checks=checks,
                 warnings=warnings,
                 follow_up_commands=_follow_up(self.root, changes, request.action),
             ),
@@ -405,6 +421,8 @@ class LocalCurationService:
             or not request.platforms
         ):
             return _error("scaffold requires kind, name, summary, profiles, and platforms")
+        if request.artifact_version is None:
+            return _error("scaffold requires an artifact version")
         version = _semver(request.artifact_version, "artifact version")
         if isinstance(version, Err):
             return version
@@ -429,6 +447,318 @@ class LocalCurationService:
                 request,
                 planned.value,
                 warnings=("Review and complete the generated starter payload before publication.",),
+            )
+        )
+
+    def _vendor_review_check(
+        self,
+        request: CurationRequest,
+        acquisition: NativeReferenceAcquisition,
+        plan: RegistryWorkspacePlan,
+    ) -> CurationCheck:
+        """State what is being copied, from where, and at which commit.
+
+        The maintainer approves a copy of somebody else's bytes, so the review has to say whose,
+        which revision, and how much — none of which the diff alone makes legible once the payload
+        is more than a couple of files.
+        """
+
+        base = next(
+            str(item.path).removesuffix("/artifact.json")
+            for item in plan.changes
+            if str(item.path).endswith("/artifact.json")
+        )
+        payload = sum(1 for item in plan.changes if str(item.path).startswith(f"{base}/payload/"))
+        return CurationCheck(
+            "vendor-origin",
+            True,
+            (
+                f"origin: {acquisition.url}",
+                f"ref: {acquisition.requested_ref}",
+                f"resolved commit: {acquisition.resolved_commit}",
+                f"subtree: {request.path}",
+                f"target: {base}",
+                f"declared version: {request.artifact_version}",
+                f"payload files: {payload}",
+            ),
+        )
+
+    def _vendor_license_check(
+        self,
+        request: CurationRequest,
+        finding: LicenseFinding,
+    ) -> CurationCheck:
+        """Say what the subtree claims about its licence, and what this registry will record.
+
+        It always passes. AART is not qualified to adjudicate a licence, and a maintainer vendoring
+        their own company's code has nothing to record; the obligation is to make the omission
+        visible rather than to block on it (design §7).
+        """
+
+        recorded = request.artifact_license or finding.identifier
+        details = [f"discovered: {finding.note}"]
+        if request.artifact_license is not None:
+            details.append(f"stated: {request.artifact_license}")
+        details.append(
+            f"recorded: {recorded}"
+            if recorded is not None
+            else "recorded: none; state one with --license, or registry audit will report it"
+        )
+        return CurationCheck("vendor-license", True, tuple(details))
+
+    def _vendor_assessment_check(self, assessment: SecurityAssessment) -> CurationCheck:
+        """Report what the baseline found in the bytes this vendoring would write.
+
+        The check passes when the assessment ran to completion, not when it found nothing: a
+        scan that completed and reported three findings did its job, and the maintainer decides
+        whether those findings are acceptable.  Nothing here calls the package safe.
+        """
+
+        details = [
+            f"installation risk: {assessment.installation_risk.value}",
+            f"findings: {len(assessment.findings)}",
+        ]
+        details.extend(
+            f"{finding.rule_id} ({finding.severity.value}): {finding.message}"
+            + ("" if finding.path is None else f" [{finding.path}]")
+            for finding in assessment.findings
+        )
+        return CurationCheck(
+            "vendor-assessment",
+            assessment.status is AssessmentStatus.COMPLETE,
+            tuple(details),
+        )
+
+    def _prepare_vendor(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if (
+            request.kind is None
+            or request.name is None
+            or request.summary is None
+            or request.url is None
+            or request.path is None
+            or not request.profiles
+            or not request.platforms
+        ):
+            return _error(
+                "vendoring requires kind, name, summary, URL, subtree path, profiles, and platforms"
+            )
+        if request.artifact_version is None:
+            return _error("vendoring requires an artifact version")
+        version = _semver(request.artifact_version, "artifact version")
+        if isinstance(version, Err):
+            return version
+        path = parse_relative_path(request.path)
+        if isinstance(path, Err):
+            return _error(f"vendored subtree path is unsafe: {request.path}")
+        recipe: SafeRelativePath | None = None
+        if request.setup_recipe is not None:
+            parsed = parse_relative_path(request.setup_recipe)
+            if isinstance(parsed, Err):
+                return _error(f"setup recipe path is unsafe: {request.setup_recipe}")
+            recipe = parsed.value
+        try:
+            options = VendorOptions(
+                ArtifactIdentity(cast(CanonicalArtifactType, request.kind), request.name),
+                version.value,
+                request.summary,
+                request.profiles,
+                request.platforms,
+                request.scopes,
+                request.modes,
+                recipe,
+                license=request.artifact_license,
+            )
+        except ValueError as error:
+            return _error(str(error))
+        acquired = self.native_acquirer(request.url, request.ref)
+        if isinstance(acquired, Err):
+            return acquired
+        planned = prepare_artifact_vendor(
+            acquired.value,
+            options,
+            path=path.value,
+            # The record the maintainer is being asked to approve.  It gates the plan and is not
+            # persisted: an owned package has no `entries/` document to carry a review.
+            review=ReviewRecord("approved", request.review_policy),
+            importer_version=_VERSION,
+            output=self.workspace,
+        )
+        if isinstance(planned, Err):
+            return planned
+        return Ok(
+            self._workspace_review(
+                request,
+                planned.value.plan,
+                checks=(
+                    self._vendor_review_check(request, acquired.value, planned.value.plan),
+                    self._vendor_license_check(request, planned.value.license),
+                    self._vendor_assessment_check(planned.value.assessment),
+                ),
+                warnings=(
+                    "Vendoring copies upstream bytes into this registry and pins them to a commit; "
+                    "a successful vendor reports what was copied, and is not a safety claim.",
+                    # Verbatim from the `security` command's own description: the vendor review is
+                    # the same evidence under a different verb, and must not read as stronger.
+                    "Assessments reduce uncertainty; they are not safety guarantees.",
+                    "This registry now owns the copy: upstream fixes do not reach consumers until "
+                    "it is vendored again.",
+                ),
+            )
+        )
+
+    def _informational_review(
+        self,
+        request: CurationRequest,
+        snapshot: SourceSnapshot,
+        checks: tuple[CurationCheck, ...],
+        warnings: tuple[str, ...],
+    ) -> Result[PreparedCuration]:
+        """A review that reports and writes nothing, and whose failing checks fail the command."""
+
+        digest = _snapshot_digest(snapshot)
+        if isinstance(digest, Err):
+            return digest
+        return Ok(
+            PreparedCuration(
+                CurationReview(
+                    request.action,
+                    self.root,
+                    False,
+                    curation_review_digest(request.action, digest.value, (), checks, warnings),
+                    digest.value,
+                    (),
+                    checks,
+                    warnings,
+                ),
+                _ReadOnlyPrepared(snapshot, checks),
+            )
+        )
+
+    def _drift_check(
+        self,
+        vendored: VendoredArtifactOrigin,
+        checked: VendoredArtifactCheck,
+    ) -> CurationCheck:
+        """Say which of the three things happened, and never let two of them read alike.
+
+        `up-to-date` passes.  `changed` without a stated version and `unreachable` both fail, for
+        different reasons that the details spell out: one is work the maintainer has to finish, the
+        other is an upstream they can no longer read.  Neither is a copy that is known to be current.
+        """
+
+        details = [
+            f"disposition: {checked.disposition.value}",
+            f"origin: {vendored.url}",
+            f"ref: {vendored.ref}",
+            f"subtree: {vendored.path}",
+            f"recorded commit: {checked.recorded_commit}",
+        ]
+        if checked.resolved_commit is not None:
+            details.append(f"resolved commit: {checked.resolved_commit}")
+        if checked.disposition is NativeReferenceDisposition.CHANGED:
+            details.extend(
+                (
+                    f"upstream files added: {checked.added}",
+                    f"upstream files changed: {checked.changed}",
+                    f"upstream files removed: {checked.removed}",
+                )
+            )
+            if checked.plan is None:
+                details.append(
+                    "state the version this movement deserves with --artifact-version to plan it"
+                )
+        return CurationCheck(
+            "vendor-drift",
+            checked.disposition is NativeReferenceDisposition.UP_TO_DATE
+            or checked.plan is not None,
+            tuple(details),
+        )
+
+    def _prepare_revendor(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if request.kind is None or request.name is None:
+            return _error("re-vendoring requires an exact artifact kind and name")
+        current = self._current()
+        if isinstance(current, Err):
+            return current
+        identity = ArtifactIdentity(cast(CanonicalArtifactType, request.kind), request.name)
+        vendored = read_vendored_artifact_origin(identity, output=self.workspace)
+        if isinstance(vendored, Err):
+            return vendored
+        version: SemVer | None = None
+        if request.artifact_version is not None:
+            parsed = _semver(request.artifact_version, "artifact version")
+            if isinstance(parsed, Err):
+                return parsed
+            version = parsed.value
+        acquired = self.native_acquirer(vendored.value.url, vendored.value.ref)
+        if isinstance(acquired, Err):
+            # An upstream that cannot be read is a disposition, not a crash: the maintainer needs to
+            # be told their copy's provenance can no longer be checked, which is a different fact
+            # from the copy being current (design §6).
+            return self._informational_review(
+                request,
+                current.value,
+                (
+                    self._drift_check(
+                        vendored.value,
+                        VendoredArtifactCheck(
+                            NativeReferenceDisposition.UNREACHABLE,
+                            None,
+                            vendored.value.recorded_commit,
+                            0,
+                            0,
+                            0,
+                        ),
+                    ),
+                    CurationCheck(
+                        "vendor-origin-error",
+                        False,
+                        tuple(" ".join(item.message.split()) for item in acquired.diagnostics),
+                    ),
+                ),
+                (
+                    "An unreachable upstream is not an up-to-date copy; nothing was compared.",
+                    "The vendored copy is unchanged and still installable; only the check failed.",
+                ),
+            )
+        checked = prepare_artifact_revendor(
+            acquired.value,
+            vendored.value,
+            version=version,
+            review=ReviewRecord("approved", request.review_policy),
+            importer_version=_VERSION,
+            output=self.workspace,
+        )
+        if isinstance(checked, Err):
+            return checked
+        drift = self._drift_check(vendored.value, checked.value)
+        if checked.value.plan is None:
+            return self._informational_review(
+                request,
+                current.value,
+                (drift,),
+                ("Nothing was written; re-vendoring compares upstream and reports.",)
+                if checked.value.disposition is NativeReferenceDisposition.UP_TO_DATE
+                else (
+                    "Upstream moved. This registry owns the version, so it states the new one.",
+                    "Nothing was written.",
+                ),
+            )
+        assert checked.value.assessment is not None
+        return Ok(
+            self._workspace_review(
+                request,
+                checked.value.plan,
+                checks=(
+                    drift,
+                    self._vendor_assessment_check(checked.value.assessment),
+                ),
+                warnings=(
+                    "Re-vendoring replaces the copied bytes and re-pins the commit; "
+                    "a successful re-vendor reports what was copied, and is not a safety claim.",
+                    "Assessments reduce uncertainty; they are not safety guarantees.",
+                    "Consumers receive this movement only after the version you stated is published.",
+                ),
             )
         )
 
@@ -639,6 +969,8 @@ class LocalCurationService:
             CurationAction.FORMAT,
             CurationAction.PROMOTE_NATIVE,
             CurationAction.REFRESH_NATIVE,
+            CurationAction.VENDOR,
+            CurationAction.REVENDOR,
             CurationAction.LOCK,
             CurationAction.BUILD,
         }
@@ -652,6 +984,10 @@ class LocalCurationService:
             return self._prepare_scaffold(request)
         if request.action is CurationAction.FORMAT:
             return self._prepare_format(request)
+        if request.action is CurationAction.VENDOR:
+            return self._prepare_vendor(request)
+        if request.action is CurationAction.REVENDOR:
+            return self._prepare_revendor(request)
         if request.action is CurationAction.PROMOTE_NATIVE:
             return self._prepare_promote(request)
         if request.action is CurationAction.REFRESH_NATIVE:

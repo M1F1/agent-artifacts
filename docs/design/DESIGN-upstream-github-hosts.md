@@ -1,5 +1,15 @@
 # agent-artifacts - Design: per-upstream GitHub host metadata
 
+> **Superseded by [DESIGN-registry-vendoring.md](DESIGN-registry-vendoring.md) (AART `2.3.0`).**
+> Per-upstream GitHub host metadata answered a question vendoring does not ask: any
+> credential-free HTTPS or SSH Git host is reached the same way, so there is no API host to
+> configure and no `upstreams.json` to carry it (vendoring design §9).
+> `2.3.0` deleted `agent_artifacts/io/net.py`, the last module carrying that token handling.
+> AART holds no credentials of its own: it reaches Git through system Git, so a private or
+> Enterprise host is reached with an SSH key or a Git credential helper. This document is kept as
+> the record of what was intended and why the mechanism changed; nothing in it describes shipping
+> behaviour.
+
 Companion to [DESIGN-upstream.md](DESIGN-upstream.md) and GitHub issue
 [#5](https://github.com/M1F1/agent-artifacts/issues/5).
 

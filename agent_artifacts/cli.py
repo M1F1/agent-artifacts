@@ -600,7 +600,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_promote = registry_sub.add_parser(
         "promote-native",
-        help="review and add one exact native Git package reference",
+        help="reference a native package upstream keeps: consumers reach it, upstream owns it",
+        description=(
+            "Add a reviewed reference to a canonical AART package in another repository, pinned to "
+            "a resolved commit. The bytes stay upstream and this registry ships none of them: a "
+            "consumer installing it reaches that origin, and upstream owns the version. Use "
+            "`vendor` instead when the upstream is not an AART package, or when consumers must "
+            "reach this registry only."
+        ),
     )
     _add_registry_source(p_promote)
     p_promote.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
@@ -627,9 +634,137 @@ def build_parser() -> argparse.ArgumentParser:
     _add_registry_finalize(p_promote)
     _add_json(p_promote)
 
+    p_vendor = registry_sub.add_parser(
+        "vendor",
+        help="copy a foreign subtree in: this registry ships the bytes and owns the version",
+        description=(
+            "Copy a subtree of any Git repository into this registry as an owned package pinned "
+            "to a resolved commit, with provenance recording where the bytes came from. The "
+            "upstream needs no AART markers. This registry then owns the copy: it declares the "
+            "version, and upstream fixes reach consumers only when it is vendored again. A "
+            "successful vendor reports what was copied; it is not a safety claim. Use "
+            "`promote-native` instead to reference a native AART package without copying it. A "
+            "repository containing a symlink anywhere cannot be acquired, and a symlink inside "
+            "the subtree is refused."
+        ),
+    )
+    _add_registry_source(p_vendor)
+    p_vendor.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_vendor.add_argument("names", nargs=1, metavar="NAME")
+    p_vendor.add_argument(
+        "--url", dest="native_url", required=True, metavar="URL", help="credential-free Git URL"
+    )
+    p_vendor.add_argument(
+        "--ref", default="main", metavar="REF", help="Git ref to resolve (default: main)"
+    )
+    p_vendor.add_argument(
+        "--path",
+        dest="native_path",
+        required=True,
+        metavar="DIR",
+        help="subtree to copy, relative to the repository root",
+    )
+    p_vendor.add_argument(
+        # Upstream declares no version AART can trust, and deriving one would be a guess presented
+        # as a fact.  The registry owns the version, so the maintainer states it.
+        "--artifact-version",
+        required=True,
+        metavar="VERSION",
+        help="version this registry publishes the copy under",
+    )
+    p_vendor.add_argument(
+        "--summary", required=True, metavar="TEXT", help="one-line artifact description"
+    )
+    p_vendor.add_argument(
+        # Discovery fills the silence; it never overrules the maintainer.  AART reads an upstream
+        # licence file, it does not adjudicate the grant, so the registry states what it publishes.
+        "--license",
+        dest="artifact_license",
+        metavar="SPDX",
+        help="license this registry records for the copy (default: read from the taken subtree)",
+    )
+    p_vendor.add_argument(
+        "--profile",
+        action="append",
+        required=True,
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
+    p_vendor.add_argument(
+        "--platform",
+        action="append",
+        required=True,
+        metavar="PLATFORM",
+        help="supported platform (repeatable)",
+    )
+    p_vendor.add_argument(
+        "--install-scope",
+        action="append",
+        choices=_INSTALL_SCOPES,
+        dest="registry_scopes",
+        default=[],
+        help="supported install scope (repeatable; default: project)",
+    )
+    p_vendor.add_argument(
+        "--install-mode",
+        action="append",
+        choices=("copy", "symlink"),
+        dest="registry_modes",
+        default=[],
+        help="supported install mode (repeatable; default: copy)",
+    )
+    p_vendor.add_argument(
+        "--setup-recipe",
+        metavar="PATH",
+        help="package-relative setup recipe you have already authored beside the payload",
+    )
+    p_vendor.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    _add_registry_finalize(p_vendor)
+    _add_json(p_vendor)
+
+    p_revendor = registry_sub.add_parser(
+        "revendor",
+        help="re-resolve one vendored copy's upstream and report, or apply what moved",
+        description=(
+            "Re-resolve the ref this artifact was vendored at and compare the subtree with the "
+            "copy this registry ships. Reports up-to-date, changed, or unreachable; an upstream "
+            "that cannot be read is never reported as up-to-date. Upstream declares no version "
+            "AART can trust, so applying a change requires the version you state for it. "
+            "`refresh-native` is the equivalent for a reference, where re-pinning is the whole "
+            "change; here the bytes this registry ships are replaced."
+        ),
+    )
+    _add_registry_source(p_revendor)
+    p_revendor.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
+    p_revendor.add_argument("names", nargs=1, metavar="NAME")
+    p_revendor.add_argument(
+        "--artifact-version",
+        metavar="VERSION",
+        help="version this registry publishes the moved copy under; without it, nothing is planned",
+    )
+    p_revendor.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    _add_check(p_revendor)
+    _add_registry_finalize(p_revendor)
+    _add_json(p_revendor)
+
     p_refresh = registry_sub.add_parser(
         "refresh-native",
-        help="review a new immutable snapshot for one existing native reference",
+        help="re-pin one referenced package to upstream's current commit",
+        description=(
+            "Re-resolve one `entries/` native reference and review the new immutable snapshot. It "
+            "moves a pin; the delivered bytes are upstream's either way. `revendor` is the "
+            "equivalent for a copy this registry owns, and it requires the version to publish."
+        ),
     )
     _add_registry_source(p_refresh)
     p_refresh.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
@@ -661,6 +796,14 @@ def build_parser() -> argparse.ArgumentParser:
         "audit", help="audit review, provenance, setup, and available security metadata"
     )
     _add_registry_source(p_audit)
+    p_audit.add_argument(
+        "--check-upstream",
+        action="store_true",
+        help=(
+            "resolve each vendored artifact's origin and report the ones behind upstream; "
+            "unreachable origins are reported as unknown, and neither finding fails the audit"
+        ),
+    )
     _add_json(p_audit)
 
     p_test = registry_sub.add_parser("test", help="run a compatibility validation fixture")
@@ -854,15 +997,18 @@ def _to_request(args: argparse.Namespace) -> Request:
         ref=getattr(args, "ref", None),
         native_url=getattr(args, "native_url", None),
         native_path=getattr(args, "native_path", None),
+        setup_recipe=getattr(args, "setup_recipe", None),
         review_policy=getattr(args, "review_policy", None),
         registry_action=getattr(args, "registry_action", None),
         check=bool(getattr(args, "check", False)),
+        check_upstream=bool(getattr(args, "check_upstream", False)),
         strict=bool(getattr(args, "strict", False)),
         frozen=bool(getattr(args, "frozen", False)),
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
         summary=getattr(args, "summary", None),
         artifact_version=getattr(args, "artifact_version", None),
+        artifact_license=getattr(args, "artifact_license", None),
         minimum_version=getattr(args, "minimum_version", None),
         maximum_version=getattr(args, "maximum_version", None),
         latest_version=getattr(args, "latest_version", None),

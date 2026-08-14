@@ -43,6 +43,27 @@ def non_stdlib_imports(package_root: Path) -> tuple[str, ...]:
     return tuple(sorted(set(violations)))
 
 
+def credential_promise_diagnostics(package_root: Path) -> tuple[str, ...]:
+    """Reject any module naming a credential AART does not hold.
+
+    `2.3.0` deleted the last one (`io/net.py`, the removed importer's GitHub API client, imported by
+    nothing but its own test). It named `GITHUB_TOKEN` and `GITHUB_API_URL` and hinted at setting
+    them for GitHub Enterprise, which did nothing — an advertised capability the product does not
+    have. AART reaches Git through system Git and holds no token, so a private host is reached with
+    an SSH key or a Git credential helper. This guard exists so the promise cannot reappear.
+    """
+
+    return tuple(
+        sorted(
+            f"{path.relative_to(package_root.parent)}: names {name}, "
+            "but AART holds no credentials of its own"
+            for path in sorted(package_root.rglob("*.py"))
+            for name in ("GITHUB_TOKEN", "GITHUB_API_URL")
+            if name in path.read_text(encoding="utf-8")
+        )
+    )
+
+
 def operational_catalog_diagnostics(root: Path) -> tuple[str, ...]:
     """Reject embedded legacy or canonical catalog content from the tool checkout.
 
@@ -61,6 +82,7 @@ def operational_catalog_diagnostics(root: Path) -> tuple[str, ...]:
 def main() -> int:
     diagnostics = (
         *non_stdlib_imports(ROOT / "agent_artifacts"),
+        *credential_promise_diagnostics(ROOT / "agent_artifacts"),
         *operational_catalog_diagnostics(ROOT),
     )
     for diagnostic in diagnostics:

@@ -412,15 +412,24 @@ class Request:
     # before its registry entry is allowed to name it.
     native_url: Optional[str] = None
     native_path: Optional[str] = None
+    # A package-relative setup recipe declared while vendoring, when the maintainer has authored
+    # one beside the copied payload.
+    setup_recipe: Optional[str] = None
     review_policy: Optional[str] = None
     registry_action: Optional[str] = None
     check: bool = False
+    # Resolve vendored origins during an audit.  Off by default: an audit that reached the network
+    # unasked would fail offline and depend on somebody else's uptime in CI.
+    check_upstream: bool = False
     strict: bool = False
     frozen: bool = False
     source_id: Optional[str] = None
     display_name: Optional[str] = None
     summary: Optional[str] = None
     artifact_version: Optional[str] = None
+    # The licence the registry records for a vendored copy.  Stated by the maintainer, because a
+    # licence read out of an upstream file is a reading of somebody else's document.
+    artifact_license: Optional[str] = None
     minimum_version: Optional[str] = None
     maximum_version: Optional[str] = None
     latest_version: Optional[str] = None

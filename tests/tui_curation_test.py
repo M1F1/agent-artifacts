@@ -22,6 +22,10 @@ from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.native_tree import SnapshotOrigin, SourceSnapshot
 
 
+def _action_index(name):
+    return [action for action, _label in tui.CANONICAL_MAINTAINER_ACTIONS].index(name)
+
+
 def _scripted(values):
     answers = iter(values)
 
@@ -90,7 +94,9 @@ class TuiCurationTest(unittest.TestCase):
                 selection["wizard_session"] = session
                 return session
 
-            singles = iter((1, 8))  # Maintainer role, then the zero-based "user" action
+            # Derived, not counted: the action list grows, and a stale index selects a different
+            # action while still passing for the wrong reason.
+            singles = iter((1, _action_index("user")))  # Maintainer role, then "user"
             output = io.StringIO()
             with (
                 redirect_stdout(output),
@@ -133,7 +139,7 @@ class TuiCurationTest(unittest.TestCase):
                 mock.patch.object(tui, "_run_user_text_wizard", return_value=0) as run_user,
             ):
                 code = tui._run_text(
-                    _scripted(["", "2", "9"]),
+                    _scripted(["", "2", str(_action_index("user") + 1)]),
                     mock.Mock(),
                     source_dir=str(root),
                     project=str(root),

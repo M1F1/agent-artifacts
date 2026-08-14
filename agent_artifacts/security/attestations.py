@@ -21,6 +21,9 @@ _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40,64}$")
 _HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_INDEX_ENTRIES = 100_000
+# The cache-key value for "no analyzer options" and "no installation policy".  One definition,
+# because two evidence producers computing it apart would silently address different cache keys.
+EMPTY_CACHE_INPUT_DIGEST = json_digest(JsonObject(()))
 
 
 def _valid_digest(value: object) -> bool:

@@ -1,5 +1,16 @@
 # agent-artifacts - Design: batch upstream import
 
+> **Superseded by [DESIGN-registry-vendoring.md](DESIGN-registry-vendoring.md) (AART `2.3.0`).**
+> The intent — copy a foreign subtree into a curated collection and record where it came
+> from — is preserved by `registry vendor`. The mechanism is not: the GitHub REST API,
+> `GITHUB_API_URL` hosts and a `GITHUB_TOKEN` in the environment are all gone, and batch
+> discovery is a deliberate non-goal (vendoring design §9 and §10).
+> `2.3.0` deleted `agent_artifacts/io/net.py`, the last module carrying that token handling.
+> AART holds no credentials of its own: it reaches Git through system Git, so a private or
+> Enterprise host is reached with an SSH key or a Git credential helper. This document is kept as
+> the record of what was intended and why the mechanism changed; nothing in it describes shipping
+> behaviour.
+
 Companion to [DESIGN-upstream.md](DESIGN-upstream.md) and
 [DESIGN-frictionless-adoption.md](DESIGN-frictionless-adoption.md).
 

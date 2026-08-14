@@ -37,8 +37,8 @@ from .model import (
     risk_from_evidence,
 )
 
-_PROVIDER_ID = "aart-baseline"
-_PROVIDER_VERSION = "1"
+BASELINE_PROVIDER_ID = "aart-baseline"
+BASELINE_PROVIDER_VERSION = "1"
 _RULESET_REVISION = "baseline-v1.0"
 _MAX_SCANNED_FILE_BYTES = 1024 * 1024
 _MAX_AST_NODES = 50_000
@@ -979,8 +979,8 @@ def _assessment(
         AssessmentStatus.FAILED: "Baseline evidence failed an object, manifest, provenance, or lock integrity check.",
     }[status]
     provider = ProviderAssessment(
-        _PROVIDER_ID,
-        _PROVIDER_VERSION,
+        BASELINE_PROVIDER_ID,
+        BASELINE_PROVIDER_VERSION,
         BASELINE_RULES_DIGEST,
         status,
         coverage,
@@ -1046,8 +1046,8 @@ def assess_installation_risk(request: BaselineScanRequest) -> SecurityAssessment
 def not_scanned_assessment(object_digest: ObjectDigest, reason: str) -> SecurityAssessment:
     coverage = AssessmentCoverage(0, len(_EXPECTED_CATEGORIES), ("baseline:not-requested",))
     provider = ProviderAssessment(
-        _PROVIDER_ID,
-        _PROVIDER_VERSION,
+        BASELINE_PROVIDER_ID,
+        BASELINE_PROVIDER_VERSION,
         BASELINE_RULES_DIGEST,
         AssessmentStatus.NOT_SCANNED,
         coverage,
@@ -1071,7 +1071,9 @@ def mark_assessment_stale(
     current_object_digest: ObjectDigest,
     current_rules_digest: ObjectDigest,
 ) -> SecurityAssessment:
-    baseline = next((item for item in assessment.providers if item.id == _PROVIDER_ID), None)
+    baseline = next(
+        (item for item in assessment.providers if item.id == BASELINE_PROVIDER_ID), None
+    )
     if (
         assessment.object_digest == current_object_digest
         and baseline is not None

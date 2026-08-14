@@ -4,10 +4,11 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.2.0`
-- **Execution status:** `2.2.0` answers live acceptance v2 on top of the released `2.0.0` contract —
-  nine of its thirteen residues closed; both registries are published on that contract and need no
-  re-authoring, and the consumer project reconciles against them in CI
+- **Current code version:** `2.3.0`
+- **Execution status:** `2.3.0` adds registry vendoring on top of the released `2.0.0` contract,
+  closing the last live-acceptance-v2 residue that needed a feature rather than a fix; both
+  registries are published on that contract and need no re-authoring, and the consumer project
+  reconciles against them in CI
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-14
@@ -1841,3 +1842,29 @@ None.
   section stating a rule the compiler already enforced. No registry precondition.
 - Still human-gated, unchanged: the curses passes, the MCP credential pass, and the publication
   itself.
+
+### 2026-08-14 — registry vendoring; 2.3.0 release contract
+
+- **`VN-1`..`VN-9` all landed.** Design and plan in `docs/design/DESIGN-registry-vendoring.md` and
+  `docs/plan/PLAN-registry-vendoring.md`; each package's section records what the plan did not
+  anticipate, which is again where the interesting part of the release is written down.
+- **The residue is closed by making content owned, not by loosening a rule.** `requires` still
+  resolves only against packages the registry owns; `registry vendor` gives a maintainer a way to
+  own foreign content, so the dependency rule needed no change at all.
+- **No protocol revision, and that is the design claim.** A vendored artifact is an ordinary owned
+  package carrying `provenance.json`; the two facts re-vendoring needs ride in the namespaced
+  `aart.vendor` extension, verified against `importer.options_digest`. `schema-freeze-v11.json`
+  carries protocol versions identical to v10 and differs in exactly two inputs, both protocol prose.
+- **A successful vendor is a report, not a certificate.** The assessment covers the exact bytes that
+  would be written — the maintainer's authored wrapper as much as the copied payload — findings do
+  not block the action, and the review says in words that the registry is now the distributor.
+- **`unreachable` is not `up-to-date`.** The one reading design §6 forbids is an upstream that could
+  not be read counting as agreement; `revendor --check` exits non-zero for it, and
+  `registry audit --check-upstream` reports it as unknown rather than as drift.
+- **One module was deleted for what it promised rather than what it did.** `io/net.py` read
+  `GITHUB_TOKEN`; AART holds no credentials and runs system Git. The `validate` gate now refuses the
+  names, so the promise cannot return by accident.
+- **Three residues are open and owned by nobody**, recorded in the plan: `io/cache.py` is now
+  unreferenced by shipping code, `docs/design/DESIGN-upstream.md` carries no superseded banner, and
+  `commands/registry.py` stamps dead `1.0.0`/`2.0.0` AART bounds on every non-`init` request.
+- Still human-gated, unchanged: the curses passes and the MCP credential pass.
