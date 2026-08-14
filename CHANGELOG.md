@@ -3,6 +3,84 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.5.0 — 2026-08-14
+
+A setup recipe can build from the package it belongs to. An MCP server that has to be built on the
+machine it runs on was not expressible: a package could carry a `Dockerfile` and nothing could say
+*build these bytes*, so a maintainer either published an image every consumer could reach or wrote a
+`SETUP.md` and hoped. This release adds the primitive — a private writable copy of a package-relative
+subtree — the two modules that use it, and the module reference AART had never written. Nothing is
+pushed, and no code path could push. Minor: no command, flag, field, document format, or install
+effect changes, and the v13 schema freeze carries protocol versions identical to v12, differing in
+exactly one input, `agent_artifacts/setup.py`, which is the module catalog and not a parsed field.
+
+The live acceptance run for this release then found that none of it was reachable, in this release or
+any before it, and that fix is the *Fixed* entry below.
+
+### Added
+
+- `docker.build@1`: builds one local image from a package-relative context. The tag is derived,
+  `aart/<type>/<name>:<version>`, and a recipe declaring its own is refused — which is what lets
+  `payload/mcp.json` name the image before it exists and gives rollback a rule it can hold. The
+  reviewed argv is what executes, the receipt records the context digest, the tag, the image id and
+  whether the tag pre-existed, and rollback removes a tag this run created and leaves one that was
+  already there. One build per recipe, refused at parse time, because "the context" is a definite
+  article.
+- A recipe can name a subtree of its own package to be read. AART copies it into a private `0o700`
+  directory under the data root, builds there, and removes it when the run ends — after success,
+  after failure, and after a consumer declines. **The package is never written to**, held by the
+  store's object digest rather than by a file comparison. A symlink in the subtree is refused, as
+  everywhere else in AART, and the path is resolved at plan time so the review already names what
+  will be read.
+- `trust-store.export-certificates@1` and the `trust-store` capability, distinct from `keychain`
+  because reading a public certificate list is a materially smaller claim than credential-store
+  access. It writes a PEM bundle into the build context and nowhere else; a substring matching
+  nothing fails and names it; an export that would overwrite a file the package ships is refused; and
+  an export without a build, or ordered after it, is refused at parse time.
+- The security baseline reads `Dockerfile`, `Containerfile`, and `*.dockerfile`, extracting `RUN`
+  instructions and rejoining `\` continuations first, so `curl … | sh` is seen whole. Two rules for
+  the new capabilities, `setup-capability-docker-build` (high) and `setup-capability-trust-store`
+  (medium), keep the distinction the release draws instead of reporting both as unknown. The ruleset
+  revision is `baseline-v1.1`, so evidence recorded under the old rules is reported stale rather than
+  silently reused.
+- `docs/protocol/setup-recipe-v2.md`: the first module reference AART has had — all ten modules, all
+  capabilities, what the review shows, and the manual command for each. A test asserts that every
+  module and capability appears there, and another feeds the worked recipe to the parser a consumer
+  uses.
+- `docs/design/DESIGN-setup-build-context.md`, `docs/plan/PLAN-setup-build-context.md`, and
+  `docs/testing/PROGRESS-live-acceptance-setup-build.md` — the design, the work-package record, and
+  the live acceptance ledger for this release, the last written during the run rather than after it.
+
+### Fixed
+
+- **A registry index published capabilities no consumer could match, so setup planning refused every
+  recipe beyond a keychain-only one.** The index carried the author's declared vocabulary
+  (`filesystem`, `docker`) while the consumer recomputed the policy vocabulary (`managed-file`,
+  `docker-build`) and required equality. Both vocabularies remain, because they say different things;
+  one function now decides what a recipe's steps need, the index publishes that, the consumer
+  recomputes it from the same bytes, and the gate detects a tampered index instead of refusing
+  everything. Pre-existing in every release that had the check. **A registry should re-run
+  `registry build` on `2.5.0`**; nothing that worked stops working, because the affected artifacts
+  were the ones already being refused.
+
+### Changed
+
+- `docs/configuration/config-policy-v1.md` states that `allowed_setup_capabilities` is written in the
+  policy vocabulary and lists its values.
+- The setup recipe reference's manual build carries the `chmod -R u+w` the object store's read-only
+  modes require, and states what an older executable actually does with a new module — it refuses the
+  whole source at `source add`, and an existing subscriber freezes at last-known-good — rather than
+  implying a `requires_aart` floor protects anyone.
+
+### Known defects shipped open
+
+Eight findings from the acceptance run ship unfixed, listed with their blast radius in
+[`compatibility-v13.md`](docs/release/compatibility-v13.md) and with their transcripts in the ledger.
+The two that change what a consumer should do: **nothing a consumer can invoke reverses a setup that
+succeeded**, though every effect's review line promises otherwise; and **an unattended keychain step
+stores an empty secret and reports success**, so a secret-bearing recipe should be set up
+interactively.
+
 ## 2.4.0 — 2026-08-14
 
 Vendored copy integrity. The `2.3.0` live acceptance run found that AART verified the vendoring

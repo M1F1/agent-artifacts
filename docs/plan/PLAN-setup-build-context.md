@@ -388,6 +388,45 @@ unpatched code.
   kept the agent from typing a credential turned into the finding: any unattended install produces a
   configured artifact with an empty token.
 
+### SBC-9
+
+- **The fix the run sketched is not the fix that landed.** The ledger's patch made the *consumer*
+  compare against the author's declared list, which would have made policy blind: an index that says
+  `docker` cannot tell an organization whether the recipe pulls a pinned image or builds one from
+  bytes it ships. Publishing the policy vocabulary instead is a change to the index rather than to
+  the gate, and it is the direction that makes `allowed_setup_capabilities` mean something from the
+  index alone — which is why capability evidence is published at all.
+- **`protocol/` importing `setup` looked like a layering violation and was not.** `native_tree.py`
+  already imports from `agent_artifacts.setup`; the module catalog is the protocol's own vocabulary,
+  not consumer policy. The alternative — a third copy of the table inside `protocol/` — is exactly
+  the shape that produced `LAF-51`.
+- **The old test asserted the defect.** `test_setup_capabilities_are_published_from_the_compiled_recipe`
+  passed a declared list through a stub installer with *no steps* and checked it came back out. It
+  was a test of a pipe, and it was green for as long as the bug existed. Its replacement builds real
+  steps, and a second case asserts that a recipe declaring much and doing nothing publishes nothing.
+- **Re-running the acceptance scenarios needed a fresh sandbox, not a fresh command.** The first
+  re-run inherited the earlier run's data root and reported `already configured`, which proves
+  nothing about planning. Rebuilding the sandbox and the consumer project from zero is what makes
+  `LAB-A-01′` a re-run rather than a re-read.
+- **A killed re-run left evidence of a new defect** (`LAF-61`): a working copy is removed when a run
+  ends and not when a run is killed. Recorded, not fixed — the run's own rule applied to the run's
+  own accident.
+
+### SBC-8
+
+- **The release documents are where the residues become a consumer-facing statement.** Eight findings
+  ship open; a compatibility matrix that lists only what was added would be accurate and misleading.
+  *Known defects shipped with this release* is a section this project has not needed before, and it
+  belongs beside the upgrade notes rather than in the ledger only.
+- **The upgrade obligation is a rebuild, and it needed stating twice.** Rebuilding the index is what
+  makes the fix take effect for existing registries, and it is also what refreshes assessment
+  evidence stranded by the `baseline-v1.1` revision. Two unrelated mechanisms, one command, and a
+  consumer who does neither sees no regression and no improvement.
+- **`LAF-60` is the rollout note, not a defect note.** A maintainer reading only *Added* would
+  publish a `docker.build@1` artifact the week the release lands and withhold their whole registry
+  from every consumer still on `2.4.0`. That warning outranks the module descriptions in practice, so
+  it sits in the upgrade notes and in the registry precondition rather than in a footnote.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,

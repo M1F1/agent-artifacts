@@ -4,18 +4,19 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.4.0`
-- **Execution status:** `2.4.0` closes three live-acceptance-v3 findings against the vendoring
-  surface `2.3.0` shipped — the copy is now verified against the origin digest it records, drift is
-  measured from the bytes on disk, and the review states what a consumer of an `mcp` artifact
-  actually receives. Still the released `2.0.0` contract: no command, field, or install effect
-  changes, both registries need no re-authoring, and the consumer project reconciles against them in
-  CI
+- **Current code version:** `2.5.0`
+- **Execution status:** `2.5.0` makes an artifact that builds itself expressible — a package-relative
+  build context, `docker.build@1`, `trust-store.export-certificates@1` — and, after the live
+  acceptance run showed the guided route had never run for *any* recipe beyond a keychain-only one,
+  reconciles the two capability vocabularies so it does. Still the released `2.0.0` contract: no
+  command, field, or install effect changes, and both registries need no re-authoring, though a
+  registry should re-run `registry build`. The commit is prepared locally; tagging and publication
+  are the maintainer's
 - **Next task:** WP-7 — run the full agent-driven acceptance matrix against the published content,
   then the human-gated curses, real-home, and credential passes
 - **Last updated:** 2026-08-14
 
-## Setup build context (`2.5.0`, in progress)
+## Setup build context (`2.5.0`, complete — unpublished)
 
 - **Design:** [docs/design/DESIGN-setup-build-context.md](docs/design/DESIGN-setup-build-context.md)
 - **Plan:** [docs/plan/PLAN-setup-build-context.md](docs/plan/PLAN-setup-build-context.md)
@@ -39,7 +40,7 @@
 | SBC-6 | The worked artifact, and the documentation that makes it copyable | done | Module reference, worked section, the three limits from design §9, and a test that every module in `_MODULES` is documented |
 | SBC-7 | Live acceptance: both routes, on a real machine | done | Both routes walked and diffed on a real daemon and a real keychain: [`PROGRESS-live-acceptance-setup-build.md`](docs/testing/PROGRESS-live-acceptance-setup-build.md). Ten findings (`LAF-51`..`LAF-60`) in five clusters; `LAF-51` makes the guided route unreachable as shipped and had to be worked around to observe anything else. Contents agree between routes; image identity does not |
 | SBC-9 | The guided route actually runs | done | One table decides what a recipe needs; the index publishes it and the consumer recomputes it, so the gate compares like with like. `LAF-51` closed and the acceptance scenarios re-walked unpatched; `LAF-56` and `LAF-60` fixed in the reference |
-| SBC-8 | The `2.5.0` release commit | not started | Contract v13; publication is the maintainer's |
+| SBC-8 | The `2.5.0` release commit | done | Version `2.5.0`, contract v13: [compatibility](docs/release/compatibility-v13.md), [checklist](docs/release/release-checklist-v13.md), [notes](docs/release/github-release-v2.5.0.md), and a freeze that differs from v12 in one input and no protocol version. The matrix carries the two upgrade obligations — rebuild the index, do not publish a new-module artifact ahead of consumer upgrades — and the eight findings shipping open. **Not tagged, not pushed, not published: that is the maintainer's** |
 
 ## Live acceptance run
 
