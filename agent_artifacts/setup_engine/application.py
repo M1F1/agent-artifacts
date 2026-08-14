@@ -269,6 +269,12 @@ def _planned_capabilities(installer: SetupInstaller) -> tuple[Capability, ...]:
             values.add("managed-file")
         elif step.use == "docker.pull@1":
             values.update(("docker-pull", "network"))
+        elif step.use == "docker.build@1":
+            # A build reaches the network for its base image and its `RUN` lines, and runs a local
+            # process to do it. An organization that denies either must be able to deny this.
+            values.update(("docker-build", "network", "process"))
+        elif step.use == "trust-store.export-certificates@1":
+            values.add("trust-store")
         elif step.use == "command.verify@1":
             values.add("verify-command")
     if installer.custom_entrypoint is not None:

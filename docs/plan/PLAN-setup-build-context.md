@@ -301,6 +301,18 @@ machine.
   scanner is not reading at that line, and `--require-hashes` is the remediation. Weakening the rule
   to accept `-r` would have been the wrong fix, so the test asserts the finding instead.
 
+### SBC-5
+
+- **The review was not the only surface that had to learn the new modules.** `_planned_capabilities`
+  translates steps into the vocabulary that *policy* speaks — `docker-pull`, `managed-file`,
+  `verify-command` — and it had no case for either new module, so a build planned an empty capability
+  set. An organization that forbids container execution would have approved one without seeing it.
+  A build now declares `docker-build`, `network`, and `process`; an export declares `trust-store`.
+- **The generic detail line is correct for a restart notice.** The plan asks that no effect fall
+  through to the generic rendering; that is right for the *identity* of every effect and right for
+  the *details* of the new modules, but `restart.notice@1` genuinely runs nothing and saying so is
+  not a fall-through. The test distinguishes the two rather than forcing prose onto a notice.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
