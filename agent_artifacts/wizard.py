@@ -175,6 +175,8 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
         "scaffold",
         "promote-native",
         "refresh-native",
+        "vendor",
+        "revendor",
     ):
         return maintainer + ("native_details", "review")
     if action == "user":

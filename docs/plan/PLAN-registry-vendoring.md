@@ -1,6 +1,6 @@
 # Plan: registry vendoring
 
-Status: **`VN-1` … `VN-8` landed; `VN-9` open.** Implements
+Status: **`VN-1` … `VN-9` landed; the `2.3.0` release commit is the maintainer's.** Implements
 [the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
 "What the plan did not anticipate" section; those sections, not this line, are the run record.
 
@@ -506,6 +506,36 @@ copied", matching the review (carried from `VN-5` through `VN-6`).
 
 **Tests:** the TUI request value equals the flag-mode request for one fixture; the rendered review
 contains the assessment. Depends on `VN-4`.
+
+**What the plan did not anticipate**
+
+- **The wizard stage graph gates the action, not just the menu.** `tui.py:193` is only the list;
+  an action reaches the prompt stage `native_details` only if `wizard.py`'s `_stage_ready` graph
+  routes it there, and the four routed actions were enumerated by name. Adding the menu entries
+  alone would have sent `vendor` straight to Review with an empty request — a package with no URL —
+  so `agent_artifacts/wizard.py` is a third file this package touches.
+- **Two tests selected the maintainer action by hard-coded index** (`tests/tui_curation_test.py`,
+  curses `iter((1, 8))` and text `"9"`). Both still passed after two entries were inserted, because
+  the index now names a different action. They are derived from
+  `CANONICAL_MAINTAINER_ACTIONS` here; an index that can silently mean something else is not a test.
+- **`revendor` keeps the unstated version unstated.** The wizard prompt takes a blank answer as
+  "report what moved, plan nothing" — what flag mode says by omitting `--artifact-version`. A
+  default here would answer the one question design §4 requires the maintainer to answer, so the
+  prompt says so in the text and a test holds it.
+- **Parity is asserted over the whole request except the `init` bounds.** `minimum_version` and
+  `maximum_version` are `registry init`'s source-compatibility bounds; no other action reads them,
+  and the two front-ends disagree on the value nobody reads (see the residue below). The test
+  normalizes exactly those two fields and states why, rather than weakening to a field-by-field
+  comparison that would stop noticing a real divergence.
+
+**Residues found, recorded against the package that will own them:**
+
+- No package owns this; it is a finding for the maintainer. `commands/registry.py`'s
+  `_curation_request` stamps `minimum_version="1.0.0"`/`maximum_version="2.0.0"` on **every**
+  request when the parsed flags are absent — which they always are, since `--minimum-version` and
+  `--maximum-version` exist only on `registry init`. The value is dead for every action but `init`,
+  and where it is alive `init`'s own argparse defaults (`__version__` and next major) supply it, so
+  the fallback constants are both unreachable and stale. Harmless today; misleading to read.
 
 ## Dependency order
 
