@@ -344,6 +344,61 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
             self.assertEqual(len(ages), 2)
             self.assertGreater(ages[1], ages[0], "the clock must actually have advanced")
 
+    def test_expect_carries_one_reviewed_decision_across_two_commands(self) -> None:
+        # The workflow the review text prescribes: read the digest from a review, then finalize that
+        # exact plan in a second command.  A digest that no longer describes the plan must refuse.
+        with _environment() as env:
+            _, review = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
+            reviewed = review["review_digest"]
+
+            stale = "sha256:" + "0" * 64
+            code, refused = env.run(
+                "marketplace",
+                "install",
+                _COORDINATE,
+                "--profile",
+                "claude",
+                "--yes",
+                "--expect",
+                stale,
+            )
+
+            self.assertEqual(code, 1)
+            self.assertFalse(refused["ok"])
+            self.assertFalse(refused["finalized"])
+            self.assertEqual(refused["expected_review_digest"], stale)
+            self.assertEqual(refused["review_digest"], reviewed)
+            self.assertEqual(
+                refused["diagnostics"][0]["code"],
+                "consumer-review-mismatch",
+            )
+            self.assertIn("review", refused, "a refusal must show the plan that would have run")
+            self.assertEqual(list(env.project.iterdir()), [], "a refusal writes nothing")
+
+            code, applied = env.run(
+                "marketplace",
+                "install",
+                _COORDINATE,
+                "--profile",
+                "claude",
+                "--yes",
+                "--expect",
+                reviewed,
+            )
+
+            self.assertEqual(code, 0, applied)
+            self.assertTrue(applied["finalized"])
+            self.assertTrue((env.project / ".claude" / "skills" / "code-review").exists())
+
+    def test_yes_without_expect_keeps_its_meaning(self) -> None:
+        with _environment() as env:
+            code, applied = env.run(
+                "marketplace", "install", _COORDINATE, "--profile", "claude", "--yes"
+            )
+
+            self.assertEqual(code, 0, applied)
+            self.assertTrue(applied["finalized"])
+
     def test_uninstall_removes_the_installed_payload(self) -> None:
         with _environment() as env:
             env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")

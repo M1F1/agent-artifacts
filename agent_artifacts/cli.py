@@ -283,6 +283,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="adopt the reviewed identity change (without this the command only reviews)",
     )
+    p_source_resubscribe.add_argument(
+        "--expect",
+        metavar="FROM:TO",
+        help=(
+            "adopt only this exact identity change, written as the two declared source IDs; "
+            "otherwise refuse and show the transition that is actually offered"
+        ),
+    )
     _add_json(p_source_resubscribe)
 
     p_source_health = source_sub.add_parser(
@@ -417,6 +425,14 @@ def build_parser() -> argparse.ArgumentParser:
             "--yes",
             action="store_true",
             help="finalize the reviewed plan (without this the command only reviews)",
+        )
+        lifecycle.add_argument(
+            "--expect",
+            metavar="DIGEST",
+            help=(
+                "finalize only if the recomputed review digest equals DIGEST; otherwise refuse "
+                "and show the new review"
+            ),
         )
         _add_json(lifecycle)
         return lifecycle
@@ -825,6 +841,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         scope=getattr(args, "scope", "project"),
         artifact_kind=getattr(args, "artifact_kind", None),
         yes=bool(getattr(args, "yes", False)),
+        expect=getattr(args, "expect", None),
         force=bool(getattr(args, "force", False)),
         dry_run=bool(getattr(args, "dry_run", False)),
         json=bool(getattr(args, "json", False)),

@@ -459,6 +459,80 @@ class SourceCliCommandTests(unittest.TestCase):
         self.assertEqual(request.source_alias, "company")
         self.assertTrue(request.yes)
 
+    def _resubscribe_with_expect(self, expect: str) -> tuple[int, list[str], list[object], str]:
+        events: list[str] = []
+        _source, configuration = self._configured()
+        runtime = _runtime(configuration, writes=events)
+        calls: list[object] = []
+
+        def resubscribe(_source, *, data_root, expected=None, **_kwargs):
+            calls.append(expected)
+            return Ok(
+                SimpleNamespace(
+                    transition=_TRANSITION,
+                    finalized=expected is not None,
+                    current=SimpleNamespace(
+                        declared_source_id=SourceId("renamed-registry"),
+                        candidate=SimpleNamespace(
+                            resolved_revision="b" * 40,
+                            snapshot_digest=ObjectDigest("sha256", "d" * 64),
+                        ),
+                    ),
+                )
+            )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "agent_artifacts.commands.source.load_runtime_configuration",
+                return_value=Ok(runtime),
+            ),
+            patch(
+                "agent_artifacts.commands.source.resubscribe_configured_source",
+                side_effect=resubscribe,
+            ),
+            patch(
+                "agent_artifacts.commands.source._source_health",
+                return_value=SourceHealth(HealthStatus.HEALTHY, 12, None),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = cli.main(
+                [
+                    "source",
+                    "resubscribe",
+                    "--alias",
+                    "company",
+                    "--yes",
+                    "--expect",
+                    expect,
+                    "--json",
+                ]
+            )
+        return result, events, calls, stdout.getvalue()
+
+    def test_resubscribe_expect_adopts_only_the_exact_reviewed_transition(self) -> None:
+        # A human reviews in one command and adopts in another.  Between the two the origin may
+        # declare a third identity; adopting that one silently would make the review a lie.
+        code, events, calls, raw = self._resubscribe_with_expect("team-registry:renamed-registry")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[-1], _TRANSITION, "finalize must carry the reviewed transition")
+        payload = json.loads(raw)
+        self.assertTrue(payload["finalized"])
+
+    def test_resubscribe_expect_refuses_a_transition_it_did_not_review(self) -> None:
+        code, events, calls, raw = self._resubscribe_with_expect("team-registry:some-other-id")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(events, [], "a refused resubscription writes nothing")
+        self.assertEqual(calls, [None], "finalize must not be reached")
+        payload = json.loads(raw)
+        self.assertFalse(payload["ok"])
+        message = payload["diagnostics"][0]["message"]
+        self.assertIn("team-registry:some-other-id", message)
+        self.assertIn("team-registry:renamed-registry", message)
+
     def test_resubscribe_without_yes_reviews_both_identities_and_publishes_nothing(self) -> None:
         events: list[str] = []
         _source, configuration = self._configured()

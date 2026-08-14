@@ -7,7 +7,9 @@ Two properties are load-bearing for automation safety and are asserted by the te
 * **Review before Finalize.**  The TUI asks a human to confirm an exact reviewed plan.  The
   non-interactive equivalent is ``--yes``: without it every action stops after Review and reports
   the plan it *would* apply.  Finalize always passes the digest of the review computed in this same
-  process, so a plan can never drift between Review and Finalize.
+  process, so a plan can never drift between Review and Finalize.  ``--expect DIGEST`` extends that
+  guarantee across two commands: it binds the decision a human actually read to the plan being
+  applied, and refuses — showing the new review — when they have stopped being the same plan.
 * **Authorizations are never implied.**  Untrusted-source setup, custom entrypoints, and setup
   effect consent each need their own flag.  Omitting a flag denies; it never asks and never
   assumes.
@@ -20,7 +22,10 @@ import os
 from pathlib import Path
 
 from agent_artifacts import command_outcome as _common
-from agent_artifacts.consumer.application import ConsumerApplicationService
+from agent_artifacts.consumer.application import (
+    CONSUMER_REVIEW_MISMATCH,
+    ConsumerApplicationService,
+)
 from agent_artifacts.consumer.coordinates import CONSUMER_INVALID, parse_artifact_selectors
 from agent_artifacts.consumer.model import (
     ConsumerAction,
@@ -511,6 +516,39 @@ def _lifecycle(request: Request, action: str) -> int:
             + ("Reviewed only; re-run with --yes to apply this exact plan.",),
         )
         return _common.OK
+
+    if request.expect is not None and request.expect != str(review.review_digest):
+        # The reviewed decision did not survive to this command.  Refuse, and render the plan that
+        # would actually run — an operator who cannot see the new plan cannot re-authorize it.
+        refusal = Diagnostic(
+            CONSUMER_REVIEW_MISMATCH,
+            Severity.ERROR,
+            (
+                f"the plan changed since it was reviewed: expected {request.expect}, "
+                f"recomputed {review.review_digest}"
+            ),
+            remediation=("re-read the review below, then re-run --expect with its review_digest",),
+        )
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                "ok": False,
+                "operation": operation,
+                "finalized": False,
+                "diagnostics": [diagnostic_to_data(refusal)],
+                "expected_review_digest": request.expect,
+                "review_digest": str(review.review_digest),
+                "review": review_data,
+            },
+            (
+                f"{refusal.severity.value}: {refusal.message}",
+                *(f"  remediation: {item}" for item in refusal.remediation),
+                *render_consumer_review(review),
+            ),
+        )
+        return _common.ERROR
 
     finalized = service.value.finalize(review, review.review_digest)
     if isinstance(finalized, Err):
