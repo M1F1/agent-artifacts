@@ -57,9 +57,29 @@ def run_process(
     cwd: Optional[str],
     timeout: int,
     capture: bool,
+    stdout_path: Optional[str] = None,
 ) -> ProcessResult:
-    """Run a fixed argv without a shell or broad inherited environment."""
+    """Run a fixed argv without a shell or broad inherited environment.
 
+    Captured output is truncated because it exists to be shown to a person.  A tool whose output is
+    *data* — a certificate bundle is the only one today — writes to `stdout_path` instead, so the
+    bytes go to the file they were asked for and never through a field sized for a message.
+    """
+
+    if stdout_path is not None:
+        with open(stdout_path, "wb") as sink:
+            completed = subprocess.run(
+                tuple(argv),
+                shell=False,
+                check=False,
+                env=dict(env),
+                cwd=cwd,
+                timeout=timeout,
+                text=True,
+                stdout=sink,
+                stderr=subprocess.PIPE,
+            )
+        return ProcessResult(completed.returncode, "", (completed.stderr or "")[:4096])
     completed = subprocess.run(
         tuple(argv),
         shell=False,
@@ -433,6 +453,70 @@ def _docker_build_apply(
             else "Rollback removes this tag, which only this run created."
         ),
     }, True
+
+
+_PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
+_PEM_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _trust_store_apply(
+    effect: SetupEffect,
+    runtime: SetupRuntime,
+    plan: SetupPlan,
+    workspace: _RunWorkspace,
+) -> tuple[dict, bool]:
+    """Write the matching public certificates into the build context, and only there.
+
+    A corporate root CA is public by nature — it is what the interception proxy presents to every
+    machine on the network — so this is not the secret machinery and does not prompt anyone for
+    anything.  `security find-certificate` exports certificates and never private keys.
+    """
+
+    context = workspace.open(plan, str(effect.config["context_source"]))
+    output = str(effect.config["output"])
+    destination = os.path.abspath(os.path.join(context, output))
+    if os.path.commonpath((context, destination)) != context:
+        raise RuntimeError(f"certificate output escapes the build context: {output}")
+    if os.path.lexists(destination):
+        # The package already ships a file by this name. Overwriting it would silently replace
+        # something a maintainer chose to include, and the assessment already read.
+        raise RuntimeError(f"certificate output would overwrite a package file: {output}")
+    os.makedirs(os.path.dirname(destination), mode=0o700, exist_ok=True)
+    result = runtime.process(
+        effect.argv,
+        env=_minimal_env(runtime),
+        cwd=None,
+        timeout=120,
+        capture=True,
+        stdout_path=destination,
+    )
+    subject = str(effect.config["subject_contains"])
+    try:
+        if result.returncode != 0:
+            raise RuntimeError(redact_text(result.stderr or "certificate export failed")[:512])
+        size = os.path.getsize(destination)
+        if size > _PEM_MAX_BYTES:
+            raise RuntimeError("exported certificate bundle is implausibly large")
+        bundle = fs.read_text(destination)
+        certificates = bundle.count(_PEM_BEGIN)
+        if certificates == 0:
+            # An empty bundle builds an image without the CA, which fails much later inside `pip`
+            # with a TLS error nobody can trace back to here.
+            raise RuntimeError(f"no certificate name contains {subject!r}")
+    except (OSError, RuntimeError, UnicodeDecodeError):
+        try:
+            os.unlink(destination)
+        except OSError:
+            pass
+        raise
+    os.chmod(destination, 0o600)
+    return {
+        "module": effect.module,
+        "output": output,
+        "subject_contains": subject,
+        "certificates": certificates,
+        "recovery": "",
+    }, False
 
 
 def _command_verify(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, bool]:
@@ -907,6 +991,8 @@ def _apply_effect(
         return _docker_apply(effect, runtime)
     if effect.module == "docker.build@1":
         return _docker_build_apply(effect, runtime, plan, workspace)
+    if effect.module == "trust-store.export-certificates@1":
+        return _trust_store_apply(effect, runtime, plan, workspace)
     if effect.module == "command.verify@1":
         return _command_verify(effect, runtime)
     if effect.module == "restart.notice@1":
@@ -1043,9 +1129,12 @@ def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> b
         return result.returncode == 0
     # Docker images may be shared and are never removed automatically; verify/notices mutate
     # nothing. Other changed modules are handled above with ownership-aware compensation.
-    return module in ("restart.notice@1", "command.verify@1") or not bool(
-        receipt.get("changed", False)
-    )
+    return module in (
+        "restart.notice@1",
+        "command.verify@1",
+        # The bundle was written into a working copy that the run already deleted.
+        "trust-store.export-certificates@1",
+    ) or not bool(receipt.get("changed", False))
 
 
 def _record(

@@ -50,7 +50,18 @@ Result = Union[Ok, Err]  # conceptually Result[T]
 # --------------------------------------------------------------------------- #
 # Catalog (source side)                                                        #
 # --------------------------------------------------------------------------- #
-SetupCapability = Literal["keychain", "filesystem", "docker", "network", "process", "custom-code"]
+SetupCapability = Literal[
+    "keychain",
+    "filesystem",
+    "docker",
+    "network",
+    "process",
+    "custom-code",
+    # Reading the machine's public certificate list is a materially smaller claim than reaching
+    # into its credential store, and a review that called both "keychain" would teach the reader
+    # to discount the word.
+    "trust-store",
+]
 SetupTerminalStatus = Literal[
     "configured",
     "already_configured",

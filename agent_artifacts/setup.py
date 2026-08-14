@@ -45,7 +45,15 @@ _TOP_FIELDS = {
     "steps",
     "custom_entrypoint",
 }
-_CAPABILITIES = {"keychain", "filesystem", "docker", "network", "process", "custom-code"}
+_CAPABILITIES = {
+    "keychain",
+    "filesystem",
+    "docker",
+    "network",
+    "process",
+    "custom-code",
+    "trust-store",
+}
 _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozenset[str]]] = {
     "macos-keychain.store@1": (
         "keychain",
@@ -81,6 +89,11 @@ _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozense
         "docker",
         frozenset({"context", "dockerfile"}),
         frozenset({"context"}),
+    ),
+    "trust-store.export-certificates@1": (
+        "trust-store",
+        frozenset({"subject_contains", "output"}),
+        frozenset({"subject_contains", "output"}),
     ),
     "command.verify@1": (
         "process",
@@ -422,6 +435,11 @@ def _validate_step(
             # A build that cannot find the tool must fail as a missing prerequisite, before any
             # consent is asked for, rather than as a build error halfway through the recipe.
             raise _Invalid(f"step {step_id!r} requires 'docker' in required_tools")
+    elif use == "trust-store.export-certificates@1":
+        _single_line(config["subject_contains"], f"step {step_id}.subject_contains")
+        _context_relative_file(config["output"], f"step {step_id}.output")
+        if "/usr/bin/security" not in required_tools:
+            raise _Invalid(f"step {step_id!r} requires '/usr/bin/security' in required_tools")
     elif use == "command.verify@1":
         argv = config["argv"]
         if not isinstance(argv, list) or not argv:
@@ -554,6 +572,19 @@ def parse_installer(
             )
             for entry in steps_raw
         )
+        uses = [step.use for step in steps]
+        if "trust-store.export-certificates@1" in uses:
+            # A certificate export writes into the build context and nowhere else, so a recipe
+            # without a build has nowhere to put it, and one that exports after the build has
+            # already built without it.
+            if "docker.build@1" not in uses:
+                raise _Invalid(
+                    "trust-store.export-certificates@1 requires a docker.build@1 step to write into"
+                )
+            if uses.index("trust-store.export-certificates@1") > uses.index("docker.build@1"):
+                raise _Invalid(
+                    "trust-store.export-certificates@1 must come before the docker.build@1 step"
+                )
         if sum(step.use == "docker.build@1" for step in steps) > 1:
             # One recipe, one build context: it is materialized once for the run and every step
             # that contributes a file contributes to that one copy.
@@ -746,6 +777,17 @@ def _effect_for_step(
         summary = (
             f"Build local Docker image {target} from a copy of {context_source} "
             f"using {dockerfile}; the image is never pushed anywhere"
+        )
+    elif step.use == "trust-store.export-certificates@1":
+        subject = str(config["subject_contains"])
+        output = str(config["output"])
+        target = f"{output} inside the build context"
+        argv = ("/usr/bin/security", "find-certificate", "-a", "-c", subject, "-p")
+        planned_config["context_source"] = context_source
+        reversible = True
+        summary = (
+            f"Export certificates whose name contains {subject!r} into the build context "
+            f"as {output}; no private key is read and nothing is stored"
         )
     elif step.use == "command.verify@1":
         raw_argv = config["argv"]
@@ -971,6 +1013,7 @@ def _effect_identity(effect: SetupEffect) -> str:
         "directory.create@1": "Create a directory",
         "docker.pull@1": "Pull a digest-pinned Docker image",
         "docker.build@1": "Build a local Docker image from this package",
+        "trust-store.export-certificates@1": "Export certificates into the build context",
         "command.verify@1": "Run a verification command",
         "restart.notice@1": "Show a restart notice",
         "custom.install@1": "Run reviewed custom setup protocol",
@@ -995,6 +1038,11 @@ def _effect_details(effect: SetupEffect) -> str:
             f"required tool: docker; runs the instructions in "
             f"{effect.config.get('dockerfile', 'Dockerfile')} with network access, from a copy of "
             f"{effect.config.get('context_source', '')}; the image stays on this machine"
+        )
+    if effect.module == "trust-store.export-certificates@1":
+        return (
+            "required tool: /usr/bin/security; reads public certificates from the login and "
+            "System keychains, exports no private key, and writes only into the build context"
         )
     if effect.module == "command.verify@1":
         return "reviewed command arguments are withheld from review"
@@ -1217,6 +1265,8 @@ def receipt_matches_plan(receipt: Mapping[str, object], plan: SetupPlan) -> bool
         return receipt.get("image") == effect.target
     if effect.module == "docker.build@1":
         return receipt.get("tag") == effect.target
+    if effect.module == "trust-store.export-certificates@1":
+        return receipt.get("output") == effect.config.get("output")
     if effect.module == "custom.install@1":
         run_dir = str(receipt.get("run_dir", ""))
         expected_runs = os.path.join(plan.run_root, ".agent-artifacts", "setup-runs")

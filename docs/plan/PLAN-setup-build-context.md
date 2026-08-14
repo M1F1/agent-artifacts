@@ -252,6 +252,31 @@ machine.
   and builds on the `desktop-linux` instance without `HOME`. The limitation is narrower than the
   design stated — it is about *registry credentials*, not about building at all.
 
+### SBC-3
+
+- **The filter is the tool's own.** The plan reads as though AART would export every certificate and
+  then match subjects itself, which would mean parsing X.509 with no stdlib support or taking an
+  `openssl` dependency. `security find-certificate -c` already substring-matches the common name —
+  verified directly: `-c ppl` returns the same certificates as `-c Apple`. So the substring is
+  passed to the tool and the reviewed argv is the whole filter.
+- **`security` exits 0 when nothing matches.** No-match is an empty bundle with a success code, so
+  the "no match is a failure" rule cannot be a return-code check; it is a count of PEM blocks in
+  what was written.
+- **A bundle is data, not a message.** `run_process` truncates captured output at 4096 characters
+  because captured output exists to be shown to a person; a two-certificate bundle is larger than
+  that. The runner gained `stdout_path`, so the tool writes to the file it was asked for and the
+  bytes never pass through a field sized for a sentence.
+- **The search list is already the right one.** `security` without a keychain argument searches
+  `login.keychain-db` and `System.keychain` — where an MDM-installed corporate CA lands — and *not*
+  `SystemRootCertificates.keychain`, so Apple's 156 built-in roots cannot be swept up by a loose
+  substring.
+- **Order is a parse-time rule, not a convention.** An export after the build writes into a context
+  that has already been built, silently producing an image without the CA, so the export must
+  precede the build and a recipe that inverts them is refused.
+- **The export may not overwrite a file the package ships.** Otherwise a maintainer's own
+  `company-ca.pem` would be replaced by whatever the machine's trust store held, silently, after the
+  assessment had already read the shipped one.
+
 ## Residues this plan records and does not own
 
 - **`inputs` accepts only `type: "secret"`.** The acceptance artifact wants to prompt for a username,
