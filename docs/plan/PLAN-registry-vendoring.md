@@ -1,6 +1,6 @@
 # Plan: registry vendoring
 
-Status: **`VN-1` … `VN-7` landed; `VN-8` and `VN-9` open.** Implements
+Status: **`VN-1` … `VN-8` landed; `VN-9` open.** Implements
 [the design](../design/DESIGN-registry-vendoring.md). Each landed package records what it found in a
 "What the plan did not anticipate" section; those sections, not this line, are the run record.
 
@@ -471,6 +471,30 @@ distinguishes behind-upstream from unreachable.
    upstream moves.
 
 **Must land after `SI-9`.** Depends on `VN-6`.
+
+**What the plan did not anticipate**
+
+- **The tutorial's setup recipe is not upstream's `install.sh`.** Item 4 reads "adding `install.sh`
+  and `SETUP.md` as the setup recipe", but a setup recipe v2 is a JSON document AART parses, and a
+  shell script cannot be one. The reading taken: upstream's `install.sh` is *payload* — bytes the
+  registry redistributes, and exactly what the assessment flags as
+  `shell-pipe-to-interpreter (critical)` — while the maintainer authors a real recipe plus `SETUP.md`
+  beside it. That is the more instructive tutorial anyway: it shows the copied script being judged
+  rather than trusted, which is the point of assessing the bytes that would be written.
+- **A v2 recipe's package-relative path must be exactly `setup/installer.json`.** Discovered by
+  writing the walkthrough: `setup/atlassian.json` is refused with "version-2 installer path must be
+  below a package setup/ directory" (`agent_artifacts/setup.py`, `_manual_path`). The recipe must
+  also declare `help_urls`, or the artifact is refused as an invalid setup installer. Both are
+  pre-existing rules, both are invisible until a maintainer hits them, so the tutorial states them.
+- **The tutorial is a carried-forward release document.** Added to `REQUIRED_PERSISTENT_DOCS` in
+  `scripts/release.py` beside the other two tutorials, so a later release cannot quietly drop it.
+- **`docs/tutorials/company-registry-v1.md` claimed foreign content is converted by a built-in
+  importer.** That importer was removed in `2.0.0`; vendoring is what replaces it. The sentence was
+  corrected here rather than left as a residue, because `VN-8` owns the tutorials and the false
+  sentence is precisely what this package exists to replace.
+
+**Residue closed:** the `registry vendor --help` text now says "A successful vendor reports what was
+copied", matching the review (carried from `VN-5` through `VN-6`).
 
 ## VN-9 — the same action in the text front-end
 

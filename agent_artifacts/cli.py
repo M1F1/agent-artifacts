@@ -600,7 +600,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_promote = registry_sub.add_parser(
         "promote-native",
-        help="review and add one exact native Git package reference",
+        help="reference a native package upstream keeps: consumers reach it, upstream owns it",
+        description=(
+            "Add a reviewed reference to a canonical AART package in another repository, pinned to "
+            "a resolved commit. The bytes stay upstream and this registry ships none of them: a "
+            "consumer installing it reaches that origin, and upstream owns the version. Use "
+            "`vendor` instead when the upstream is not an AART package, or when consumers must "
+            "reach this registry only."
+        ),
     )
     _add_registry_source(p_promote)
     p_promote.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")
@@ -629,14 +636,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_vendor = registry_sub.add_parser(
         "vendor",
-        help="review and copy one foreign subtree in as an artifact this registry owns",
+        help="copy a foreign subtree in: this registry ships the bytes and owns the version",
         description=(
             "Copy a subtree of any Git repository into this registry as an owned package pinned "
             "to a resolved commit, with provenance recording where the bytes came from. The "
             "upstream needs no AART markers. This registry then owns the copy: it declares the "
-            "version, and upstream fixes reach consumers only when it is vendored again. A clean "
-            "vendor reports what was found; it is not a safety claim. A repository containing a "
-            "symlink anywhere cannot be acquired, and a symlink inside the subtree is refused."
+            "version, and upstream fixes reach consumers only when it is vendored again. A "
+            "successful vendor reports what was copied; it is not a safety claim. Use "
+            "`promote-native` instead to reference a native AART package without copying it. A "
+            "repository containing a symlink anywhere cannot be acquired, and a symlink inside "
+            "the subtree is refused."
         ),
     )
     _add_registry_source(p_vendor)
@@ -720,12 +729,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_revendor = registry_sub.add_parser(
         "revendor",
-        help="re-resolve one vendored artifact's upstream and report or apply what moved",
+        help="re-resolve one vendored copy's upstream and report, or apply what moved",
         description=(
             "Re-resolve the ref this artifact was vendored at and compare the subtree with the "
             "copy this registry ships. Reports up-to-date, changed, or unreachable; an upstream "
             "that cannot be read is never reported as up-to-date. Upstream declares no version "
-            "AART can trust, so applying a change requires the version you state for it."
+            "AART can trust, so applying a change requires the version you state for it. "
+            "`refresh-native` is the equivalent for a reference, where re-pinning is the whole "
+            "change; here the bytes this registry ships are replaced."
         ),
     )
     _add_registry_source(p_revendor)
@@ -748,7 +759,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_refresh = registry_sub.add_parser(
         "refresh-native",
-        help="review a new immutable snapshot for one existing native reference",
+        help="re-pin one referenced package to upstream's current commit",
+        description=(
+            "Re-resolve one `entries/` native reference and review the new immutable snapshot. It "
+            "moves a pin; the delivered bytes are upstream's either way. `revendor` is the "
+            "equivalent for a copy this registry owns, and it requires the version to publish."
+        ),
     )
     _add_registry_source(p_refresh)
     p_refresh.add_argument("artifact_kind", choices=_ARTIFACT_TYPES, metavar="KIND")

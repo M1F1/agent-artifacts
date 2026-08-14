@@ -4,6 +4,38 @@ An AART registry is a native source with optional curation documents. It may own
 under `artifacts/`, or reference native packages in other repositories through `entries/`. The
 reference fixture at `tests/fixtures/protocol/registry-v1/` exercises both forms.
 
+## Owned, referenced, vendored
+
+Three ways content reaches a consumer through one registry. They differ in who the consumer must
+reach, who owns the version, and who can change the bytes that are delivered:
+
+| | Authored here | Referenced (`entries/`) | Vendored (`artifacts/` + `provenance.json`) |
+|---|---|---|---|
+| Where the payload lives | this registry | upstream repository | this registry |
+| Who the consumer reaches | this registry | this registry **and** the upstream origin | this registry |
+| Who owns the version | this registry | upstream | this registry |
+| Who can change delivered bytes | this registry | upstream, at a new commit the maintainer pins | this registry |
+| Upstream must be an AART package | — | yes | no |
+| A `requires` target | yes | no | yes |
+
+One worked vendoring, from an upstream with an arbitrary layout through to re-vendoring when it
+moves, is in [the vendoring tutorial](../tutorials/vendoring-v1.md).
+
+Vendoring is not a third document format. A vendored artifact is an ordinary owned package that
+carries `provenance.json`, so every rule for owned content applies to it unchanged and an AART that
+predates vendoring reads it without being taught anything.
+
+**What vendoring moves is the trust boundary.** Copying a subtree into `artifacts/` makes this
+registry the distributor of somebody else's work: its consumers install those bytes on this
+registry's word, never having seen the origin, and upstream's later fixes — including security
+fixes — do not reach them until a maintainer vendors the artifact again. AART records where the
+bytes came from, assesses exactly the bytes that would be written, and reports what it found. It
+does not certify them. A vendor or re-vendor that completes with no findings means the copy was
+made and pinned, and nothing more; responsibility for the copied content stays with the maintainer
+who published it. Licensing is part of that responsibility: the copy carries whatever obligations
+the upstream licence imposes, `artifact.json`'s `license` records what this registry publishes it
+under, and `aart registry audit` reports a vendored artifact that records none.
+
 ## Authored inputs
 
 `aart-registry.json` declares protocol compatibility, required compiler capabilities, a default
@@ -26,8 +58,9 @@ depending registry can pin what it does not contain. Consumption federates acros
 source; publication does not.
 
 To depend on foreign content, put it in this registry: author the artifact here
-(`aart registry scaffold --help`), or copy the upstream content into a package this registry owns and
-record where it came from.
+(`aart registry scaffold --help`), or vendor the upstream content into a package this registry owns
+(`aart registry vendor --help`), which copies the subtree and records where it came from. A promoted
+native reference is not a route to this: it is the `entries/` case below.
 
 An `entries/` native reference is not a `requires` target. It offers a foreign package to consumers
 of this registry — they resolve and install it from its own repository at the pinned commit — but the

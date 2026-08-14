@@ -25,6 +25,8 @@ aart registry audit --source .
 aart registry test --source . --compatibility all --latest-version 1.0.0
 ```
 
-Native references pin upstream commit/digests without copying payload. Foreign content is converted
-by a reviewed built-in importer before consumer installation. AART never commits or pushes a
-maintainer checkout automatically.
+Native references pin upstream commit/digests without copying payload; consumers resolve those
+packages from the upstream repository. Foreign content — an upstream that is not an AART package, or
+one your consumers must not reach — is copied into the registry as a package it owns, with
+provenance recording the origin: see [the vendoring tutorial](vendoring-v1.md). AART never commits or
+pushes a maintainer checkout automatically.
