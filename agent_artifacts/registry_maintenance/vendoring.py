@@ -17,6 +17,7 @@ hand.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -48,6 +49,8 @@ from agent_artifacts.protocol.native_schema import (
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
+    SnapshotOrigin,
+    SourceSnapshot,
     compile_native_package,
 )
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
@@ -70,6 +73,7 @@ from agent_artifacts.security.baseline import (
     assess_installation_risk,
 )
 from agent_artifacts.security.model import SecurityAssessment
+from agent_artifacts.sources.model import source_snapshot_digest
 from agent_artifacts.sources.subtree import TakenSubtree
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
 
@@ -262,6 +266,99 @@ def read_vendor_record(provenance: Provenance) -> Result[VendorRecord]:
             "provenance.json has been edited by hand"
         )
     return Ok(VendorRecord(ref, paths))
+
+
+@dataclass(frozen=True, slots=True)
+class CopyIntegrity:
+    """What the copy's own record says, and what the copy says (VI-1).
+
+    Both digests are carried rather than a boolean, because every caller renders them: a maintainer
+    told only that something mismatched has no way to record which copy of which package it was.
+    """
+
+    recorded: ObjectDigest
+    recomputed: ObjectDigest
+    files: int
+
+    @property
+    def matches(self) -> bool:
+        return self.recorded == self.recomputed
+
+
+def verify_vendored_copy(
+    files: Mapping[str, SnapshotEntry],
+    base: str,
+    payload_root: SafeRelativePath,
+    authored: tuple[str, ...],
+    recorded: ObjectDigest,
+) -> Result[CopyIntegrity]:
+    """Recompute `origin.input_digest` from the package on disk (design §3).
+
+    The taken subtree is recoverable from the copy, so the claim vendoring makes has a gate that
+    needs no network and no new field. Two properties make the inverse of `project_vendored_package`
+    exact: `_authored_files` refuses an authored path that collides with a taken one, so subtracting
+    the recorded list leaves precisely the taken files; and `take_subtree` carries only files and
+    directories out of a Git tree, which holds no empty directory, so the taken directories are
+    exactly the ancestors of the taken files.
+
+    A package that cannot be reconstructed at all is refused rather than reported as a mismatch. A
+    payload with nothing in it but the maintainer's own wrapper is a malformed package, and calling
+    that drift would name the wrong defect.
+    """
+
+    prefix = f"{base}/{payload_root}/"
+    excluded = {f"{base}/{relative}" for relative in authored}
+    entries: list[SnapshotEntry] = []
+    directories: set[str] = set()
+    for raw in sorted(files):
+        entry = files[raw]
+        if (
+            not raw.startswith(prefix)
+            or raw in excluded
+            or entry.kind is not SnapshotEntryKind.FILE
+        ):
+            continue
+        parsed = parse_relative_path(raw.removeprefix(prefix))
+        if isinstance(parsed, Err):
+            return _error(f"the vendored payload holds an unsafe path: {raw}", path=raw)
+        parts = parsed.value.parts
+        directories.update("/".join(parts[:index]) for index in range(1, len(parts)))
+        entries.append(
+            SnapshotEntry(parsed.value, SnapshotEntryKind.FILE, entry.content, entry.executable)
+        )
+    if not entries:
+        return _error(
+            f"the vendored package holds no copied payload file under {prefix}; "
+            "it cannot be checked against the origin it records",
+            path=base,
+        )
+    taken = len(entries)
+    entries.extend(
+        SnapshotEntry(_path(relative), SnapshotEntryKind.DIRECTORY) for relative in directories
+    )
+    entries.sort(key=lambda item: str(item.path))
+    digest = source_snapshot_digest(SourceSnapshot(SnapshotOrigin.IMMUTABLE_GIT, tuple(entries)))
+    if isinstance(digest, Err):
+        return digest
+    return Ok(CopyIntegrity(recorded, digest.value, taken))
+
+
+def copy_integrity_message(identity: ArtifactIdentity, integrity: CopyIntegrity) -> str:
+    """One sentence, said the same way by validate, audit, and re-vendor.
+
+    It states what is wrong and stops: the copy is not the copy its provenance describes. Who changed
+    it is not knowable from here — a local patch, a checkout that translated line endings, and a
+    substitution are indistinguishable in the bytes — so the message names all three and the one
+    route AART supports, rather than diagnosing.
+    """
+
+    return (
+        f"vendored artifact no longer matches the origin it records: {identity} "
+        f"({integrity.files} copied payload files digest to {integrity.recomputed}, "
+        f"provenance records {integrity.recorded}). The copy was edited after vendoring, "
+        "translated on checkout, or replaced; AART has no patched-copy record, so a copy that "
+        "must differ from upstream is vendored from a fork that contains the difference"
+    )
 
 
 def _is_license_name(relative: str) -> bool:

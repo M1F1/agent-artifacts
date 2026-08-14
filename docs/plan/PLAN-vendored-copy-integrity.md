@@ -53,6 +53,27 @@ than hiding the file; one changed byte, one added file, one removed file, and on
 bit each mismatch; a nested payload reproduces the digest of the subtree it was taken from
 (the directory-derivation property, design §3); a package with no unauthored payload file refuses.
 
+**What the plan did not anticipate:**
+
+- **The payload root is read from the manifest, not assumed.** `project_vendored_package` writes
+  `payload/` and `_PAYLOAD_ROOT` is a module constant, so hard-coding it here would have looked
+  right. A package declaring any other root would then have had *no* payload file matched, which the
+  refusal in item 3 reports as a malformed package — a check that fails loudly on a legal package is
+  worse than no check. `PayloadSpec.root` is the authority and is passed in.
+- **The `authored` evasion closes by arithmetic, not by a rule.** `aart.vendor.authored` is not
+  covered by `options_digest` — that digest covers URL, ref, and path — so a tamperer can add a file
+  they edited to the authored list. It does not help: excluding a file upstream supplied removes it
+  from the recomputed tree, which is a different digest, not a matching one. A test states this,
+  because the reasoning is not visible from the code.
+- **Verified against packages nothing in this repository produced.** The two artifacts the
+  acceptance run vendored from `modelcontextprotocol/servers` — 12 and 17 payload files, one with a
+  two-level payload — both reproduce their recorded digests under this function, and the
+  reconstructed two-month-old copy that produced `LAF-41` mismatches. The unit fixtures prove the
+  function; those packages prove the derivation matches what `2.3.0` actually wrote to disk.
+- **Both digests travel, and the message is built once.** `copy_integrity_message` lives beside the
+  check rather than in each caller: three commands report this condition, and three phrasings of
+  "the copy is not the copy" would read as three different defects.
+
 ## VI-2 — a copy that contradicts its record fails the gates
 
 **Files:** `agent_artifacts/registry_commands/planning.py`
