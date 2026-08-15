@@ -49,16 +49,45 @@ port in a separate process with no run in flight.
 Renders the record `RR-1` reads: plan hash, installer hash, start and finish, exit status, and every
 step with module, target, disposition and detail.
 
-- **The transcript is printed whole.** `LAF-59` is not a truncation in the record — it is a
-  truncation in the one line that reports it. Rendering the stored transcript closes it.
-- **A planning failure prints as the failure.** `LAF-52`'s count becomes the typed reason and its
-  remediation.
-- **The review is printed after the fact.** `LAF-54` says `render_setup_review` composes an effect
-  list nothing prints; `show` prints it from the persisted plan hash and effects.
-- `--json` carries the same content; the text renderer may summarise nothing the JSON has.
+This package is rendering only, and it closes none of `LAF-52`, `LAF-54` or `LAF-59` — an earlier
+draft of this plan said it closed all three, and checking each against the code refuted it. Those
+belong to `RR-2A` and `RR-2B`. What `show` gives is the account, readable a week later, which is what
+`undo` and `verify` are argued from.
 
-**Evidence:** the three findings above, each reproduced against `2.5.0` and then shown closed by the
-same reproduction.
+**Evidence:** a completed setup's record rendered in text and in `--json`, with the text carrying
+every field the JSON does.
+
+## `RR-2A` — the text renderer stops summarising what `--json` carries
+
+Design §3.4. The defect `LAF-52` and `LAF-54` describe is not distance from the record — both
+findings state that the content is present in the `--json` payload and absent from the human output.
+It is a lossy renderer at the moment of consent.
+
+- `marketplace setup` without `--yes` prints the **setup** review — effects, capabilities, and the
+  `Manual alternative` pointing at `SETUP.md` — which `render_setup_review` already composes and no
+  CLI path emits.
+- A setup planning failure prints the detail, the artifact key and the manual route, not
+  `planned=0, failures=1`.
+- Counts may accompany content; they may not replace it.
+- A path with nothing to report says it checked, so `LAF-45`'s lesson does not recur in a new command.
+
+**Evidence:** `marketplace setup <coord>` at a terminal with no `--json` shows every field the JSON
+payload carries; `--approve-setup-effects` now approves a list the operator has been shown.
+
+## `RR-2B` — a transcript keeps the end that explains it
+
+Design §3.5. `_docker_build_apply` raises `RuntimeError(detail[:512])` at the point of failure
+(`setup_runtime.py:436`), so the failing instruction and exit code BuildKit prints last are discarded
+before persistence. Nothing downstream can recover them.
+
+- One helper that keeps the tail, and both ends with the middle elided where both carry meaning.
+- Used at all three call sites — `:436`, `:496`, `:535` — because a rule applied at two of three is
+  how this recurs.
+- Redaction is applied before truncation, as it is today, and the helper must not be able to reorder
+  those two steps.
+
+**Evidence:** an artifact whose Dockerfile ends `RUN … && exit 3` reports that instruction and
+`exit code: 3`, which is `LAB-X-04` re-walked.
 
 ## `RR-3` — `setup receipt verify`
 
@@ -160,9 +189,11 @@ The run this whole stream exists to make honest.
 
 ## Dependency order
 
-`RR-1` first and alone. Then `RR-2`, `RR-3`, `RR-4` in parallel — they share only the reader. `RR-5`
-after all three. `RR-6` after `RR-5`. `RR-7` is independent of every other package and may land at
-any point. `RR-8` after `RR-6` and `RR-7`. `RR-9` last, against the released artifact.
+`RR-1` first and alone. Then `RR-2`, `RR-3`, `RR-4` in parallel — they share only the reader.
+`RR-2A` and `RR-2B` are independent of the reader and of each other, and may land at any point;
+`RR-2B` before `RR-2A` is preferable, so the renderer's first honest output is not a truncated one.
+`RR-5` after `RR-2`..`RR-4`. `RR-6` after `RR-5`. `RR-7` is independent of every other package.
+`RR-8` after `RR-6` and `RR-7`. `RR-9` last, against the released artifact.
 
 ## Release shape
 

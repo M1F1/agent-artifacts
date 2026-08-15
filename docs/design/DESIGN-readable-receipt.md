@@ -28,27 +28,38 @@ path inside a run: `recovery = rollback_record(applied, runtime) if applied.rece
 **`agent_artifacts/cli.py` contains no occurrence of `receipt` and none of `rollback`.** Nothing
 outside a run ever reads what a run wrote.
 
-That single gap is what six shipped findings describe from six directions:
+## 2. Two mechanisms, not one — and the correction that found the second
 
-- `LAF-54` — the setup review is composed and never printed by any CLI path.
-- `LAF-52` — a setup planning failure is reported as a count.
-- `LAF-59` — a failing build's transcript is truncated from the front, losing the failing instruction.
-- `LAF-53` — nothing reverses a setup that succeeded, though the review line promises it does. Its
-  remediation says *undo them from the receipt* and names no command, because there is none.
-- `LAF-58` — a pre-existing tag keeps its name and loses its binding; rollback restores neither.
-- `LAF-55` — an unattended Keychain step stores an empty secret and reports success, and nothing ever
-  re-reads the record to ask whether the success was real.
+The first version of this design claimed all six C1/C2/C3 findings were one absence: no reader over
+the persisted record. Checking each against the code refuted it for three of them, and the refutation
+is what makes the design correct rather than tidy.
 
-## 2. Why this is one change and not six
+**`LAF-52` and `LAF-54` are not about the record at all.** Both findings say so in their own words:
+for `LAF-52`, *the detail, the artifact key, and the offered manual route are all present in the
+`--json` payload and none of them reach the human-readable output*; for `LAF-54`, *the complete review
+is in the `--json` payload only*. Nothing is missing and nothing is unreachable. The text renderer
+prints counts over a payload that already holds the answer, at the moment the operator is standing
+there deciding whether to approve.
 
-The six are not six defects in six components. They are one absence — no reader — seen from whichever
-component the operator happened to be standing in.
+**`LAF-59` is not about the record either.** `_docker_build_apply` truncates at the point of failure:
+`raise RuntimeError(detail[:512])` (`setup_runtime.py:436`). The tail — the failing instruction and
+its exit code, which BuildKit prints last — is discarded before anything is persisted. There is no
+whole transcript anywhere to render. The same head-truncation is applied at `setup_runtime.py:496`
+and `:535`.
 
-Fixing them individually produces six surfaces: a printer for the review, a different printer for the
-failure, a transcript window, an undo verb for setup, a tag-specific repair, and a Keychain probe.
-Each would re-derive from the record what the record already states, and each would be free to
-disagree with the others about what happened. The design claim is that **one reader over one
-persisted record is both smaller and more honest than six projections of it.**
+So this design carries two mechanisms:
+
+| Mechanism | Findings | What it is |
+|---|---|---|
+| The text renderer must not summarise what `--json` carries | `LAF-52`, `LAF-54`, and the rule that keeps `LAF-45` from recurring | A rendering rule, applied where the operator is standing |
+| The persisted record gets a reader | `LAF-53`, `LAF-58`, `LAF-55` | `receipt show`, `verify`, `undo` over `RR-1`'s read path |
+
+And one repair that belongs to neither: `LAF-59` is fixed where the bytes are captured, by keeping
+the end of a transcript rather than its beginning.
+
+Splitting them this way is not a concession. Collapsing them would have produced a design whose
+central claim — *the data is already there, expose it* — is true of three findings and false of
+three, and the false half would have been discovered during implementation instead of during review.
 
 ## 3. What is added
 
@@ -58,11 +69,15 @@ state except where stated.
 ### 3.1 `receipt show`
 
 Prints the persisted record for an installation: plan hash, timings, exit status, every step with its
-module, target and disposition, and the failure detail in full when there is one.
+module, target and disposition, and the recorded detail.
 
-New logic: none beyond rendering. The data is in the setup state file today. This is `LAF-54`,
-`LAF-52` and `LAF-59` at once — the transcript is not truncated in the record, only in the one line
-that currently reports it.
+New logic: none beyond rendering — the data is in the setup state file today. What `show` does **not**
+do is close `LAF-52` or `LAF-54`. Those are failures of the live path at the moment of consent, and a
+second command the operator would have to know to run afterwards is not consent. They are closed by
+§3.4, and `show` is what makes the same account readable again a week later.
+
+`show` also cannot recover a transcript that was truncated before it was written; after `LAF-59` is
+fixed at the capture site, `show` renders what capture kept.
 
 ### 3.2 `receipt verify`
 
@@ -86,6 +101,29 @@ it: a `preexisting` tag currently keeps its name and loses its binding, and the 
 image id the tag pointed at before the run, so restoring the binding is a matter of reading a field
 that is already written.
 
+### 3.4 The text renderer stops summarising what `--json` carries
+
+A rule, not a feature: **where the JSON payload holds a detail, an artifact key, a remediation or a
+manual alternative, the text renderer prints it.** Counts may accompany that content and may not
+replace it.
+
+This is `LAF-52` and `LAF-54`, and it is applied at `commands/marketplace` where the operator is
+standing when they decide. `render_setup_review` already composes the effect list, the capabilities
+and the `Manual alternative` pointing at `SETUP.md`; the change is that a CLI path emits it, so that
+`--approve-setup-effects` approves a list the human has seen.
+
+The rule generalises the lesson of `LAF-45` — success that prints nothing is indistinguishable from a
+flag that was dropped — so a path that has nothing to report says that it checked.
+
+### 3.5 A transcript keeps the end that explains it
+
+`LAF-59`, fixed where the bytes are captured: `docker build` prints progress first and the error last,
+so a head-truncated 512 characters is exactly the half that cannot explain the failure. Capture keeps
+the tail, and where both ends carry meaning it keeps both with the middle elided.
+
+The same three call sites share the defect (`setup_runtime.py:436`, `:496`, `:535`) and the fix is one
+helper used by all three, because a rule applied at two of three sites is how this recurs.
+
 ## 4. Review-first applies unchanged
 
 `undo` mutates, so it is an action, so it stops after Review and changes nothing without `--yes`, and
@@ -107,13 +145,16 @@ orphaned run directories `LAF-61` describes, which `verify` reports and leaves a
 
 ## 6. Acceptance criteria
 
-1. On a project with a completed setup, `receipt show` prints the review that `LAF-54` says is never
-   printed, including a failing step's full transcript.
+1. `marketplace setup` at the terminal — no `--json`, no second command — prints the effect list, the
+   capabilities and the manual alternative before asking for approval, and prints a planning failure
+   as the failure rather than as a count. `receipt show` prints the same account afterwards.
 2. On a setup whose Keychain step ran without a terminal, `receipt verify` reports the item as
    present and empty — the condition `LAF-55` says is reported as success.
 3. `receipt undo` on a completed setup removes the image tag, the Keychain item and the shell block,
    and restores a `preexisting` tag's original binding.
 4. `receipt undo` without `--yes` changes nothing and prints the effects it would reverse.
 5. `receipt verify` reports an orphaned run directory and does not remove it.
-6. Every one of the above is reachable with no flag that patches the executable, and is walked on a
+6. A build that fails on its last instruction reports that instruction and its exit code, not the
+   dockerfile-transfer line that BuildKit printed first.
+7. Every one of the above is reachable with no flag that patches the executable, and is walked on a
    real machine in the live acceptance run for this release.
