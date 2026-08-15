@@ -13,9 +13,10 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight residue run continues with `LAF-69` and `LAF-73`; `LAF-75` closed on
+  `fix/wheel-digest-emits-what-it-hashes-laf75`. The human-gated passes — the curses front-end and
+  the MCP credential run — and `LAF-61` still wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -2026,3 +2027,36 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-75`
+
+Branch `fix/wheel-digest-emits-what-it-hashes-laf75`, cut from `main`, not pushed. One work package.
+
+- **The defect is one of evidence.** `python scripts/release.py wheel-digest` built the publishable
+  wheel in a temporary directory, printed its digest, and deleted it. The publisher then had to
+  produce the attachment some other way, and the obvious way — `python scripts/build_wheel.py` —
+  builds a **different file under the same name**, because a build from the checkout carries no
+  commit stamp. `2.6.0` came within one `curl` of publishing a digest line that did not describe its
+  own attachment.
+- **The fix hands over the artifact.** `wheel-digest` now writes the wheel into `dist/`, or into
+  `--output <dir>`, and reads the digest back **from the written file**, so the first printed line
+  describes the file named on the second. A copy that arrived short cannot be described by the
+  digest of the file it was copied from.
+- **Walked live, both sides, one machine** — [`PROGRESS-live-acceptance-v5.md`](docs/testing/PROGRESS-live-acceptance-v5.md),
+  scenarios `LA-0-07`..`LA-0-10`, stressor `LAS-31`. On `main` the command printed `8ed1226d…` and
+  left no `dist/`; the wheel a publisher then builds hashed `fcdf95d9…`. On the branch the printed
+  `e552d473…` is the digest of the file in `dist/`, and that file installs into a clean venv,
+  reports `agent-artifacts 2.6.0` and carries `COMMIT = 1c659a3…` where the other carries
+  `unknown`. A stale unstamped wheel already sitting in `dist/` is replaced by the hashed one.
+- **`LAF-75` closes.** `tests/release_test.py::WheelDigestArtifactTest` holds the property: the
+  printed digest is the digest of the file left behind, the command names the path, the emitted
+  wheel carries this commit, and the default destination is `dist/`.
+- **Two findings recorded, not fixed.** `LAF-80`: `make wheel` rewrites the tracked
+  `agent_artifacts/_commit.py` and no document says to restore it, so the verification route
+  `wheel-reproducibility-v1.md` recommends leaves a dirty checkout. `LAF-81`: `wheel-digest` builds
+  from the working tree while stamping `HEAD`, so on a dirty checkout it emits a wheel claiming a
+  commit it does not contain — true before this change, and now durable as a file.
+- **`release-checklist-v14.md` is left alone.** It is `2.6.0`'s dated evidence and its workaround
+  paragraph was true when it shipped. The standing procedure lives in `wheel-reproducibility-v1.md`,
+  which is where the new two-line output and the "attach the file it names" rule are recorded; the
+  next checklist inherits from there.

@@ -56,6 +56,7 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-31` | Evidence produced by one route, artifact produced by another | `LA-0-07`, `LA-0-08`, `LA-0-10` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -73,6 +74,10 @@ way the system can be pushed.
 | `LA-0-04` | Cache follows HOME | flag | D | inspect `$LA_HOME/.cache/agent-artifacts` after a sync | cache created in sandbox, not in real `~` |
 | `LA-0-05` | Maintainer menu switch | TUI-text | D | enter maintainer role from a registry checkout, then from a non-registry dir | the two menus differ; condition stateable in one sentence |
 | `LA-0-06` | Upgrade dry run | flag | D | `aart upgrade --dry-run --wheel <w>` | reports plan; mutates nothing |
+| `LA-0-07` | The digest describes a file that exists | flag | D | `python scripts/release.py wheel-digest` in a clean clone; `shasum -a 256` the path it names | the printed digest equals the digest of the file named on the second line |
+| `LA-0-08` | The earlier executable leaves nothing | flag | D | the same command from `main`, then `python scripts/build_wheel.py` | digest printed, `dist/` absent; the wheel a publisher then builds has a **different** digest under the same name |
+| `LA-0-09` | The emitted wheel is the publishable one | flag | D | install what `wheel-digest` wrote into a clean venv; read `aart --version` and `_commit.COMMIT` | version matches; the stamp equals the checkout's `HEAD`, unlike a plain `build_wheel.py` build |
+| `LA-0-10` | A stale wheel in `dist/` is replaced | flag | D | `build_wheel.py`, then `wheel-digest`, then hash `dist/` | the file left in `dist/` is the one just hashed, not the earlier build |
 
 ## Phase R — registry authoring
 
