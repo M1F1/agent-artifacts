@@ -28,12 +28,14 @@
   `cli.py` contained no occurrence of `receipt` and none of `rollback`.
 - **Released `2026-08-15`.** Tag `v2.6.0`, wheel digest
   `sha256:ccdbff2a6f111d4d8dc478c2a4415785628cfb41e4ee7d6b0b41702f2ef6ba91`. The full fail-closed
-  `release.py check` passed against a clean `origin/main` registry clone. **Not published** — no
-  GitHub release, no package index; that step is the maintainer's and was left for them.
+  `release.py check` passed against a clean `origin/main` registry clone. **Published as a GitHub
+  release** with the wheel attached; not on any package index. The published asset was downloaded and
+  its digest checked against `wheel-digest` — which is how `LAF-75` was caught, one `curl` before it
+  would have shipped a digest line that did not describe its own attachment.
 - **Registry step: a pin move, and nothing else.** `2.6.0` adds no index field, capability or module,
   so a registry built on `2.5.0` validates on `2.6.0` and the reverse. Registry B's PR is green
-  against the real tag; the consumer repository's cannot go green until a GitHub release exists,
-  because its workflow installs the wheel from a release asset, and its PR body says so.
+  against the real tag; the consumer repository's is green against the published wheel, reconciling
+  eleven installations. Neither is merged: that is the maintainer's step.
 - **Method note:** nearly every design premise this stream checked against the code proved partly
   false, and each refutation is recorded where it was found rather than edited away. Three of the six
   findings the design set out to close turned out not to be the absence it named; `LAF-58`'s premise —

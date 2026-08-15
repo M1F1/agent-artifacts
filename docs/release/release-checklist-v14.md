@@ -16,7 +16,7 @@ Run from a clean commit merged into `origin/main`:
 make quality
 make release-check REGISTRY=/path/to/a-clean-public-registry
 python scripts/version.py check-tag v2.6.0
-python scripts/build_wheel.py
+git checkout v2.6.0            # the stamp is taken from HEAD; a branch gives a different wheel
 python scripts/release.py wheel-digest
 ```
 
@@ -25,6 +25,19 @@ zero-dependency wheel installation, and all public-registry format, validate, lo
 compatibility gates. The GitHub release must attach the wheel produced from the tagged commit, and
 the release notes must carry the `sha256:<hex>  <wheel filename>` line
 `python scripts/release.py wheel-digest` prints at the tag.
+
+**`python scripts/build_wheel.py` does not produce the wheel you attach** (`LAF-75`). It builds from
+the checkout, which has no injected `_commit.py`, so the wheel in `dist/` has a different digest from
+the one `wheel-digest` prints — and this list used to name the two commands on consecutive lines,
+which is how `2.6.0` came within one `curl` of publishing a digest line that did not describe its own
+attachment. The publishable wheel is the one `wheel-digest` builds in its throwaway copy with the
+stamp written in; until that command can also emit the artifact, build it the way it does and check
+the digest of what you actually uploaded:
+
+```sh
+shasum -a 256 <the file you attached>
+curl -sL -o /tmp/published.whl <the release asset URL> && shasum -a 256 /tmp/published.whl
+```
 
 ## Registry precondition
 

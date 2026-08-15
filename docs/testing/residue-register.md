@@ -39,13 +39,12 @@ a *shipped open* heading in one of them must not be `closed` here:
 - checked: `docs/design/*.md`
 - checked: `docs/release/compatibility-v14.md`
 - checked: `docs/release/release-checklist-v14.md`
-- checked: `docs/release/github-release-v2.6.0.md`
 
-**A release note is checked until it is published, and never after.** `github-release-v2.6.0.md` is
-the text that will be pasted into the GitHub release, so until that happens it is a current document
-making current claims and belongs in this list. The moment it is published it becomes a dated record
-and the entry is removed, exactly like `github-release-v2.5.0.md` below. `LAF-74` is what putting it
-here found.
+**A release note is checked until it is published, and never after.** `github-release-v2.6.0.md` was
+in this list while it was still the text about to be pasted into a release — a current document
+making current claims. It was published on `2026-08-15` and the entry came out the same day, which is
+the rule working rather than the rule being abandoned. `LAF-74` is what putting it here found, and
+the next release note joins the list the moment it is written and leaves it the moment it ships.
 
 **Released documents are deliberately absent.** `github-release-v2.5.0.md` and
 `release-checklist-v13.md` list `LAF-52`..`LAF-59` as shipped open, and that was true when they
@@ -89,10 +88,11 @@ does not have to agree with the present; a current document does.
 | `LAF-65` | medium | `2.6.0` live acceptance | `closed` | `RR-10E`; `rollback_command` names `receipt undo`, and `tests/setup_custom_test.py::WrittenCommandFieldTests` hands the written field to the shipped CLI parser so it cannot go stale again |
 | `LAF-66` | high | `2.6.0` live acceptance | `closed` | `RR-10D`; the probe takes the run root the engine writes into, answers `unknown` when it has no root to read, and `tests/setup_verify_test.py::test_laf66_the_probe_reads_the_root_the_engine_writes_into` drives the real writer and the real reader together |
 | `LAF-67` | medium | `2.6.0` live acceptance | `open` | — |
-| `LAF-68` | medium | `2.6.0` live acceptance | `open` | — PR #1 now moves the runner to `2.6.0` rather than `2.5.0`, and is blocked on the release rather than on the decision; `main` still pins `2.0.0` until it merges |
+| `LAF-68` | medium | `2.6.0` live acceptance | `visible` | — PR #1 moves the runner to `2.6.0` and is **green**: it reconciles eleven installations against the published wheel. `main` still pins `2.0.0` until it merges, which is the maintainer's step |
 | `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
-| `LAF-70` | medium | triaging for `2.6.0` | `open` | — the machine that authors registry content runs AART `2.0.0` while Registry A's CI gates it at `2.5.0`; the author's tool is older than its own gate |
-| `LAF-71` | medium | triaging for `2.6.0` | `visible` | — both moves are re-aimed at `2.6.0` and say in the PR body what blocks them. Registry B PR #5 is green against the real `v2.6.0` tag; acceptance-repo PR #1 cannot go green until a GitHub release exists, and its body says so with the wheel digest to attach. Still unmerged, by the maintainer's decision |
+| `LAF-70` | medium | triaging for `2.6.0` | `closed` | — the authoring machine runs `2.6.0`, installed from the published release asset after verifying its digest against `wheel-digest`. Registry A's CI gates at `2.5.0` and its pin move is the remaining half, tracked as `LAF-71` |
+| `LAF-71` | medium | triaging for `2.6.0` | `visible` | — both moves are re-aimed at `2.6.0` and **both are green**: Registry B PR #5 against the real tag, acceptance-repo PR #1 against the published wheel. Registry A's own pin is still `2.5.0` and has no PR. Unmerged by the maintainer's decision, which is a choice rather than a finding |
+| `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
