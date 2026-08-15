@@ -60,6 +60,7 @@ from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
+from agent_artifacts.setup_render import render_setup_payload
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -517,10 +518,13 @@ def _lifecycle(request: Request, action: str) -> int:
                 authorize_untrusted_source=request.authorize_untrusted_source,
                 authorize_custom_entrypoint=request.authorize_custom_entrypoint,
             )
-            payload["setup"] = _setup_payload(setup_queue)
+            setup_data = _setup_payload(setup_queue)
+            payload["setup"] = setup_data
+            # `LAF-54`: the plan renderer alone emits nothing when planning failed, so the
+            # operator approving effects was shown a setup queue and never told it will not run.
             setup_lines = tuple(
                 line for plan in setup_queue.plans for line in render_setup_review(plan.legacy_plan)
-            )
+            ) + render_setup_payload(setup_data, planned_effects=False)
         _emit(
             request,
             operation,
@@ -591,10 +595,8 @@ def _lifecycle(request: Request, action: str) -> int:
     if action == "setup" or any(item.setup_status == "pending" for item in outcome.items):
         setup_payload, setup_ok = _run_setup_queue(request, service.value, review, outcome)
         payload["setup"] = setup_payload
-        lines += (
-            f"Setup: planned={len(setup_payload['planned'])}, "
-            f"failures={len(setup_payload['planning_failures'])}",
-        )
+        # `LAF-52`: the counts stay, at the end, after the content they used to replace.
+        lines += render_setup_payload(setup_payload)
     payload["ok"] = outcome.session_status != "failed" and setup_ok
     _emit(request, operation, payload, lines)
     if outcome.session_status in {"failed", "partial"} or not setup_ok:

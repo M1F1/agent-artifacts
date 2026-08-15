@@ -1010,7 +1010,7 @@ class SetupReview:
 _PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
 
 
-def _public_text(value: str) -> str:
+def public_text(value: str) -> str:
     """Redact the credential-shaped fragments that author-controlled review text may contain."""
 
     return _SENSITIVE_ASSIGNMENT.sub("[redacted]", value.replace("\r", " ").replace("\n", " "))
@@ -1095,7 +1095,7 @@ def project_setup_review(plan: SetupPlan) -> SetupReview:
         SetupEffectReview(
             index=index,
             identity=_effect_identity(effect),
-            target=_public_text(effect.target) if effect.target else "no filesystem target",
+            target=public_text(effect.target) if effect.target else "no filesystem target",
             capability=effect.capability or "none",
             recovery=(
                 "removes only changes created by this run"
@@ -1110,17 +1110,17 @@ def project_setup_review(plan: SetupPlan) -> SetupReview:
         artifact=f"{plan.item.artifact_type}/{plan.item.artifact_name}",
         profile=plan.item.profile,
         scope=plan.item.scope,
-        purpose=_public_text(installer.purpose),
-        source_label=_public_text(plan.item.source_label),
+        purpose=public_text(installer.purpose),
+        source_label=public_text(plan.item.source_label),
         recipe_path=installer.descriptor_path,
         recipe_hash=installer.descriptor_hash,
         plan_hash=plan.plan_hash,
-        capabilities=tuple(_public_text(value) for value in installer.capabilities),
-        required_tools=tuple(_public_text(value) for value in installer.required_tools),
+        capabilities=tuple(public_text(value) for value in installer.capabilities),
+        required_tools=tuple(public_text(value) for value in installer.required_tools),
         manual=manual_reference(plan.item),
         effects=effects,
         preflight_status=plan.preflight_status,
-        preflight_detail=_public_text(plan.preflight_detail),
+        preflight_detail=public_text(plan.preflight_detail),
     )
 
 
@@ -1141,8 +1141,8 @@ def render_manual_alternative(
     lines: Tuple[str, ...] = ("Manual alternative",)
     return lines + field_block(
         (
-            ("instructions", _public_text(reference.relative_path)),
-            ("source", _public_text(reference.source)),
+            ("instructions", public_text(reference.relative_path)),
+            ("source", public_text(reference.source)),
             (
                 "status",
                 (
@@ -1175,18 +1175,18 @@ def render_setup_outcome(
     incomplete = status not in _SETUP_COMPLETE
     lines = wrap(f"Setup outcome: {artifact}@{profile} ({scope})", width=width)
     fields: list[tuple[str, str]] = [
-        ("status", _public_text(status)),
-        ("details", _public_text(redact_text(detail))),
+        ("status", public_text(status)),
+        ("details", public_text(redact_text(detail))),
     ]
     if retry_command:
-        fields.append(("retry", _public_text(redact_text(retry_command))))
+        fields.append(("retry", public_text(redact_text(retry_command))))
     if rollback_command:
-        fields.append(("rollback", _public_text(redact_text(rollback_command))))
+        fields.append(("rollback", public_text(redact_text(rollback_command))))
     lines += field_block(tuple(fields), indent=2, width=width)
     if recovery:
         lines += ("Recovery",)
         for item in recovery:
-            lines += wrap(f"  {_public_text(redact_text(item))}", width=width)
+            lines += wrap(f"  {public_text(redact_text(item))}", width=width)
     if incomplete and manual is not None:
         lines += render_manual_alternative(
             manual, width=width, incomplete=status not in _SETUP_UNSTARTED

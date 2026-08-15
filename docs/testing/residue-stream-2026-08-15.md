@@ -90,6 +90,18 @@ all — which is itself part of the finding above.
 | ID | One line |
 |---|---|
 | `LAF-62` | A `≤2.4.0` consumer cannot `source add` a registry rebuilt on `2.5.0`; it fails before any artifact is named |
+| `LAF-63` | Credential redaction misses every namespaced name — `GITHUB_TOKEN=…` and `AWS_SECRET_ACCESS_KEY=…` are printed and **persisted** in full |
+
+`LAF-63` was found while implementing `RR-2A`, not during a run, and is recorded rather than fixed
+there. `_SENSITIVE_ASSIGNMENT` (`setup.py:131`) opens with `\b(token|password|secret|api[_-]?key…)`,
+and in `GITHUB_TOKEN` the position before `TOKEN` sits between two word characters, so no boundary
+exists and no match is made. Measured: `TOKEN=ghp_x` redacts, `GITHUB_TOKEN=ghp_x` does not,
+`secret=abc` redacts, `AWS_SECRET_ACCESS_KEY=abc` does not. The prefixed forms are the ones real
+recipes use. The same pattern is what `_redact` applies before writing the setup state file
+(`setup.py:1400`), so this is a credential reaching disk, not only a terminal — which also means
+`RR-2B`'s guarantee that redaction precedes truncation is intact and simply weaker than it reads.
+`tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_not_redacted_today` holds the
+gap visible so it cannot be assumed closed.
 
 ## Clusters
 
