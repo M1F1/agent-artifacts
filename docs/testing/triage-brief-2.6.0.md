@@ -1,224 +1,302 @@
-# Triage brief — what is broken, and whether 2.6.0 should ship
+# What is broken, and should 2.6.0 be released?
 
-Derived from [`residue-register.md`](residue-register.md) on `2026-08-15`. The register says *what is
-open*; this brief says *what it costs you and what to do about it*. When the two disagree, the
-register is right and this file is stale.
-
-## Verdict on 2.6.0
-
-**Hold it for three fixes.** Not because the release is unsound — 1528 tests pass, nine gates are
-green, and the schema freeze proves no boundary moved — but because all three land on the exact
-feature the release is named after, and each is small.
-
-| | Finding | Why it blocks *this* release specifically |
-|---|---|---|
-| 1 | `LAF-63` | A credential in free text is persisted unredacted, and `receipt show` is the command that prints it |
-| 2 | `LAF-66` | `receipt verify` answers `true` about a directory it never looks in |
-| 3 | `LAF-65` | The receipt tells the operator no command reverses a setup, in the release that ships one |
-
-Releasing without them ships a reader that can print a secret, a verifier that passes what it cannot
-see, and a record that contradicts its own executable. Every one of those is a claim about
-trustworthiness, which is the only thing this release sells.
-
-Two further facts belong in the decision, and neither is a reason to hold:
-
-- **Two of the design's seven acceptance criteria were never walked** against published content
-  (`LAF-67`). They were accepted against a local fixture in a unit test. That is a known, stated gap,
-  not a suspected one.
-- **No registry and no consumer repository has met this code** (`LAF-70`, `LAF-71`, `LAF-68`).
-  Registry A's CI gates at `2.5.0`; Registry B and the acceptance repo are still at `2.0.0` with
-  their moves sitting in unmerged PRs; the machine that authors registry content runs `2.0.0`.
-
-## How to read the two numbers
-
-**Severity** is what it costs when it bites — a property of the defect.
-
-| | Meaning |
-|---|---|
-| **high** | A secret escapes, state is lost, or a command reports success or `true` when the opposite is true |
-| **medium** | The product promises something in its own UI or docs that the code does not do; a human can recover by hand |
-| **low** | Friction, dead code, or an undocumented limit; nothing is wrong, something is unhelpful |
-
-**Priority** is when to spend on it — severity plus how likely it is to be met and how much it costs
-to fix.
-
-| | Meaning |
-|---|---|
-| **P1** | Before the next release. Lands on a feature that release advertises |
-| **P2** | Next stream. Real, met by real users, but not on the current release's face |
-| **P3** | When that area is next opened. Correct to fix, wrong to open the file for |
-
-A **high/P3** is not a contradiction: it means the blast radius is large but the path there is narrow
-and nobody is standing on it.
+Written on `2026-08-15`. The full list of open problems lives in
+[`residue-register.md`](residue-register.md). That file says **what is open**. This file says **what
+it costs you, and what to do first**. If the two disagree, the register is correct and this file is
+out of date.
 
 ---
 
-## By feature
+## The short answer
 
-Each section names the feature a user would say is broken, so you can decide per feature rather than
-per finding.
+**Do not release 2.6.0 yet. Fix 3 things first. All 3 are small.**
 
-### Credential handling — *"my token does not leave this machine"*
+The release itself is healthy: 1528 tests pass, all 9 quality gates are green, and we proved by
+machine that no data format changed.
 
-| ID | Sev | Pri | What actually happens |
+The problem is different. 2.6.0 adds three commands for reading setup receipts. All 3 bugs below are
+in exactly those commands. So the release would ship with its own main feature broken in visible ways.
+
+| # | Bug | How bad | Why it matters right now |
 |---|---|---|---|
-| `LAF-63` | high | **P1** | Redaction anchors on `\b(token\|password\|secret\|api_key)`, and in `GITHUB_TOKEN` there is no word boundary before `TOKEN`. Measured: `TOKEN=ghp_x` redacts, `GITHUB_TOKEN=ghp_x` does not; `secret=` redacts, `AWS_SECRET_ACCESS_KEY=` does not. The prefixed forms are the ones real recipes use |
-| `RS-12` | medium | P2 | Setup process steps run without `HOME`, so Docker reads no `config.json` and a private base image cannot authenticate at all |
+| 1 | `LAF-63` | **high** | A password or token can be written to disk in plain text. 2.6.0 adds the command that prints that file on screen. |
+| 2 | `LAF-66` | **high** | `receipt verify` says "everything is fine" about a folder it never actually checks. |
+| 3 | `LAF-65` | medium | The receipt text tells the user "no command can undo a setup". 2.6.0 *is* the release that adds that command. |
 
-**On `LAF-63`.** Mapping *keys* are safe — that path matches by substring and catches `GITHUB_TOKEN`.
-The gap is free text: a step `detail`, a build transcript, an error message. Those go through
-`redact_text` to `dump_setup_state`, so the secret reaches **disk**, not only a terminal. 2.5.0 wrote
-them. 2.6.0 adds `receipt show`, which renders `detail` (`setup_render.py:156`) — a second exposure
-surface on a file that already had the problem.
+None of these 3 bugs is new. They only became important now, because 2.6.0 is the release that lets
+users see them.
 
-The fix is the regex plus its tests, and
-`tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_not_redacted_today` already
-holds the gap visible, so the change is small and its acceptance already exists. Tracked as `RR-2C`.
+Two more things you should know before deciding. Neither is a reason to wait:
 
-**Already written records are not cleaned by fixing the pattern.** Whatever is on disk stays there.
-That is a second decision — a `receipt` action that rewrites, or an advisory in the release notes.
+- **2 of the 7 planned acceptance tests were never run** on real published content (`LAF-67`). They
+  were only tested with a local test fixture.
+- **No registry and no real project has ever run this version.** Details in the version table at the
+  bottom.
 
-### Setup receipts: show, verify, undo — *the whole of 2.6.0*
+---
 
-| ID | Sev | Pri | What actually happens |
+## How to read the two ratings
+
+Every problem below has two ratings. They mean different things.
+
+### Severity = how bad is it, if it happens?
+
+| Rating | Meaning |
+|---|---|
+| **high** | A password leaks, data is lost, or a command says "OK" / "true" when the truth is the opposite. |
+| **medium** | The tool promises something in its own text, but does not do it. A person can fix it by hand. |
+| **low** | Annoying, or dead code, or a limit that nobody wrote down. Nothing is actually wrong. |
+
+### Priority = when should you spend time on it?
+
+| Rating | Meaning |
+|---|---|
+| **P1** | Fix before the next release. |
+| **P2** | Fix soon, in the next round of work. |
+| **P3** | Fix later, when you are already editing that part of the code anyway. |
+
+**You will see one "high + P3" combination below.** That is not a mistake. It means: *if this happens
+it is bad, but it is very hard to reach, and almost nobody will hit it.* It is explained where it
+appears.
+
+---
+
+## The 3 problems to fix before release
+
+### 1. `LAF-63` — a token can be saved to disk in plain text
+
+**Severity: high. Priority: P1.**
+
+**What goes wrong.** The tool tries to hide passwords and tokens before writing logs. It looks for
+words like `token`, `password`, `secret`, `api_key`. But it only finds them when the word stands
+alone. If the name has a prefix, it does not match.
+
+Here is the real test I ran:
+
+```
+hidden   TOKEN=ghp_aaa              ->  TOKEN=[redacted]
+LEAKED   GITHUB_TOKEN=ghp_bbb       ->  GITHUB_TOKEN=ghp_bbb
+LEAKED   AWS_SECRET_ACCESS_KEY=s2   ->  AWS_SECRET_ACCESS_KEY=s2
+LEAKED   MY_API_KEY=k2              ->  MY_API_KEY=k2
+```
+
+The names with a prefix are the names real projects actually use.
+
+**Why it matters.** This text is saved into a file on disk, not only shown on screen. And 2.6.0 adds
+`receipt show`, which reads that file and prints it. So this release adds a second way to expose the
+same secret.
+
+**Good news.** Not everything is affected. When the token sits in a named field, it *is* hidden
+correctly. The leak only happens in free text: error messages, build logs, step details.
+
+**Cost to fix: small.** It is one pattern plus its tests. The test already exists
+(`tests/setup_render_test.py::test_laf63_...`) and today it checks that the bug is still there. So
+the fix is: change the pattern, flip the test.
+
+**One extra decision.** Fixing the pattern does not clean files that were already written. Old files
+keep the secret. You need to decide separately: add a cleanup command, or just warn people in the
+release notes.
+
+---
+
+### 2. `LAF-66` — `verify` reports "fine" about a folder it never looks at
+
+**Severity: high. Priority: P1.**
+
+**What goes wrong.** When a setup run is killed, it can leave a leftover working folder. `receipt
+verify` is supposed to notice this and tell you. It looks in the project folder. But real runs create
+that folder somewhere else — in the data folder. The two are never the same place.
+
+I tested it with a real leftover folder:
+
+| Where I put the leftover folder | What `verify` said |
+|---|---|
+| Where the check looks | "found it", correct |
+| Where runs really are | **"true: no working copy was left behind"** — wrong |
+
+**Why it matters.** The whole point of `verify` is to answer "is this still true?". The design
+document even says that a checker which quietly passes things it cannot see is worse than no checker
+at all. This is that exact case. It does not say "I don't know". It says "everything is fine".
+
+**Cost to fix: small.** Point the check at the correct folder.
+
+**Bonus.** Another open problem (`LAF-61`, the leftover folder itself) becomes visible to users the
+moment this is fixed.
+
+---
+
+### 3. `LAF-65` — the receipt contradicts the program that printed it
+
+**Severity: medium. Priority: P1.**
+
+**What goes wrong.** Every receipt contains a line of help text:
+
+```
+rollback  no command reverses a completed setup; undo ... by hand,
+          then re-run setup
+```
+
+That sentence was true before. It is false now, because 2.6.0 adds `receipt undo`.
+
+**Why it matters.** This is not an old document we forgot. It is a field this release *writes*. Every
+new receipt from now on will carry a sentence that the same program contradicts. A user who reads the
+receipt instead of the release notes will do manual work that one command already does.
+
+**Cost to fix: small.** Change the text.
+
+---
+
+## Everything else, grouped by what is broken
+
+Each section is named after the thing a user would say is broken.
+
+### Passwords and tokens
+
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-66` | high | **P1** | The orphan-run-directory probe scans `<project_root>/.agent-artifacts/setup-runs`; runs are created under `<data_root>`. The claim answers `true` in every scope without looking |
-| `LAF-65` | medium | **P1** | The `rollback` line the record itself carries says *no command reverses a completed setup*. `receipt undo` is in the same executable that prints it |
-| `LAF-61` | medium | P2 | A killed run leaves its working copy under the data root and nothing sweeps it. Was recorded `visible`; `LAF-66` took that back — nothing sees it |
-| `LAF-58` | medium | P2 | An image tag that existed before a run keeps its name through an undo and points at what the run built. The earlier binding was never recorded, so nothing can restore it. The undo review does say so before consent |
-| `LAF-67` | medium | P2 | No published artifact uses `docker.build@1`, so the `preexisting`-tag criterion and the failing-build criterion cannot be walked against published content at all |
+| `LAF-63` | high | **P1** | Explained above. |
+| `RS-12` | medium | P2 | Setup steps run without `HOME`. Docker then cannot read its login file, so a private base image cannot be downloaded at all. |
 
-**`LAF-66` is the one to care about.** The design's own §3.2 says *a verifier that quietly passes what
-it cannot see is worse than no verifier*, and the three-status mechanism was built for exactly that.
-It protects against **asking and failing**. It does nothing against **asking the wrong question
-confidently**, which is what this is. Fix is the path the probe is handed; `LAF-61` becomes genuinely
-visible the moment it lands.
+### Setup receipts — the 2.6.0 feature
 
-**`LAF-65` is cheap and embarrassing.** A field this release *writes* carries a sentence this release
-falsifies. Every record created from now on carries it. An operator who reads the receipt rather than
-the release notes is told to do by hand what one command does.
-
-**`LAF-67` is not a code defect** — it is the acceptance surface being assumed rather than derived. It
-belongs here because it is why two criteria have no live evidence behind them, which you should know
-before deciding what "tested" means for this release.
-
-### Install and uninstall hygiene — *"uninstall leaves nothing behind"*
-
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-47` | medium | P2 | Uninstall leaves the `.mcp.json` it created, reduced to `{"mcpServers": {}}` |
-| `RS-10` | medium | P2 | The same shape for any merge effect: the last uninstall leaves the merge file behind |
-| `LAF-57` | low | P3 | The two installation routes agree on content and disagree on image identity |
+| `LAF-66` | high | **P1** | Explained above. |
+| `LAF-65` | medium | **P1** | Explained above. |
+| `LAF-61` | medium | P2 | A killed run leaves its working folder behind and nothing removes it. We thought `verify` reported it; `LAF-66` proved it does not. |
+| `LAF-58` | medium | P2 | If a Docker image tag already existed before a setup run, undo cannot restore what it pointed to before. Nobody wrote down the old value. The undo screen does warn you about this before you confirm. |
+| `LAF-67` | medium | P2 | No published artifact uses the Docker *build* step. So 2 of the 7 planned acceptance tests cannot be run against real content at all. |
 
-These two are one defect. `DESIGN-readable-receipt.md` §5 claimed `receipt verify` would make them
-observable; it does not — both are **install** effects and `verify` reads a **setup** record, whose
-only claim for `json.managed-merge@1` is that the path exists, which is `true` for an emptied file
-exactly as for a full one. That correction is recorded in the register rather than edited into the
-design.
+**About `LAF-67`.** This is not a bug in the code. It is a gap in testing. The acceptance tests were
+written by looking at the code, not by looking at what the registries actually publish. Worth knowing
+before you decide what "tested" means for this release.
 
-### Registry and source acquisition — *"I can vendor from any upstream"*
+### Uninstall
 
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-62` | medium | P2 | A `≤2.4.0` consumer cannot `source add` a registry rebuilt on `2.5.0`; it fails before any artifact is named. Deferred to the index-version boundary stream |
-| `RS-03` | medium | P3 | A repository containing *any* symlink cannot be acquired at all — a bound stricter than the design rule states. Deferred |
-| `LAF-43` | medium | P3 | Vendoring refuses a `file://` upstream, so `changed` and the symlink refusal cannot be rehearsed live. Deferred |
-| `RS-01` | medium | P2 | An owned, non-vendored `mcp` package with a wrongly-shaped descriptor is never checked |
-| `RS-08` | medium | P2 | A snapshot carrying a *malformed* `aart-registry.json` skips the identity comparison entirely |
-| `RS-04` | low | P3 | `vendor` is create-only and its refusal cannot name `revendor`, the command that does adopt movement |
+| `LAF-47` | medium | P2 | Uninstall leaves the `.mcp.json` file behind, empty: `{"mcpServers": {}}`. |
+| `RS-10` | medium | P2 | Same thing for any merged file: the last uninstall leaves the file. |
+| `LAF-57` | low | P3 | The two install methods produce the same content but report different image identity. |
 
-**`LAF-62` and `RS-03` bear directly on what you asked for next.** If the acceptance repo becomes an
-upstream that registries vendor from, `RS-03` decides whether it may contain a symlink anywhere, and
-`LAF-62` decides who can still read the registries afterwards.
+The first two are really one bug. The design document claimed `verify` would make them visible. It
+does not, and we checked: `verify` reads *setup* records, but these are *install* effects, and the
+only thing it checks is that the file exists — which is true for an empty file too.
 
-### Diagnostics and reporting — *"when it refuses, it tells me what to do"*
+### Getting artifacts from other repositories
 
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `RS-09` | medium | P2 | No `registry` refusal carries remediation at all — the field is empty in both renderers |
-| `RS-07` | medium | P2 | `marketplace status` under a removed sole subscription refuses `no-source-configured` instead of reporting `source-unavailable` |
-| `LAF-45` | medium | P2 | `audit --check-upstream` prints nothing when everything is current, so success is indistinguishable from a dropped flag |
-| `LAF-49` | low | P3 | The allowlisted Git environment drops `https_proxy`, undocumented — behind a corporate proxy this fails with no hint |
+| `LAF-62` | medium | P2 | A user on AART 2.4.0 or older cannot add a registry that was rebuilt with 2.5.0. It fails immediately. |
+| `RS-03` | medium | P3 | A repository containing *any* symlink cannot be imported at all. This is stricter than the rule the design describes. |
+| `LAF-43` | medium | P3 | Import refuses `file://` sources, so some behaviour cannot be tested locally. |
+| `RS-01` | medium | P2 | A locally-owned `mcp` package with a badly shaped descriptor is never checked. |
+| `RS-08` | medium | P2 | If `aart-registry.json` is broken, the identity check is skipped completely instead of failing. |
+| `RS-04` | low | P3 | `vendor` only creates. When it refuses, it cannot mention `revendor`, which is the command that would work. |
 
-`LAF-45`'s lesson was applied to the three new commands — a path with nothing to report says it
-checked. `audit --check-upstream` itself is untouched, which is why the row is still open.
+**These matter for what you asked me to do next.** If the acceptance repo becomes a source that
+registries copy from, then `RS-03` decides whether it may contain any symlink, and `LAF-62` decides
+who can still read the registries afterwards.
 
-### Recipe format limits — *"I can express my setup"*
+### Error messages
 
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `RS-11` | low | P3 | `inputs` accepts only `type: "secret"`; a recipe cannot prompt for a username |
-| `RS-13` | low | P3 | No `shell.zshrc-managed-block@1`; the convenience module does not exist |
-| `RS-14` | low | P3 | The format has no comment convention, and every `_comment` is refused |
-| `RS-15` | low | P3 | A package cannot carry an auxiliary script at its root |
+| `RS-09` | medium | P2 | No `registry` error message tells you how to fix the problem. The field is empty everywhere. |
+| `RS-07` | medium | P2 | If your only source is removed, `marketplace status` says "no source configured" instead of "source unavailable". Different problem, wrong message. |
+| `LAF-45` | medium | P2 | `audit --check-upstream` prints nothing when everything is up to date. You cannot tell success from a forgotten flag. |
+| `LAF-49` | low | P3 | Git runs without `https_proxy`, and this is not documented. Behind a company proxy it fails with no hint why. |
 
-All four are the same decision deferred: the recipe format is closed and nothing may be added to it
-without a protocol move. Worth opening together, as one format stream, or not at all.
+### What a setup recipe can express
 
-### Front-end — *"the two skins behave the same"*
-
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-64` | medium | P2 | `_curses_install_scope` returns a `WizardInput` with `wizard=True` and an `InstallScope` without it. A new caller writing the obvious `isinstance` guard compiles, typechecks, and silently turns every successful selection into a cancel |
+| `RS-11` | low | P3 | A recipe can only ask for a secret. It cannot ask for a username. |
+| `RS-13` | low | P3 | There is no ready-made module for editing `.zshrc`. |
+| `RS-14` | low | P3 | The recipe format has no way to write a comment. |
+| `RS-15` | low | P3 | A package cannot include a helper script at its top level. |
 
-This one is worth its priority for a reason the severity does not show: it was found by writing the
-*second* caller of a helper that had had one. It cost a debugging session and was caught only by a
-test. The next second-caller pays the same cost.
+All four are the same decision, postponed: the recipe format is closed, and adding anything needs a
+format change. Do them together as one piece of work, or not at all.
 
-### Release and acceptance process — *"the gates mean what they say"*
+### The full-screen menu
 
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-69` | high | P2 | `DOC009` fails a document that calls a `closed` finding open, and says nothing about one that calls an `open` finding closed. The dangerous direction is unchecked, and it fired: the register moved `LAF-61` to `open` and `docs-check` stayed green with two release documents still saying `visible` |
-| `LAF-70` | medium | P2 | The machine that authors registry content runs AART `2.0.0` (`pipx`, from the v2.0.0 release wheel) while Registry A's CI gates that content at `v2.5.0`. The author's tool is older than its own gate, so content can pass locally and be judged by something else |
-| `LAF-71` | medium | P2 | Every version-move is prepared and none lands. Registry B's move to `2.5.0` is open **PR #5**; the acceptance repo's is open **PR #1**. Both were raised, both were left |
-| `LAF-68` | medium | P2 | The acceptance repo's `main` pins `2.0.0`, so its CI has never exercised `2.5.0`. The instance of `LAF-71` that a live run met |
-| `RS-02` | low | P3 | `commands/registry.py` stamps dead `1.0.0`/`2.0.0` AART bounds on every non-`init` request |
+| `LAF-64` | medium | P2 | One helper function returns two different types depending on an argument. A new caller writing the obvious code compiles fine, passes the type checker, and silently treats every successful choice as "cancel". |
 
-**`LAF-69` is high and P2, which is the combination worth explaining.** Its blast radius is large — it
-is the gate that decides whether the release documents can be trusted — but it fired once, was caught
-by a human within minutes, and the fix is a design question rather than a predicate change: making
-`DOC009` symmetric means teaching it to read a disposition out of prose, which is the thing the
-register exists to stop documents doing. Fix it deliberately, not quickly.
+This one costs more than its severity suggests. It was found by writing the *second* caller of a
+function that had only ever had one. It cost a debugging session and only a test caught it. The next
+person to add a caller pays the same cost again.
 
-**`LAF-70`, `LAF-71` and `LAF-68` are one defect with three faces**, and the version state across the
-four repositories is not what a reader would guess:
+### Release process and version pins
 
-| Repository | `main` pins | Move to `2.5.0` |
-|---|---|---|
-| Authoring machine (`pipx`) | `2.0.0` | never attempted |
-| Registry A | `v2.5.0` | merged (`c472730`) |
-| Registry B | `v2.0.0` | open **PR #5** |
-| Acceptance repo | `2.0.0` | open **PR #1** |
+| ID | Sev | Pri | What goes wrong |
+|---|---|---|---|
+| `LAF-69` | high | P2 | Our documentation check only catches one kind of mistake, and it is the harmless one. Explained below. |
+| `LAF-70` | medium | P2 | The computer that authors registry content runs AART 2.0.0, while Registry A's CI checks that content with 2.5.0. The author's tool is older than the check that judges it. |
+| `LAF-71` | medium | P2 | Every version upgrade is prepared and none is merged. Registry B PR #5 and acceptance-repo PR #1 are both still open. |
+| `LAF-68` | medium | P2 | The acceptance project still pins 2.0.0, so its CI has never run 2.5.0. This is one example of `LAF-71`. |
+| `RS-02` | low | P3 | Dead version numbers are stamped on registry requests. |
 
-Two of the three moves were written and neither was merged, and the one machine that authors content
-for all of them is the oldest thing in the table — older than the CI that judges its output. Nothing
-here has met `2.6.0` at all.
+**About `LAF-69` — why high but only P2.** The documentation check makes sure our documents agree
+with the register. But it only checks one direction. It complains when a document says a problem is
+*still open* after we fixed it — harmless. It says nothing when a document says a problem is *fixed*
+when it is actually open — which is the dangerous direction, because it is a false promise of safety.
 
-This is also the first place I got the facts wrong while writing this brief: I read both registries'
-pins out of local working trees, and both were sitting on branches that disagreed with `origin/main`
-— one seven commits behind, one *on* the unmerged PR. The corrected numbers are above. That mistake
-is the reason the skill this brief comes with makes reading remote state a rule rather than advice.
+This actually happened during this work. The register moved `LAF-61` back to "open", two release
+documents still said it was handled, and the check stayed green. I fixed those documents by hand.
+
+It is P2 and not P1 because it happened once, a human caught it in minutes, and the proper fix needs
+thought: making the check symmetric means teaching it to read claims out of English prose, which is
+the exact thing the register was created to avoid. Fix it carefully, not quickly.
 
 ### Dead weight
 
-| ID | Sev | Pri | What actually happens |
+| ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `RS-05` | low | P3 | `io/cache.py` is unreferenced by shipping code |
-| `RS-06` | low | P3 | `DESIGN-upstream.md` carries no superseded banner |
+| `RS-05` | low | P3 | `io/cache.py` is not used by any shipping code. |
+| `RS-06` | low | P3 | An old design document is not marked as replaced. |
 
 ---
 
-## If you only do one thing
+## Version pins — who is running what
 
-`LAF-63`. It is the only finding here where the failure mode is *a secret on disk and on a terminal*,
-the fix is a regex and its tests, and the test that proves it is already written and currently
-asserting the broken behaviour.
+This is the table behind `LAF-70`, `LAF-71` and `LAF-68`.
 
-## If you want 2.6.0 out this week
+| Repository | Version on `main` | Upgrade to 2.5.0 |
+|---|---|---|
+| Your machine (`pipx` install) | `2.0.0` | never started |
+| Registry A | `v2.5.0` | done and merged |
+| Registry B | `v2.0.0` | open **PR #5** |
+| Acceptance project | `2.0.0` | open **PR #1** |
 
-`LAF-63`, `LAF-66`, `LAF-65` — one stream, all three small, all three on the release's own face. Then
-re-walk scenarios 3 and 6 of
-[`PROGRESS-live-acceptance-receipt.md`](PROGRESS-live-acceptance-receipt.md), which are the two the
-fixes change, and ship with `LAF-67`'s two unwalked criteria stated in the release notes rather than
-rounded up.
+Two upgrades were written and neither was merged. The one machine that authors content for all of
+them is the oldest thing in the table. **Nothing here has ever run 2.6.0.**
+
+**A mistake worth recording.** I first reported these pins backwards. I read them from local folders
+on my disk instead of from GitHub. One folder was 7 commits out of date, the other was sitting on the
+exact unmerged branch I was describing. The table above is the corrected version, read from
+`origin/main`. This is why the skill I wrote makes "read the remote, not your local folder" a rule.
+
+---
+
+## If you only have time for one thing
+
+**Fix `LAF-63`.**
+
+It is the only problem here where the failure is *a password on disk and on screen*. The fix is one
+pattern and its tests. The test that proves it is already written and today it checks that the bug
+still exists.
+
+## If you want 2.6.0 released this week
+
+Fix `LAF-63`, `LAF-66`, `LAF-65`. One round of work, all three small, all three in the feature this
+release is about.
+
+Then re-run acceptance scenarios 3 and 6 from
+[`PROGRESS-live-acceptance-receipt.md`](PROGRESS-live-acceptance-receipt.md), because those are the
+two the fixes change.
+
+Then release — and write in the release notes that 2 of the 7 acceptance tests could not be run
+against published content. Do not round that up.
