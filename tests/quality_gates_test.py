@@ -104,6 +104,93 @@ class DocsCheckTest(unittest.TestCase):
             self.assertEqual(docs_check._repository_markdown(root), ())
 
 
+class ResidueRegisterGateTest(unittest.TestCase):
+    """`RR-7`: the register is the single place, enforced rather than asserted.
+
+    Each test introduces one disagreement into a throwaway copy of the register's shape and
+    requires the gate to name it. A rule that cannot be made to fail is not a gate — that is
+    cluster `C6`'s whole complaint about closure recorded in prose.
+    """
+
+    HEADER = (
+        "# Residue register\n\n## Checked documents\n\n"
+        "- checked: `docs/plan/*.md`\n\n## Register\n\n"
+        "| ID | Severity | Found in | Disposition | Closed or made visible by |\n"
+        "|---|---|---|---|---|\n"
+    )
+
+    def _root(self, register: str, extra: dict[str, str] | None = None) -> pathlib.Path:
+        root = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        (root / "docs" / "testing").mkdir(parents=True)
+        (root / "docs" / "plan").mkdir(parents=True)
+        (root / "docs" / "testing" / "residue-register.md").write_text(register, encoding="utf-8")
+        for name, text in (extra or {}).items():
+            (root / name).write_text(text, encoding="utf-8")
+        return root
+
+    def _codes(self, root: pathlib.Path) -> set[str]:
+        docs_check = _load_script("docs_check")
+        return {item.code for item in docs_check._register_diagnostics(root)}
+
+    def test_a_stream_finding_absent_from_the_register_fails(self):
+        root = self._root(
+            self.HEADER + "| `LAF-52` | high | run | `open` | — |\n",
+            {
+                "docs/testing/residue-stream-2026-08-15.md": (
+                    "| ID | One line |\n|---|---|\n"
+                    "| `LAF-52` | in the register |\n"
+                    "| `LAF-99` | not in the register |\n"
+                )
+            },
+        )
+        self.assertIn("DOC008", self._codes(root))
+
+    def test_a_closure_claim_without_its_reproduction_fails(self):
+        root = self._root(self.HEADER + "| `LAF-52` | high | run | `closed` | — |\n")
+        self.assertIn("DOC007", self._codes(root))
+
+    def test_a_closed_finding_still_listed_as_shipped_open_fails(self):
+        root = self._root(
+            self.HEADER + "| `LAF-52` | high | run | `closed` | a reproduction |\n",
+            {"docs/plan/PLAN-x.md": "## Known defects shipped open\n\n- `LAF-52` is open\n"},
+        )
+        self.assertIn("DOC009", self._codes(root))
+
+    def test_one_id_recorded_twice_fails(self):
+        root = self._root(
+            self.HEADER
+            + "| `LAF-52` | high | run | `open` | — |\n"
+            + "| `LAF-52` | high | run | `closed` | a reproduction |\n"
+        )
+        self.assertIn("DOC006", self._codes(root))
+
+    def test_a_released_document_may_disagree_because_it_is_dated(self):
+        # `github-release-v2.5.0.md` lists findings this register now records as closed, and it
+        # stays that way: it is evidence of what shipped, not a claim about today.
+        root = self._root(
+            self.HEADER + "| `LAF-52` | high | run | `closed` | a reproduction |\n",
+            {"docs/plan/kept.md": "# nothing here\n"},
+        )
+        (root / "docs" / "release").mkdir(parents=True)
+        (root / "docs" / "release" / "github-release-v2.5.0.md").write_text(
+            "## Known defects shipped open\n\n- `LAF-52`\n", encoding="utf-8"
+        )
+        self.assertEqual(self._codes(root), set())
+
+    def test_the_real_register_and_the_real_documents_agree(self):
+        docs_check = _load_script("docs_check")
+        self.assertEqual(docs_check._register_diagnostics(ROOT), ())
+
+    def test_every_finding_this_stream_gathered_has_a_disposition(self):
+        docs_check = _load_script("docs_check")
+        register = (ROOT / "docs" / "testing" / "residue-register.md").read_text(encoding="utf-8")
+        rows = docs_check._REGISTER_ROW_RE.findall(register)
+        self.assertEqual(len(rows), len({identifier for identifier, _ in rows}))
+        # The stream gathered twenty-eight; implementing the response to it added two more.
+        self.assertGreaterEqual(len(rows), 28)
+
+
 class PackagingCheckTest(unittest.TestCase):
     def test_packaging_smoke_does_not_mutate_tracked_source(self):
         packaging_check = _load_script("packaging_check")

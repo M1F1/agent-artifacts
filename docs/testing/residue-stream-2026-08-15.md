@@ -114,6 +114,11 @@ branching, so the defect is not that the shapes are unhandled but that handling 
 job and nothing says so. This is `C1`'s shape moved into the code: the function knows which mode it
 is in and returns a type that does not.
 
+**What is open today is not in this document.** This is a dated gathering; the answer to *what is
+still true* is [`residue-register.md`](residue-register.md), which `docs_check` requires every current
+plan, design and release document to agree with. That register is `RR-7`, and it is this stream's own
+`C6` answered.
+
 ## Clusters
 
 **C1 — The system knows more than it says.** `LAF-52`, `LAF-54`, `LAF-59`, `LAF-45`, `RS-09`,
