@@ -115,9 +115,9 @@ This is the first release in three with **no obligation for a registry maintaine
 direction. Nothing here publishes into an index; every command it adds reads a file under the
 consumer's own data root.
 
-The v14 schema freeze differs from v13 in one input — `agent_artifacts/setup.py`, where the difference
-is a single rename — and carries identical protocol versions. That is the machine-checked statement
-that no boundary moved.
+The v14 schema freeze differs from v13 in one input — `agent_artifacts/setup.py`, a rename and the
+departure of the redaction rules to a module that parses nothing — and carries identical protocol
+versions. That is the machine-checked statement that no boundary moved.
 
 ## Known defects shipped open
 

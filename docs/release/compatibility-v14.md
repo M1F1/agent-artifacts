@@ -36,8 +36,9 @@ nothing `2.5.0` cannot parse.
 ## Why this is minor and not a protocol move
 
 The v14 schema freeze differs from v13 in **one input and no protocol version**:
-`agent_artifacts/setup.py`, and the difference there is a single rename — `_public_text` became
-`public_text` so the shared renderer could reach it. No parsed field, no module catalog entry, no
+`agent_artifacts/setup.py`. Two changes are in it: `_public_text` became `public_text` so the shared
+renderer could reach it, and the redaction rules moved out to `agent_artifacts/redaction.py`, which
+is not a schema input because it parses nothing. No parsed field, no module catalog entry, no
 validation rule. `schema-freeze-v14.json` and `schema-freeze-v13.json` carry identical
 `protocol_versions`, and every other hashed input is byte-identical.
 

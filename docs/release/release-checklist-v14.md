@@ -130,9 +130,10 @@ Nine quality gates green. `docs-check` now carries four rules the previous relea
 current plan, design and compatibility document in agreement about what is open.
 
 The v14 schema freeze differs from v13 in **one input and no protocol version**:
-`agent_artifacts/setup.py`, where the difference is a single rename, `_public_text` → `public_text`,
-so the shared renderer could reach it. Verified rather than asserted: `protocol_versions` are equal
-between `schema-freeze-v13.json` and `schema-freeze-v14.json`, and `setup.py` is the only
+`agent_artifacts/setup.py` — the `_public_text` → `public_text` rename, and the redaction rules
+leaving for `agent_artifacts/redaction.py`, which parses nothing and is not a schema input. Verified
+rather than asserted, and re-verified after `RR-10`: `protocol_versions` are equal between
+`schema-freeze-v13.json` and `schema-freeze-v14.json`, and `setup.py` is still the only
 `schema_inputs` entry whose digest moved.
 
 The live acceptance run is recorded below when it has been walked, on a real machine, with a real
