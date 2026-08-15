@@ -91,6 +91,7 @@ all — which is itself part of the finding above.
 |---|---|
 | `LAF-62` | A `≤2.4.0` consumer cannot `source add` a registry rebuilt on `2.5.0`; it fails before any artifact is named |
 | `LAF-63` | Credential redaction misses every namespaced name — `GITHUB_TOKEN=…` and `AWS_SECRET_ACCESS_KEY=…` are printed and **persisted** in full |
+| `LAF-64` | `_curses_install_scope` answers with two different types depending on a keyword argument, and the wrong one is silently a cancel |
 
 `LAF-63` was found while implementing `RR-2A`, not during a run, and is recorded rather than fixed
 there. `_SENSITIVE_ASSIGNMENT` (`setup.py:131`) opens with `\b(token|password|secret|api[_-]?key…)`,
@@ -102,6 +103,16 @@ recipes use. The same pattern is what `_redact` applies before writing the setup
 `RR-2B`'s guarantee that redaction precedes truncation is intact and simply weaker than it reads.
 `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_not_redacted_today` holds the
 gap visible so it cannot be assumed closed.
+
+`LAF-64` was found while implementing `RR-5`, by writing a second caller of a helper that had had
+exactly one. `_curses_install_scope(…, wizard=True)` returns a `WizardInput` whose `selected` holds
+the *index*; without `wizard=True` it returns the `InstallScope` itself. A new caller that writes the
+obvious `if isinstance(result, WizardInput): return` compiles, typechecks, and silently treats every
+successful selection as a cancel — which is what the first draft of `_run_receipt_curses` did, and
+what its test caught. The existing call site (`tui.py:4269`) handles both shapes with eleven lines of
+branching, so the defect is not that the shapes are unhandled but that handling them is the caller's
+job and nothing says so. This is `C1`'s shape moved into the code: the function knows which mode it
+is in and returns a type that does not.
 
 ## Clusters
 

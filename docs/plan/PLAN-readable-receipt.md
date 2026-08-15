@@ -152,7 +152,23 @@ its own claim is how a guardrail stops meaning anything.
 actions appear in the text front-end with the same review, the same refusals and the same
 remediation.
 
-**Evidence:** the text front-end walked for all three actions, as `SI-9` and `VN-9` were.
+Two things this package settled that the plan had left implicit:
+
+- **`receipt` is not a fifth wizard verb.** The four in `ACTIONS` select artifacts from a catalog and
+  end at the wizard's Review; a receipt reads or reverses one artifact that is already installed, so
+  it has no basket and no install mode. Putting it in `ACTIONS` would set a value in the state machine
+  that no stage after `action` can interpret. It is offered from the same menu, runs its own three
+  questions, and returns to the menu.
+- **Parity is enforced by a guard, not by intention.** Both skins call one function; an AST check
+  fails if either names a receipt renderer, a projection, or `apply_undo` outside it. Without that,
+  the second skin drifts and the drift shows up as two different answers to the same question — which
+  is the defect `VN-9` describes, one level up.
+
+The interactive undo is bound the way `--expect` binds the flag-mode one: after the answer, the undo
+is recomputed from disk and refused if the digest moved.
+
+**Evidence:** both front-ends walked for all three actions against a real record in a temporary data
+root, as `SI-9` and `VN-9` were. Found doing it: `LAF-64`.
 
 ## `RR-6` — the documents become a test gate
 
