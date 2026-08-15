@@ -13,9 +13,10 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight residue run continues with `LAF-73`; see *Overnight run 2026-08-15 →
+  16* below for what is done and on which branch. `LAF-61` and the human-gated passes — the curses
+  front-end and the MCP credential run — still wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -374,6 +375,27 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 ## Blockers
 
 None.
+
+## Overnight run 2026-08-15 → 16
+
+The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
+another; they can be reviewed and merged in any order. `PROGRESS.md` and the register are touched by
+each of them, so expect conflicts in those two files and take both sides.
+
+| # | Item | Branch | State |
+|---|---|---|---|
+| 1 | `RS-12` — setup steps ran without `HOME`, so docker could not read `config.json` | `fix/setup-docker-credentials-rs12` | done, walked live (v4) |
+| 2 | `LAF-64` — the scope selector returned two types | `fix/curses-install-scope-laf64` | done, headless part walked; curses skin human-gated |
+| 3 | `LAF-75` — `wheel-digest` printed the digest of a wheel it deleted | `fix/wheel-digest-emits-what-it-hashes-laf75` | done, walked live (v5) |
+| 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
+
+**New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4). Every one has a register row saying where
+it came from.
+
+**Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
+and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
+untouched — it needs a live run against a second GHE host, which this run cannot make.
 
 ## Work log
 
@@ -2026,3 +2048,33 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-69`
+
+Branch `fix/docs-check-both-directions-laf69`, cut from `main`, not pushed. One work package.
+
+- **The gate only caught pessimism.** `DOC009` fails a checked document that lists as *shipped open*
+  a finding the register records as `closed`. Nothing failed the opposite: a document claiming
+  `closed` or `visible` for something the register records as `open` — the claim of a safety that is
+  not there. It had already happened for a whole release, when `LAF-66` moved `LAF-61` back to
+  `open` and two release documents kept saying it was handled.
+- **`DOC010` reads the claim where the documents already make it.** `compatibility-v14.md` states a
+  disposition in a table cell — one word, in backticks, beside the finding. That cell is the
+  structured claim; the gate compares it with the register and fails on disagreement. It does not
+  read sentences, deliberately: deciding a disposition by parsing prose is the thing the register
+  exists to stop documents doing.
+- **Proved by replaying the case, not by a fixture.** With `LAF-61` put back to `open` in a copy of
+  the real `docs/` tree, `docs_check` reports
+  `docs/release/compatibility-v14.md:160: DOC010 LAF-61 is claimed \`visible\` and the register
+  records \`open\`` — the row that went unchallenged for a release. Unit side:
+  `tests/quality_gates_test.py::ResidueRegisterGateTest`, one test per direction, plus one that
+  fixes the boundary (a cell recounting a *history* is not a claim about today).
+- **No wheel run.** `scripts/docs_check.py` is not part of the package — the wheel contains
+  `agent_artifacts/` only — so there is no executable to install and walk. The equivalent of a live
+  run for this gate is running the real script over the real documents, which is what the
+  reproduction above does.
+- **`LAF-69` closes; two findings recorded, not fixed.** `LAF-82`: this register's own opening
+  paragraph claims `docs_check` fails a document naming a finding the register does not carry, and
+  no rule does that — a document may name `LAF-99`, claim anything, and every check stays silent.
+  `LAF-83`: the prose half of the original case still passes, because `DOC010` reads cells;
+  `release-checklist-v14.md`'s sentence about `LAF-61` would not be caught today.

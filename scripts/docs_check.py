@@ -8,6 +8,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +26,11 @@ _REGISTER_ROW_RE = re.compile(
     re.MULTILINE,
 )
 _OPEN_HEADING_RE = re.compile(r"^(#{2,6}) .*\bshipped open\b.*$", re.MULTILINE | re.IGNORECASE)
+# `LAF-69`: the structured form in which a document may state a finding's state — one table cell
+# holding one disposition and nothing else.  A cell that says anything more (*was `visible`*, *`open`
+# again*) is prose about a history, and prose is what the register exists to stop documents deciding
+# with.  So the gate reads the cell, never the sentence.
+_CLAIM_CELL_RE = re.compile(r"^`(open|closed|visible|deferred)`$")
 _HEADING_RE = re.compile(r"^#{1,6} ", re.MULTILINE)
 _STREAM_GLOB = "docs/testing/residue-stream-*.md"
 # Which documents must agree with the register, declared by the register itself. Released
@@ -183,6 +189,47 @@ def _sections_under(text: str, heading: re.Match[str]) -> str:
     return text[start : following.start() if following else len(text)]
 
 
+def _claim_diagnostics(
+    path: Path, text: str, root: Path, rows: Mapping[str, str]
+) -> tuple[Diagnostic, ...]:
+    """`DOC010` — a checked document's disposition claims must equal the register's.
+
+    `LAF-69`: `DOC009` fails a document that lists as *shipped open* something the register has
+    closed, and nothing failed the opposite claim. The first is a stale worry; the second asserts a
+    safety that is not there, which is the direction that misleads an operator — and it happened:
+    the register moved `LAF-61` back to `open` while two release documents kept saying `visible`,
+    and `docs-check` passed.
+
+    A claim is a table row that names a finding and carries a cell that is *exactly* one
+    disposition (`_CLAIM_CELL_RE`) — the shape `compatibility-v14.md` already uses. Released
+    documents are outside the checked list in this direction too: a dated record is not edited to
+    agree with today.
+    """
+
+    diagnostics: list[Diagnostic] = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        claimed = [match.group(1) for cell in cells if (match := _CLAIM_CELL_RE.match(cell))]
+        if not claimed:
+            continue
+        for identifier in dict.fromkeys(_FINDING_RE.findall(line)):
+            recorded = rows.get(identifier)
+            for claim in claimed:
+                if recorded is not None and claim != recorded:
+                    diagnostics.append(
+                        Diagnostic(
+                            str(path.relative_to(root)),
+                            line_number,
+                            "DOC010",
+                            f"{identifier} is claimed `{claim}` and the register records "
+                            f"`{recorded}`",
+                        )
+                    )
+    return tuple(diagnostics)
+
+
 def _register_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
     """`RR-7`: the residue register is the only place a finding's state is recorded.
 
@@ -248,6 +295,7 @@ def _register_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
             if not path.is_file():
                 continue
             text = path.read_text(encoding="utf-8")
+            diagnostics.extend(_claim_diagnostics(path, text, root, rows))
             for heading in _OPEN_HEADING_RE.finditer(text):
                 for found in _FINDING_RE.finditer(_sections_under(text, heading)):
                     if rows.get(found.group(1)) == "closed":
