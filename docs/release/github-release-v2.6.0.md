@@ -99,6 +99,36 @@ characters kept exactly the half that cannot explain the failure. Capture now ke
 where both ends carry meaning it keeps both with the middle elided — at all three capture sites,
 because a rule applied at two of three is how this comes back.
 
+## One redactor, and it runs at the exits
+
+There were two, with different rules, and neither was a superset of the other. The weaker of them was
+the one on the path that writes the persisted record — so a credential could be correctly hidden on
+screen and written out in full to a file, in the same run.
+
+They are now one function. It hides a credential name with any prefix (`COMPANY_GHE_TOKEN=`, not only
+`TOKEN=`), a credential in a URL's userinfo or query string, and a credential-shaped value standing
+alone with no name beside it — which is the form a `git clone` failure actually prints, and the one
+form the other three rules cannot reach. Detection is by shape and never by entropy, so the digests
+and plan hashes a receipt exists to carry are returned untouched.
+
+**Nothing about how a secret is collected changed, because nothing about it was wrong.** `security
+add-generic-password -w` is invoked with no value after the flag, so the `security` tool prompts at
+the terminal without echo and reads the value directly. The token goes from your keyboard into the
+Keychain; it never passes through AART. What `shell.env-from-keychain@1` writes into a shell profile
+is a lookup — the question, not the answer.
+
+**A record written before this release is reported, not repaired.** `verify` says a record contains
+credential-shaped text, without printing the value, and says that deleting it and re-running setup is
+the only thing that removes it. Rewriting a persisted record would destroy the thing receipts exist
+to be.
+
+The test that holds this is written against the **exits** rather than the call sites: known values are
+planted where a run would meet them, the real machinery runs, and every channel is checked — the
+record in memory, the persisted record read back as bytes, the working copy during and after a run,
+the three `--json` payloads, the text they render to, and the review. The payload walks are
+structural, so a field added later is covered without anyone remembering to extend the test. That is
+the property the persisted record did not have when it grew the field this defect escaped through.
+
 ## Both front-ends, one implementation
 
 All three actions are in the Action menu of the line-oriented and the full-screen front-end. Both call
@@ -123,13 +153,13 @@ versions. That is the machine-checked statement that no boundary moved.
 
 - **A pre-existing image tag keeps its name through an undo and loses its binding** (`LAF-58`). The id
   it pointed at before the run was never recorded. Named in the undo review before consent.
-- **Credential redaction misses every namespaced name** (`LAF-63`). `TOKEN=…` is redacted;
-  `GITHUB_TOKEN=…` and `AWS_SECRET_ACCESS_KEY=…` are not, and the same pattern is applied before the
-  setup state file is written — so this is a credential reaching disk, not only a terminal. Found while
-  building this release. Prefer recipes whose `inputs` are named without a namespace prefix until it is
-  fixed.
-- **A killed run's working copy is not swept** (`LAF-61`), and the two installation routes still
-  disagree on image identity (`LAF-57`).
+- **A killed run's working copy is not swept** (`LAF-61`). `receipt verify` now names it and where it
+  is; removing it is still yours to do, deliberately — deciding when AART may delete something it may
+  not own is a separate question.
+- **An older record keeps text this release would no longer write** (`LAF-73`). `receipt show` on a
+  record written before this release prints the old `rollback` sentence, and nothing reports the
+  disagreement. The same shape as the credential case below, without the answer.
+- The two installation routes still disagree on image identity (`LAF-57`).
 
 What is open is recorded in [`residue-register.md`](../testing/residue-register.md), with a disposition
 and — where something closed — the reproduction that closed it. `docs-check` fails if any current plan,
