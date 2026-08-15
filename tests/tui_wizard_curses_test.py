@@ -901,7 +901,11 @@ class CursesWizardFlowTests(unittest.TestCase):
                     "_curses_multiselect",
                     side_effect=lambda *_args, **_kwargs: next(multis),
                 ),
-                mock.patch.object(tui, "_curses_install_scope", return_value="project"),
+                mock.patch.object(
+                    tui,
+                    "_curses_install_scope_event",
+                    return_value=WizardInput("confirm", (0,), 0, 0),
+                ),
                 mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
                 mock.patch.object(tui, "_curses_review", return_value=True),
                 mock.patch.object(tui, "_dispatch_result") as legacy_dispatch,
@@ -967,7 +971,11 @@ class CursesWizardFlowTests(unittest.TestCase):
                     "_curses_multiselect",
                     side_effect=lambda *_args, **_kwargs: next(multis),
                 ),
-                mock.patch.object(tui, "_curses_install_scope", return_value="project"),
+                mock.patch.object(
+                    tui,
+                    "_curses_install_scope_event",
+                    return_value=WizardInput("confirm", (0,), 0, 0),
+                ),
                 mock.patch.object(tui, "_curses_install_mode", return_value="copy"),
                 mock.patch.object(tui, "_curses_review", return_value=True),
                 mock.patch.object(

@@ -69,7 +69,7 @@ does not have to agree with the present; a current document does.
 | `LAF-61` | medium | `2.5.0` live acceptance | `visible` | `RR-10D`; `receipt verify` names an orphaned run directory and removes nothing. Claimed `visible` once already on a probe that read the wrong root (`LAF-66`); the claim is made again on a test that drives the real writer and the real reader together |
 | `LAF-62` | medium | `2.5.0` publication | `deferred` | — cluster C4; needs the index-version boundary stream |
 | `LAF-63` | high | implementing `RR-2A` | `closed` | `RR-10A`; one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix, `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_redacted` |
-| `LAF-64` | medium | implementing `RR-5` | `open` | — |
+| `LAF-64` | medium | implementing `RR-5` | `closed` | `_curses_install_scope_event` always answers with a `WizardInput`; the `wizard` flag and the scope-only return are both gone, and with them the eleven lines of shape-branching at each call site. `tests/tui_install_scope_test.py` drives the real selector with a scripted screen for `confirm`/`back`/`quit`, and two guards keep the trap from returning: the signature carries no mode flag, and `_curses_install_scope` no longer exists to be called by accident |
 | `RS-01` | medium | `2.3.0` prose | `open` | — |
 | `RS-02` | low | `2.3.0` prose | `open` | — |
 | `RS-03` | medium | `2.3.0` prose | `deferred` | — cluster C5, with `LAF-43` |
@@ -95,6 +95,7 @@ does not have to agree with the present; a current document does.
 | `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
+| `LAF-79` | medium | closing `LAF-64` | `open` | — `_curses_install_mode` and `_curses_singleselect` still take `wizard` and still answer with two types: a `WizardInput`, or the mode / the index / `None` / the string `"back"`. It is `LAF-64` exactly, one function over. Both have callers that handle the shapes today, so nothing is broken now; what is unfixed is the trap the next caller walks into |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced

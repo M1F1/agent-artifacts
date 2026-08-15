@@ -2026,3 +2026,40 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-15 → 16 — overnight residue run (continued)
+
+`LAF-64` on `fix/curses-install-scope-laf64`. See the head of this run at
+[the section above](#2026-08-15--16--overnight-residue-run); this entry continues it.
+
+#### `LAF-64` — one function, one return type, and no flag to move a caller between them
+
+`_curses_install_scope(…, wizard=True)` answered with a `WizardInput` carrying an index; without the
+flag it answered with the `InstallScope` itself. Both shapes are legitimate and nothing in the
+signature said which one a caller would get, so the obvious `if isinstance(result, WizardInput):
+return` read every successful selection as a cancel. It cost a debugging session once already.
+
+- **The flag is gone rather than documented.** A caller cannot misread a type it never receives.
+- **And so is the second shape.** The scope-only return had exactly one reader — a `try/except
+  TypeError` fallback that existed to survive a stubbed function in a test. Keeping an unused
+  second shape would be the same trap with a spare exit, so `_curses_install_scope` no longer
+  exists; a test asserts that, because deleting it is half the fix.
+- **The call sites got shorter, which is the point.** Eleven lines of shape-branching in the wizard
+  and eight in the receipt flow became one line each. The knowledge moved from every caller into
+  the function that already had it.
+- **Two tests that would fail if it came back:** the signature carries no `wizard` parameter, and
+  the old name resolves to nothing.
+
+**Not walked live, and why:** the surface is the curses skin, which is human-gated (design §10).
+`LA-U-27a` is added to the scenario map with the three checks a human should make at that screen —
+Enter on either choice advances with it selected, Backspace goes back rather than cancelling, `q`
+quits. The unit tests drive the real selector with a scripted screen, which is as close as an
+unattended run gets.
+
+**Found next door and left alone:** `LAF-79`. `_curses_install_mode` and `_curses_singleselect` have
+the identical two-type shape. Their current callers handle it, so nothing is broken today; the trap
+is for whoever writes the next caller.
+
+**A note for the merge:** every branch in this run is cut from `main`, so each one edits
+`residue-register.md` and this file independently. Expect small textual conflicts in the register
+table when they are merged in sequence — the rows are additive and do not contradict each other.
