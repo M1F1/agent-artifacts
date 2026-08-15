@@ -46,6 +46,34 @@ class RollbackIncompleteError(RuntimeError):
         self.receipt = receipt
 
 
+_DETAIL_LIMIT = 512
+_DETAIL_HEAD = 128
+
+
+def failure_detail(raw: str, *, limit: int = _DETAIL_LIMIT) -> str:
+    """Redact, then keep the end of a failure transcript rather than its beginning.
+
+    `docker build` prints progress first and the failing instruction last, so a head-truncated
+    detail is exactly the half that cannot explain the failure — a consumer was shown
+    `transferring dockerfile: 117B done` and never `did not complete successfully: exit code: 3`
+    (`LAF-59`).  Both ends can carry meaning, so the head is kept too and the middle is elided.
+
+    Redaction happens here rather than at the call site so the two steps cannot be ordered the
+    wrong way round by a caller: truncating first could cut a secret in half and leave the half
+    that the redaction pattern no longer matches.
+    """
+
+    text = redact_text(raw)
+    if len(text) <= limit:
+        return text
+    head = text[:_DETAIL_HEAD]
+    marker = f"\n… {len(text) - limit} characters elided …\n"
+    tail_budget = limit - len(head) - len(marker)
+    if tail_budget <= 0:
+        return text[-limit:]
+    return f"{head}{marker}{text[-tail_budget:]}"
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -432,8 +460,7 @@ def _docker_build_apply(
     digest = context_digest(context)
     built = runtime.process(effect.argv, env=env, cwd=context, timeout=1800, capture=True)
     if built.returncode != 0:
-        detail = redact_text(built.stderr or built.stdout or "docker build failed")
-        raise RuntimeError(detail[:512])
+        raise RuntimeError(failure_detail(built.stderr or built.stdout or "docker build failed"))
     identified = runtime.process(
         ("docker", "image", "inspect", "--format", "{{.Id}}", tag),
         env=env,
@@ -493,7 +520,7 @@ def _trust_store_apply(
     subject = str(effect.config["subject_contains"])
     try:
         if result.returncode != 0:
-            raise RuntimeError(redact_text(result.stderr or "certificate export failed")[:512])
+            raise RuntimeError(failure_detail(result.stderr or "certificate export failed"))
         size = os.path.getsize(destination)
         if size > _PEM_MAX_BYTES:
             raise RuntimeError("exported certificate bundle is implausibly large")
@@ -531,8 +558,9 @@ def _command_verify(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
         capture=True,
     )
     if result.returncode != 0:
-        detail = redact_text(result.stderr or result.stdout or "verification command failed")
-        raise RuntimeError(detail[:512])
+        raise RuntimeError(
+            failure_detail(result.stderr or result.stdout or "verification command failed")
+        )
     return {"module": effect.module, "verified": True}, False
 
 
