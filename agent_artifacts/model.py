@@ -453,6 +453,9 @@ class Request:
     registry_modes: Tuple[str, ...] = ()
     registry_platforms: Tuple[str, ...] = ()
     security_action: Optional[str] = None
+    # Which `marketplace receipt` action was asked for.  Kept beside the other per-family
+    # action fields rather than reusing one, so an unrelated command cannot select a receipt.
+    receipt_action: Optional[str] = None
     security_input: Optional[str] = None
     security_artifact: Optional[str] = None
     registry_index: Optional[str] = None

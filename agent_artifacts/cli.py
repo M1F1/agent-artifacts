@@ -483,6 +483,93 @@ def build_parser() -> argparse.ArgumentParser:
         help="approve every reviewed setup effect; without it each effect is declined",
     )
 
+    # `receipt` lives under `marketplace` rather than under a top-level `setup` group, because
+    # `marketplace setup` already owns that word: a second `aart setup` would name two different
+    # operations.  A receipt is a read over one installation, which is this family's subject.
+    p_marketplace_receipt = marketplace_sub.add_parser(
+        "receipt",
+        formatter_class=_HELP_FORMATTER,
+        help="read what a setup run recorded for one installation",
+        description=(
+            "Read the persisted setup record AART writes for every setup run: plan hash, "
+            "timings, exit status, and each step with its module, target and disposition. "
+            "This is a read; it starts no run and locks nothing."
+        ),
+    )
+    receipt_sub = p_marketplace_receipt.add_subparsers(
+        dest="receipt_action", metavar="ACTION", required=True
+    )
+    p_receipt_show = receipt_sub.add_parser(
+        "show",
+        help="print the persisted setup record for one installed artifact",
+    )
+    p_receipt_show.add_argument(
+        "names",
+        nargs=1,
+        metavar="COORDINATE",
+        help="the installed artifact coordinate whose setup record should be printed",
+    )
+    _add_profile(p_receipt_show)
+    _add_project(p_receipt_show)
+    _add_scope(p_receipt_show)
+    _add_json(p_receipt_show)
+
+    p_receipt_verify = receipt_sub.add_parser(
+        "verify",
+        formatter_class=_HELP_FORMATTER,
+        help="ask whether what the setup record claims is still true",
+        description=(
+            "Put each claim in a persisted setup record to the machine: does the image still "
+            "exist, does the tag still resolve to the recorded id, does the Keychain item hold a "
+            "value, is the managed block still in the file. Reports and never repairs; exits "
+            "non-zero when any claim is false."
+        ),
+    )
+    p_receipt_verify.add_argument(
+        "names",
+        nargs=1,
+        metavar="COORDINATE",
+        help="the installed artifact coordinate whose setup record should be checked",
+    )
+    _add_profile(p_receipt_verify)
+    _add_project(p_receipt_verify)
+    _add_scope(p_receipt_verify)
+    _add_json(p_receipt_verify)
+
+    p_receipt_undo = receipt_sub.add_parser(
+        "undo",
+        formatter_class=_HELP_FORMATTER,
+        help="reverse the effects a setup run recorded",
+        description=(
+            "Replay a persisted setup receipt in reverse, with the ownership checks the run "
+            "itself uses. The only mutating action in this family: without --yes it prints "
+            "every effect it would reverse and every effect it would not, and changes nothing."
+        ),
+    )
+    p_receipt_undo.add_argument(
+        "names",
+        nargs=1,
+        metavar="COORDINATE",
+        help="the installed artifact coordinate whose setup effects should be reversed",
+    )
+    _add_profile(p_receipt_undo)
+    _add_project(p_receipt_undo)
+    _add_scope(p_receipt_undo)
+    p_receipt_undo.add_argument(
+        "--yes",
+        action="store_true",
+        help="apply the reviewed undo (without this the command only reviews)",
+    )
+    p_receipt_undo.add_argument(
+        "--expect",
+        metavar="DIGEST",
+        help=(
+            "apply only if the recomputed undo digest equals DIGEST; otherwise refuse and show "
+            "the undo that is actually offered"
+        ),
+    )
+    _add_json(p_receipt_undo)
+
     # registry ---------------------------------------------------------------- #
     p = sub.add_parser(
         "registry",
@@ -1045,6 +1132,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_location=getattr(args, "source_location", None),
         source_make_default=getattr(args, "source_make_default", None),
         marketplace_action=getattr(args, "marketplace_action", None),
+        receipt_action=getattr(args, "receipt_action", None),
         runtime_environment=getattr(args, "runtime_environment", None),
         offline=bool(getattr(args, "offline", False)),
         authorize_untrusted_source=bool(getattr(args, "authorize_untrusted_source", False)),

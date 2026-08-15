@@ -30,6 +30,7 @@ from .model import (
     SetupStateRecord,
     SetupStep,
 )
+from .redaction import redact_text
 from .tui_layout import CONTENT_MEASURE, field_block, wrap
 
 _TOP_FIELDS = {
@@ -128,9 +129,9 @@ _PLANNED_CAPABILITIES: Mapping[str, Tuple[str, ...]] = {
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _ARTIFACT_KEY = re.compile(r"^(skill|hook|mcp)/[A-Za-z0-9][A-Za-z0-9._-]*$")
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\b(token|password|passwd|secret|api[_-]?key|api[_-]?token)\s*[:=]\s*[^\s,;]+"
-)
+# The redactor is `redaction.redact_text`, imported above.  This module used to carry a second,
+# weaker one, and `dump_setup_state` — the function that writes to disk — used that one, so a
+# credentialed clone URL was hidden in a diagnostic and persisted in full (`LAF-72`).
 _CANONICAL_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SETUP_STATE_REF = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
 _TRUST_CLASSES = {
@@ -1010,10 +1011,24 @@ class SetupReview:
 _PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
 
 
-def _public_text(value: str) -> str:
-    """Redact the credential-shaped fragments that author-controlled review text may contain."""
+_REDACTED_ASSIGNMENT = re.compile(r"[A-Za-z0-9_.-]*\s*[:=]\s*\[redacted\]")
 
-    return _SENSITIVE_ASSIGNMENT.sub("[redacted]", value.replace("\r", " ").replace("\n", " "))
+
+def public_text(value: str) -> str:
+    """Redact the credential-shaped fragments that author-controlled review text may contain.
+
+    Stricter than `redact_text` by one step: the name goes too.  Everywhere else `TOKEN=[redacted]`
+    is the better rendering, because it tells the operator what kind of thing was hidden.  Review
+    text is the exception — the string is chosen by the *author* of a recipe the operator has not
+    yet consented to, so it is shown with the least of it that still reads as text.
+
+    `redact_text` decides what counts as a credential; this decides how much of it to show.  There
+    is still only one answer to the first question, which is the point of `RR-10A`.
+    """
+
+    return _REDACTED_ASSIGNMENT.sub(
+        "[redacted]", redact_text(value.replace("\r", " ").replace("\n", " "))
+    )
 
 
 def _contained_manual_path(item: SetupQueueItem, relative_path: str) -> str:
@@ -1095,7 +1110,7 @@ def project_setup_review(plan: SetupPlan) -> SetupReview:
         SetupEffectReview(
             index=index,
             identity=_effect_identity(effect),
-            target=_public_text(effect.target) if effect.target else "no filesystem target",
+            target=public_text(effect.target) if effect.target else "no filesystem target",
             capability=effect.capability or "none",
             recovery=(
                 "removes only changes created by this run"
@@ -1110,17 +1125,17 @@ def project_setup_review(plan: SetupPlan) -> SetupReview:
         artifact=f"{plan.item.artifact_type}/{plan.item.artifact_name}",
         profile=plan.item.profile,
         scope=plan.item.scope,
-        purpose=_public_text(installer.purpose),
-        source_label=_public_text(plan.item.source_label),
+        purpose=public_text(installer.purpose),
+        source_label=public_text(plan.item.source_label),
         recipe_path=installer.descriptor_path,
         recipe_hash=installer.descriptor_hash,
         plan_hash=plan.plan_hash,
-        capabilities=tuple(_public_text(value) for value in installer.capabilities),
-        required_tools=tuple(_public_text(value) for value in installer.required_tools),
+        capabilities=tuple(public_text(value) for value in installer.capabilities),
+        required_tools=tuple(public_text(value) for value in installer.required_tools),
         manual=manual_reference(plan.item),
         effects=effects,
         preflight_status=plan.preflight_status,
-        preflight_detail=_public_text(plan.preflight_detail),
+        preflight_detail=public_text(plan.preflight_detail),
     )
 
 
@@ -1141,8 +1156,8 @@ def render_manual_alternative(
     lines: Tuple[str, ...] = ("Manual alternative",)
     return lines + field_block(
         (
-            ("instructions", _public_text(reference.relative_path)),
-            ("source", _public_text(reference.source)),
+            ("instructions", public_text(reference.relative_path)),
+            ("source", public_text(reference.source)),
             (
                 "status",
                 (
@@ -1175,18 +1190,18 @@ def render_setup_outcome(
     incomplete = status not in _SETUP_COMPLETE
     lines = wrap(f"Setup outcome: {artifact}@{profile} ({scope})", width=width)
     fields: list[tuple[str, str]] = [
-        ("status", _public_text(status)),
-        ("details", _public_text(redact_text(detail))),
+        ("status", public_text(status)),
+        ("details", public_text(redact_text(detail))),
     ]
     if retry_command:
-        fields.append(("retry", _public_text(redact_text(retry_command))))
+        fields.append(("retry", public_text(redact_text(retry_command))))
     if rollback_command:
-        fields.append(("rollback", _public_text(redact_text(rollback_command))))
+        fields.append(("rollback", public_text(redact_text(rollback_command))))
     lines += field_block(tuple(fields), indent=2, width=width)
     if recovery:
         lines += ("Recovery",)
         for item in recovery:
-            lines += wrap(f"  {_public_text(redact_text(item))}", width=width)
+            lines += wrap(f"  {public_text(redact_text(item))}", width=width)
     if incomplete and manual is not None:
         lines += render_manual_alternative(
             manual, width=width, incomplete=status not in _SETUP_UNSTARTED
@@ -1258,18 +1273,23 @@ def retry_command(item: SetupQueueItem) -> str:
 
 
 def rollback_command(item: SetupQueueItem) -> str:
-    """What reverses effects this item already applied — which is not a command.
+    """The command that reverses effects this item already applied.
 
-    `aart setup rollback` never shipped: the engine reverses its own effects when an apply fails,
-    and `rollback_setup` has no CLI surface.  Naming it here sent an operator whose setup left
-    receipts behind to a command that does not exist, which is worse than saying so.  The missing
-    surface is recorded as a residue rather than invented here.
+    This used to say *no command reverses a completed setup*, and that was true when it was
+    written: the engine reversed its own effects on a failed apply, and `rollback_setup` had no CLI
+    surface.  `2.6.0` gave it one, and the sentence became a field that every new record carried
+    and the same executable contradicted (`LAF-65`).
+
+    It is a written field and not printed prose, which is why it went stale unnoticed: nothing
+    reads a persisted record back and checks its claims against the command surface.  The test for
+    this parses the string with the real CLI parser, so the next time the surface moves, this fails
+    rather than lying.
     """
 
-    coordinate = f"{item.artifact_type}/{item.artifact_name}"
+    coordinate = shlex.quote(f"{item.artifact_type}/{item.artifact_name}")
     return (
-        f"no command reverses a completed setup; undo {coordinate} in {item.profile} "
-        f"({item.scope}) from the recorded receipt, then re-run setup"
+        f"aart marketplace receipt undo {coordinate} --profile {shlex.quote(item.profile)} "
+        f"--scope {item.scope} --yes"
     )
 
 
@@ -1348,10 +1368,6 @@ def mark_unstarted_skipped(
 
 def setup_state_path(scope_root: str) -> str:
     return os.path.join(scope_root, ".agent-artifacts", "setup-state.json")
-
-
-def redact_text(value: str) -> str:
-    return _SENSITIVE_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=[redacted]", value)
 
 
 def _redact(value: object) -> object:

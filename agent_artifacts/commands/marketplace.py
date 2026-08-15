@@ -58,8 +58,24 @@ from agent_artifacts.model import Request, SetupManualReference
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
+from agent_artifacts.receipt_service import (
+    RECEIPT_ACTIONS,
+    apply_undo,
+    load_receipt,
+    resolved_paths,
+    show_view,
+    undo_view,
+    unsupported_action,
+    verify_view,
+)
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
+from agent_artifacts.setup_render import (
+    render_receipt_payload,
+    render_setup_payload,
+    render_undo_payload,
+    render_verification_payload,
+)
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -517,10 +533,13 @@ def _lifecycle(request: Request, action: str) -> int:
                 authorize_untrusted_source=request.authorize_untrusted_source,
                 authorize_custom_entrypoint=request.authorize_custom_entrypoint,
             )
-            payload["setup"] = _setup_payload(setup_queue)
+            setup_data = _setup_payload(setup_queue)
+            payload["setup"] = setup_data
+            # `LAF-54`: the plan renderer alone emits nothing when planning failed, so the
+            # operator approving effects was shown a setup queue and never told it will not run.
             setup_lines = tuple(
                 line for plan in setup_queue.plans for line in render_setup_review(plan.legacy_plan)
-            )
+            ) + render_setup_payload(setup_data, planned_effects=False)
         _emit(
             request,
             operation,
@@ -591,10 +610,8 @@ def _lifecycle(request: Request, action: str) -> int:
     if action == "setup" or any(item.setup_status == "pending" for item in outcome.items):
         setup_payload, setup_ok = _run_setup_queue(request, service.value, review, outcome)
         payload["setup"] = setup_payload
-        lines += (
-            f"Setup: planned={len(setup_payload['planned'])}, "
-            f"failures={len(setup_payload['planning_failures'])}",
-        )
+        # `LAF-52`: the counts stay, at the end, after the content they used to replace.
+        lines += render_setup_payload(setup_payload)
     payload["ok"] = outcome.session_status != "failed" and setup_ok
     _emit(request, operation, payload, lines)
     if outcome.session_status in {"failed", "partial"} or not setup_ok:
@@ -602,9 +619,141 @@ def _lifecycle(request: Request, action: str) -> int:
     return _common.OK
 
 
+def _undo(request: Request, loaded, operation: str) -> int:
+    """Review-first, exactly as every other mutating action: `--yes` finalizes, nothing else."""
+
+    payload, digest = undo_view(loaded)
+
+    if not request.yes:
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                "ok": True,
+                "operation": operation,
+                "finalized": False,
+                "undo_digest": digest,
+                "undo": payload,
+            },
+            render_undo_payload(payload)
+            + ("Reviewed only; re-run with --yes to apply this exact undo.",),
+        )
+        return _common.OK
+
+    if request.expect is not None and request.expect != digest:
+        refusal = Diagnostic(
+            CONSUMER_REVIEW_MISMATCH,
+            Severity.ERROR,
+            f"the undo changed since it was reviewed: expected {request.expect}, "
+            f"recomputed {digest}",
+            remediation=("re-read the undo below, then re-run --expect with its undo_digest",),
+        )
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                "ok": False,
+                "operation": operation,
+                "finalized": False,
+                "diagnostics": [diagnostic_to_data(refusal)],
+                "expected_undo_digest": request.expect,
+                "undo_digest": digest,
+                "undo": payload,
+            },
+            (
+                f"{refusal.severity.value}: {refusal.message}",
+                *(f"  remediation: {item}" for item in refusal.remediation),
+                *render_undo_payload(payload),
+            ),
+        )
+        return _common.ERROR
+
+    rolled = apply_undo(loaded)
+    complete = rolled.status == "skipped"
+    _emit(
+        request,
+        operation,
+        {
+            "schema_version": 1,
+            "ok": complete,
+            "operation": operation,
+            "finalized": True,
+            "undo_digest": digest,
+            "status": rolled.status,
+            "detail": rolled.detail,
+            "undo": payload,
+        },
+        render_undo_payload(payload, applied=True)
+        + (f"Undo outcome: {rolled.status} \u2014 {rolled.detail}",),
+    )
+    return _common.OK if complete else _common.ERROR
+
+
+def _receipt(request: Request) -> int:
+    operation = f"marketplace.receipt.{request.receipt_action or 'show'}"
+    if request.receipt_action not in RECEIPT_ACTIONS:
+        return _emit_error(request, unsupported_action(request.receipt_action), operation)
+
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, runtime, operation)
+    data_root = runtime.value.paths.data_root
+    project_root, home = resolved_paths(
+        data_root=data_root, project=request.project, user_home=request.user_home
+    )
+    loaded = load_receipt(
+        data_root=data_root,
+        project_root=project_root,
+        user_home=home,
+        scope=request.scope,
+        selector=request.names[0],
+        profiles=tuple(request.profiles),
+    )
+    if isinstance(loaded, Err):
+        return _emit_error(request, loaded, operation)
+
+    if request.receipt_action == "undo":
+        return _undo(request, loaded.value, operation)
+
+    if request.receipt_action == "verify":
+        verification = verify_view(loaded.value)
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                # A false claim is a finding, and a finding must not report success to CI.
+                "ok": verification["false"] == 0,
+                "operation": operation,
+                "coordinate": loaded.value.location.coordinate,
+                "verification": verification,
+            },
+            render_verification_payload(verification),
+        )
+        return _common.OK if verification["false"] == 0 else _common.ERROR
+
+    payload = show_view(loaded.value)
+    _emit(
+        request,
+        operation,
+        {
+            "schema_version": 1,
+            "ok": True,
+            "operation": operation,
+            "receipt": payload,
+        },
+        render_receipt_payload(payload),
+    )
+    return _common.OK
+
+
 def run(request: Request) -> int:
     """Run one canonical marketplace command."""
 
+    if request.marketplace_action == "receipt":
+        return _receipt(request)
     if request.marketplace_action == "list":
         return _list(request)
     if request.marketplace_action == "health":

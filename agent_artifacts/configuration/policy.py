@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 
+from ..redaction import redact_text
 from .model import (
     OrganizationPolicy,
     ReportingMode,
@@ -23,15 +23,6 @@ from .model import (
 SOURCE_POLICY_DENIED = DiagnosticCode("source-policy-denied")
 CONFIG_INVALID = DiagnosticCode("config-invalid")
 _PUBLIC_GIT_HOSTS = frozenset({"github.com", "gitlab.com", "bitbucket.org"})
-_URL_CREDENTIALS_RE = re.compile(r"(?P<prefix>[a-z][a-z0-9+.-]*://)[^/@\s]+@", re.IGNORECASE)
-_QUERY_SECRET_RE = re.compile(
-    r"(?P<prefix>[?&](?:token|access_token|api_key|key|secret|password)=)[^&#\s]+",
-    re.IGNORECASE,
-)
-_ASSIGNMENT_SECRET_RE = re.compile(
-    r"(?P<prefix>\b(?:token|access_token|api_key|secret|password)=)[^\s&#]+",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,14 +39,6 @@ class EffectiveConfiguration:
     configuration: UserConfiguration
     policy: OrganizationPolicy
     locked_fields: tuple[str, ...]
-
-
-def redact_text(text: str) -> str:
-    """Remove common URL and assignment secrets without interpreting the message."""
-
-    redacted = _URL_CREDENTIALS_RE.sub(r"\g<prefix>[redacted]@", text)
-    redacted = _QUERY_SECRET_RE.sub(r"\g<prefix>[redacted]", redacted)
-    return _ASSIGNMENT_SECRET_RE.sub(r"\g<prefix>[redacted]", redacted)
 
 
 def _denied(message: str) -> Diagnostic:

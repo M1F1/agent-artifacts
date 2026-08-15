@@ -10,9 +10,6 @@ from agent_artifacts.configuration.model import SourceKind, git_location_parts
 from agent_artifacts.configuration.policy import (
     EffectiveConfiguration,
 )
-from agent_artifacts.configuration.policy import (
-    redact_text as redact_config,
-)
 from agent_artifacts.configuration.schema import organization_policy_bytes
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ObjectDigest
@@ -53,15 +50,13 @@ from agent_artifacts.protocol.native_tree import (
     compile_native_package,
 )
 from agent_artifacts.protocol.paths import SafeRelativePath, parse_relative_path
+from agent_artifacts.redaction import redact_text
 from agent_artifacts.setup import (
     manual_reference,
     parse_setup_state,
     plan_setup,
     planned_capabilities,
     receipt_matches_plan,
-)
-from agent_artifacts.setup import (
-    redact_text as redact_setup,
 )
 from agent_artifacts.setup_runtime import SetupRuntime, apply_setup_plan, rollback_record
 from agent_artifacts.store.model import (
@@ -111,7 +106,12 @@ def _error(code: DiagnosticCode, message: str) -> Err:
 
 
 def _redact(value: str) -> str:
-    return " ".join(redact_setup(redact_config(value)).split())[:512]
+    # One redactor, applied once.  This used to compose the configuration redactor with the setup
+    # redactor because they had different rules and neither was a superset of the other — which is
+    # precisely the arrangement that let `LAF-72` through, since the weaker of the two was the one
+    # on the write-to-disk path.  `RR-10A` left a single function; composing it with itself would
+    # only preserve the shape of the bug.
+    return " ".join(redact_text(value).split())[:512]
 
 
 def _configured_source(effective: EffectiveConfiguration, alias):

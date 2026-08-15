@@ -16,6 +16,22 @@ _LINK_RE = re.compile(r"!?\[[^]]*\]\(([^)]+)\)")
 _TASK_RE = re.compile(r"^### ([A-Z][A-Z0-9]*\d+) — ", re.MULTILINE)
 _LEDGER_RE = re.compile(r"^\| ([A-Z][A-Z0-9]*\d+) \|", re.MULTILINE)
 
+# `RR-7` / cluster C6: the residue register is the single place that says what is open, and these
+# expressions are what make it authoritative rather than aspirational.
+_REGISTER_PATH = ("docs", "testing", "residue-register.md")
+_FINDING_RE = re.compile(r"\b((?:LAF|RS)-\d+)\b")
+_REGISTER_ROW_RE = re.compile(
+    r"^\| `((?:LAF|RS)-\d+)` \| [^|]+ \| [^|]+ \| `(open|closed|visible|deferred)` \|",
+    re.MULTILINE,
+)
+_OPEN_HEADING_RE = re.compile(r"^(#{2,6}) .*\bshipped open\b.*$", re.MULTILINE | re.IGNORECASE)
+_HEADING_RE = re.compile(r"^#{1,6} ", re.MULTILINE)
+_STREAM_GLOB = "docs/testing/residue-stream-*.md"
+# Which documents must agree with the register, declared by the register itself. Released
+# documents are dated records of what was open when they shipped and are deliberately not here:
+# editing them to match today would destroy the evidence they exist to be.
+_CHECKED_RE = re.compile(r"^- checked: `([^`]+)`\s*$", re.MULTILINE)
+
 
 @dataclass(frozen=True, order=True)
 class Diagnostic:
@@ -159,11 +175,100 @@ def _structure_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
     return tuple(diagnostics)
 
 
+def _sections_under(text: str, heading: re.Match[str]) -> str:
+    """The body of one heading's section: everything up to the next heading of any depth."""
+
+    start = heading.end()
+    following = _HEADING_RE.search(text, start)
+    return text[start : following.start() if following else len(text)]
+
+
+def _register_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
+    """`RR-7`: the residue register is the only place a finding's state is recorded.
+
+    Three rules, and the first is the one that answers cluster `C6`. A finding gathered into a
+    stream and left out of the register is exactly how an item stops being trackable and gets
+    re-discovered a release later; nothing else in this repository would notice.
+    """
+
+    register_path = root.joinpath(*_REGISTER_PATH)
+    if not register_path.is_file():
+        return ()
+    register = register_path.read_text(encoding="utf-8")
+    relative = str(register_path.relative_to(root))
+    diagnostics: list[Diagnostic] = []
+
+    rows: dict[str, str] = {}
+    reproduction: dict[str, str] = {}
+    for match in _REGISTER_ROW_RE.finditer(register):
+        identifier, disposition = match.group(1), match.group(2)
+        if identifier in rows:
+            diagnostics.append(
+                Diagnostic(
+                    relative,
+                    _line_number(register, match.start()),
+                    "DOC006",
+                    f"{identifier} has more than one register row",
+                )
+            )
+            continue
+        rows[identifier] = disposition
+        tail = register[match.end() :].split("\n", 1)[0]
+        reproduction[identifier] = tail.strip().strip("|").strip()
+
+    # A closure claim without the reproduction that establishes it is prose again, which is the
+    # form of record this register was written to replace.
+    for identifier, disposition in sorted(rows.items()):
+        established = reproduction[identifier].lstrip("—").strip()
+        if disposition in ("closed", "visible") and not established:
+            diagnostics.append(
+                Diagnostic(
+                    relative,
+                    1,
+                    "DOC007",
+                    f"{identifier} is {disposition} and names no reproduction",
+                )
+            )
+
+    for stream_path in sorted(root.glob(_STREAM_GLOB)):
+        stream = stream_path.read_text(encoding="utf-8")
+        for match in re.finditer(r"^\| `((?:LAF|RS)-\d+)` \|", stream, re.MULTILINE):
+            if match.group(1) not in rows:
+                diagnostics.append(
+                    Diagnostic(
+                        str(stream_path.relative_to(root)),
+                        _line_number(stream, match.start()),
+                        "DOC008",
+                        f"{match.group(1)} is gathered into a stream and absent from the register",
+                    )
+                )
+
+    for pattern in _CHECKED_RE.findall(register):
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for heading in _OPEN_HEADING_RE.finditer(text):
+                for found in _FINDING_RE.finditer(_sections_under(text, heading)):
+                    if rows.get(found.group(1)) == "closed":
+                        diagnostics.append(
+                            Diagnostic(
+                                str(path.relative_to(root)),
+                                _line_number(text, heading.start()),
+                                "DOC009",
+                                f"{found.group(1)} is listed as shipped open "
+                                "and is closed in the register",
+                            )
+                        )
+    return tuple(diagnostics)
+
+
 def check_repository(root: Path = ROOT) -> tuple[Diagnostic, ...]:
     diagnostics: list[Diagnostic] = []
     for path in _repository_markdown(root):
         diagnostics.extend(validate_markdown(path, path.read_text(encoding="utf-8"), root))
     diagnostics.extend(_structure_diagnostics(root))
+    diagnostics.extend(_register_diagnostics(root))
     return tuple(sorted(diagnostics))
 
 
