@@ -115,8 +115,84 @@ REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
 
 
-def _error(message: str) -> Err:
-    return Err((Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message),))
+# `RS-09`: the next step a refused registry command hands over. These are shared lines rather than
+# one sentence per call site, which `SI-6` already learned once on the object store: the operator's
+# next step is the same wherever the same problem is stated, and a distinct sentence per site
+# invents distinctions they do not have. Every `aart …` written here is parsed by the shipped CLI in
+# `tests/source_remediation_test.py`, so a command that stops existing fails the suite.
+_REVIEW_AGAIN = (
+    "the workspace moved between the review and the finalize; run the command again to review the "
+    "current workspace, then repeat it with `--yes`",
+)
+_REVIEW_FIRST = (
+    "run the same command without `--yes` to produce the review, approve it, then repeat the "
+    "command with `--yes`",
+)
+_INITIALIZE = (
+    "point `--source` at a registry checkout, or create one with "
+    "`aart registry init --source-id SLUG --display-name NAME --yes`",
+)
+_CLEAR_PATH = (
+    "move or remove whatever occupies that path in the checkout, then run the command again",
+)
+_ALREADY_A_REGISTRY = (
+    "this checkout is already a registry: read it with `aart registry validate`, or "
+    "initialize a different directory by pointing `--source` at it",
+)
+_LIST_PACKAGES = ("`aart registry validate` reports every package and entry this registry holds",)
+_RELOCK = (
+    "resolve the authored entries again with `aart registry lock --yes`, then "
+    "`aart registry build --yes`",
+)
+_LOCK_FIRST = (
+    "`aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`",
+)
+_APPROVE_ENTRIES = (
+    "approve the review record of every authored entry under `entries/`, then "
+    "`aart registry lock --yes`",
+)
+_COPY_INTEGRITY = (
+    "the copy on disk no longer matches the record committed beside it: restore it from the last "
+    "commit that agreed with the record before re-vendoring",
+)
+_CANONICAL_ROOTS = (
+    "restore the canonical `artifacts/` and `collections/` roots in `aart-source.json`, then "
+    "`aart registry validate`",
+)
+_SETUP_RECIPE = (
+    "add the declared recipe and its `SETUP.md` to the package, or drop `--setup-recipe`, then run "
+    "the command again",
+)
+
+
+_RECORDED_ORIGIN = (
+    "run the command without `--yes` to read the origin and ref recorded with the copy, and take "
+    "the new bytes from that origin",
+)
+_IDENTITIES = (
+    "make `registry_id` in `aart-registry.json` and `source_id` in `aart-source.json` the same "
+    "value, then `aart registry validate`",
+)
+_ENTRY_FILES = (
+    "one file under `entries/` per identity, named for the identity it declares; correct the file, "
+    "then `aart registry validate`",
+)
+
+
+def _not_vendored(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The one next step that names the package it is about, so it can be run as written."""
+
+    return (
+        "this package ships no vendoring record, so there is no copy to move: "
+        f"`aart registry refresh-native {identity.kind} {identity.name}` is what updates a "
+        "native reference",
+    )
+
+
+def _error(message: str, remediation: tuple[str, ...]) -> Err:
+    return Err(
+        (Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message, remediation=remediation),)
+    )
 
 
 def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
@@ -130,7 +206,7 @@ def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
 def _files(snapshot: SourceSnapshot) -> Result[dict[str, SnapshotEntry]]:
     digest = source_snapshot_digest(snapshot)
     if isinstance(digest, Err):
-        return _error("registry command requires one safe inert workspace snapshot")
+        return _error("registry command requires one safe inert workspace snapshot", _CLEAR_PATH)
     return Ok({str(item.path): item for item in snapshot.entries})
 
 
@@ -188,10 +264,10 @@ def _project_changes(
         raw = str(change.path)
         before = output.get(raw)
         if before is not None and before.kind is not SnapshotEntryKind.FILE:
-            return _error(f"registry change target is not a regular file: {raw}")
+            return _error(f"registry change target is not a regular file: {raw}", _CLEAR_PATH)
         actual = None if before is None else sha256_bytes(before.content)
         if actual != change.before_digest:
-            return _error(f"registry change precondition changed: {raw}")
+            return _error(f"registry change precondition changed: {raw}", _REVIEW_AGAIN)
         if change.kind is WorkspaceChangeKind.REMOVED:
             # The directory entries stay: an emptied directory is still on disk after the file is
             # unlinked, and a projection that dropped it would disagree with the snapshot the
@@ -209,7 +285,7 @@ def _project_changes(
             parent = SafeRelativePath(change.path.parts[:length])
             existing = output.get(str(parent))
             if existing is not None and existing.kind is not SnapshotEntryKind.DIRECTORY:
-                return _error(f"registry change parent is not a directory: {parent}")
+                return _error(f"registry change parent is not a directory: {parent}", _CLEAR_PATH)
             output.setdefault(
                 str(parent),
                 SnapshotEntry(parent, SnapshotEntryKind.DIRECTORY),
@@ -281,13 +357,13 @@ def project_registry_workspace_plan(
     if isinstance(current, Err):
         return current
     if current.value != plan.expected_snapshot_digest:
-        return _error("registry workspace changed after plan review")
+        return _error("registry workspace changed after plan review", _REVIEW_AGAIN)
     projected = _project_changes(snapshot, plan.changes)
     if isinstance(projected, Err):
         return projected
     digest = source_snapshot_digest(projected.value)
     if isinstance(digest, Err) or digest.value != plan.next_snapshot_digest:
-        return _error("registry plan no longer produces its reviewed snapshot")
+        return _error("registry plan no longer produces its reviewed snapshot", _REVIEW_AGAIN)
     return projected
 
 
@@ -315,7 +391,7 @@ def plan_registry_init(
         "aart.index.json",
     } & files.value.keys()
     if occupied:
-        return _error("registry init refuses an existing registry workspace")
+        return _error("registry init refuses an existing registry workspace", _ALREADY_A_REGISTRY)
     templates = (
         (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
         *REPORTING_TEMPLATES,
@@ -327,7 +403,9 @@ def plan_registry_init(
             or existing.content != expected
             or existing.executable
         ):
-            return _error(f"registry init refuses to overwrite an existing template: {path}")
+            return _error(
+                f"registry init refuses to overwrite an existing template: {path}", _CLEAR_PATH
+            )
     bounds = VersionBounds(options.minimum_aart, options.maximum_aart_exclusive)
     registry = RegistryManifest(
         1,
@@ -377,7 +455,7 @@ def plan_registry_init(
 def _source_manifest(files: dict[str, SnapshotEntry]) -> Result[SourceManifest]:
     marker = files.get("aart-source.json")
     if marker is None or marker.kind is not SnapshotEntryKind.FILE:
-        return _error("registry workspace requires aart-source.json")
+        return _error("registry workspace requires aart-source.json", _INITIALIZE)
     parsed = parse_source_manifest(marker.content)
     if isinstance(parsed, Err):
         return parsed
@@ -388,7 +466,8 @@ def _source_manifest(files: dict[str, SnapshotEntry]) -> Result[SourceManifest]:
         (_path("collections"),),
     }:
         return _error(
-            "registry maintainer commands require canonical artifacts/ and collections/ roots"
+            "registry maintainer commands require canonical artifacts/ and collections/ roots",
+            _CANONICAL_ROOTS,
         )
     return parsed
 
@@ -490,7 +569,9 @@ def plan_artifact_scaffold(
     root = source.value.artifact_roots[0]
     base = f"{root}/{options.kind}/{options.name}"
     if any(path == base or path.startswith(f"{base}/") for path in files.value):
-        return _error(f"artifact package already exists: {options.kind}/{options.name}")
+        return _error(
+            f"artifact package already exists: {options.kind}/{options.name}", _LIST_PACKAGES
+        )
     kind = cast(CanonicalArtifactType, options.kind)
     manifest = ArtifactManifest(
         1,
@@ -559,7 +640,7 @@ def plan_artifact_vendor(
     """
 
     if review.status != "approved":
-        return _error("vendoring requires an approved review record")
+        return _error("vendoring requires an approved review record", _REVIEW_FIRST)
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
@@ -572,7 +653,9 @@ def plan_artifact_vendor(
     # An existing manifest is an existing package: adopting the maintainer's authored wrapper is the
     # point, so their `payload/` and `setup/` files must not read as one.
     if f"{base}/artifact.json" in files.value:
-        return _error(f"artifact package already exists: {identity.kind}/{identity.name}")
+        return _error(
+            f"artifact package already exists: {identity.kind}/{identity.name}", _LIST_PACKAGES
+        )
     taken = take_subtree(acquisition.snapshot, path)
     if isinstance(taken, Err):
         return taken
@@ -590,7 +673,8 @@ def plan_artifact_vendor(
         for required in (f"{base}/{options.setup_recipe}", f"{base}/SETUP.md"):
             if required not in written:
                 return _error(
-                    f"the declared setup recipe requires {required}, which is not present"
+                    f"the declared setup recipe requires {required}, which is not present",
+                    _SETUP_RECIPE,
                 )
     # The assessment runs over the projected object, so the review reports what the baseline found
     # in the exact bytes this vendoring writes — the maintainer's own wrapper as much as the copied
@@ -662,7 +746,9 @@ def read_vendored_artifact(
     base = f"{source.value.artifact_roots[0]}/{identity.kind}/{identity.name}"
     manifest_entry = files.value.get(f"{base}/artifact.json")
     if manifest_entry is None:
-        return _error(f"registry has no artifact package {identity.kind}/{identity.name}")
+        return _error(
+            f"registry has no artifact package {identity.kind}/{identity.name}", _LIST_PACKAGES
+        )
     manifest = parse_artifact_manifest(manifest_entry.content, path=f"{base}/artifact.json")
     if isinstance(manifest, Err):
         return manifest
@@ -684,7 +770,8 @@ def read_vendored_package(
     if provenance_entry is None:
         return _error(
             f"{manifest.identity} records no provenance, so it was not vendored; "
-            "refresh-native updates a native reference"
+            "refresh-native updates a native reference",
+            _not_vendored(manifest.identity),
         )
     provenance = parse_provenance(provenance_entry.content, path=f"{base}/provenance.json")
     if isinstance(provenance, Err):
@@ -764,9 +851,11 @@ def plan_artifact_revendor(
     """
 
     if review.status != "approved":
-        return _error("re-vendoring requires an approved review record")
+        return _error("re-vendoring requires an approved review record", _REVIEW_FIRST)
     if acquisition.url != vendored.url or acquisition.requested_ref != vendored.ref:
-        return _error("the acquisition does not resolve the recorded vendoring instruction")
+        return _error(
+            "the acquisition does not resolve the recorded vendoring instruction", _RECORDED_ORIGIN
+        )
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
@@ -783,7 +872,9 @@ def plan_artifact_revendor(
     if isinstance(integrity, Err):
         return integrity
     if not integrity.value.matches:
-        return _error(copy_integrity_message(vendored.manifest.identity, integrity.value))
+        return _error(
+            copy_integrity_message(vendored.manifest.identity, integrity.value), _COPY_INTEGRITY
+        )
     taken = take_subtree(acquisition.snapshot, vendored.path)
     if isinstance(taken, Err):
         return taken
@@ -816,7 +907,9 @@ def plan_artifact_revendor(
     for relative in vendored.authored:
         entry = files.value.get(f"{vendored.base}/{relative}")
         if entry is None or entry.kind is not SnapshotEntryKind.FILE:
-            return _error(f"the authored file recorded with this copy is missing: {relative}")
+            return _error(
+                f"the authored file recorded with this copy is missing: {relative}", _COPY_INTEGRITY
+            )
         authored.append((relative, entry.content, entry.executable))
     options = VendorOptions(
         manifest.identity,
@@ -908,7 +1001,7 @@ def plan_registry_format(snapshot: SourceSnapshot) -> Result[RegistryWorkspacePl
             return parsed
         desired.append((path, canonical_json_bytes(parsed.value), item.executable))
     if not desired:
-        return _error("registry format found no JSON documents")
+        return _error("registry format found no JSON documents", _INITIALIZE)
     return _plan(RegistryOperation.FORMAT, snapshot, tuple(desired))
 
 
@@ -920,7 +1013,7 @@ def _registry_inputs(
         return files
     registry_file = files.value.get("aart-registry.json")
     if registry_file is None or registry_file.kind is not SnapshotEntryKind.FILE:
-        return _error("registry workspace requires aart-registry.json")
+        return _error("registry workspace requires aart-registry.json", _INITIALIZE)
     registry = parse_registry_manifest(registry_file.content)
     source = _source_manifest(files.value)
     if isinstance(registry, Err):
@@ -928,7 +1021,7 @@ def _registry_inputs(
     if isinstance(source, Err):
         return source
     if registry.value.registry_id != source.value.source_id:
-        return _error("registry and source identities differ")
+        return _error("registry and source identities differ", _IDENTITIES)
     entries = []
     for path, item in sorted(files.value.items()):
         if not path.startswith("entries/") or item.kind is not SnapshotEntryKind.FILE:
@@ -938,11 +1031,11 @@ def _registry_inputs(
             return parsed
         expected_path = f"entries/{parsed.value.identity.kind}/{parsed.value.identity.name}.json"
         if path != expected_path:
-            return _error(f"registry entry identity does not match its path: {path}")
+            return _error(f"registry entry identity does not match its path: {path}", _ENTRY_FILES)
         entries.append(parsed.value)
     identities = tuple(item.identity for item in entries)
     if len(set(identities)) != len(identities):
-        return _error("registry workspace contains duplicate entry identities")
+        return _error("registry workspace contains duplicate entry identities", _ENTRY_FILES)
     return Ok((registry.value, source.value, tuple(entries)))
 
 
@@ -954,7 +1047,7 @@ def _acquisitions_by_identity(
     available_capabilities: tuple[Capability, ...],
 ) -> Result[dict[ArtifactIdentity, tuple]]:
     if len(entries) != len(acquisitions):
-        return _error("registry lock/build requires one acquisition per entry")
+        return _error("registry lock/build requires one acquisition per entry", _RELOCK)
     available = list(acquisitions)
     resolved: dict[ArtifactIdentity, tuple] = {}
     for entry in entries:
@@ -969,7 +1062,9 @@ def _acquisitions_by_identity(
             if isinstance(result, Ok):
                 matches.append((acquisition, (*result.value, acquisition)))
         if len(matches) != 1:
-            return _error(f"registry acquisition is missing or ambiguous for {entry.identity}")
+            return _error(
+                f"registry acquisition is missing or ambiguous for {entry.identity}", _RELOCK
+            )
         available.remove(matches[0][0])
         resolved[entry.identity] = matches[0][1]
     return Ok(resolved)
@@ -987,7 +1082,9 @@ def plan_registry_lock(
         return parsed
     _registry, _source, entries = parsed.value
     if any(entry.review.status != "approved" for entry in entries):
-        return _error("registry lock requires every authored entry to be approved")
+        return _error(
+            "registry lock requires every authored entry to be approved", _APPROVE_ENTRIES
+        )
     resolved = _acquisitions_by_identity(
         entries,
         acquisitions,
@@ -1044,7 +1141,7 @@ def plan_registry_build(
     assert isinstance(files, Ok)
     lock_file = files.value.get("aart.lock.json")
     if lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE:
-        return _error("registry build requires a committed aart.lock.json")
+        return _error("registry build requires a committed aart.lock.json", _LOCK_FIRST)
     lock = parse_registry_lock(lock_file.content)
     inputs = registry_inputs_digest(snapshot)
     if isinstance(lock, Err):
@@ -1095,7 +1192,7 @@ def plan_registry_build(
             provenance_digest,
         )
         if locked_by_identity.get(entry.identity) != actual:
-            return _error(f"acquired package does not match lock for {entry.identity}")
+            return _error(f"acquired package does not match lock for {entry.identity}", _RELOCK)
         indexed.append(
             index_artifact_from_package(
                 package,

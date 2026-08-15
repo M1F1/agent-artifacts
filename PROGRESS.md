@@ -13,9 +13,11 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight residue run continues with the second half of `RS-09` — the
+  `validate` and `audit` report findings — then `RS-07` and `LAF-45`. See *Overnight run
+  2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
+  the human-gated passes — the curses front-end and the MCP credential run — wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -374,6 +376,33 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 ## Blockers
 
 None.
+
+## Overnight run 2026-08-15 → 16
+
+The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
+another; they can be reviewed and merged in any order. `PROGRESS.md` and the register are touched by
+each of them, so expect conflicts in those two files and take both sides.
+
+| # | Item | Branch | State |
+|---|---|---|---|
+| 1 | `RS-12` — setup steps ran without `HOME`, so docker could not read `config.json` | `fix/setup-docker-credentials-rs12` | done, walked live (v4) |
+| 2 | `LAF-64` — the scope selector returned two types | `fix/curses-install-scope-laf64` | done, headless part walked; curses skin human-gated |
+| 3 | `LAF-75` — `wheel-digest` printed the digest of a wheel it deleted | `fix/wheel-digest-emits-what-it-hashes-laf75` | done, walked live (v5) |
+| 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
+| 5 | `LAF-73` — an old record still says there is no undo | `fix/receipt-verify-stale-rollback-laf73` | done, walked live (v6) |
+| 6 | `RS-11`/`RS-13`/`RS-14`/`RS-15` — the recipe format is closed | `docs/recipe-format-options` | options note written, nothing implemented; all four stay `open` |
+| 7 | `RS-09` — a refused `registry` command said nothing about what to do next | `fix/registry-refusals-carry-remediation-rs09` | refusals done and guarded; the `validate`/`audit` report findings are the remaining half, so `RS-09` stays `open` |
+
+**New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5). Every one has
+a register row saying where it came from. **`LAF-85` is the one to read first:** something wrote to
+your real data root during this run, and the quality gates have been measured clear of it.
+
+**Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
+and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
+untouched — it needs a live run against a second GHE host, which this run cannot make. Item 6 is the
+note that says so in full: it measures all four refusals, recommends leaving them open for now, and
+names the two observations that would change that.
 
 ## Work log
 
@@ -2026,3 +2055,92 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-73`
+
+Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+- **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
+  `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
+  command reverses a completed setup*, and the same executable that holds both facts said nothing.
+  An operator reading an old receipt does by hand what one command does.
+- **A claim in `verify`, which is the shape `RR-10F` set.** `receipt verify` now asks whether the
+  recorded rollback line is a command this executable accepts. When it is not, the report says so
+  and names the command that works today, composed from the record's own coordinates. The record is
+  not touched: a persisted record is evidence of what a run reported, and rewriting it would destroy
+  the thing receipts exist to be.
+- **One source for the command string.** `rollback_command_for` composes it, `rollback_command`
+  calls it, and `verify` calls it. Composing the sentence twice is precisely how `LAF-65` happened.
+- **Walked live** — `docs/testing/PROGRESS-live-acceptance-v6.md`, which lives on the
+  `fix/receipt-verify-stale-rollback-laf73` branch and is therefore not linked from here,
+  scenarios `LA-M-12`..`LA-M-15`, stressor `LAS-32`. A real registry, a real install, a real setup
+  writing a managed block into a sandbox home. With the record aged to the pre-`2.6.0` sentence, the
+  `main` wheel reports `true=3, false=0` and says nothing; the branch reports `true=3, false=1`,
+  names the undo command, exits `1`, and leaves the record file's sha256 unchanged. The command it
+  names was then run: the block and the file are gone.
+- **`LAF-73` closes; two findings recorded, not fixed.** `LAF-84`: a completed undo leaves the
+  record reading `skipped`, a word that in this vocabulary means the setup never ran. `LAF-85`:
+  something wrote to the real user data root at `23:34`–`23:36` during this unattended session while
+  every live scenario ran under a sandbox `HOME`; `make integration`, `unit`, `validate` and
+  `packaging-check` were each measured afterwards and touched nothing there, so the writer is
+  unidentified and now tracked rather than shrugged at a second time.
+
+### 2026-08-16 — overnight residue run, the recipe-format options note
+
+Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work package, no code.
+
+- **Four findings, one decision.** `RS-11`, `RS-13`, `RS-14`, `RS-15` are what the triage brief says
+  they are: the same postponed decision seen from four sides. The note treats them as one and is
+  filed as `docs/design/OPTIONS-recipe-format-change.md`, on the `docs/recipe-format-options`
+  branch and therefore not linked from here. Nothing
+  is implemented, and all four rows stay `open` — `RS-11` was explicitly out of scope for this run.
+- **The refusals are measured, not remembered.** Each of the four was produced by handing a real
+  recipe to the shipped parser and to the canonical-tree check, and the note quotes the parser's own
+  words with the file and line that says them.
+- **Two claims were narrowed by the measurement.** `RS-13` blocks nothing: a `file.managed-block@1`
+  step on `~/.zshrc` parses and plans today, so the missing module is a convenience. `RS-15` is
+  about the package *root*: further files under `payload/` are already accepted for `skill`, `mcp`
+  and `hook`, and `SETUP.md` was refused by that same allowlist until `LAF-27` added it — which is
+  the fix shape, already walked once.
+- **What the change would actually cost.** Not the code. `schema_version` and `protocol_version`
+  must both be exactly `2`, and this project ships one revision of a protocol and refuses the rest.
+  So changing what a recipe may say means every published recipe rises in step, and a registry
+  rebuilt on the new revision stops being readable to consumers who have not upgraded — the
+  `LAF-60`/`LAF-62` rollout, seen twice. That bill is the same for one change or four, which is the
+  argument for doing them together or not at all.
+- **The recommendation is to wait, and the note says what for.** Two observations, neither of which
+  exists in any run: a second GHE host, which is what produces a per-operator value that is not a
+  secret; and an operator who completed a setup wrongly because the recipe could not ask for a
+  username, rather than merely reading a paragraph in `SETUP.md`. Without those, `RS-11` buys
+  comfort rather than correctness, and low-and-open is a complete answer.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-09` (first half)
+
+Branch `fix/registry-refusals-carry-remediation-rs09`, cut from `main`, not pushed. One work
+package, split: the refusals, with the report findings left for the next one.
+
+- **The family that says the most after a success said nothing after a refusal.** `registry` emits
+  follow-up commands when an action works. Its 37 refusals carried an empty `remediation` in both
+  renderers, so the operator who most needed a next step was the one who got none.
+- **The test reads the shipped modules, not a list.** `RegistryRefusalRemediationTest` walks the
+  syntax of `registry_commands/planning.py` and `commands/registry.py` and fails on any `_error`
+  built without a next step. A list of the refusals that carry one would be true the day it was
+  written; this covers the refusal added next month. It failed on 37 sites before the fix.
+- **Shared lines, not one sentence per site.** Fifteen constants cover thirty-seven refusals,
+  because the operator's next step is the same wherever the same problem is stated — the lesson
+  `SI-6` already paid for on the object store. The one exception interpolates the package it is
+  about, so the command it names can be run as written.
+- **The existing guard caught two mistakes while I wrote them.** `EveryVisibleCommandMentionTest`
+  parses every `aart …` the package prints: it rejected `aart registry refresh`, which does not
+  exist — the action is `refresh-native` — and every command ending in `--source .`, because a
+  trailing period is stripped as punctuation and leaves the flag without a value. Both were mine,
+  both were caught before they could reach an operator.
+- **The parity test then found the second half of the defect.** `_emit_report` — how `validate` and
+  `audit` state a refusal in text — printed the message and dropped the remediation, while the JSON
+  envelope carried it. That is `LAF-52`'s shape one command family over, and it is fixed here.
+- **`RS-09` stays `open`, on purpose.** The 34 findings `validate` and `audit` collect through
+  `_diagnostic` still carry nothing. That is the next package, and the register row says so rather
+  than claiming a closure the operator would not see.
+- **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
+  and every claim here is driven through the shipped CLI parser and the shipped renderers.

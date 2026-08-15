@@ -398,6 +398,77 @@ class EveryVisibleCommandMentionTest(unittest.TestCase):
         self.assertEqual(tuple(_visible_strings(module)), ())
 
 
+class RegistryRefusalRemediationTest(unittest.TestCase):
+    """`RS-09`: a refused `registry` command must say what to do next.
+
+    The family emitted next-step lines after a *successful* action and nothing after a refusal, so
+    the operator who most needed one got none. A list of the refusals that carry remediation would
+    be true on the day it was written; this reads the shipped modules instead, so the refusal added
+    next month is covered by the same guard.
+
+    Scope today is the `_error` helper — every `Err` the registry family returns. The report
+    findings that `validate` and `audit` collect through `_diagnostic` are the other half of
+    `RS-09`; they are not guarded here yet, and the register row says so.
+    """
+
+    def refusals_without_remediation(self) -> tuple[str, ...]:
+        """Every registry refusal built without a next step, as `module:line`."""
+
+        found: list[str] = []
+        for path in (
+            _PACKAGE / "commands" / "registry.py",
+            _PACKAGE / "registry_commands" / "planning.py",
+        ):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                    continue
+                if node.func.id != "_error":
+                    continue
+                if len(node.args) < 2 and not any(
+                    keyword.arg == "remediation" for keyword in node.keywords
+                ):
+                    found.append(f"{path.name}:{node.lineno}")
+        return tuple(found)
+
+    def test_rs09_every_registry_refusal_hands_the_operator_a_next_step(self) -> None:
+        silent = self.refusals_without_remediation()
+
+        self.assertEqual(silent, (), f"refusals with no remediation: {', '.join(silent)}")
+
+    def test_rs09_the_guard_sees_a_refusal_that_carries_nothing(self) -> None:
+        """The guard is only worth having if it fails on the thing it claims to catch."""
+
+        planted = ast.parse('return _error("registry workspace requires aart-registry.json")\n')
+        calls = [
+            node
+            for node in ast.walk(planted)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        ]
+
+        self.assertEqual(len(calls[0].args), 1)
+
+    def test_rs09_a_refused_registry_command_prints_a_next_step(self) -> None:
+        """Driven through the shipped CLI, because the renderer is where `LAF-52` went wrong."""
+
+        with _environment() as env:
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env.xdg, clear=False),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                code = cli.main(["registry", "test", "--source", str(env.project)])
+
+            self.assertEqual(code, 1, stdout.getvalue())
+            remediation = _remediation_in_text(stdout.getvalue())
+            self.assertTrue(remediation, f"no remediation printed: {stdout.getvalue()}")
+            for line in remediation:
+                for command in _COMMAND.findall(line):
+                    failure = _parse_failure(command)
+                    self.assertIsNone(failure, f"`{command}` is not accepted: {failure}")
+
+
 class RendererParityTest(unittest.TestCase):
     """Parser parity proves a command exists; this proves the operator was shown it.
 
@@ -407,8 +478,10 @@ class RendererParityTest(unittest.TestCase):
 
     Two families are absent because they have nothing to compare. `upgrade` defines no `--json`, so
     it has one renderer; `security` and `reporting` report through plain messages rather than a
-    diagnostic envelope. `registry` is present and currently carries no remediation on either side
-    — see the residue recorded against this package.
+    diagnostic envelope. `registry` was present and vacuous — both renderers agreed on nothing,
+    because its refusals carried nothing. `RS-09` filled the field, and the same comparison then
+    found the second half of the defect: `_emit_report` printed the message and dropped the next
+    step, so the JSON envelope carried advice a person at a terminal never saw.
     """
 
     def _both_renderers(self, env, *argv: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -479,6 +552,7 @@ class RendererParityTest(unittest.TestCase):
                 env, "registry", "validate", "--source", str(env.project)
             )
 
+            self.assertTrue(text, "a refused registry validate must print a next step")
             self.assertEqual(sorted(text), sorted(envelope))
 
 
