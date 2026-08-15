@@ -16,16 +16,24 @@
   machine and with no patched executable
 - **Last updated:** 2026-08-15
 
-## Readable receipt (`2.6.0`, in progress)
+## Readable receipt (`2.6.0`, released)
 
 - **Design:** [docs/design/DESIGN-readable-receipt.md](docs/design/DESIGN-readable-receipt.md)
 - **Plan:** [docs/plan/PLAN-readable-receipt.md](docs/plan/PLAN-readable-receipt.md)
 - **Stream:** [docs/testing/residue-stream-2026-08-15.md](docs/testing/residue-stream-2026-08-15.md)
 - **Register:** [docs/testing/residue-register.md](docs/testing/residue-register.md)
-- **Branch:** `feat/receipt-as-residue`
+- **Branch:** `feat/receipt-as-residue`, merged as [#90](https://github.com/M1F1/agent-artifacts/pull/90); tagged `v2.6.0`
 - **Root cause:** AART writes a complete account of every setup run and offers no way to look at it.
   Every part of an undo exists, is tested, and runs — exactly once, on the failure path inside a run.
   `cli.py` contained no occurrence of `receipt` and none of `rollback`.
+- **Released `2026-08-15`.** Tag `v2.6.0`, wheel digest
+  `sha256:ccdbff2a6f111d4d8dc478c2a4415785628cfb41e4ee7d6b0b41702f2ef6ba91`. The full fail-closed
+  `release.py check` passed against a clean `origin/main` registry clone. **Not published** — no
+  GitHub release, no package index; that step is the maintainer's and was left for them.
+- **Registry step: a pin move, and nothing else.** `2.6.0` adds no index field, capability or module,
+  so a registry built on `2.5.0` validates on `2.6.0` and the reverse. Registry B's PR is green
+  against the real tag; the consumer repository's cannot go green until a GitHub release exists,
+  because its workflow installs the wheel from a release asset, and its PR body says so.
 - **Method note:** nearly every design premise this stream checked against the code proved partly
   false, and each refutation is recorded where it was found rather than edited away. Three of the six
   findings the design set out to close turned out not to be the absence it named; `LAF-58`'s premise —
@@ -45,8 +53,9 @@
 | RR-6 | The documents become a test gate | done | Command reference with the renderer's real output, and `compatibility-v14`. Six findings move out of shipped-open and **five** close — the plan said six; `LAF-61` is `visible`, and the document says so rather than rounding up |
 | RR-7 | The open-residue register, derived rather than maintained | done | Thirty rows, four `docs-check` rules each with a test that makes it fail. Released documents are outside it on purpose: a dated record does not have to agree with the present |
 | RR-8 | The `2.6.0` release commit | done | Version `2.6.0`, contract v14: [compatibility](docs/release/compatibility-v14.md), [checklist](docs/release/release-checklist-v14.md), [notes](docs/release/github-release-v2.6.0.md). The freeze claim is verified rather than asserted — identical `protocol_versions`, one differing input |
-| RR-9 | Live acceptance: two registries and the consumer repository | todo | Registry A carries the three setup-bearing recipes; Registry B carries none, so it is where the three actions must refuse cleanly; the consumer repository must still report eleven `current` and a clean `git diff`. No patched executable — `2.5.0` needed one to observe anything (`LAF-51`) and that must not recur silently |
-| RR-2C | Credential redaction misses namespaced names | todo | `_SENSITIVE_ASSIGNMENT` anchors on `\b`, which does not exist inside `GITHUB_TOKEN`. Same pattern persists the receipt, so this is a credential reaching disk |
+| RR-9 | Live acceptance: two registries and the consumer repository | done | Walked with no patched executable. Nine of nine scenarios attempted; three failed or were unreachable and became `LAF-65`..`LAF-69`. The run is what turned a finished release into a second pass |
+| RR-10 | Token containment: the three release blockers | done | [design](docs/design/DESIGN-token-containment.md), [plan](docs/plan/PLAN-token-containment.md). One redactor at the exits (`LAF-63`, `LAF-72`), the orphan probe reads where runs are (`LAF-66`), the rollback field names a command that exists (`LAF-65`). Re-walked live; scenario 6 passes both halves |
+| RR-2C | Credential redaction misses namespaced names | done | Superseded by `RR-10A`. The estimate was one pattern; measuring first found **two** redactors with the weaker one on the write-to-disk path, which is the defect that mattered (`LAF-72`) |
 | RR-4A | The capture site records what a tag pointed at | todo | Read `{{.Id}}` at the pre-build inspect and record `previous_image_id`; the undo then restores a `preexisting` tag's binding |
 
 ## Setup build context (`2.5.0`, released)
