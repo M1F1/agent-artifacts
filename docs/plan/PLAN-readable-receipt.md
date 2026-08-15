@@ -174,9 +174,18 @@ root, as `SI-9` and `VN-9` were. Found doing it: `LAF-64`.
 
 - Command reference for the three actions, and a worked section showing an undo.
 - `compatibility-v14` records what became possible and — the part that matters — moves six findings
-  from *shipped open* to *closed*, with the reproduction each was closed by.
+  from *shipped open*, with the reproduction each moved by.
 - The remediation guard already parses every user-visible `aart …` mention with the real CLI parser;
   three new commands means three new mentions that must parse.
+
+**Six move, and five of them close.** This bullet said *six findings from shipped open to closed*.
+`LAF-61` does not close: `verify` names the orphaned run directory and leaves it, because
+`DESIGN-readable-receipt.md` §4 forbids a read command from sweeping anything. It is `visible` in the
+register, and `compatibility-v14` says five closed and one visible rather than rounding up — which is
+the whole point of having a register with more than two dispositions.
+
+The worked undo in `README.md` is the renderer's real output, captured from `render_undo_payload`, not
+prose shaped like it. A hand-written example is a claim about the code that nothing checks.
 
 ## `RR-7` — the open-residue register, derived rather than maintained
 
