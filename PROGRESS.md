@@ -13,9 +13,10 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight residue run continues with the `RS-11`/`RS-13`/`RS-14`/`RS-15` options
+  note; see *Overnight run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
+  the human-gated passes — the curses front-end and the MCP credential run — wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -374,6 +375,29 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 ## Blockers
 
 None.
+
+## Overnight run 2026-08-15 → 16
+
+The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
+another; they can be reviewed and merged in any order. `PROGRESS.md` and the register are touched by
+each of them, so expect conflicts in those two files and take both sides.
+
+| # | Item | Branch | State |
+|---|---|---|---|
+| 1 | `RS-12` — setup steps ran without `HOME`, so docker could not read `config.json` | `fix/setup-docker-credentials-rs12` | done, walked live (v4) |
+| 2 | `LAF-64` — the scope selector returned two types | `fix/curses-install-scope-laf64` | done, headless part walked; curses skin human-gated |
+| 3 | `LAF-75` — `wheel-digest` printed the digest of a wheel it deleted | `fix/wheel-digest-emits-what-it-hashes-laf75` | done, walked live (v5) |
+| 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
+| 5 | `LAF-73` — an old record still says there is no undo | `fix/receipt-verify-stale-rollback-laf73` | done, walked live (v6) |
+
+**New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5). Every one has
+a register row saying where it came from. **`LAF-85` is the one to read first:** something wrote to
+your real data root during this run, and the quality gates have been measured clear of it.
+
+**Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
+and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
+untouched — it needs a live run against a second GHE host, which this run cannot make.
 
 ## Work log
 
@@ -2026,3 +2050,31 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-73`
+
+Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+- **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
+  `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
+  command reverses a completed setup*, and the same executable that holds both facts said nothing.
+  An operator reading an old receipt does by hand what one command does.
+- **A claim in `verify`, which is the shape `RR-10F` set.** `receipt verify` now asks whether the
+  recorded rollback line is a command this executable accepts. When it is not, the report says so
+  and names the command that works today, composed from the record's own coordinates. The record is
+  not touched: a persisted record is evidence of what a run reported, and rewriting it would destroy
+  the thing receipts exist to be.
+- **One source for the command string.** `rollback_command_for` composes it, `rollback_command`
+  calls it, and `verify` calls it. Composing the sentence twice is precisely how `LAF-65` happened.
+- **Walked live** — [`PROGRESS-live-acceptance-v6.md`](docs/testing/PROGRESS-live-acceptance-v6.md),
+  scenarios `LA-M-12`..`LA-M-15`, stressor `LAS-32`. A real registry, a real install, a real setup
+  writing a managed block into a sandbox home. With the record aged to the pre-`2.6.0` sentence, the
+  `main` wheel reports `true=3, false=0` and says nothing; the branch reports `true=3, false=1`,
+  names the undo command, exits `1`, and leaves the record file's sha256 unchanged. The command it
+  names was then run: the block and the file are gone.
+- **`LAF-73` closes; two findings recorded, not fixed.** `LAF-84`: a completed undo leaves the
+  record reading `skipped`, a word that in this vocabulary means the setup never ran. `LAF-85`:
+  something wrote to the real user data root at `23:34`–`23:36` during this unattended session while
+  every live scenario ran under a sandbox `HOME`; `make integration`, `unit`, `validate` and
+  `packaging-check` were each measured afterwards and touched nothing there, so the writer is
+  unidentified and now tracked rather than shrugged at a second time.

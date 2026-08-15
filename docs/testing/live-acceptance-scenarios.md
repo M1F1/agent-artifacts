@@ -56,6 +56,7 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-32` | A persisted record read by a later executable than wrote it | `LA-M-12`, `LA-M-13`, `LA-M-14`, `LA-M-15` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -170,6 +171,10 @@ way the system can be pushed.
 | `LA-M-05` | Rollback restores | flag | H | `setup rollback` | prior state restored exactly |
 | `LA-M-06` | No credential leakage | flag | H | inspect all captured output | no secret in any recorded artefact |
 | `LA-M-07` | Skill-carried installer | flag | D review / H run | any residuality skill declaring setup effects | reviewed in `LA-M-01` with no effect; executed here only after explicit approval |
+| `LA-M-12` | A fresh record verifies its own rollback line | flag | D | real `marketplace setup`, then `receipt verify` | the `rollback-command-runs` claim is `true`; the recorded command is the one this executable accepts |
+| `LA-M-13` | A record written before the undo command | flag | D | set the record's `rollback_command` to the pre-`2.6.0` sentence, then `receipt verify` | the claim is `false`, names the command that works today, and the record file's digest is unchanged |
+| `LA-M-14` | The earlier executable says nothing | flag | D | the same aged record, `receipt verify` from the `main` wheel | no such claim; `true=3, false=0` where the fix reports `true=3, false=1` |
+| `LA-M-15` | The advice the claim gives works | flag | D | run the command the claim names | the managed block and the file the run created are gone |
 
 ---
 

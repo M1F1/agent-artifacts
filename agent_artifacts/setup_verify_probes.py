@@ -12,7 +12,10 @@ and nothing else.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
+import shlex
 import subprocess
 from typing import Tuple
 
@@ -104,6 +107,40 @@ def _path_present(path: str) -> bool | None:
         return None
 
 
+def command_accepted(command: str) -> bool | None:
+    """Does this executable's own CLI accept the command a record recorded? (`LAF-73`)
+
+    The parser is the shipped surface, so this cannot answer `True` for a command the executable
+    does not define — which is the whole point: a record written before `2.6.0` instructs the
+    operator to undo a setup by hand, and only the parser knows that instruction is now wrong.
+
+    ``parse_args`` writes to stderr and raises `SystemExit` rather than returning a verdict, so
+    both streams are captured and the exit is read as the answer. Nothing is executed.
+    """
+
+    try:
+        from agent_artifacts import cli  # imported here: `cli` reaches this module in a cycle
+    except ImportError:  # pragma: no cover - the CLI is part of the package
+        return None
+
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return False
+    if arguments[:1] != ["aart"]:
+        return False
+
+    with (
+        contextlib.redirect_stdout(io.StringIO()),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
+        try:
+            cli.build_parser().parse_args(arguments[1:])
+        except SystemExit as exited:
+            return exited.code == 0
+    return True
+
+
 def orphan_run_directories(run_root: str, plan_hash: str) -> Tuple[str, ...] | None:
     """Working copies an interrupted run left behind under the run root (`LAF-61`).
 
@@ -149,7 +186,8 @@ def local_probes(*, project_root: str, run_root: str) -> VerificationProbes:
         read_text=_read_text,
         path_present=_path_present,
         orphan_run_directories=lambda plan_hash: orphan_run_directories(run_root, plan_hash),
+        command_accepted=command_accepted,
     )
 
 
-__all__ = ["local_probes", "orphan_run_directories"]
+__all__ = ["command_accepted", "local_probes", "orphan_run_directories"]

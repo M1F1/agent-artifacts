@@ -10,7 +10,8 @@ import os
 import tempfile
 from types import SimpleNamespace
 
-from agent_artifacts.model import SetupStateRecord
+from agent_artifacts.model import SetupQueueItem, SetupStateRecord
+from agent_artifacts.setup import rollback_command
 from agent_artifacts.setup_runtime import new_run_directory
 from agent_artifacts.setup_verify import (
     BLOCK_PRESENT,
@@ -18,6 +19,7 @@ from agent_artifacts.setup_verify import (
     KEYCHAIN_HOLDS_VALUE,
     NO_CREDENTIAL_IN_RECORD,
     NO_ORPHAN_RUN,
+    ROLLBACK_COMMAND_RUNS,
     TAG_RESOLVES,
     TRUE,
     UNKNOWN,
@@ -26,7 +28,7 @@ from agent_artifacts.setup_verify import (
     verification_payload,
     verify_claims,
 )
-from agent_artifacts.setup_verify_probes import orphan_run_directories
+from agent_artifacts.setup_verify_probes import command_accepted, orphan_run_directories
 
 BLOCK = (
     "# >>> aart setup: mcp/x@claude >>>\nexport TOKEN_LOOKUP=1\n# <<< aart setup: mcp/x@claude <<<"
@@ -41,6 +43,7 @@ def _probes(**overrides) -> VerificationProbes:
         read_text=lambda _path: BLOCK,
         path_present=lambda _path: True,
         orphan_run_directories=lambda _plan_hash: (),
+        command_accepted=lambda _command: True,
     )
     defaults.update(overrides)
     return VerificationProbes(**defaults)  # type: ignore[arg-type]
@@ -56,6 +59,19 @@ def _record(*steps, plan_hash: str = "a" * 64) -> SetupStateRecord:
         detail="done",
         plan_hash=plan_hash,
         receipt=tuple(steps),
+    )
+
+
+def _record_with_rollback(command: str) -> SetupStateRecord:
+    return SetupStateRecord(
+        artifact_type="mcp",
+        artifact_name="x",
+        profile="claude",
+        scope="project",
+        status="apply_failed_rolled_back",
+        detail="done",
+        plan_hash="a" * 64,
+        rollback_command=command,
     )
 
 
@@ -269,6 +285,77 @@ def test_rr10f_a_clean_record_says_it_checked() -> None:
     status, _detail = _statuses(_record(), _probes())[NO_CREDENTIAL_IN_RECORD]
 
     assert status == TRUE
+
+
+def test_laf73_a_rollback_line_this_executable_rejects_is_reported_not_rewritten() -> None:
+    """`LAF-73`: the write path was fixed and the read path kept believing the old records.
+
+    `RR-10E` corrected `rollback_command` for records written from now on. A record written
+    before it still carries *no command reverses a completed setup*, and the same executable that
+    holds both facts said nothing — an operator reading an old receipt does by hand what one
+    command does. Same contract as every other claim: report, name the command that works, and
+    leave the record exactly as it is.
+    """
+
+    record = _record_with_rollback(
+        "no command reverses a completed setup; undo mcp/x in claude (project) "
+        "from the recorded receipt, then re-run setup"
+    )
+
+    before = record.rollback_command
+    # The real parser answers, not a fake: what makes the old sentence wrong is this executable.
+    statuses = _statuses(record, _probes(command_accepted=command_accepted))
+    status, detail = statuses[ROLLBACK_COMMAND_RUNS]
+
+    assert status == FALSE
+    assert "aart marketplace receipt undo mcp/x --profile claude --scope project --yes" in detail
+    assert record.rollback_command == before
+
+
+def test_laf73_the_command_this_release_writes_is_the_one_verify_accepts() -> None:
+    """The real writer and the real reader, driven together — `LAF-66`'s lesson.
+
+    A fake probe that answers `True` would prove nothing about whether the string a run records
+    is a string this CLI accepts. So the command comes from `rollback_command`, the function the
+    engine calls, and the answer comes from the probe a real machine uses.
+    """
+
+    item = SetupQueueItem(
+        "mcp",
+        "x",
+        "claude",
+        "project",
+        "pin:abc",
+        "/src",
+        SimpleNamespace(descriptor_path="", descriptor_hash="", custom_hash="", schema_version=2),
+    )
+    record = _record_with_rollback(rollback_command(item))
+
+    results = verify_claims(
+        plan_verification(record), probes=_probes(command_accepted=command_accepted)
+    )
+    statuses = {result.claim.kind: (result.status, result.detail) for result in results}
+
+    assert statuses[ROLLBACK_COMMAND_RUNS][0] == TRUE
+
+
+def test_laf73_the_probe_rejects_the_sentence_and_accepts_the_command() -> None:
+    # The probe itself, against the shipped parser: the two strings the finding is about.
+    assert command_accepted("no command reverses a completed setup; undo mcp/x") is False
+    assert (
+        command_accepted(
+            "aart marketplace receipt undo mcp/x --profile claude --scope project --yes"
+        )
+        is True
+    )
+
+
+def test_laf73_a_record_carrying_no_rollback_line_claims_nothing() -> None:
+    # A successful run clears the field. There is no claim to make about an empty string, and
+    # inventing one would report `false` for every clean record.
+    kinds = {claim.kind for claim in plan_verification(_record())}
+
+    assert ROLLBACK_COMMAND_RUNS not in kinds
 
 
 def test_a_receipt_with_nothing_checkable_still_reports_a_payload() -> None:

@@ -1286,10 +1286,22 @@ def rollback_command(item: SetupQueueItem) -> str:
     rather than lying.
     """
 
-    coordinate = shlex.quote(f"{item.artifact_type}/{item.artifact_name}")
+    return rollback_command_for(item.artifact_type, item.artifact_name, item.profile, item.scope)
+
+
+def rollback_command_for(artifact_type: str, artifact_name: str, profile: str, scope: str) -> str:
+    """The same command, composed from a persisted record's own coordinates.
+
+    `LAF-73`: `verify` has to be able to say *this is the command that works* about a record
+    written before `2.6.0`, and it has only the record to say it from.  Composing the string
+    there as well would give the sentence two sources and one of them would go stale — which is
+    the whole shape of `LAF-65`.  So there is one function, and both callers use it.
+    """
+
+    coordinate = shlex.quote(f"{artifact_type}/{artifact_name}")
     return (
-        f"aart marketplace receipt undo {coordinate} --profile {shlex.quote(item.profile)} "
-        f"--scope {item.scope} --yes"
+        f"aart marketplace receipt undo {coordinate} --profile {shlex.quote(profile)} "
+        f"--scope {scope} --yes"
     )
 
 

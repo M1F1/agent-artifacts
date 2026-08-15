@@ -23,6 +23,7 @@ from typing import Callable, Mapping, Sequence, Tuple
 
 from agent_artifacts.model import SetupStateRecord
 from agent_artifacts.redaction import contains_credential_shape
+from agent_artifacts.setup import rollback_command_for
 
 TRUE = "true"
 FALSE = "false"
@@ -38,6 +39,7 @@ BLOCK_PRESENT = "block-present"
 FILE_PRESENT = "file-present"
 NO_ORPHAN_RUN = "no-orphan-run-directory"
 NO_CREDENTIAL_IN_RECORD = "no-credential-in-record"
+ROLLBACK_COMMAND_RUNS = "rollback-command-runs"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +75,8 @@ class VerificationProbes:
     read_text: Callable[[str], str | None]
     path_present: Callable[[str], bool | None]
     orphan_run_directories: Callable[[str], Tuple[str, ...] | None]
+    # Not the machine, but the executable doing the asking: does its own CLI accept this string?
+    command_accepted: Callable[[str], bool | None]
 
 
 def _record_text(record: SetupStateRecord) -> str:
@@ -109,6 +113,28 @@ def plan_verification(record: SetupStateRecord) -> Tuple[Claim, ...]:
             arguments={"record": _record_text(record)},
         )
     )
+    # `LAF-73`: the record's own instruction to the operator, checked against the command surface
+    # of the executable reading it.  A record written before `2.6.0` says no undo exists, and the
+    # same executable ships one.  Nothing rewrites the field — this is how the reader stops
+    # repeating it without the writer touching evidence.
+    if record.rollback_command:
+        claims.append(
+            Claim(
+                index=0,
+                module="",
+                kind=ROLLBACK_COMMAND_RUNS,
+                subject="the rollback command this record recorded",
+                arguments={
+                    "command": record.rollback_command,
+                    "today": rollback_command_for(
+                        record.artifact_type,
+                        record.artifact_name,
+                        record.profile,
+                        record.scope,
+                    ),
+                },
+            )
+        )
     if record.plan_hash:
         claims.append(
             Claim(
@@ -277,6 +303,21 @@ def _verify(claim: Claim, probes: VerificationProbes) -> ClaimResult:
             + ", ".join(orphans),
         )
 
+    if claim.kind == ROLLBACK_COMMAND_RUNS:
+        accepted = probes.command_accepted(claim.arguments["command"])
+        if accepted is None:
+            return result(UNKNOWN, "this executable's command surface could not be asked")
+        if accepted:
+            return result(TRUE, "this executable accepts the recorded rollback command")
+        # `LAF-73`, at the moment it becomes visible.  The recorded line is not echoed back: it is
+        # the wrong instruction, and repeating it is what this claim exists to stop.
+        return result(
+            FALSE,
+            "this executable does not accept the rollback line this record carries, which is "
+            "what a record written before the undo command looks like. The record is left as it "
+            f"is; the command that reverses this setup today is: {claim.arguments['today']}",
+        )
+
     if claim.kind == NO_CREDENTIAL_IN_RECORD:
         if contains_credential_shape(claim.arguments["record"]):
             # Reported and never repaired, like every other claim.  A persisted record is evidence
@@ -308,6 +349,7 @@ __all__ = [
     "KEYCHAIN_HOLDS_VALUE",
     "NO_CREDENTIAL_IN_RECORD",
     "NO_ORPHAN_RUN",
+    "ROLLBACK_COMMAND_RUNS",
     "TAG_RESOLVES",
     "TRUE",
     "UNKNOWN",
