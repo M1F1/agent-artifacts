@@ -10,10 +10,11 @@
   counts over payloads that held the answer. Still the released `2.0.0` contract, and the first
   release in three with **no registry obligation in either direction**: nothing here publishes into an
   index. The v14 freeze carries protocol versions identical to v13 and differs in one input,
-  `agent_artifacts/setup.py`, where the difference is a single rename. Not tagged, not published:
-  `RR-9`'s live acceptance is the remaining gate
-- **Next task:** `RR-9` — live acceptance on both registries and the consumer repository, on a real
-  machine and with no patched executable
+  `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
+  and a GitHub release carrying the wheel, after a second live acceptance pass and the token
+  containment work (`RR-10`) that pass made necessary
+- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
+  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
 - **Last updated:** 2026-08-15
 
 ## Readable receipt (`2.6.0`, released)
@@ -85,7 +86,7 @@
 | SBC-7 | Live acceptance: both routes, on a real machine | done | Both routes walked and diffed on a real daemon and a real keychain: [`PROGRESS-live-acceptance-setup-build.md`](docs/testing/PROGRESS-live-acceptance-setup-build.md). Ten findings (`LAF-51`..`LAF-60`) in five clusters; `LAF-51` makes the guided route unreachable as shipped and had to be worked around to observe anything else. Contents agree between routes; image identity does not |
 | SBC-9 | The guided route actually runs | done | One table decides what a recipe needs; the index publishes it and the consumer recomputes it, so the gate compares like with like. `LAF-51` closed and the acceptance scenarios re-walked unpatched; `LAF-56` and `LAF-60` fixed in the reference |
 | SBC-8 | The `2.5.0` release commit | done | Version `2.5.0`, contract v13: [compatibility](docs/release/compatibility-v13.md), [checklist](docs/release/release-checklist-v13.md), [notes](docs/release/github-release-v2.5.0.md), and a freeze that differs from v12 in one input and no protocol version. The matrix carries the two upgrade obligations — rebuild the index, do not publish a new-module artifact ahead of consumer upgrades — and the eight findings shipping open. Published as [v2.5.0](https://github.com/M1F1/agent-artifacts/releases/tag/v2.5.0) from `b0b0253`, wheel `sha256:a9a04ad4…`, reproducible across two builds |
-| SBC-10 | The reference registry moves with the release | done | `release-check` failed three registry gates on the tag: a not-yet-rebuilt index disagrees with what `2.5.0` recomputes. Rebuilt on `2.5.0` and the CI pin moved with it ([registry#7](https://github.com/M1F1/agent-artifacts-registry/pull/7)); measured in both directions — the rebuilt index fails the same gate under `2.4.0` and `2.0.0`, and consumers are untouched either way. The upgrade note now says which side a registry is on ([#87](https://github.com/M1F1/agent-artifacts/pull/87)) |
+| SBC-10 | The reference registry moves with the release | done | `release-check` failed three registry gates on the tag: a not-yet-rebuilt index disagrees with what `2.5.0` recomputes. Rebuilt on `2.5.0` and the CI pin moved with it ([registry#7](https://github.com/M1F1/agent-artifacts-registry/pull/7)); measured in both directions — the rebuilt index fails the same gate under `2.4.0` and `2.0.0`. The upgrade note now says which side a registry is on ([#87](https://github.com/M1F1/agent-artifacts/pull/87)). **The claim recorded here that consumers are untouched either way is false and was corrected on 2026-08-15**: a `2.0.0` or `2.4.0` consumer cannot add the rebuilt registry (`LAF-62`) |
 
 ## Live acceptance run
 
@@ -1953,3 +1954,39 @@ None.
   unreferenced by shipping code, `docs/design/DESIGN-upstream.md` carries no superseded banner, and
   `commands/registry.py` stamps dead `1.0.0`/`2.0.0` AART bounds on every non-`init` request.
 - Still human-gated, unchanged: the curses passes and the MCP credential pass.
+
+### 2026-08-15 — post-release verification of Registry B and the consumer project
+
+- **The upgrade obligation is narrower than the release wrote it, and its cost is wider.** Registry B
+  (`la-registry-b`) owns no setup-bearing package, so the vocabulary boundary never reaches its
+  index: `registry build` under `2.5.0` reports `unchanged: aart.index.json`, and the committed index
+  passes `validate --strict --frozen` under `2.0.0` *and* `2.5.0`. "Valid on one side or the other,
+  never both" holds for an index that carries a recipe, not for every index. Only the CI pin moved
+  ([registry-2#5](https://github.com/M1F1/agent-artifacts-registry-2/pull/5)); all seven gates of its
+  quality workflow pass under `2.5.0` against the unchanged index.
+- **`LAF-62`: a `≤2.4.0` consumer cannot add a rebuilt registry.** Severity: major; owned by nobody.
+  `source add --kind registry-git` against rebuilt Registry A exits 1 with `compiled index disagrees
+  with owned package` for `mcp/github-docker`, `mcp/github-enterprise-docker`, and
+  `mcp/postgres-docker`, under both `2.0.0` and `2.4.0` (the latter run from a worktree at `v2.4.0`).
+  It fails before any artifact is named, so nothing downstream is reachable. Reproduction: any clean
+  home, `aart source add --alias registry-a --kind registry-git --location
+  https://github.com/M1F1/agent-artifacts-registry.git --ref main`.
+- **What that falsifies.** `SBC-10` and the rebuild commit both recorded that consumers are untouched
+  either way, and named the `2.4.0` consumer specifically as adding the registry "exactly as before".
+  The reasoning was that a consumer recompiles the index from the source snapshot and never reads the
+  committed one; publishing that snapshot evidently validates the committed index first. The design
+  claim may still be right about *installing* — it is wrong about *subscribing*, which is the step
+  that comes first.
+- **It was already failing in production, unobserved for a day.** The consumer project's nightly
+  acceptance run failed at 2026-08-15 05:46 UTC with exactly those three lines; the last green run was
+  2026-08-14 06:49 UTC, before the rebuild merged at 21:26. Between those two timestamps the
+  reconciliation this workflow exists to perform had silently stopped happening. A registry-side
+  release step and a consumer-side pin are one obligation, and only half of it was written down.
+- **The installation state itself never moved.** Every step of the consumer workflow replayed locally
+  under `2.5.0` against an isolated home: both sources `healthy`, `marketplace status` `ok` with 11
+  of 11 `current`, `git diff --exit-code` clean. The runner's pin moved to `2.5.0`
+  ([project#1](https://github.com/M1F1/agent-artifacts-live-acceptance-project/pull/1)); nothing was
+  reinstalled, because nothing needed to be.
+- **Open, and deliberately not fixed here:** `LAF-62` itself. Whether `source add` should validate a
+  committed index at all is a design question — the snapshot it publishes is recompiled either way —
+  and answering it inside a cleanup pass would be the wrong place to decide it.
