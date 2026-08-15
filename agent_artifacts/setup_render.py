@@ -21,8 +21,49 @@ __all__ = [
     "receipt_payload",
     "render_receipt_payload",
     "render_setup_payload",
+    "render_undo_payload",
     "render_verification_payload",
 ]
+
+
+def render_undo_payload(
+    payload: Mapping[str, Any],
+    *,
+    applied: bool = False,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """Render what an undo will reverse and, as loudly, what it will not."""
+
+    steps = _rows(payload, "steps")
+    heading = "Undo outcome" if applied else "Review undo"
+    lines = wrap(
+        f"{heading}: {_text(payload.get('coordinate'), fallback='unknown')}"
+        f"#{_text(payload.get('profile'), fallback='unknown')}"
+        f"/{_text(payload.get('scope'), fallback='unknown')}",
+        width=width,
+    )
+    if not steps:
+        return lines + ("This receipt records no effect, so an undo would reverse nothing.",)
+
+    for step in steps:
+        lines += wrap(
+            f"{_text(step.get('disposition'), fallback='unknown')}: "
+            f"{_text(step.get('subject'), fallback='unnamed subject')}",
+            width=width,
+        )
+        lines += field_block(
+            (
+                ("step", _text(step.get("step"), fallback="-")),
+                ("module", _text(step.get("module"), fallback="unknown")),
+                ("reason", _text(step.get("reason"), fallback="none recorded")),
+            ),
+            indent=2,
+            width=width,
+        )
+    return lines + (
+        f"Undo: reverses={_text(payload.get('reverses'), fallback='0')}, "
+        f"keeps={_text(payload.get('keeps'), fallback='0')}",
+    )
 
 
 def render_verification_payload(

@@ -110,10 +110,21 @@ stored nothing is to ask the Keychain. `verify` asks.
 Calls `rollback_record` against the persisted record instead of the in-process one.
 
 New logic: the wiring, the record lookup, and the review gate. Not the rollback — that function, its
-ownership checks and its `receipt_matches_plan` binding are used unchanged. `LAF-58` is closed inside
-it: a `preexisting` tag currently keeps its name and loses its binding, and the receipt records the
-image id the tag pointed at before the run, so restoring the binding is a matter of reading a field
-that is already written.
+ownership checks and its `receipt_matches_plan` binding are used unchanged.
+
+**`LAF-58` is not closed here, and the reason is a premise of this design that was false.** The
+draft said the receipt records the image id the tag pointed at *before* the run, so restoring the
+binding would be a matter of reading a field already written. It does not. `_docker_build_apply`
+inspects the tag before building only to learn **whether it exists** (`preexisting = inspect.returncode
+== 0`, `setup_runtime.py:458`) and reads the id **after** the build (`setup_runtime.py:465`), so
+`image_id` is the id the tag points at *afterwards*. The earlier binding is never recorded and cannot
+be restored from the record.
+
+Closing it needs the capture site to record the prior id — the same shape of change `RR-2B` made, and
+outside `RR-4`, whose whole claim is that it adds no new field. So `RR-4` does the one thing it can do
+honestly: **the undo review says so out loud**, naming the tag, saying it will not be removed, and
+saying that the original binding cannot be restored. An operator who reads that before approving is
+not surprised by it afterwards, which is the difference between a known limit and a defect.
 
 ### 3.4 The text renderer stops summarising what `--json` carries
 

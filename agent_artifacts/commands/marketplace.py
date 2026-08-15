@@ -55,13 +55,14 @@ from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.install_state.paths import install_state_paths
 from agent_artifacts.install_state.schema import parse_install_state
+from agent_artifacts.io import fs
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
-from agent_artifacts.model import Request, SetupManualReference
+from agent_artifacts.model import Request, SetupManualReference, SetupState
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
-from agent_artifacts.setup import project_setup_review, render_setup_review
+from agent_artifacts.setup import dump_setup_state, project_setup_review, render_setup_review
 from agent_artifacts.setup_receipt import (
     RECEIPT_INVALID,
     RECEIPT_NOT_INSTALLED,
@@ -73,8 +74,11 @@ from agent_artifacts.setup_render import (
     receipt_payload,
     render_receipt_payload,
     render_setup_payload,
+    render_undo_payload,
     render_verification_payload,
 )
+from agent_artifacts.setup_runtime import production_runtime, rollback_record
+from agent_artifacts.setup_undo import plan_undo, undo_digest, undo_payload
 from agent_artifacts.setup_verify import plan_verification, verification_payload, verify_claims
 from agent_artifacts.setup_verify_probes import local_probes
 from agent_artifacts.store.model import ObjectReadRequest
@@ -654,7 +658,89 @@ def _receipt_candidates(state, *, selector: str, scope: str) -> list:
     return matched
 
 
-_RECEIPT_ACTIONS = frozenset({"show", "verify"})
+_RECEIPT_ACTIONS = frozenset({"show", "verify", "undo"})
+
+
+def _undo(request: Request, record, location, operation: str) -> int:
+    """Review-first, exactly as every other mutating action: `--yes` finalizes, nothing else."""
+
+    payload = undo_payload(
+        plan_undo(record),
+        coordinate=location.coordinate,
+        profile=location.profile,
+        scope=location.scope,
+    )
+    digest = undo_digest(payload)
+
+    if not request.yes:
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                "ok": True,
+                "operation": operation,
+                "finalized": False,
+                "undo_digest": digest,
+                "undo": payload,
+            },
+            render_undo_payload(payload)
+            + ("Reviewed only; re-run with --yes to apply this exact undo.",),
+        )
+        return _common.OK
+
+    if request.expect is not None and request.expect != digest:
+        refusal = Diagnostic(
+            CONSUMER_REVIEW_MISMATCH,
+            Severity.ERROR,
+            f"the undo changed since it was reviewed: expected {request.expect}, "
+            f"recomputed {digest}",
+            remediation=("re-read the undo below, then re-run --expect with its undo_digest",),
+        )
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                "ok": False,
+                "operation": operation,
+                "finalized": False,
+                "diagnostics": [diagnostic_to_data(refusal)],
+                "expected_undo_digest": request.expect,
+                "undo_digest": digest,
+                "undo": payload,
+            },
+            (
+                f"{refusal.severity.value}: {refusal.message}",
+                *(f"  remediation: {item}" for item in refusal.remediation),
+                *render_undo_payload(payload),
+            ),
+        )
+        return _common.ERROR
+
+    rolled = rollback_record(record, production_runtime())
+    fs.write_atomic(
+        location.state_path,
+        (dump_setup_state(SetupState((rolled,))) + "\n").encode("utf-8"),
+    )
+    complete = rolled.status == "skipped"
+    _emit(
+        request,
+        operation,
+        {
+            "schema_version": 1,
+            "ok": complete,
+            "operation": operation,
+            "finalized": True,
+            "undo_digest": digest,
+            "status": rolled.status,
+            "detail": rolled.detail,
+            "undo": payload,
+        },
+        render_undo_payload(payload, applied=True)
+        + (f"Undo outcome: {rolled.status} — {rolled.detail}",),
+    )
+    return _common.OK if complete else _common.ERROR
 
 
 def _receipt(request: Request) -> int:
@@ -749,6 +835,9 @@ def _receipt(request: Request) -> int:
     record = read_setup_record(record_file.read_text(encoding="utf-8"), location=location)
     if isinstance(record, Err):
         return _emit_error(request, record, operation)
+
+    if request.receipt_action == "undo":
+        return _undo(request, record.value, location, operation)
 
     if request.receipt_action == "verify":
         results = verify_claims(

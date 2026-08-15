@@ -536,6 +536,40 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scope(p_receipt_verify)
     _add_json(p_receipt_verify)
 
+    p_receipt_undo = receipt_sub.add_parser(
+        "undo",
+        formatter_class=_HELP_FORMATTER,
+        help="reverse the effects a setup run recorded",
+        description=(
+            "Replay a persisted setup receipt in reverse, with the ownership checks the run "
+            "itself uses. The only mutating action in this family: without --yes it prints "
+            "every effect it would reverse and every effect it would not, and changes nothing."
+        ),
+    )
+    p_receipt_undo.add_argument(
+        "names",
+        nargs=1,
+        metavar="COORDINATE",
+        help="the installed artifact coordinate whose setup effects should be reversed",
+    )
+    _add_profile(p_receipt_undo)
+    _add_project(p_receipt_undo)
+    _add_scope(p_receipt_undo)
+    p_receipt_undo.add_argument(
+        "--yes",
+        action="store_true",
+        help="apply the reviewed undo (without this the command only reviews)",
+    )
+    p_receipt_undo.add_argument(
+        "--expect",
+        metavar="DIGEST",
+        help=(
+            "apply only if the recomputed undo digest equals DIGEST; otherwise refuse and show "
+            "the undo that is actually offered"
+        ),
+    )
+    _add_json(p_receipt_undo)
+
     # registry ---------------------------------------------------------------- #
     p = sub.add_parser(
         "registry",

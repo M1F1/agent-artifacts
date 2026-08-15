@@ -120,9 +120,11 @@ in-process one.
 
 - The rollback function, its ownership checks and its `receipt_matches_plan` binding
   (`setup.py:1276`) are used unchanged. This package is wiring, a review, and a record lookup.
-- **`LAF-58` is closed inside it.** A `preexisting` tag currently keeps its name and loses its
-  binding; the receipt records the image id the tag pointed at before the run, so restoring the
-  binding reads a field already written.
+- **`LAF-58` is *not* closed inside it**, and finding out why is what this package produced.
+  `_docker_build_apply` records the image id *after* the build (`setup_runtime.py:465`); the
+  pre-run inspect only asks whether the tag exists (`:458`). The earlier binding was never written
+  down, so no reader can restore it. Closing it is a capture-site change like `RR-2B`'s, tracked as
+  `RR-4A`. What `RR-4` does instead is name the limit in the undo review, before consent.
 - The review names every effect it will reverse and every effect it will not — a step whose receipt
   no longer matches the reviewed plan is reported and skipped, never forced.
 - On partial success the record is written back as `rollback_incomplete`, which the existing
@@ -131,6 +133,18 @@ in-process one.
 **Evidence:** `LAF-53`'s scenario end to end — install a setup-bearing artifact, `undo`, and observe
 the image tag, the Keychain item and the shell block gone, with a `preexisting` tag restored to its
 original binding.
+
+## `RR-4A` — the capture site records what a tag pointed at before the run
+
+One line at `setup_runtime.py:458`: the pre-build inspect already runs, and already discards
+everything but its exit status. Reading `{{.Id}}` there and recording it as `previous_image_id`
+costs nothing extra and is what `LAF-58` needs. The undo then restores the binding with
+`docker tag <previous_image_id> <tag>` for a `preexisting` tag, and the review says so.
+
+Kept out of `RR-4` deliberately: `RR-4` claims to add no field, and a package that quietly breaks
+its own claim is how a guardrail stops meaning anything.
+
+**Evidence:** a tag that names an image before a run points at that same image again after an undo.
 
 ## `RR-5` — the same three actions in the text front-end
 
