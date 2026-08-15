@@ -77,9 +77,14 @@ daemon and a real keychain.
   `2026-08-15`: hardcoding it made every docker claim report `unknown` on a host whose daemon was
   running, because `docker` is at `/usr/local/bin`;
 - exit is non-zero when any claim is false, so it is usable from CI;
-- it reports and never repairs, proved by hashing `.zshrc` before and after a verify. The orphaned
-  run directory it was meant to report (`LAF-61`) it does **not** find: the probe scans the project
-  root and runs are created under the data root, measured in the live run as `LAF-66`.
+- it reports and never repairs, proved by hashing `.zshrc` before and after a verify. That now
+  includes a record written before the redactor was corrected: `verify` reports credential-shaped
+  text in the record, names neither the value nor a repair, and leaves the file alone;
+- the orphaned run directory it was meant to report (`LAF-61`) it now finds. The live run measured
+  the probe scanning the project root while runs are created under the data root (`LAF-66`); it takes
+  the run root the engine writes into, and answers `unknown` rather than `true` when it has no root
+  to read. A test drives `new_run_directory` and `orphan_run_directories` together, and asserts the
+  old location finds nothing, so the fix cannot pass by widening the search.
 
 `marketplace receipt undo` is review-first, like every other mutation:
 
@@ -137,18 +142,15 @@ rather than a hope.
 
 ## Residues shipped open
 
-Five findings move out of shipped-open and close. The plan predicted six; the sixth was `LAF-61`, and
-the live run showed the probe meant to make it visible looks in the wrong directory (`LAF-66`), so it
-stays open.
+Nine findings move out of shipped-open and close, and `LAF-61` becomes visible — five in this
+release's first pass and the rest in the second, which the live acceptance run made necessary and
+which [`compatibility-v14.md`](compatibility-v14.md) accounts for.
 The state of every one of them is in [`residue-register.md`](../testing/residue-register.md), which
 `docs-check` enforces, and **not** in this document — a second list is how the first stops being true.
 
-Two are worth naming here because they change what an operator should expect:
+One is worth naming here because it changes what an operator should expect:
 
 - `LAF-58`: an image tag that existed before a run keeps its name through an undo and points at what
   the run built. The earlier binding was never recorded, so nothing can restore it. The undo review
   says so before consent, which is the difference between a known limit and a defect. Closing it is a
   capture-site change tracked as `RR-4A`.
-- `LAF-63`: credential redaction misses every namespaced name, so `GITHUB_TOKEN=…` is printed **and
-  persisted** in full. Found while building this release, and shipped open. A test holds the gap
-  visible so it cannot be assumed closed; the fix is `RR-2C`.

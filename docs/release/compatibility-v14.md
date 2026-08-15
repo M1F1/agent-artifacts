@@ -109,17 +109,41 @@ last, so a head-truncated 512 characters was exactly the half that could not exp
 Capture now keeps the tail, and where both ends carry meaning it keeps both with the middle elided.
 The same helper is used at all three capture sites.
 
+**There is one redactor, and it runs at the exits.** There were two, with different rules, and the
+weaker of them was the one on the path that writes the persisted record — so a credentialed clone URL
+was hidden in a diagnostic and written in full to disk. They are now one function in
+`agent_artifacts/redaction.py`, matching a credential name with any prefix (`COMPANY_GHE_TOKEN=` as
+well as `TOKEN=`), a credential in a URL's userinfo or query string, and a value with a recognisable
+credential shape standing alone with no name beside it. Detection is by shape and never by entropy,
+so the digests and plan hashes a receipt exists to carry are untouched.
+
+Nothing about how a secret is *collected* changed, because nothing about it was wrong: `security
+add-generic-password -w` is invoked with no value after the flag, so the `security` tool prompts at
+the terminal without echo and AART never receives the token at all. What
+`shell.env-from-keychain@1` writes into a shell profile is a lookup — the question, not the answer.
+
+**`receipt verify` reports a record that was written before the redactor was corrected.** It never
+echoes the value and never edits the record: a persisted record is evidence of what a run did, and
+rewriting one would destroy the thing receipts exist to be. Deleting it and re-running setup is the
+operator's decision, and the message says so.
+
+**The rollback field names a command that exists.** Every record written by `2.6.0`'s first pass said
+no command reverses a completed setup — in the release that shipped `receipt undo`. The field now
+carries the command, and the shipped CLI parser is what checks it, so it cannot go stale silently
+again.
+
 ## Residues this release closes
 
-Five of the findings `compatibility-v13` shipped open close, and the register
+Nine findings close and one becomes visible, and the register
 [`residue-register.md`](../testing/residue-register.md) is where their state now lives — not this
 document, and not a release paragraph.
 
-The plan for this work predicted six. The sixth was `LAF-61`, and this release does **not** move it:
-`RR-3` shipped a probe for orphaned run directories, the live acceptance run measured it against a
-real leftover directory, and it scans the project root while runs are created under the data root
-(`LAF-66`). The claim answers `true` without looking. `LAF-61` is open, and so is the probe defect
-that briefly made it look otherwise.
+The plan for this work predicted six of them and this document, in an earlier revision, reported
+five. The sixth was `LAF-61`, and the live acceptance run showed why it could not move: `RR-3`
+shipped a probe for orphaned run directories, and it scanned the project root while runs are created
+under the data root (`LAF-66`), so the claim answered `true` without looking. That measurement is
+what turned one deferred finding into a second release pass, and the four rows below the rule are
+its result.
 
 | Finding | Now | Established by |
 |---|---|---|
@@ -128,6 +152,11 @@ that briefly made it look otherwise.
 | `LAF-54` — the review composed and never printed | `closed` | the review prints before approval is asked for |
 | `LAF-55` — an unattended Keychain step stores nothing and reports success | `closed` | `receipt verify` asks whether the item holds a value |
 | `LAF-59` — a transcript truncated from the wrong end | `closed` | a build failing on its last instruction reports that instruction |
+| `LAF-63` — credential redaction misses every namespaced name | `closed` | one redactor, matching a credential name with any prefix |
+| `LAF-72` — the weaker of two redactors was the one writing to disk | `closed` | there is one redactor, and a test walks every string of the persisted record |
+| `LAF-66` — the orphan probe reads a directory no run writes into | `closed` | the probe takes the run root the engine writes into, or answers `unknown` |
+| `LAF-65` — the rollback field denies the undo command this release shipped | `closed` | the field names `receipt undo`, and the shipped CLI parser is what checks it |
+| `LAF-61` — a working copy left behind by an interrupted run | `visible` | `receipt verify` names it and removes nothing |
 
 ## Known defects shipped open
 
@@ -137,11 +166,6 @@ image tag keeps its name through an undo and points at what the run built, becau
 id *after*. The earlier binding was never written down, so no reader can restore it. What this release
 does instead is **say so in the undo review, before consent** — the tag is named, the fact that it is
 not removed is stated, and so is the reason. Closing it is a capture-site change tracked as `RR-4A`.
-
-`LAF-63` — credential redaction misses every namespaced name, so `GITHUB_TOKEN=…` is printed *and
-persisted* in full — was found while building this release and ships open. It is a defect in
-`_SENSITIVE_ASSIGNMENT`, whose pattern anchors on a word boundary that does not exist inside
-`GITHUB_TOKEN`. A test holds the gap visible so it cannot be assumed closed.
 
 The rest of what is open is in the register, with a disposition each. This document does not
 enumerate it, because a second list is how the first one stops being true.

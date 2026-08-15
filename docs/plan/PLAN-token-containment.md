@@ -149,3 +149,31 @@ If one does, rule 4 is wrong and the design's §4.4 limit needs widening, not th
 probe the same root the run used. If it cannot, the probe should report `unknown` rather than
 guessing — a probe that cannot ask is exactly what the three-status design is for, and `LAF-66`
 happened because that mechanism was bypassed by a confident `true`.
+
+## What the work found
+
+Every package landed. Both hypotheses above were put to the test, and they did not fare the same way.
+
+**Rule 4 did not redact anything receipts need**, and it is now measured rather than argued:
+`tests/setup_render_test.py::test_a_digest_is_not_mistaken_for_a_credential` asserts a `sha256:`
+digest survives untouched, and `token_containment_test.py` walks every string of a real persisted
+record. §4.4's limit stands as written.
+
+**The second hypothesis came true.** The run root is not always reachable — `verify` runs from a
+loaded receipt, and a record can carry no data root at all. `orphan_run_directories` returns `None`
+for an empty root, which becomes `unknown`, and a test asserts that specifically. The design
+anticipated this correctly, which is worth recording because the same design's first draft was wrong
+about `trust-store.export-certificates@1` recording a digest, and being right is not the default.
+
+**One thing the plan did not anticipate.** `RR-10A` could not be a change inside
+`configuration/policy.py`, because `setup.py` importing from it closes an import cycle
+(`configuration → protocol → native_tree → setup`). The single redactor had to become a leaf module,
+`agent_artifacts/redaction.py`, importing nothing from the package. That is a better outcome than the
+one planned — the function every exit depends on now depends on nothing — but it was forced by the
+import graph rather than chosen, and the module docstring says so, so a later edit does not
+reintroduce the cycle by adding a convenient import.
+
+**And one residue of the two-redactor era outlived the two redactors.** `setup_engine/application.py`
+composed both under two aliases: `redact_setup(redact_config(value))`. Once they were one function
+that read as applying it to itself, which is harmless but preserves the shape of the bug for the next
+reader. Collapsed in `RR-10C`.

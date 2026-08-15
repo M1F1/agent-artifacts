@@ -9,24 +9,31 @@ out of date.
 
 ## The short answer
 
-**Do not release 2.6.0 yet. Fix 3 things first. All 3 are small.**
+**The 3 blockers are fixed. 2.6.0 is ready to release.**
 
-The release itself is healthy: 1528 tests pass, all 9 quality gates are green, and we proved by
-machine that no data format changed.
+> This section was written on `2026-08-15` saying *do not release yet, fix 3 things first*. That was
+> the right call, and the 3 things are now done. The original reasoning is kept below rather than
+> deleted, because a brief edited until it agrees with the code stops being a record of the decision
+> it was written for.
 
-The problem is different. 2.6.0 adds three commands for reading setup receipts. All 3 bugs below are
-in exactly those commands. So the release would ship with its own main feature broken in visible ways.
+The release was already healthy — 1549 tests pass, all 9 quality gates are green, and no data format
+changed. What was wrong was that 2.6.0 adds three commands for reading setup receipts, and all 3 bugs
+below were in exactly those commands. The release would have shipped with its own main feature broken
+in visible ways.
 
-| # | Bug | How bad | Why it matters right now |
+| # | Bug | How bad | State |
 |---|---|---|---|
-| 1 | `LAF-63` | **high** | A password or token can be written to disk in plain text. 2.6.0 adds the command that prints that file on screen. |
-| 2 | `LAF-66` | **high** | `receipt verify` says "everything is fine" about a folder it never actually checks. |
-| 3 | `LAF-65` | medium | The receipt text tells the user "no command can undo a setup". 2.6.0 *is* the release that adds that command. |
+| 1 | `LAF-63` | **high** | **fixed.** And measuring it found a bigger one, `LAF-72` — see below. |
+| 2 | `LAF-66` | **high** | **fixed.** `receipt verify` now looks where runs really are. |
+| 3 | `LAF-65` | medium | **fixed.** The receipt names the undo command that exists. |
 
-None of these 3 bugs is new. They only became important now, because 2.6.0 is the release that lets
-users see them.
+**The one thing worth knowing.** Fixing bug 1 turned up something worse than the bug. There were
+**two** functions hiding passwords, with different rules — and the weaker one was the one used when
+writing to disk. So a password could be correctly hidden on screen and written out in full to a file,
+in the same run. That is `LAF-72`, it is also fixed, and it is the reason this took a second pass
+rather than a one-line patch.
 
-Two more things you should know before deciding. Neither is a reason to wait:
+Two more things you should know. Neither is a reason to wait:
 
 - **2 of the 7 planned acceptance tests were never run** on real published content (`LAF-67`). They
   were only tested with a local test fixture.
@@ -61,11 +68,14 @@ appears.
 
 ---
 
-## The 3 problems to fix before release
+## The 3 problems that had to be fixed before release
+
+All three are now fixed. Each one below keeps the diagnosis as it was written, and ends with **what
+actually happened** when it was fixed — which in one case was not what the diagnosis predicted.
 
 ### 1. `LAF-63` — a token can be saved to disk in plain text
 
-**Severity: high. Priority: P1.**
+**Severity: high. Priority: P1. Now: fixed.**
 
 **What goes wrong.** The tool tries to hide passwords and tokens before writing logs. It looks for
 words like `token`, `password`, `secret`, `api_key`. But it only finds them when the word stands
@@ -97,11 +107,40 @@ the fix is: change the pattern, flip the test.
 keep the secret. You need to decide separately: add a cleanup command, or just warn people in the
 release notes.
 
+**What actually happened.** The "cost: small" estimate was wrong, and usefully so.
+
+Before changing the pattern I measured it, and the measurement showed **two** functions doing this
+job, not one. They had different rules, neither covered everything the other did, and the weaker of
+the two was the one on the path that writes the file. So the version of the check protecting your
+screen was stronger than the version protecting your disk. That is `LAF-72`, and it is the defect
+that mattered.
+
+Both are now one function. It hides: a credential name with any prefix, a password inside a web
+address (`https://user:secret@host`), a password in a URL query string, and a value that simply
+*looks* like a credential with no name beside it at all — which is the case none of the others can
+reach, and the case a `git clone` failure actually prints. It recognises credentials by shape and
+never by randomness, so the long checksums a receipt exists to record are left alone.
+
+Two things did **not** change, because nothing was wrong with them, and it is worth stating plainly
+since the whole question was "can a token leak":
+
+- **The tool never receives your token.** It runs macOS's own `security` command with the value flag
+  left empty, so `security` asks you at the terminal, with no echo, and reads it directly. The token
+  goes from your keyboard into the Keychain. It never passes through this program.
+- **What gets written into your shell profile is the question, not the answer** — a lookup that asks
+  the Keychain for the value each time, not the value itself.
+
+**On the extra decision above:** old files keep the secret, and nothing rewrites them, on purpose — a
+receipt is evidence of what a run did. What `receipt verify` now does is *tell you*: it reports that
+a record contains credential-shaped text, without printing the value, and says that deleting the
+record and re-running setup is the only thing that removes it. Your call, stated clearly, rather than
+a silent rewrite.
+
 ---
 
 ### 2. `LAF-66` — `verify` reports "fine" about a folder it never looks at
 
-**Severity: high. Priority: P1.**
+**Severity: high. Priority: P1. Now: fixed.**
 
 **What goes wrong.** When a setup run is killed, it can leave a leftover working folder. `receipt
 verify` is supposed to notice this and tell you. It looks in the project folder. But real runs create
@@ -123,11 +162,21 @@ at all. This is that exact case. It does not say "I don't know". It says "everyt
 **Bonus.** Another open problem (`LAF-61`, the leftover folder itself) becomes visible to users the
 moment this is fixed.
 
+**What actually happened.** Fixed as described, and the bonus landed: `LAF-61` is now visible — the
+leftover folder is named and left exactly where it is, never deleted for you.
+
+One extra thing was needed. If the check has no folder to look in, it now says **"I don't know"**
+instead of "fine". That was the real shape of this bug: not a missing check, but a check that
+answered confidently about a place it had never looked. And the test that proves the fix drives the
+*real* function that creates these folders together with the *real* function that finds them, then
+checks that the old wrong location finds nothing — so the fix cannot pass by simply searching
+everywhere.
+
 ---
 
 ### 3. `LAF-65` — the receipt contradicts the program that printed it
 
-**Severity: medium. Priority: P1.**
+**Severity: medium. Priority: P1. Now: fixed.**
 
 **What goes wrong.** Every receipt contains a line of help text:
 
@@ -144,6 +193,13 @@ receipt instead of the release notes will do manual work that one command alread
 
 **Cost to fix: small.** Change the text.
 
+**What actually happened.** The text changed, and one more thing was added, because the interesting
+question was *why nobody noticed*. The tool already checks that every `aart …` command it prints is a
+command that really exists — it hands them to its own command parser. It never checked these two,
+because they are not printed messages: they are fields written into a file that nothing ever read
+back. Now they go through the same parser. A future release that renames `receipt undo` will fail its
+own tests instead of quietly writing wrong advice into every receipt.
+
 ---
 
 ## Everything else, grouped by what is broken
@@ -154,16 +210,17 @@ Each section is named after the thing a user would say is broken.
 
 | ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-63` | high | **P1** | Explained above. |
+| `LAF-63` | high | ~~P1~~ **fixed** | Explained above. |
+| `LAF-72` | high | ~~P1~~ **fixed** | Two functions hid passwords, with different rules, and the weaker one was the one writing to disk. Found while measuring `LAF-63`. |
 | `RS-12` | medium | P2 | Setup steps run without `HOME`. Docker then cannot read its login file, so a private base image cannot be downloaded at all. |
 
 ### Setup receipts — the 2.6.0 feature
 
 | ID | Sev | Pri | What goes wrong |
 |---|---|---|---|
-| `LAF-66` | high | **P1** | Explained above. |
-| `LAF-65` | medium | **P1** | Explained above. |
-| `LAF-61` | medium | P2 | A killed run leaves its working folder behind and nothing removes it. We thought `verify` reported it; `LAF-66` proved it does not. |
+| `LAF-66` | high | ~~P1~~ **fixed** | Explained above. |
+| `LAF-65` | medium | ~~P1~~ **fixed** | Explained above. |
+| `LAF-61` | medium | P2 | A killed run leaves its working folder behind and nothing removes it. `verify` now tells you it is there and where; removing it is still your job. |
 | `LAF-58` | medium | P2 | If a Docker image tag already existed before a setup run, undo cannot restore what it pointed to before. Nobody wrote down the old value. The undo screen does warn you about this before you confirm. |
 | `LAF-67` | medium | P2 | No published artifact uses the Docker *build* step. So 2 of the 7 planned acceptance tests cannot be run against real content at all. |
 
@@ -281,22 +338,29 @@ exact unmerged branch I was describing. The table above is the corrected version
 
 ---
 
-## If you only have time for one thing
+## What is left before 2.6.0 goes out
 
-**Fix `LAF-63`.**
+The code is done. What remains is not code:
 
-It is the only problem here where the failure is *a password on disk and on screen*. The fix is one
-pattern and its tests. The test that proves it is already written and today it checks that the bug
-still exists.
+1. **Re-run acceptance scenarios 3 and 6** from
+   [`PROGRESS-live-acceptance-receipt.md`](PROGRESS-live-acceptance-receipt.md) — those are the two
+   the fixes change. This needs a real machine, a real Docker daemon and a real Keychain, and you
+   type the password yourself; I never type one.
+2. **Decide the release itself.** Nothing is tagged, pushed or published, and nothing will be without
+   you saying so.
+3. **Say the honest thing in the release notes:** 2 of the 7 acceptance scenarios could not be run
+   against published content (`LAF-67`). Do not round that up.
 
-## If you want 2.6.0 released this week
+Then the version table above is the next job: three of the four rows have never run 2.6.0, and two
+upgrades are sitting in unmerged pull requests.
 
-Fix `LAF-63`, `LAF-66`, `LAF-65`. One round of work, all three small, all three in the feature this
-release is about.
+## If you only have time for one thing (as written before the fixes)
 
-Then re-run acceptance scenarios 3 and 6 from
-[`PROGRESS-live-acceptance-receipt.md`](PROGRESS-live-acceptance-receipt.md), because those are the
-two the fixes change.
+> **Fix `LAF-63`.** It is the only problem here where the failure is *a password on disk and on
+> screen*. The fix is one pattern and its tests.
 
-Then release — and write in the release notes that 2 of the 7 acceptance tests could not be run
-against published content. Do not round that up.
+Kept because it turned out to be the right instinct for a reason it did not state. `LAF-63` was worth
+starting with not because it was the worst bug, but because *measuring* it was what exposed
+`LAF-72` — the one that actually mattered. The lesson is not "pick the security bug first". It is
+**measure the bug before you fix it**: the estimate said one pattern, and the measurement said two
+functions with the weaker one on the disk path.

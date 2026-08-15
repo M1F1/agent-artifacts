@@ -60,9 +60,9 @@ does not have to agree with the present; a current document does.
 | `LAF-57` | low | `2.5.0` live acceptance | `open` | — |
 | `LAF-58` | medium | `2.5.0` live acceptance | `open` | — `RR-4` names the limit in the undo review before consent; closing it needs `RR-4A` at the capture site |
 | `LAF-59` | high | `2.5.0` live acceptance | `closed` | `RR-2B`; a build failing on its last instruction reports that instruction and its exit code |
-| `LAF-61` | medium | `2.5.0` live acceptance | `open` | — `RR-3` claimed `visible`; `RR-9` measured the probe scanning the project root while runs live under the data root (`LAF-66`), so nothing sees it |
+| `LAF-61` | medium | `2.5.0` live acceptance | `visible` | `RR-10D`; `receipt verify` names an orphaned run directory and removes nothing. Claimed `visible` once already on a probe that read the wrong root (`LAF-66`); the claim is made again on a test that drives the real writer and the real reader together |
 | `LAF-62` | medium | `2.5.0` publication | `deferred` | — cluster C4; needs the index-version boundary stream |
-| `LAF-63` | high | implementing `RR-2A` | `open` | — `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_not_redacted_today` holds the gap visible |
+| `LAF-63` | high | implementing `RR-2A` | `closed` | `RR-10A`; one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix, `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_redacted` |
 | `LAF-64` | medium | implementing `RR-5` | `open` | — |
 | `RS-01` | medium | `2.3.0` prose | `open` | — |
 | `RS-02` | low | `2.3.0` prose | `open` | — |
@@ -79,14 +79,14 @@ does not have to agree with the present; a current document does.
 | `RS-13` | low | `2.5.0` prose | `open` | — |
 | `RS-14` | low | `2.5.0` prose | `open` | — |
 | `RS-15` | low | `2.5.0` prose | `open` | — |
-| `LAF-65` | medium | `2.6.0` live acceptance | `open` | — |
-| `LAF-66` | high | `2.6.0` live acceptance | `open` | — |
+| `LAF-65` | medium | `2.6.0` live acceptance | `closed` | `RR-10E`; `rollback_command` names `receipt undo`, and `tests/setup_custom_test.py::WrittenCommandFieldTests` hands the written field to the shipped CLI parser so it cannot go stale again |
+| `LAF-66` | high | `2.6.0` live acceptance | `closed` | `RR-10D`; the probe takes the run root the engine writes into, answers `unknown` when it has no root to read, and `tests/setup_verify_test.py::test_laf66_the_probe_reads_the_root_the_engine_writes_into` drives the real writer and the real reader together |
 | `LAF-67` | medium | `2.6.0` live acceptance | `open` | — |
 | `LAF-68` | medium | `2.6.0` live acceptance | `open` | — |
 | `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
 | `LAF-70` | medium | triaging for `2.6.0` | `open` | — the machine that authors registry content runs AART `2.0.0` while Registry A's CI gates it at `2.5.0`; the author's tool is older than its own gate |
 | `LAF-71` | medium | triaging for `2.6.0` | `open` | — every version-move is prepared and none lands: Registry B PR #5 and acceptance-repo PR #1 both open, both raised for `2.5.0` |
-| `LAF-72` | high | measuring `LAF-63` | `open` | — two `redact_text` implementations exist and `dump_setup_state` uses the weaker one, so a credentialed clone URL is hidden in a diagnostic and written in full to disk |
+| `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced
 
@@ -114,6 +114,16 @@ measured the probe against a real leftover directory and found it scanning
 That correction is the register earning its place. Under the old regime the `visible` claim would have
 lived in a release paragraph, agreed with nothing, and been re-discovered a release later as a new
 finding. Here it had one row, the row was wrong, and the row changed.
+
+**`LAF-61` is `visible` again, and this time on a different kind of evidence.** `RR-10D` gave the
+probe the run root the engine writes into. The claim being made is the same claim `RR-3` made and
+lost, so the thing worth recording is what changed about the *measurement*: the first claim rested
+on a test that drove a fake probe, which proved the claim rendered and never proved the probe looked
+anywhere real. The second rests on `test_laf66_the_probe_reads_the_root_the_engine_writes_into`,
+which calls `new_run_directory` — the function a run actually uses — and then the real
+`orphan_run_directories`, and then asserts the old location finds nothing, so the fix cannot pass by
+widening the search. A claim is only as good as the thing that would falsify it, and the first one
+had nothing.
 
 **And the gate did not notice the row changing.** Moving `LAF-61` back to `open` left
 `compatibility-v14.md` and `release-checklist-v14.md` both saying `visible`, and `make docs-check`
