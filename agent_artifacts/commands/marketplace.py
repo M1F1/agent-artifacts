@@ -73,7 +73,10 @@ from agent_artifacts.setup_render import (
     receipt_payload,
     render_receipt_payload,
     render_setup_payload,
+    render_verification_payload,
 )
+from agent_artifacts.setup_verify import plan_verification, verification_payload, verify_claims
+from agent_artifacts.setup_verify_probes import local_probes
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -651,9 +654,12 @@ def _receipt_candidates(state, *, selector: str, scope: str) -> list:
     return matched
 
 
+_RECEIPT_ACTIONS = frozenset({"show", "verify"})
+
+
 def _receipt(request: Request) -> int:
     operation = f"marketplace.receipt.{request.receipt_action or 'show'}"
-    if request.receipt_action != "show":
+    if request.receipt_action not in _RECEIPT_ACTIONS:
         return _emit_error(
             request,
             Err(
@@ -665,6 +671,8 @@ def _receipt(request: Request) -> int:
                         remediation=(
                             "read a persisted record with: "
                             "aart marketplace receipt show <coordinate>",
+                            "check whether it is still true with: "
+                            "aart marketplace receipt verify <coordinate>",
                         ),
                     ),
                 )
@@ -741,6 +749,27 @@ def _receipt(request: Request) -> int:
     record = read_setup_record(record_file.read_text(encoding="utf-8"), location=location)
     if isinstance(record, Err):
         return _emit_error(request, record, operation)
+
+    if request.receipt_action == "verify":
+        results = verify_claims(
+            plan_verification(record.value),
+            probes=local_probes(project_root=project_root),
+        )
+        verification = verification_payload(results)
+        _emit(
+            request,
+            operation,
+            {
+                "schema_version": 1,
+                # A false claim is a finding, and a finding must not report success to CI.
+                "ok": verification["false"] == 0,
+                "operation": operation,
+                "coordinate": location.coordinate,
+                "verification": verification,
+            },
+            render_verification_payload(verification),
+        )
+        return _common.OK if verification["false"] == 0 else _common.ERROR
 
     payload = receipt_payload(record.value, location=location)
     _emit(

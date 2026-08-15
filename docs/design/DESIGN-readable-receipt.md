@@ -87,8 +87,17 @@ fixed at the capture site, `show` renders what capture kept.
 ### 3.2 `receipt verify`
 
 Re-reads what each receipt claims and reports whether it is still true: does the tag still exist and
-still point at the recorded image id; does the managed block still carry the recorded digest; does
+still point at the recorded image id; is the managed block still in the file, unchanged; does
 the Keychain item exist **and hold a non-empty value**.
+
+Two rows of this section's first draft did not survive contact with the receipts. `file.managed-block@1`
+records no digest — it records `installed_block`, the literal text — so the check is a text comparison,
+which is stronger than a digest and distinguishes *edited* from *removed*. And
+`trust-store.export-certificates@1` records `output`, `subject_contains` and the certificate names,
+and no digest at all, so existence is the only claim it licenses. A verifier must ask what the
+receipt actually wrote down, and say `unknown` rather than `true` for anything it could not ask —
+implemented as a third status, because a verifier that quietly passes what it cannot see is worse
+than no verifier.
 
 New logic: yes, and this is the only genuinely new mechanism in the design. It is also the answer to
 `LAF-55` — the receipt faithfully records a Keychain step that exited 0, and the only way to learn it

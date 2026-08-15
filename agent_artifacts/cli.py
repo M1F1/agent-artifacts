@@ -514,6 +514,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scope(p_receipt_show)
     _add_json(p_receipt_show)
 
+    p_receipt_verify = receipt_sub.add_parser(
+        "verify",
+        formatter_class=_HELP_FORMATTER,
+        help="ask whether what the setup record claims is still true",
+        description=(
+            "Put each claim in a persisted setup record to the machine: does the image still "
+            "exist, does the tag still resolve to the recorded id, does the Keychain item hold a "
+            "value, is the managed block still in the file. Reports and never repairs; exits "
+            "non-zero when any claim is false."
+        ),
+    )
+    p_receipt_verify.add_argument(
+        "names",
+        nargs=1,
+        metavar="COORDINATE",
+        help="the installed artifact coordinate whose setup record should be checked",
+    )
+    _add_profile(p_receipt_verify)
+    _add_project(p_receipt_verify)
+    _add_scope(p_receipt_verify)
+    _add_json(p_receipt_verify)
+
     # registry ---------------------------------------------------------------- #
     p = sub.add_parser(
         "registry",

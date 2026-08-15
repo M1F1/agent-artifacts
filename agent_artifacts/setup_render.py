@@ -17,7 +17,48 @@ from typing import Any, Mapping, Sequence, Tuple
 from agent_artifacts.setup import public_text
 from agent_artifacts.tui_layout import CONTENT_MEASURE, field_block, wrap
 
-__all__ = ["receipt_payload", "render_receipt_payload", "render_setup_payload"]
+__all__ = [
+    "receipt_payload",
+    "render_receipt_payload",
+    "render_setup_payload",
+    "render_verification_payload",
+]
+
+
+def render_verification_payload(
+    payload: Mapping[str, Any],
+    *,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """Render what `verify` asked and what it heard back."""
+
+    claims = _rows(payload, "claims")
+    if not claims:
+        # `LAF-45`: a receipt whose every step leaves nothing checkable is a real answer.
+        return ("Verification: this receipt records no claim that can be checked.",)
+
+    lines: Tuple[str, ...] = ("Verification",)
+    for claim in claims:
+        status = _text(claim.get("status"), fallback="unknown")
+        lines += wrap(
+            f"{status}: {_text(claim.get('subject'), fallback='unnamed subject')}",
+            width=width,
+        )
+        lines += field_block(
+            (
+                ("claim", _text(claim.get("kind"), fallback="unknown")),
+                ("step", _text(claim.get("step"), fallback="-")),
+                ("module", _text(claim.get("module"), fallback="none")),
+                ("detail", _text(claim.get("detail"), fallback="none recorded")),
+            ),
+            indent=2,
+            width=width,
+        )
+    return lines + (
+        f"Verification: true={_text(payload.get('true'), fallback='0')}, "
+        f"false={_text(payload.get('false'), fallback='0')}, "
+        f"unknown={_text(payload.get('unknown'), fallback='0')}",
+    )
 
 
 def receipt_payload(record: Any, *, location: Any) -> dict[str, Any]:
