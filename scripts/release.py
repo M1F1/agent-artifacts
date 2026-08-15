@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -148,7 +149,7 @@ def _script(name: str):
     return module
 
 
-def wheel_digest(root: Path = ROOT) -> tuple[str, str]:
+def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[str, str]:
     """Build this commit's wheel in a throwaway copy and return ``(filename, digest)``.
 
     The published wheel is dated from the commit it was built at, so its digest is a property of
@@ -156,6 +157,13 @@ def wheel_digest(root: Path = ROOT) -> tuple[str, str]:
     commit that determines it.  This command is how the digest reaches the release evidence — run
     it at the tag and publish what it prints beside the artifact
     (``docs/release/wheel-reproducibility-v1.md``).
+
+    ``output_dir`` receives that artifact, and the digest is then read back from the written file:
+    what the caller is handed is the file the printed digest describes.  `LAF-75`: the wheel used
+    to live in a temporary directory removed before this returned, which left the publisher to
+    build a second wheel by another route and attach that one — a *different* file, because a
+    build from the checkout carries no commit stamp.  `2.6.0` came within one ``curl`` of
+    publishing a digest line that did not describe its own attachment.
     """
 
     inject = _script("inject_commit")
@@ -180,7 +188,14 @@ def wheel_digest(root: Path = ROOT) -> tuple[str, str]:
         built = tuple((source_copy / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
         if len(built) != 1:
             raise ValueError(f"expected one built wheel, found {built}")
-        return built[0].name, _sha256(built[0].read_bytes())
+        if output_dir is None:
+            return built[0].name, _sha256(built[0].read_bytes())
+        output_dir.mkdir(parents=True, exist_ok=True)
+        destination = output_dir / built[0].name
+        shutil.copyfile(built[0], destination)
+        # Hashed from the destination rather than from the source, so a copy that arrived short
+        # cannot be described by the digest of the file it was copied from.
+        return destination.name, _sha256(destination.read_bytes())
 
 
 def _environment() -> dict[str, str]:
@@ -642,7 +657,15 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     freeze = commands.add_parser("freeze", help="write exact schema-freeze evidence")
     freeze.add_argument("--write", action="store_true", help="required write acknowledgement")
-    commands.add_parser("wheel-digest", help="print the digest of the wheel this commit publishes")
+    digest = commands.add_parser(
+        "wheel-digest", help="build the wheel this commit publishes and print its digest"
+    )
+    digest.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="directory the wheel is written into (default: dist/)",
+    )
     check = commands.add_parser("check", help="run the complete stable-release checklist")
     check.add_argument("--registry", required=True, type=Path)
     check.add_argument("--json", action="store_true")
@@ -666,12 +689,14 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
         print(f"schema freeze written: {SCHEMA_FREEZE_PATH}")
         return 0
     if args.command == "wheel-digest":
+        output_dir = args.output if args.output is not None else root / "dist"
         try:
-            name, digest = wheel_digest(root)
+            name, digest = wheel_digest(root, output_dir=output_dir)
         except (OSError, ValueError, subprocess.CalledProcessError) as error:
             print(f"release error: cannot build the wheel to digest: {error}", file=sys.stderr)
             return 1
         print(f"{digest}  {name}")
+        print(f"wrote {output_dir / name}")
         return 0
     receipt = check_release(root, args.registry)
     if args.json:

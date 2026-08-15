@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest import mock
 
 from tests.versioning_test import ROOT, _load_script
 
@@ -416,13 +419,85 @@ class WheelDigestEvidenceTest(unittest.TestCase):
         release = _load_script("release")
         stdout = io.StringIO()
 
-        with contextlib.redirect_stdout(stdout):
-            code = release.main(["wheel-digest"], root=ROOT)
+        with tempfile.TemporaryDirectory(prefix="aart-digest-line-") as raw:
+            with contextlib.redirect_stdout(stdout):
+                code = release.main(["wheel-digest", "--output", raw], root=ROOT)
 
         self.assertEqual(code, 0)
-        digest, name = stdout.getvalue().split()
+        digest, name = stdout.getvalue().splitlines()[0].split()
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
         self.assertTrue(name.endswith("-py3-none-any.whl"), name)
+
+
+@unittest.skipIf(sys.version_info < (3, 11), "the stdlib wheel builder requires Python 3.11+")
+class WheelDigestArtifactTest(unittest.TestCase):
+    """`LAF-75`: the command hands over the wheel whose digest it prints.
+
+    The digest used to describe a wheel inside a temporary directory that was removed before the
+    command returned, so the publisher had to build a second wheel by another route and attach
+    that one — a different file, because the checkout carries no commit stamp. One build serves
+    every assertion here; building it per test would triple a slow test for no extra evidence.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._temporary = tempfile.TemporaryDirectory(prefix="aart-laf75-")
+        cls.output = Path(cls._temporary.name) / "handed-over"
+        release = _load_script("release")
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            cls.code = release.main(["wheel-digest", "--output", str(cls.output)], root=ROOT)
+        cls.stdout = stdout.getvalue()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._temporary.cleanup()
+
+    def _written_wheel(self) -> Path:
+        digest, name = self.stdout.splitlines()[0].split()
+        return self.output / name
+
+    def test_laf75_the_printed_digest_is_the_digest_of_the_file_left_behind(self) -> None:
+        self.assertEqual(self.code, 0, self.stdout)
+        digest, _ = self.stdout.splitlines()[0].split()
+        written = self._written_wheel()
+
+        self.assertTrue(written.is_file(), self.stdout)
+        self.assertEqual(digest, "sha256:" + hashlib.sha256(written.read_bytes()).hexdigest())
+
+    def test_laf75_the_command_names_the_path_it_wrote(self) -> None:
+        lines = self.stdout.splitlines()
+
+        self.assertEqual(len(lines), 2, self.stdout)
+        self.assertTrue(lines[1].startswith("wrote "), lines[1])
+        self.assertEqual(Path(lines[1][len("wrote ") :]), self._written_wheel())
+
+    def test_laf75_the_written_wheel_is_the_stamped_one_a_plain_build_does_not_produce(
+        self,
+    ) -> None:
+        inject = _load_script("inject_commit")
+
+        with zipfile.ZipFile(self._written_wheel()) as archive:
+            stamp = archive.read("agent_artifacts/_commit.py").decode("utf-8")
+
+        # The tracked source says `unknown`; `build_wheel.py` run in the checkout packages that.
+        self.assertIn(f'COMMIT = "{inject.current_commit()}"', stamp)
+        self.assertNotIn('COMMIT = "unknown"', stamp)
+
+    def test_laf75_without_an_output_directory_the_wheel_lands_in_dist(self) -> None:
+        release = _load_script("release")
+        seen: dict[str, object] = {}
+
+        def record(root: Path, *, output_dir: Path | None = None) -> tuple[str, str]:
+            seen["output_dir"] = output_dir
+            return "agent_artifacts-0.0.0-py3-none-any.whl", "sha256:" + "0" * 64
+
+        with mock.patch.object(release, "wheel_digest", record):
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = release.main(["wheel-digest"], root=Path("/nonexistent-root"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["output_dir"], Path("/nonexistent-root/dist"))
 
 
 if __name__ == "__main__":

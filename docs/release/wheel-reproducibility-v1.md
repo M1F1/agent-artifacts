@@ -47,5 +47,21 @@ python scripts/release.py wheel-digest
 ```
 
 The command builds the wheel this commit publishes in a throwaway copy — stamping `HEAD` exactly as
-`make wheel` would — and prints `sha256:<hex>  <wheel filename>`. Running it at the tag and pasting
-the line into the release notes is a step in each release checklist from v10 onward.
+`make wheel` would — writes it into `dist/`, and prints two lines:
+
+```
+sha256:<hex>  agent_artifacts-<version>-py3-none-any.whl
+wrote dist/agent_artifacts-<version>-py3-none-any.whl
+```
+
+**Attach the file it names.** The digest is read back from that file after it is written, so the
+first line describes the second. `--output <dir>` writes it somewhere else instead.
+
+Running the command at the tag, pasting the first line into the release notes, and attaching the
+file named on the second is a step in each release checklist from v10 onward.
+
+Until `2.6.0` the command hashed a wheel it then deleted, which left the publisher to produce the
+attachment by a second route. `python scripts/build_wheel.py` alone is that second route and builds
+a *different* file: the checkout carries no commit stamp, so its members are dated at the zip epoch
+and the digest does not match. `2.6.0` came within one `curl` of publishing a digest line that did
+not describe its own attachment (`LAF-75`).
