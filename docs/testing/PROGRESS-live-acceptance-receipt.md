@@ -27,7 +27,7 @@ that a criterion rather than a hope. Everything below runs the wheel built from 
 | 3 | `receipt verify` reports a Keychain item stored by an unattended run as present and empty | A | §6.2 | **pass** |
 | 4 | `receipt undo` without `--yes` changes nothing and prints what it would reverse | A | §6.4 | **pass** |
 | 5 | `receipt undo --yes` reverses what it said it would and keeps what it said it would | A | §6.3 | **partial** — no published artifact builds an image, so the `preexisting` tag half is unreachable (`LAF-67`) |
-| 6 | `receipt verify` reports an orphaned run directory and does not remove it | A | §6.5 | **fail** — `LAF-66` |
+| 6 | `receipt verify` reports an orphaned run directory and does not remove it | A | §6.5 | **pass** on the second pass — **fail** on the first (`LAF-66`) |
 | 7 | A build failing on its last instruction reports that instruction and its exit code | A | §6.6 | **not walked** — `LAF-67` |
 | 8 | The three actions refuse cleanly against an installation with no setup record | B | `RR-1` | **pass** |
 | 9 | The consumer repository still reports eleven `current` and a clean `git diff` | consumer | `RR-9` | **pass** |
@@ -43,6 +43,7 @@ Recorded live, numbered from `LAF-65`, and clustered at the end. Nothing is fixe
 | `LAF-67` | 5, 7 | No published artifact uses `docker.build@1`, so two of the design's seven acceptance criteria cannot be walked against published content at all |
 | `LAF-68` | 9 | The consumer repository's `main` still pins AART `2.0.0`; the `2.5.0` pin move is an open, unmerged PR, so its CI has never exercised `2.5.0` |
 | `LAF-69` | 6 | `DOC009` catches a document that calls a closed finding open, and not the reverse — so the register moving `LAF-61` back to `open` left two release documents claiming `visible` and `docs-check` stayed green |
+| `LAF-73` | 2 (second pass) | `RR-10E` fixes the `rollback` line in records written from now on, and `receipt show` still prints the stale sentence from a record written before it — the same "records are evidence" rule that `RR-10F` handles by *reporting*, with nothing reporting this one |
 
 ### `LAF-65` — the receipt tells the operator there is no command, and there is
 
@@ -128,6 +129,33 @@ every rule can be made to fail, and one of them fails at only half the disagreem
 Not fixed in this run. Fixing it means `DOC009` reading a disposition claim out of prose, which is
 the thing the register exists to stop documents doing, so the fix is a design question rather than a
 predicate change.
+
+### `LAF-73` — the fix reaches new records, and the old ones keep the wrong sentence
+
+Found in the second live pass, by running `receipt show` on the `postgres-docker` record the first
+pass wrote — a record older than `RR-10E`. It still prints:
+
+```
+rollback  no command reverses a completed setup; undo mcp/postgres-docker in claude (user)
+          from the recorded receipt, then re-run setup
+```
+
+while the same executable, asked what it writes today, answers:
+
+```
+aart marketplace receipt undo mcp/postgres-docker --profile claude --scope user --yes
+```
+
+Both are correct behaviour taken one at a time. The record is evidence of what a run did, and
+rewriting it would destroy that — the same rule `RR-10F` follows for a credential in an old record.
+The difference is that `RR-10F` *reports* what it will not repair, and nothing reports this. An
+operator reading an old receipt is told to do by hand what one command does, and the tool holding
+both facts says nothing.
+
+The shape is the one this stream keeps meeting: a fix applied at the write path, and the read path
+left believing what was written. `RR-10F` is the pattern for the answer — a claim in `verify` that
+the recorded `rollback_command` parses with today's CLI, reported and never rewritten. Recorded,
+not fixed, because it was found during a run.
 
 ## Evidence
 
@@ -269,6 +297,44 @@ Written live, in order, so the sequence that produced each finding is recoverabl
 12. Register updated from the run: `LAF-61` back to `open`, rows for `LAF-65`..`LAF-68`. `make
     docs-check` then passed while two release documents still said `visible` — `LAF-69`, found by
     using the register rather than by testing it.
+
+## Second pass — after `RR-10`
+
+Walked on `2026-08-15`, same machine, same isolated `HOME`, against a wheel rebuilt from the tree at
+`RR-10G` and installed with `pip --no-deps` into a fresh venv (`venv-rr10`). **No patched
+executable**, again. The first pass's data root was reused rather than recreated, deliberately: the
+records it wrote are exactly the "records written before the fix" that `RR-10F` is about, and a fresh
+root would have had none.
+
+13. **Scenario 6, re-walked, both halves.** An orphan directory planted at the real run root —
+    `<data_root>/.agent-artifacts/setup-runs/85b7ad5de7a3745c-rr10live` — is found, named in full, and
+    the run exits `1`. Planted instead at the project root, the location the old probe scanned, it is
+    **not** found and the claim reports `true`, which is the assertion that stops the fix from having
+    passed by searching everywhere. `ls` and a `sha256` of the record either side confirm `verify`
+    removed and rewrote nothing. Scenario 6 **pass**.
+14. **`LAF-61` is visible on evidence nobody planted.** Verifying the `postgres-docker` record turned
+    up `.../setup-runs/f6e69b0878f988c7-killed` — a working copy left by the *first* pass, sitting
+    there unreported ever since, found now without anyone putting it there. That is the finding
+    behaving as a finding rather than as a demonstration.
+15. **`RR-10F`, live.** A credentialed clone URL was written into the `postgres-docker` record by
+    hand, in the form `2.5.0`'s weaker redactor would have let through. `verify` reports
+    `false: credential-shaped text in the persisted record`, tells the operator that deleting the
+    record is the only thing that removes it, and **does not print the value** — `grep` of the full
+    output for the planted token returns 0. The record still contains it afterwards, `grep` returns
+    1: reported, not repaired. The file was then restored to its original `sha256`
+    (`4a8951cdea09b0…`), and both hashes are recorded here because altering evidence and restoring it
+    is only honest if the alteration is written down.
+16. **The redactor, measured on the shipped wheel.** All four rules hold at the boundary the first
+    pass measured them failing at: `GITHUB_TOKEN=`, `AWS_SECRET_ACCESS_KEY=`, `MY_API_KEY=`, a
+    credential in a URL's userinfo, one in a query string, and one standing alone with no name beside
+    it. A `sha256:` digest and a plan hash are returned unchanged, which is the §4.4 limit holding.
+17. **A credentialed source URL never reaches the redactor at all.** `source add --location
+    https://oauth2:…@ghe.example.test/…` is refused with *source URL must be a safe credential-free
+    Git location*, before anything is stored. Worth recording as the belt to the redactor's braces:
+    the boundary that should never have to be redacted, isn't.
+18. **`LAF-73`**, found at step 15's neighbour: `receipt show` on the first pass's record still prints
+    the `rollback` sentence `RR-10E` replaced, while the same executable writes the correct command
+    today. Recorded, not fixed.
 
 ## What this run did not do
 

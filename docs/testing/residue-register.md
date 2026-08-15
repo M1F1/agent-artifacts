@@ -86,6 +86,7 @@ does not have to agree with the present; a current document does.
 | `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
 | `LAF-70` | medium | triaging for `2.6.0` | `open` | — the machine that authors registry content runs AART `2.0.0` while Registry A's CI gates it at `2.5.0`; the author's tool is older than its own gate |
 | `LAF-71` | medium | triaging for `2.6.0` | `open` | — every version-move is prepared and none lands: Registry B PR #5 and acceptance-repo PR #1 both open, both raised for `2.5.0` |
+| `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced
