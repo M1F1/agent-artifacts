@@ -15,7 +15,9 @@ BUILDKIT_TAIL = (
 
 
 def _transcript(filler: int) -> str:
-    return BUILDKIT_HEAD + ("#4 resolve docker.io/library/python:3.12-slim\n" * filler) + BUILDKIT_TAIL
+    return (
+        BUILDKIT_HEAD + ("#4 resolve docker.io/library/python:3.12-slim\n" * filler) + BUILDKIT_TAIL
+    )
 
 
 def test_a_short_transcript_is_untouched() -> None:
@@ -28,7 +30,7 @@ def test_the_failing_instruction_survives_a_long_transcript() -> None:
     detail = failure_detail(_transcript(40))
 
     assert "exit code: 3" in detail
-    assert 'did not complete successfully' in detail
+    assert "did not complete successfully" in detail
 
 
 def test_the_head_survives_too_and_the_middle_says_it_was_elided() -> None:

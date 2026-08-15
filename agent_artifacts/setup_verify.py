@@ -206,9 +206,7 @@ def _verify(claim: Claim, probes: VerificationProbes) -> ClaimResult:
         return result(TRUE, "tag resolves to the recorded image")
 
     if claim.kind == KEYCHAIN_HOLDS_VALUE:
-        held = probes.keychain_value_present(
-            claim.arguments["service"], claim.arguments["account"]
-        )
+        held = probes.keychain_value_present(claim.arguments["service"], claim.arguments["account"])
         if held is None:
             return result(UNKNOWN, "the Keychain could not be asked")
         if held:

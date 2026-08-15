@@ -3,6 +3,68 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.6.0 — 2026-08-15
+
+The persisted setup receipt gets a reader. `2.2.0` began writing a complete, redacted, plan-bound
+account of every setup run — plan hash, installer hash, timings, exit status, one receipt per step —
+and no shipped code path could look at it. `marketplace uninstall` reported `setup skipped` and left
+the image tag, the keychain item and the shell block, while every effect's review line promised
+`removes only changes created by this run`. Three actions now read that account, ask whether it is
+still true, and reverse it. Two rendering paths stop printing counts over payloads that already held
+the answer. Minor: no field, no schema, no protocol version, and no obligation for a registry
+maintainer in either direction — the v14 freeze carries protocol versions identical to v13 and differs
+in exactly one input, `agent_artifacts/setup.py`, where the difference is a single rename.
+
+Composed from [`residue-stream-2026-08-15.md`](docs/testing/residue-stream-2026-08-15.md), which
+gathered twenty-eight deferred items from `2.2.0`..`2.5.0` into six clusters. Three clusters are
+answered here; two are left alone on purpose.
+
+### Added
+
+- `aart marketplace receipt show <coordinate>` renders the persisted record for one installation
+  without a run in flight and without taking a lock, so it does not block or fail during an unrelated
+  install. Three absences get three sentences — never installed, installed with no setup run recorded,
+  and a pointer whose target is gone — because an operator holding a refusal needs to know which one
+  they are in.
+- `aart marketplace receipt verify <coordinate>` asks this machine whether each receipt's claim still
+  holds: does the tag resolve to the recorded image id, does the file still carry the block that was
+  installed, does the Keychain item exist **and hold a non-empty value**. Three statuses, not two — a
+  claim it could not put is `unknown` and never `true`. Non-zero exit on any false claim. It reports
+  and never repairs: an orphaned run directory is named and left.
+- `aart marketplace receipt undo <coordinate>` calls the existing `rollback_record` against the
+  persisted record instead of the in-process one, with its ownership checks and its
+  `receipt_matches_plan` binding unchanged. Review-first like every other mutation: without `--yes`
+  nothing changes, and `--expect <digest>` binds the decision. The review names every effect it will
+  reverse **and every effect it will not, with the reason**.
+- All three in both front-ends, from the Action menu, through one shared function — with a guard that
+  fails if either skin renders a receipt on its own.
+- `docs/testing/residue-register.md`: one place that says what is open, with a disposition per finding
+  and, where something closed, the reproduction that closed it. Four `docs-check` rules
+  (`DOC006`..`DOC009`) hold it and every current plan, design and compatibility document in agreement.
+
+### Fixed
+
+- A setup review is printed by a CLI path. It was composed in full and emitted under `--json` only, so
+  `--approve-setup-effects` approved a list the operator had never been shown.
+- A setup planning failure prints the detail, the artifact key and the manual route instead of
+  `planned=0, failures=1`. Counts still appear — after the content, never instead of it.
+- A failing build reports the instruction that failed and its exit code. `docker build` prints
+  progress first and the error last, so head-truncating the transcript kept exactly the half that could
+  not explain the failure. One helper, used at all three capture sites.
+- An unattended Keychain step that stores nothing is now detectable. `security add-generic-password -w`
+  with no terminal exits 0 having stored nothing and every check downstream agreed the item existed;
+  `verify` asks the Keychain and measures the length without reading the value.
+- A path with nothing to report says that it checked, so success is distinguishable from a dropped
+  flag.
+
+### Known defects shipped open
+
+- `LAF-58`: a tag that existed before a run keeps its name through an undo and points at what the run
+  built. The earlier binding was never recorded. Named in the undo review before consent.
+- `LAF-63`: credential redaction misses namespaced names — `GITHUB_TOKEN=…` is printed **and
+  persisted** in full — found while building this release.
+- The rest, with dispositions, in the residue register.
+
 ## 2.5.0 — 2026-08-14
 
 A setup recipe can build from the package it belongs to. An MCP server that has to be built on the

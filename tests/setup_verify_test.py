@@ -21,7 +21,9 @@ from agent_artifacts.setup_verify import (
     verify_claims,
 )
 
-BLOCK = "# >>> aart setup: mcp/x@claude >>>\nexport TOKEN_LOOKUP=1\n# <<< aart setup: mcp/x@claude <<<"
+BLOCK = (
+    "# >>> aart setup: mcp/x@claude >>>\nexport TOKEN_LOOKUP=1\n# <<< aart setup: mcp/x@claude <<<"
+)
 
 
 def _probes(**overrides) -> VerificationProbes:

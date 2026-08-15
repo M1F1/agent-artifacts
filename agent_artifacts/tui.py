@@ -2557,9 +2557,7 @@ def receipt_outcome(
     )
 
     data_root = _receipt_data_root(user_home)
-    project_root, home = resolved_paths(
-        data_root=data_root, project=project, user_home=user_home
-    )
+    project_root, home = resolved_paths(data_root=data_root, project=project, user_home=user_home)
     loaded = load_receipt(
         data_root=data_root,
         project_root=project_root,
@@ -4244,9 +4242,7 @@ def _run_user_curses_wizard(
             if menu[event.selected[0]] == RECEIPT_MENU_ACTION:
                 # As in the text flow: a receipt has no basket and no wizard Review, so it runs
                 # here and returns to this menu without entering the state machine.
-                _run_receipt_curses(
-                    curses, stdscr, session, project=project, user_home=user_home
-                )
+                _run_receipt_curses(curses, stdscr, session, project=project, user_home=user_home)
                 continue
             action = ACTIONS[event.selected[0]]
             session = wizard_select(session, "action", action)

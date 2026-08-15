@@ -92,7 +92,10 @@ def test_a_planned_effect_is_rendered_field_for_field() -> None:
 def test_the_review_call_site_suppresses_only_the_effects_it_renders_itself() -> None:
     # `planned_effects=False` exists so `render_setup_review` is not duplicated, never so the
     # text may carry less than the JSON — a failure in the same payload still prints.
-    both = {"planned": PLANNED["planned"], "planning_failures": PLANNING_FAILURE["planning_failures"]}
+    both = {
+        "planned": PLANNED["planned"],
+        "planning_failures": PLANNING_FAILURE["planning_failures"],
+    }
 
     text = _joined(both, planned_effects=False)
 
