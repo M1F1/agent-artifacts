@@ -78,7 +78,7 @@ does not have to agree with the present; a current document does.
 | `RS-06` | low | `2.3.0` prose | `open` | — |
 | `RS-07` | medium | `2.2.0` prose | `open` | — |
 | `RS-08` | medium | `2.2.0` prose | `open` | — |
-| `RS-09` | medium | `2.2.0` prose | `open` | — half done. Every `Err` the registry family returns now carries a next step, from a shared vocabulary in `registry_commands/planning.py` and `commands/registry.py`, and `_emit_report` prints remediation in text as the JSON envelope always did. `tests/source_remediation_test.py::RegistryRefusalRemediationTest` reads the shipped modules, so a refusal added later without one fails. **Still open:** the 34 report findings `validate` and `audit` collect through `_diagnostic` carry nothing yet |
+| `RS-09` | medium | `2.2.0` prose | `closed` | every registry refusal and every `validate`/`audit` report finding carries a next step, from a shared vocabulary in `registry_commands/planning.py` and `commands/registry.py`; `_emit_report` prints remediation in text as the JSON envelope always did. `tests/source_remediation_test.py::RegistryRefusalRemediationTest` reads the syntax of both shipped modules, so a refusal or finding added later without one fails, and it drives `registry audit` and `registry test` through the CLI. Reproduction: `aart registry validate --strict` on a registry whose lock is missing prints two errors, each with the command that fixes it |
 | `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below |
 | `RS-11` | low | `2.5.0` prose | `open` | — |
 | `RS-12` | medium | `2.5.0` prose | `open` | — |

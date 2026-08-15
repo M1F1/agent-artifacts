@@ -63,6 +63,8 @@ _BARE = re.compile(r"\baart\s+([a-z][a-z0-9-]*)(?![\w:/-])[^,;`\n]*")
 _REMOVED = re.compile(r"^\| `aart ([a-z][a-z0-9-]*)[^|]*\|", re.MULTILINE)
 _PACKAGE = Path(cli.__file__).resolve().parent
 _RELEASE_DOCS = _PACKAGE.parent / "docs" / "release"
+_REGISTRY_FIXTURE = Path(__file__).parent / "fixtures" / "protocol" / "registry-v1"
+_FINDING_LINE = re.compile(r"^\s+(error|warning): ")
 _PLACEHOLDER = "PLACEHOLDER"
 
 
@@ -406,13 +408,14 @@ class RegistryRefusalRemediationTest(unittest.TestCase):
     be true on the day it was written; this reads the shipped modules instead, so the refusal added
     next month is covered by the same guard.
 
-    Scope today is the `_error` helper — every `Err` the registry family returns. The report
-    findings that `validate` and `audit` collect through `_diagnostic` are the other half of
-    `RS-09`; they are not guarded here yet, and the register row says so.
+    Both halves are covered: `_error`, which is every `Err` the family returns, and `_diagnostic`,
+    which is every finding `validate` and `audit` collect into a report. A report is where those
+    two commands state a problem, so a finding with no next step is the same dead end as a refusal
+    with none.
     """
 
     def refusals_without_remediation(self) -> tuple[str, ...]:
-        """Every registry refusal built without a next step, as `module:line`."""
+        """Every registry refusal or finding built without a next step, as `module:line`."""
 
         found: list[str] = []
         for path in (
@@ -423,7 +426,7 @@ class RegistryRefusalRemediationTest(unittest.TestCase):
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
                     continue
-                if node.func.id != "_error":
+                if node.func.id not in ("_error", "_diagnostic"):
                     continue
                 if len(node.args) < 2 and not any(
                     keyword.arg == "remediation" for keyword in node.keywords
@@ -447,6 +450,31 @@ class RegistryRefusalRemediationTest(unittest.TestCase):
         ]
 
         self.assertEqual(len(calls[0].args), 1)
+
+    def test_rs09_an_audit_finding_prints_a_next_step_too(self) -> None:
+        """The other half: `audit` states its problems in a report, not in a refusal."""
+
+        with _environment() as env:
+            workspace = env.root / "registry-under-audit"
+            shutil.copytree(_REGISTRY_FIXTURE, workspace)
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env.xdg, clear=False),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                cli.main(["registry", "audit", "--source", str(workspace)])
+
+            printed = stdout.getvalue()
+            findings = [
+                line for line in printed.splitlines() if _FINDING_LINE.match(line) is not None
+            ]
+            self.assertTrue(findings, printed)
+            self.assertEqual(
+                len(findings),
+                len(_remediation_in_text(printed)),
+                f"every finding needs its own next step:\n{printed}",
+            )
 
     def test_rs09_a_refused_registry_command_prints_a_next_step(self) -> None:
         """Driven through the shipped CLI, because the renderer is where `LAF-52` went wrong."""

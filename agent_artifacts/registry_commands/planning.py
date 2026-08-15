@@ -179,6 +179,56 @@ _ENTRY_FILES = (
 )
 
 
+_UPSTREAM_UNREACHABLE = (
+    "the origin could not be read, so this is unknown rather than behind: restore access to it and "
+    "run `aart registry audit --check-upstream` again",
+)
+_COVERAGE_LIMIT = (
+    "nothing to correct: this records what the audit could not cover, because a registry with no "
+    "external references has no external provenance to check",
+)
+_PROVENANCE = (
+    "a package authored in this registry has no provenance and this stays a warning; a copy taken "
+    "from upstream gets its record from the vendoring that took it",
+)
+_DECLARE_LICENSE = (
+    "record the license in the package's `artifact.json`; for a copy, `--license` on the vendoring "
+    "states what this registry publishes",
+)
+_SECURITY_EVIDENCE = (
+    "supply the per-object evidence under `security/index.json`, or accept that the audit reports "
+    "installation risk as unassessed",
+)
+_SECURITY_REBUILD = (
+    "the evidence describes a different compiled registry: rebuild the index with "
+    "`aart registry build --yes`, regenerate the evidence for it, then `aart registry audit`",
+)
+_SECURITY_RISK = (
+    "read the attestation for that object and either correct the package or stop publishing it; "
+    "the audit reports the risk rather than deciding it for you",
+)
+
+
+def _revendor(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The next step for a copy that has moved, naming the copy it is about."""
+
+    return (
+        "take the copy again with "
+        f"`aart registry revendor {identity.kind} {identity.name} --artifact-version VERSION "
+        "--yes`, which replaces the bytes this registry ships",
+    )
+
+
+def _delivery(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The next step for a copy whose shipped shape is wrong, naming the copy it is about."""
+
+    return (
+        f"correct the package this registry ships for {identity}, or take the copy again with "
+        f"`aart registry revendor {identity.kind} {identity.name} --artifact-version VERSION "
+        "--yes`",
+    )
+
+
 def _not_vendored(identity: ArtifactIdentity) -> tuple[str, ...]:
     """The one next step that names the package it is about, so it can be run as written."""
 
@@ -195,11 +245,19 @@ def _error(message: str, remediation: tuple[str, ...]) -> Err:
     )
 
 
-def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
+def _diagnostic(message: str, remediation: tuple[str, ...], *, warning: bool = False) -> Diagnostic:
+    """One line of a `validate` or `audit` report, with what to do about it.
+
+    `RS-09`: a report is where these two commands state a problem, so a finding that names no next
+    step is the same dead end as a refusal that names none. A warning gets one too — most of them
+    describe a limit rather than a defect, and saying which is exactly what the operator needs.
+    """
+
     return Diagnostic(
         REGISTRY_AUDIT_WARNING if warning else REGISTRY_COMMAND_INVALID,
         Severity.WARNING if warning else Severity.ERROR,
         message,
+        remediation=remediation,
     )
 
 
@@ -1249,11 +1307,11 @@ def validate_registry_workspace(
     valid_lock_file = lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE
     valid_index_file = index_file is not None and index_file.kind is SnapshotEntryKind.FILE
     if lock_file is not None and not valid_lock_file:
-        diagnostics.append(_diagnostic("aart.lock.json must be a regular file"))
+        diagnostics.append(_diagnostic("aart.lock.json must be a regular file", _RELOCK))
     if index_file is not None and not valid_index_file:
-        diagnostics.append(_diagnostic("aart.index.json must be a regular file"))
+        diagnostics.append(_diagnostic("aart.index.json must be a regular file", _RELOCK))
     if require_compiled and (not valid_lock_file or not valid_index_file):
-        diagnostics.append(_diagnostic("compiled registry requires lock and index"))
+        diagnostics.append(_diagnostic("compiled registry requires lock and index", _RELOCK))
     parsed_lock = None
     if lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE:
         lock = parse_registry_lock(lock_file.content)
@@ -1282,9 +1340,13 @@ def validate_registry_workspace(
                 or index.value.registry_inputs_digest != inputs.value
                 or index.value.services != registry.services
             ):
-                diagnostics.append(_diagnostic("compiled index does not match registry inputs"))
+                diagnostics.append(
+                    _diagnostic("compiled index does not match registry inputs", _RELOCK)
+                )
     if parsed_index is not None and parsed_lock is None:
-        diagnostics.append(_diagnostic("compiled index requires a valid committed lock"))
+        diagnostics.append(
+            _diagnostic("compiled index requires a valid committed lock", _LOCK_FIRST)
+        )
     if parsed_index is not None and parsed_lock is not None and isinstance(native, Ok):
         indexed_by_identity = {item.identity: item for item in parsed_index.artifacts}
         locked_by_identity = dict(parsed_lock.entries)
@@ -1307,19 +1369,23 @@ def validate_registry_workspace(
                 )
             ):
                 diagnostics.append(
-                    _diagnostic(f"compiled index disagrees with lock for {identity}")
+                    _diagnostic(f"compiled index disagrees with lock for {identity}", _RELOCK)
                 )
         owned_by_identity = {item.identity: item for item in native.value[0]}
         for identity, owned in sorted(owned_by_identity.items(), key=lambda item: str(item[0])):
             indexed = indexed_by_identity.get(identity)
             if indexed is None or replace(indexed, collections=()) != owned:
                 diagnostics.append(
-                    _diagnostic(f"compiled index disagrees with owned package {identity}")
+                    _diagnostic(f"compiled index disagrees with owned package {identity}", _RELOCK)
                 )
         if set(indexed_by_identity) != set(locked_by_identity) | set(owned_by_identity):
-            diagnostics.append(_diagnostic("compiled index artifact identities are incomplete"))
+            diagnostics.append(
+                _diagnostic("compiled index artifact identities are incomplete", _RELOCK)
+            )
         if parsed_index.collections != native.value[1]:
-            diagnostics.append(_diagnostic("compiled index collections differ from source"))
+            diagnostics.append(
+                _diagnostic("compiled index collections differ from source", _RELOCK)
+            )
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
 
 
@@ -1346,7 +1412,11 @@ def vendored_copy_diagnostics(
         return integrity.diagnostics
     if integrity.value.matches:
         return ()
-    return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
+    return (
+        _diagnostic(
+            copy_integrity_message(vendored.manifest.identity, integrity.value), _COPY_INTEGRITY
+        ),
+    )
 
 
 def vendored_delivery_diagnostics(
@@ -1373,9 +1443,11 @@ def vendored_delivery_diagnostics(
     identity = vendored.manifest.identity
     diagnostics: list[Diagnostic] = []
     if finding.referenced:
-        diagnostics.append(_diagnostic(delivery_reference_message(identity, finding)))
+        diagnostics.append(
+            _diagnostic(delivery_reference_message(identity, finding), _delivery(identity))
+        )
     if finding.starts_nothing:
-        diagnostics.append(_diagnostic(mcp_descriptor_message(identity)))
+        diagnostics.append(_diagnostic(mcp_descriptor_message(identity), _delivery(identity)))
     return tuple(diagnostics)
 
 
@@ -1477,6 +1549,7 @@ def _vendored_upstream_findings(
             _diagnostic(
                 f"vendored artifact upstream could not be read, so drift is unknown: {identity} "
                 f"({vendored.url} at {vendored.ref})",
+                _UPSTREAM_UNREACHABLE,
                 warning=True,
             ),
         )
@@ -1486,6 +1559,7 @@ def _vendored_upstream_findings(
             _diagnostic(
                 f"vendored artifact is behind upstream: {identity} was taken from "
                 f"{vendored.path}, which {vendored.ref} no longer provides",
+                _revendor(identity),
                 warning=True,
             ),
         )
@@ -1496,6 +1570,7 @@ def _vendored_upstream_findings(
             f"vendored artifact is behind upstream: {identity} copies {vendored.path} at "
             f"{vendored.recorded_commit[:12]}, and {vendored.ref} now resolves to "
             f"{acquired.value.resolved_commit[:12]}",
+            _revendor(identity),
             warning=True,
         ),
     )
@@ -1536,15 +1611,22 @@ def audit_registry_workspace(
         diagnostics.append(
             _diagnostic(
                 "registry contains no external references; provenance coverage is partial",
+                _COVERAGE_LIMIT,
                 warning=True,
             )
         )
     for entry in entries:
         if entry.review.status != "approved":
-            diagnostics.append(_diagnostic(f"external reference is not approved: {entry.identity}"))
+            diagnostics.append(
+                _diagnostic(
+                    f"external reference is not approved: {entry.identity}", _APPROVE_ENTRIES
+                )
+            )
     lock_file = files.value.get("aart.lock.json")
     if entries and (lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE):
-        diagnostics.append(_diagnostic("external reference audit requires a valid committed lock"))
+        diagnostics.append(
+            _diagnostic("external reference audit requires a valid committed lock", _LOCK_FIRST)
+        )
     if lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE:
         lock = parse_registry_lock(lock_file.content)
         if isinstance(lock, Err):
@@ -1554,13 +1636,16 @@ def audit_registry_workspace(
                 entry.identity for entry in entries
             }:
                 diagnostics.append(
-                    _diagnostic("committed lock identities differ from authored references")
+                    _diagnostic(
+                        "committed lock identities differ from authored references", _RELOCK
+                    )
                 )
             for identity, locked in lock.value.entries:
                 if locked.provenance_digest is None:
                     diagnostics.append(
                         _diagnostic(
                             f"external reference has no provenance document: {identity}",
+                            _PROVENANCE,
                             warning=True,
                         )
                     )
@@ -1584,11 +1669,14 @@ def audit_registry_workspace(
             diagnostics.append(
                 _diagnostic(
                     f"owned package has no provenance document: {manifest.value.identity}",
+                    _PROVENANCE,
                     warning=True,
                 )
             )
         elif provenance.kind is not SnapshotEntryKind.FILE:
-            diagnostics.append(_diagnostic(f"provenance is not a file: {provenance_path}"))
+            diagnostics.append(
+                _diagnostic(f"provenance is not a file: {provenance_path}", _CLEAR_PATH)
+            )
         else:
             parsed_provenance = parse_provenance(provenance.content, path=provenance_path)
             if isinstance(parsed_provenance, Err):
@@ -1615,6 +1703,7 @@ def audit_registry_workspace(
                     f"{manifest.value.identity}"
                     if vendored is not None
                     else f"owned package has no declared license: {manifest.value.identity}",
+                    _DECLARE_LICENSE,
                     warning=True,
                 )
             )
@@ -1626,17 +1715,22 @@ def audit_registry_workspace(
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)
             if recipe_file is None or recipe_file.kind is not SnapshotEntryKind.FILE:
-                diagnostics.append(_diagnostic(f"declared setup recipe is missing: {recipe}"))
+                diagnostics.append(
+                    _diagnostic(f"declared setup recipe is missing: {recipe}", _SETUP_RECIPE)
+                )
     security_file = files.value.get("security/index.json")
     if security_file is None:
         diagnostics.append(
             _diagnostic(
                 "no per-object installation-risk evidence was supplied to registry audit",
+                _SECURITY_EVIDENCE,
                 warning=True,
             )
         )
     elif security_file.kind is not SnapshotEntryKind.FILE:
-        diagnostics.append(_diagnostic("registry security index is not a regular file"))
+        diagnostics.append(
+            _diagnostic("registry security index is not a regular file", _CLEAR_PATH)
+        )
     else:
         security_index = parse_security_index(security_file.content)
         if isinstance(security_index, Err):
@@ -1649,7 +1743,8 @@ def audit_registry_workspace(
                 if document is None or document.kind is not SnapshotEntryKind.FILE:
                     diagnostics.append(
                         _diagnostic(
-                            f"registry security index document is missing: {security_entry.path}"
+                            f"registry security index document is missing: {security_entry.path}",
+                            _SECURITY_EVIDENCE,
                         )
                     )
                     missing_document = True
@@ -1669,7 +1764,9 @@ def audit_registry_workspace(
                     )
                     if compiled is None or isinstance(compiled, Err):
                         diagnostics.append(
-                            _diagnostic("registry security index requires a valid compiled index")
+                            _diagnostic(
+                                "registry security index requires a valid compiled index", _RELOCK
+                            )
                         )
                     elif (
                         security_index.value.registry_id != registry.registry_id
@@ -1679,7 +1776,8 @@ def audit_registry_workspace(
                     ):
                         diagnostics.append(
                             _diagnostic(
-                                "registry security index identity differs from the compiled registry"
+                                "registry security index identity differs from the compiled registry",
+                                _SECURITY_REBUILD,
                             )
                         )
                     else:
@@ -1692,13 +1790,15 @@ def audit_registry_workspace(
                         if missing_objects:
                             diagnostics.append(
                                 _diagnostic(
-                                    "registry security index lacks evidence for one or more compiled objects"
+                                    "registry security index lacks evidence for one or more compiled objects",
+                                    _SECURITY_REBUILD,
                                 )
                             )
                         if extra_objects:
                             diagnostics.append(
                                 _diagnostic(
-                                    "registry security index contains evidence for unknown objects"
+                                    "registry security index contains evidence for unknown objects",
+                                    _SECURITY_REBUILD,
                                 )
                             )
                         for attestation in verified.value.attestations:
@@ -1707,7 +1807,8 @@ def audit_registry_workspace(
                                 diagnostics.append(
                                     _diagnostic(
                                         "registry security evidence reports critical installation risk "
-                                        f"for {attestation.cache_key.object_digest}"
+                                        f"for {attestation.cache_key.object_digest}",
+                                        _SECURITY_RISK,
                                     )
                                 )
                             elif risk in {InstallationRisk.HIGH, InstallationRisk.UNKNOWN}:
@@ -1715,6 +1816,7 @@ def audit_registry_workspace(
                                     _diagnostic(
                                         "registry security evidence requires review because installation "
                                         f"risk is {risk.value} for {attestation.cache_key.object_digest}",
+                                        _SECURITY_RISK,
                                         warning=True,
                                     )
                                 )

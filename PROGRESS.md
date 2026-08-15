@@ -13,9 +13,8 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the overnight residue run continues with the second half of `RS-09` — the
-  `validate` and `audit` report findings — then `RS-07` and `LAF-45`. See *Overnight run
-  2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
+- **Next task:** the overnight residue run continues with `RS-07`, then `LAF-45`. See *Overnight
+  run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
   the human-gated passes — the curses front-end and the MCP credential run — wait for the maintainer
 - **Last updated:** 2026-08-16
 
@@ -391,7 +390,7 @@ each of them, so expect conflicts in those two files and take both sides.
 | 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
 | 5 | `LAF-73` — an old record still says there is no undo | `fix/receipt-verify-stale-rollback-laf73` | done, walked live (v6) |
 | 6 | `RS-11`/`RS-13`/`RS-14`/`RS-15` — the recipe format is closed | `docs/recipe-format-options` | options note written, nothing implemented; all four stay `open` |
-| 7 | `RS-09` — a refused `registry` command said nothing about what to do next | `fix/registry-refusals-carry-remediation-rs09` | refusals done and guarded; the `validate`/`audit` report findings are the remaining half, so `RS-09` stays `open` |
+| 7 | `RS-09` — a refused `registry` command said nothing about what to do next | `fix/registry-refusals-carry-remediation-rs09` | done in two commits on one branch: refusals, then the `validate`/`audit` report findings. `RS-09` closes |
 
 **New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
 `LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5). Every one has
@@ -2144,3 +2143,27 @@ package, split: the refusals, with the report findings left for the next one.
   than claiming a closure the operator would not see.
 - **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
   and every claim here is driven through the shipped CLI parser and the shipped renderers.
+
+### 2026-08-16 — overnight residue run, `RS-09` (second half, `RS-09` closes)
+
+Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
+halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
+not pushed.
+
+- **A report is where `validate` and `audit` state a problem.** The first half gave every `Err` a
+  next step. These two commands do not refuse — they hand back a report, and its 33 findings named
+  no next step at all. The dead end was the same one, in the commands a maintainer runs most.
+- **The guard widened to `_diagnostic` and went red on 33 sites.** Same shape as before: it reads
+  the syntax of the shipped module rather than a list, so the finding added next month is covered.
+- **Warnings get a next step too, and some of them say *nothing to correct*.** A warning like
+  *registry contains no external references* describes the limit of what the audit could check, not
+  a defect. Saying which of the two it is, in the line itself, is the whole value: an operator
+  otherwise cannot tell a gap in the registry from a gap in the audit.
+- **The second CLI walk covers the report path.** `registry audit` on the `registry-v1` fixture
+  prints three warnings and now three remediation lines, one per finding, and the test asserts the
+  counts match rather than that *some* remediation appeared. Reproduction for the error path:
+  `aart registry validate --strict` on a registry whose `aart.lock.json` is missing prints
+  *compiled index requires a valid committed lock* with the lock-then-build sequence, and
+  *compiled registry requires lock and index* with the rebuild.
+- **`RS-09` closes.** Both renderers, both surfaces, guarded in the shipped modules.
+- **No new findings.**
