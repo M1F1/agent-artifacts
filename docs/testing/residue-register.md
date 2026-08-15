@@ -86,6 +86,7 @@ does not have to agree with the present; a current document does.
 | `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
 | `LAF-70` | medium | triaging for `2.6.0` | `open` | — the machine that authors registry content runs AART `2.0.0` while Registry A's CI gates it at `2.5.0`; the author's tool is older than its own gate |
 | `LAF-71` | medium | triaging for `2.6.0` | `open` | — every version-move is prepared and none lands: Registry B PR #5 and acceptance-repo PR #1 both open, both raised for `2.5.0` |
+| `LAF-72` | high | measuring `LAF-63` | `open` | — two `redact_text` implementations exist and `dump_setup_state` uses the weaker one, so a credentialed clone URL is hidden in a diagnostic and written in full to disk |
 
 ## Corrections this register forced
 

@@ -30,6 +30,7 @@ from .model import (
     SetupStateRecord,
     SetupStep,
 )
+from .redaction import redact_text
 from .tui_layout import CONTENT_MEASURE, field_block, wrap
 
 _TOP_FIELDS = {
@@ -128,9 +129,9 @@ _PLANNED_CAPABILITIES: Mapping[str, Tuple[str, ...]] = {
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _ARTIFACT_KEY = re.compile(r"^(skill|hook|mcp)/[A-Za-z0-9][A-Za-z0-9._-]*$")
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\b(token|password|passwd|secret|api[_-]?key|api[_-]?token)\s*[:=]\s*[^\s,;]+"
-)
+# The redactor is `redaction.redact_text`, imported above.  This module used to carry a second,
+# weaker one, and `dump_setup_state` — the function that writes to disk — used that one, so a
+# credentialed clone URL was hidden in a diagnostic and persisted in full (`LAF-72`).
 _CANONICAL_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SETUP_STATE_REF = re.compile(r"^[a-z0-9][a-z0-9._-]{0,255}$")
 _TRUST_CLASSES = {
@@ -1010,10 +1011,24 @@ class SetupReview:
 _PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
 
 
-def public_text(value: str) -> str:
-    """Redact the credential-shaped fragments that author-controlled review text may contain."""
+_REDACTED_ASSIGNMENT = re.compile(r"[A-Za-z0-9_.-]*\s*[:=]\s*\[redacted\]")
 
-    return _SENSITIVE_ASSIGNMENT.sub("[redacted]", value.replace("\r", " ").replace("\n", " "))
+
+def public_text(value: str) -> str:
+    """Redact the credential-shaped fragments that author-controlled review text may contain.
+
+    Stricter than `redact_text` by one step: the name goes too.  Everywhere else `TOKEN=[redacted]`
+    is the better rendering, because it tells the operator what kind of thing was hidden.  Review
+    text is the exception — the string is chosen by the *author* of a recipe the operator has not
+    yet consented to, so it is shown with the least of it that still reads as text.
+
+    `redact_text` decides what counts as a credential; this decides how much of it to show.  There
+    is still only one answer to the first question, which is the point of `RR-10A`.
+    """
+
+    return _REDACTED_ASSIGNMENT.sub(
+        "[redacted]", redact_text(value.replace("\r", " ").replace("\n", " "))
+    )
 
 
 def _contained_manual_path(item: SetupQueueItem, relative_path: str) -> str:
@@ -1348,10 +1363,6 @@ def mark_unstarted_skipped(
 
 def setup_state_path(scope_root: str) -> str:
     return os.path.join(scope_root, ".agent-artifacts", "setup-state.json")
-
-
-def redact_text(value: str) -> str:
-    return _SENSITIVE_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=[redacted]", value)
 
 
 def _redact(value: object) -> object:

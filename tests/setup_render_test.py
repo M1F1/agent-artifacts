@@ -148,15 +148,37 @@ def test_a_credential_shaped_detail_is_redacted_before_it_is_printed() -> None:
     assert "[redacted]" in text
 
 
-def test_laf63_a_prefixed_credential_name_is_not_redacted_today() -> None:
-    # NOT intended behaviour. `_SENSITIVE_ASSIGNMENT` (setup.py:131) anchors on `\b`, so the
-    # namespaced names that real recipes use — GITHUB_TOKEN, AWS_SECRET_ACCESS_KEY — never match.
-    # The same pattern redacts the persisted receipt (`_redact`, setup.py:1400), so this is a
-    # credential reaching disk, not only a terminal. Recorded as `LAF-63`; fixing it is its own
-    # package, and this test is here so the gap is visible rather than assumed closed.
-    text = _joined(_failure_payload("failed: GITHUB_TOKEN=ghp_realsecretvalue rejected"))
+def test_laf63_a_prefixed_credential_name_is_redacted() -> None:
+    # `LAF-63`, closed by `RR-10A`. The pattern used to anchor on `\b`, so a vendor-prefixed name
+    # never matched: a bare `TOKEN=` redacted and every prefixed form did not, which are the forms
+    # real recipes use. The same pattern redacts the persisted record, so this was a credential
+    # reaching disk, not only a terminal.
+    #
+    # This test was written asserting the opposite, to hold the gap visible while it was open. It
+    # is the same case, measured the same way, with the expectation flipped.
+    text = _joined(_failure_payload("failed: SOMEVENDOR_TOKEN=ghp_realsecretvalue rejected"))
 
-    assert "ghp_realsecretvalue" in text, "LAF-63 was fixed — update this test and the register"
+    assert "ghp_realsecretvalue" not in text
+    assert "[redacted]" in text
+
+
+def test_a_bare_credential_with_no_name_beside_it_is_redacted() -> None:
+    # Rule 4. Rules 1-3 all need the credential next to its name; a transcript that prints the
+    # value alone defeats all three, which is the case a wider assignment pattern cannot reach.
+    text = _joined(_failure_payload("fatal: authentication failed for ghp_barevaluenotnamed01"))
+
+    assert "ghp_barevaluenotnamed01" not in text
+
+
+def test_a_digest_is_not_mistaken_for_a_credential() -> None:
+    # The limit `DESIGN-token-containment.md` §4.4 accepts: detection is by shape, never by
+    # entropy, because an entropy matcher would redact the digests and plan hashes a receipt
+    # exists to carry.
+    digest = "sha256:" + "a" * 64
+
+    text = _joined(_failure_payload(f"image {digest} was rejected"))
+
+    assert digest in text
 
 
 def test_a_multiline_detail_cannot_break_the_line_protocol() -> None:
