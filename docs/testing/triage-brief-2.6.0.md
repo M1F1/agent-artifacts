@@ -328,6 +328,13 @@ This is the table behind `LAF-70`, `LAF-71` and `LAF-68`.
 | Registry B | `v2.0.0` | open **PR #5** |
 | Acceptance project | `2.0.0` | open **PR #1** |
 
+**What happened afterwards.** All four moved, and past `2.5.0` rather than to it: your machine runs
+`2.6.0` from the published release asset, and Registry B, the acceptance project and Registry A's own
+three workflows all pin `v2.6.0` and are merged. `LAF-70`, `LAF-71` and `LAF-68` are closed in the
+register. The rows above are left as they were written, because a brief is a snapshot of what was
+true when a decision was being made, and a brief edited until it agrees with the outcome cannot be
+used to judge the decision.
+
 Two upgrades were written and neither was merged. The one machine that authors content for all of
 them is the oldest thing in the table. **Nothing here has ever run 2.6.0.**
 
