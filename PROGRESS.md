@@ -14,7 +14,10 @@
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
 - **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
+  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`). An unattended pass
+  over the register is running against the queue in the
+  [overnight run](#2026-08-15--16--overnight-residue-run) at the bottom of this file; everything it
+  produces sits on local branches, unpushed, for review
 - **Last updated:** 2026-08-15
 
 ## Readable receipt (`2.6.0`, released)
@@ -2026,3 +2029,52 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-15 → 16 — overnight residue run
+
+An unattended pass over the register, one work package per iteration, nothing pushed. Every entry
+below is on a local branch. **New findings are recorded, not fixed** — that rule is what makes the
+list at the end trustworthy.
+
+| Item | Branch | State |
+|---|---|---|
+| `RS-12` | `fix/setup-docker-credentials-rs12` | code and unit evidence committed; live walk `LA-M-08`/`LA-M-09` queued as the next iteration |
+
+**New findings this run:** `LAF-76`, `LAF-77` — both from implementing `RS-12`, both `open`.
+
+**Human-gated and left alone:** `LA-M-10` (a private pull that authenticates needs real
+credentials), `LA-M-11` (needs a second docker context), the curses passes.
+
+#### `RS-12` — a docker step now knows who the user is
+
+`_minimal_env` gave every setup process `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TERM`. Docker in
+that environment finds no `config.json`, so it has no credential store and no context, and every
+pull is anonymous. Public images still arrive, which is why this survived four live runs; a private
+base image cannot, and the run said only `docker pull failed`.
+
+- **The widening is one function and two names.** `_docker_env` adds `HOME` and `DOCKER_CONFIG`
+  — the latter derived as `$HOME/.docker` when not set explicitly — and only the docker adapters
+  use it. `curl`, `security` and a recipe's verification command keep the environment they had:
+  `HOME` buys them nothing and hands them the user's dotfiles, and `~/.curlrc` alone can change
+  what a fetch does.
+- **The rollback had to move with it.** `docker image rm` ran under `_minimal_env` while the build
+  now runs under `_docker_env`. `DOCKER_CONFIG` carries the *context*, not just the login, so an
+  unequal environment is potentially a different daemon — rollback would have asked a machine that
+  never held the tag. `test_rs12_removing_a_built_tag_asks_the_daemon_that_built_it` fails if the
+  two ever separate again.
+- **The failure says what docker said.** `raise RuntimeError("docker pull failed")` discarded a
+  captured transcript whose first line is the whole answer. It now goes through `failure_detail`,
+  the same redact-then-truncate path the build failure has used since `LAF-59`.
+- **What the unit evidence does not prove.** That a pull *authenticates* against a real private
+  registry. That is `LA-M-10` and it stays human-gated: the agent supplies no credentials.
+
+#### `LAF-76` and `LAF-77` — found here, recorded, not touched
+
+- `LAF-76`: a `custom.install@1` script still runs with `_minimal_env`, so a hand-written
+  entrypoint that pulls a private image fails exactly as `RS-12` described. Handing every
+  recipe-supplied script the user's `HOME` is a bigger decision than this package, and it belongs
+  to whoever makes it deliberately.
+- `LAF-77`: `setup_verify_probes._probe_env` states in its own docstring that it is the environment
+  `_minimal_env` gives a run. It never was — it carries `HOME` — and after this package it also
+  lacks `DOCKER_CONFIG`, so `verify` can ask a different daemon than the run used. That is
+  `LAF-66`'s shape again: a probe answering about another machine, in the reassuring direction.

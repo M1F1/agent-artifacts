@@ -162,6 +162,30 @@ def _minimal_env(runtime: SetupRuntime) -> dict[str, str]:
     return env
 
 
+def _docker_env(runtime: SetupRuntime) -> dict[str, str]:
+    """`_minimal_env`, plus the two names the docker CLI needs to know who the user is.
+
+    `RS-12`: without `HOME` and without `DOCKER_CONFIG` the CLI finds no `config.json`, so it has
+    no credential store and no context, and every pull is anonymous.  Public images still arrive,
+    which is why this survived several runs; a private base image cannot.
+
+    Widened here and not in `_minimal_env` because only docker needs it.  `curl`, `security` and a
+    recipe's own verification command gain nothing from `HOME` and would gain the user's dotfiles
+    with it — `~/.curlrc` alone can change what a fetch does.
+    """
+
+    env = _minimal_env(runtime)
+    home = runtime.environ.get("HOME", "")
+    config = runtime.environ.get("DOCKER_CONFIG", "") or (
+        os.path.join(home, ".docker") if home else ""
+    )
+    if home:
+        env["HOME"] = home
+    if config:
+        env["DOCKER_CONFIG"] = config
+    return env
+
+
 def _write_preserving_mode(path: str, content: str, previous_mode: Optional[int]) -> None:
     fs.write_atomic(path, content.encode("utf-8"))
     os.chmod(path, previous_mode if previous_mode is not None else 0o600)
@@ -393,7 +417,7 @@ def _directory_apply(effect: SetupEffect) -> tuple[dict, bool]:
 
 
 def _docker_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, bool]:
-    env = _minimal_env(runtime)
+    env = _docker_env(runtime)
     inspect = runtime.process(
         ("docker", "image", "inspect", effect.target),
         env=env,
@@ -405,7 +429,7 @@ def _docker_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, boo
         return {"module": effect.module, "image": effect.target, "preexisting": True}, False
     pulled = runtime.process(effect.argv, env=env, cwd=None, timeout=300, capture=True)
     if pulled.returncode != 0:
-        raise RuntimeError("docker pull failed")
+        raise RuntimeError(failure_detail(pulled.stderr or pulled.stdout or "docker pull failed"))
     return {
         "module": effect.module,
         "image": effect.target,
@@ -447,7 +471,7 @@ def _docker_build_apply(
     """Build one local image from a working copy of the package, and own only what it created."""
 
     tag = effect.target
-    env = _minimal_env(runtime)
+    env = _docker_env(runtime)
     inspect = runtime.process(
         ("docker", "image", "inspect", tag),
         env=env,
@@ -1149,7 +1173,9 @@ def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> b
             return True
         result = runtime.process(
             ("docker", "image", "rm", str(receipt["tag"])),
-            env=_minimal_env(runtime),
+            # The same environment the build ran in, or rollback asks a different daemon than the
+            # one that holds the tag: `DOCKER_CONFIG` carries the context, not just the login.
+            env=_docker_env(runtime),
             cwd=None,
             timeout=120,
             capture=True,

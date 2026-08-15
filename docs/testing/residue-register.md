@@ -81,7 +81,7 @@ does not have to agree with the present; a current document does.
 | `RS-09` | medium | `2.2.0` prose | `open` | — the three receipt refusals all carry remediation, which is the rule rather than the fix; `registry`'s own refusals are untouched |
 | `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below |
 | `RS-11` | low | `2.5.0` prose | `open` | — |
-| `RS-12` | medium | `2.5.0` prose | `open` | — |
+| `RS-12` | medium | `2.5.0` prose | `closed` | `_docker_env` gives both docker adapters — and the `docker.build@1` rollback — `HOME` and `DOCKER_CONFIG`, derived from `HOME` when not set explicitly; `tests/setup_docker_credentials_test.py` drives the real adapters through `apply_setup_plan` and asserts the pull's environment, that the keychain step gains neither name, and that a failed pull now reports docker's own words. A pull that authenticates against a real private registry stays human-gated (`LA-M-10`) |
 | `RS-13` | low | `2.5.0` prose | `open` | — |
 | `RS-14` | low | `2.5.0` prose | `open` | — |
 | `RS-15` | low | `2.5.0` prose | `open` | — |
@@ -95,6 +95,8 @@ does not have to agree with the present; a current document does.
 | `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
+| `LAF-76` | medium | implementing `RS-12` | `open` | — a `custom.install@1` script runs with `_minimal_env`, so a hand-written entrypoint that pulls a private image fails exactly as `RS-12` described. The docker adapters were widened and the custom route was not, because handing every recipe-supplied script the user's `HOME` is a decision of its own |
+| `LAF-77` | medium | implementing `RS-12` | `open` | — `setup_verify_probes._probe_env` says in its docstring that it is the environment `_minimal_env` gives a run. It never was — it carries `HOME` the run did not — and it now lacks the `DOCKER_CONFIG` the docker adapters use, so `verify` can ask a different daemon than the run used and report `false` about an image that is there. `LAF-66` is the same shape: a probe that answers about another machine |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced
