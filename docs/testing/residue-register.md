@@ -60,7 +60,7 @@ does not have to agree with the present; a current document does.
 | `LAF-57` | low | `2.5.0` live acceptance | `open` | — |
 | `LAF-58` | medium | `2.5.0` live acceptance | `open` | — `RR-4` names the limit in the undo review before consent; closing it needs `RR-4A` at the capture site |
 | `LAF-59` | high | `2.5.0` live acceptance | `closed` | `RR-2B`; a build failing on its last instruction reports that instruction and its exit code |
-| `LAF-61` | medium | `2.5.0` live acceptance | `visible` | `RR-3`; `receipt verify` names an orphaned run directory and does not remove it |
+| `LAF-61` | medium | `2.5.0` live acceptance | `open` | — `RR-3` claimed `visible`; `RR-9` measured the probe scanning the project root while runs live under the data root (`LAF-66`), so nothing sees it |
 | `LAF-62` | medium | `2.5.0` publication | `deferred` | — cluster C4; needs the index-version boundary stream |
 | `LAF-63` | high | implementing `RR-2A` | `open` | — `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_not_redacted_today` holds the gap visible |
 | `LAF-64` | medium | implementing `RR-5` | `open` | — |
@@ -79,6 +79,11 @@ does not have to agree with the present; a current document does.
 | `RS-13` | low | `2.5.0` prose | `open` | — |
 | `RS-14` | low | `2.5.0` prose | `open` | — |
 | `RS-15` | low | `2.5.0` prose | `open` | — |
+| `LAF-65` | medium | `2.6.0` live acceptance | `open` | — |
+| `LAF-66` | high | `2.6.0` live acceptance | `open` | — |
+| `LAF-67` | medium | `2.6.0` live acceptance | `open` | — |
+| `LAF-68` | medium | `2.6.0` live acceptance | `open` | — |
+| `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
 
 ## Corrections this register forced
 
@@ -95,3 +100,22 @@ either finding observable, so both are `open` here and not `visible`.
 The design sentence is wrong rather than imprecise, and it is left standing with this correction
 beside it, because a design edited until it agrees with the code stops being evidence of what was
 believed when it was written.
+
+**`LAF-61` was recorded `visible` and the live run took it back.** `RR-3` shipped a probe for orphaned
+run directories and this register recorded the finding as observable on the strength of it. `RR-9`
+measured the probe against a real leftover directory and found it scanning
+`<project_root>/.agent-artifacts/setup-runs` while runs are created under `<data_root>`
+(`setup_engine/application.py:457`), so the claim answers `true` without looking — recorded as
+`LAF-66`, and `LAF-61` is `open` again.
+
+That correction is the register earning its place. Under the old regime the `visible` claim would have
+lived in a release paragraph, agreed with nothing, and been re-discovered a release later as a new
+finding. Here it had one row, the row was wrong, and the row changed.
+
+**And the gate did not notice the row changing.** Moving `LAF-61` back to `open` left
+`compatibility-v14.md` and `release-checklist-v14.md` both saying `visible`, and `make docs-check`
+passed. `DOC009` is one-directional by construction: it fails a document that lists as *shipped open*
+something this table records as `closed`, and says nothing about a document claiming `closed` or
+`visible` for something this table records as `open` — the direction that asserts a safety which is
+not there. Both documents were corrected by hand. That is `LAF-69`, and until it closes, the sentence
+above about this file being *enforced* means enforced against stale pessimism only.

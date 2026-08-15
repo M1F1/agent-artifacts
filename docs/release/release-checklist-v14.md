@@ -77,8 +77,9 @@ daemon and a real keychain.
   `2026-08-15`: hardcoding it made every docker claim report `unknown` on a host whose daemon was
   running, because `docker` is at `/usr/local/bin`;
 - exit is non-zero when any claim is false, so it is usable from CI;
-- it reports and never repairs. An orphaned run directory (`LAF-61`) is named and left where it is;
-  proved by hashing `.zshrc` before and after a verify.
+- it reports and never repairs, proved by hashing `.zshrc` before and after a verify. The orphaned
+  run directory it was meant to report (`LAF-61`) it does **not** find: the probe scans the project
+  root and runs are created under the data root, measured in the live run as `LAF-66`.
 
 `marketplace receipt undo` is review-first, like every other mutation:
 
@@ -136,7 +137,9 @@ rather than a hope.
 
 ## Residues shipped open
 
-Six findings move out of shipped-open and five of them close; the sixth, `LAF-61`, becomes `visible`.
+Five findings move out of shipped-open and close. The plan predicted six; the sixth was `LAF-61`, and
+the live run showed the probe meant to make it visible looks in the wrong directory (`LAF-66`), so it
+stays open.
 The state of every one of them is in [`residue-register.md`](../testing/residue-register.md), which
 `docs-check` enforces, and **not** in this document — a second list is how the first stops being true.
 

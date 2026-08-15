@@ -111,11 +111,15 @@ The same helper is used at all three capture sites.
 
 ## Residues this release closes
 
-Six of the findings `compatibility-v13` shipped open move, and the register
+Five of the findings `compatibility-v13` shipped open close, and the register
 [`residue-register.md`](../testing/residue-register.md) is where their state now lives — not this
-document, and not a release paragraph. **Five close and one becomes visible**, which is one fewer
-closure than the plan for this work predicted; the difference is `LAF-61` and it is stated here rather
-than rounded up.
+document, and not a release paragraph.
+
+The plan for this work predicted six. The sixth was `LAF-61`, and this release does **not** move it:
+`RR-3` shipped a probe for orphaned run directories, the live acceptance run measured it against a
+real leftover directory, and it scans the project root while runs are created under the data root
+(`LAF-66`). The claim answers `true` without looking. `LAF-61` is open, and so is the probe defect
+that briefly made it look otherwise.
 
 | Finding | Now | Established by |
 |---|---|---|
@@ -124,7 +128,6 @@ than rounded up.
 | `LAF-54` — the review composed and never printed | `closed` | the review prints before approval is asked for |
 | `LAF-55` — an unattended Keychain step stores nothing and reports success | `closed` | `receipt verify` asks whether the item holds a value |
 | `LAF-59` — a transcript truncated from the wrong end | `closed` | a build failing on its last instruction reports that instruction |
-| `LAF-61` — a killed run's working copy, swept by nothing | `visible` | `receipt verify` names the orphaned directory and leaves it |
 
 ## Known defects shipped open
 

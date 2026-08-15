@@ -184,6 +184,13 @@ root, as `SI-9` and `VN-9` were. Found doing it: `LAF-64`.
 register, and `compatibility-v14` says five closed and one visible rather than rounding up — which is
 the whole point of having a register with more than two dispositions.
 
+**And `visible` did not survive either.** `RR-9` measured the probe against a real leftover directory
+and found it scanning the project root while runs are created under the data root (`LAF-66`), so
+`verify` never names anything: it answers `true` without looking. Five findings move and `LAF-61` is
+`open`. The paragraph above is left as it was written, because it is the record of what this plan
+believed — the correction goes beside it, not over it. The register is where the state lives, and it
+says `open`.
+
 The worked undo in `README.md` is the renderer's real output, captured from `render_undo_payload`, not
 prose shaped like it. A hand-written example is a claim about the code that nothing checks.
 
