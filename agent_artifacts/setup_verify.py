@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence, Tuple
 
 from agent_artifacts.model import SetupStateRecord
+from agent_artifacts.redaction import contains_credential_shape
 
 TRUE = "true"
 FALSE = "false"
@@ -36,6 +37,7 @@ KEYCHAIN_HOLDS_VALUE = "keychain-holds-value"
 BLOCK_PRESENT = "block-present"
 FILE_PRESENT = "file-present"
 NO_ORPHAN_RUN = "no-orphan-run-directory"
+NO_CREDENTIAL_IN_RECORD = "no-credential-in-record"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +75,20 @@ class VerificationProbes:
     orphan_run_directories: Callable[[str], Tuple[str, ...] | None]
 
 
+def _record_text(record: SetupStateRecord) -> str:
+    """Everything in the record that could carry free text, as one string.
+
+    Only the fields a run *writes prose into* — the detail and the receipt steps.  The digests,
+    hashes and timestamps are structured and are the fields the shape rules deliberately do not
+    match, so scanning them would only invite a false positive on the data receipts exist for.
+    """
+
+    parts = [record.detail or ""]
+    for step in record.receipt:
+        parts.extend(f"{key}={value}" for key, value in step.items())
+    return "\n".join(parts)
+
+
 def plan_verification(record: SetupStateRecord) -> Tuple[Claim, ...]:
     """Decide which questions this record licenses, asking nothing."""
 
@@ -80,6 +96,19 @@ def plan_verification(record: SetupStateRecord) -> Tuple[Claim, ...]:
     for index, step in enumerate(record.receipt, start=1):
         module = str(step.get("module", ""))
         claims.extend(_claims_for_step(index, module, step))
+    # Asked of every record, including one with no steps: a record written before `RR-10A` may
+    # carry a credential that today's redactor would have caught, and the operator cannot know
+    # that without being told.  `RR-10A` fixes what is written from here on; this is how the fix
+    # reaches what is already on disk, without the fix editing it.
+    claims.append(
+        Claim(
+            index=0,
+            module="",
+            kind=NO_CREDENTIAL_IN_RECORD,
+            subject="credential-shaped text in the persisted record",
+            arguments={"record": _record_text(record)},
+        )
+    )
     if record.plan_hash:
         claims.append(
             Claim(
@@ -248,6 +277,19 @@ def _verify(claim: Claim, probes: VerificationProbes) -> ClaimResult:
             + ", ".join(orphans),
         )
 
+    if claim.kind == NO_CREDENTIAL_IN_RECORD:
+        if contains_credential_shape(claim.arguments["record"]):
+            # Reported and never repaired, like every other claim.  A persisted record is evidence
+            # of what a run did; rewriting it would destroy the thing receipts exist to be.  The
+            # value itself is never echoed back — saying where it is, is the whole answer.
+            return result(
+                FALSE,
+                "this record contains credential-shaped text; it was written before the redactor "
+                "was corrected. Nothing here removes it: delete the record if that is what you "
+                "want, and re-run setup",
+            )
+        return result(TRUE, "no credential-shaped text in the record")
+
     return ClaimResult(claim=claim, status=UNKNOWN, detail="no probe exists for this claim")
 
 
@@ -264,6 +306,7 @@ __all__ = [
     "FILE_PRESENT",
     "IMAGE_PRESENT",
     "KEYCHAIN_HOLDS_VALUE",
+    "NO_CREDENTIAL_IN_RECORD",
     "NO_ORPHAN_RUN",
     "TAG_RESOLVES",
     "TRUE",

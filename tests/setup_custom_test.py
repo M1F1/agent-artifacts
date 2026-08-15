@@ -8,9 +8,15 @@ import tempfile
 import unittest
 
 from agent_artifacts.model import SetupQueueItem
-from agent_artifacts.setup import parse_installer, plan_setup
+from agent_artifacts.setup import (
+    parse_installer,
+    plan_setup,
+    retry_command,
+    rollback_command,
+)
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
 from tests.setup_fixtures import recipe
+from tests.source_remediation_test import _parse_failure
 
 
 class FakeCustomProcess:
@@ -129,10 +135,40 @@ class CustomProtocolTests(unittest.TestCase):
             self.assertEqual(result.status, "rollback_incomplete")
             self.assertIn("rollback", result.detail)
             self.assertIn("custom.install@1", [item["module"] for item in result.receipt])
-            # SI-6: the rollback field names the artifact to undo and says plainly that no command
-            # does it.  `aart setup rollback` never shipped, and pointing at it was the dead end.
+            # SI-6: the rollback field names the artifact to undo, and now names the command that
+            # does it.  It used to say `no command reverses a completed setup`, which was true
+            # until `2.6.0` shipped `receipt undo` and then was a claim the same executable
+            # contradicted in every record it wrote (`LAF-65`).
             self.assertIn("mcp/atlassian", result.rollback_command)
-            self.assertIn("no command reverses a completed setup", result.rollback_command)
+            self.assertIn("aart marketplace receipt undo", result.rollback_command)
+
+
+class WrittenCommandFieldTests(unittest.TestCase):
+    """`LAF-65`: a record's own command fields must name commands that exist.
+
+    The remediation guard already hands every user-visible ``aart …`` *mention* to the shipped
+    parser.  It never reached these two, because they are not printed prose — they are fields the
+    program writes into a file, and nothing read the file back.  That is exactly how
+    `rollback_command` came to tell operators there was no undo, in the release that added one.
+    """
+
+    def _item(self) -> SetupQueueItem:
+        parsed = parse_installer(
+            recipe(steps=[{"id": "restart", "use": "restart.notice@1", "with": {"message": "hi"}}]),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        ).value
+        return SetupQueueItem("mcp", "atlassian", "tabnine", "project", "pin:abc", "/src", parsed)
+
+    def test_the_rollback_field_parses_with_the_shipped_cli_parser(self) -> None:
+        command = rollback_command(self._item())
+
+        self.assertIsNone(_parse_failure(command), command)
+
+    def test_the_retry_field_parses_with_the_shipped_cli_parser(self) -> None:
+        command = retry_command(self._item())
+
+        self.assertIsNone(_parse_failure(command), command)
 
 
 if __name__ == "__main__":

@@ -1273,18 +1273,23 @@ def retry_command(item: SetupQueueItem) -> str:
 
 
 def rollback_command(item: SetupQueueItem) -> str:
-    """What reverses effects this item already applied — which is not a command.
+    """The command that reverses effects this item already applied.
 
-    `aart setup rollback` never shipped: the engine reverses its own effects when an apply fails,
-    and `rollback_setup` has no CLI surface.  Naming it here sent an operator whose setup left
-    receipts behind to a command that does not exist, which is worse than saying so.  The missing
-    surface is recorded as a residue rather than invented here.
+    This used to say *no command reverses a completed setup*, and that was true when it was
+    written: the engine reversed its own effects on a failed apply, and `rollback_setup` had no CLI
+    surface.  `2.6.0` gave it one, and the sentence became a field that every new record carried
+    and the same executable contradicted (`LAF-65`).
+
+    It is a written field and not printed prose, which is why it went stale unnoticed: nothing
+    reads a persisted record back and checks its claims against the command surface.  The test for
+    this parses the string with the real CLI parser, so the next time the surface moves, this fails
+    rather than lying.
     """
 
-    coordinate = f"{item.artifact_type}/{item.artifact_name}"
+    coordinate = shlex.quote(f"{item.artifact_type}/{item.artifact_name}")
     return (
-        f"no command reverses a completed setup; undo {coordinate} in {item.profile} "
-        f"({item.scope}) from the recorded receipt, then re-run setup"
+        f"aart marketplace receipt undo {coordinate} --profile {shlex.quote(item.profile)} "
+        f"--scope {item.scope} --yes"
     )
 
 

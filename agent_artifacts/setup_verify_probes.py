@@ -104,10 +104,22 @@ def _path_present(path: str) -> bool | None:
         return None
 
 
-def orphan_run_directories(project_root: str, plan_hash: str) -> Tuple[str, ...] | None:
-    """Working copies an interrupted run left under the project's `setup-runs` root (`LAF-61`)."""
+def orphan_run_directories(run_root: str, plan_hash: str) -> Tuple[str, ...] | None:
+    """Working copies an interrupted run left behind under the run root (`LAF-61`).
 
-    runs_root = os.path.join(project_root, ".agent-artifacts", "setup-runs")
+    The root is the one the run itself used, handed in rather than derived here.  This probe used
+    to compose `<project_root>/.agent-artifacts/setup-runs`, while `new_run_directory` composes
+    `<plan.run_root>/...` and `setup_engine/application.py` passes `run_root=location.data_root`.
+    The two are never the same directory, so the claim answered `true` in every scope without ever
+    looking at the place runs are created (`LAF-66`).
+
+    Deriving the path in two places is what allowed them to disagree, so there is now one source
+    for it and the caller supplies it.
+    """
+
+    if not run_root:
+        return None
+    runs_root = os.path.join(run_root, ".agent-artifacts", "setup-runs")
     prefix = f"{plan_hash[:16]}-"
     try:
         entries = sorted(os.listdir(runs_root))
@@ -122,8 +134,13 @@ def orphan_run_directories(project_root: str, plan_hash: str) -> Tuple[str, ...]
     )
 
 
-def local_probes(*, project_root: str) -> VerificationProbes:
-    """The probe set a real machine answers."""
+def local_probes(*, project_root: str, run_root: str) -> VerificationProbes:
+    """The probe set a real machine answers.
+
+    `project_root` resolves the paths a recipe wrote into the project.  `run_root` is where the
+    engine creates run directories, which is the data root and not the project.  They are separate
+    arguments because collapsing them is exactly the mistake `LAF-66` was.
+    """
 
     return VerificationProbes(
         image_present=_image_present,
@@ -131,7 +148,7 @@ def local_probes(*, project_root: str) -> VerificationProbes:
         keychain_value_present=_keychain_value_present,
         read_text=_read_text,
         path_present=_path_present,
-        orphan_run_directories=lambda plan_hash: orphan_run_directories(project_root, plan_hash),
+        orphan_run_directories=lambda plan_hash: orphan_run_directories(run_root, plan_hash),
     )
 
 

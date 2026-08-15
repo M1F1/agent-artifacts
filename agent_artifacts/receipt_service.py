@@ -50,6 +50,7 @@ class LoadedReceipt:
     record: SetupStateRecord
     location: ReceiptLocation
     project_root: str
+    data_root: str
 
 
 def load_receipt(
@@ -116,7 +117,7 @@ def load_receipt(
     record = read_setup_record(record_file.read_text(encoding="utf-8"), location=location)
     if isinstance(record, Err):
         return record
-    return Ok(LoadedReceipt(record.value, location, project_root))
+    return Ok(LoadedReceipt(record.value, location, project_root, data_root))
 
 
 def show_view(loaded: LoadedReceipt) -> dict:
@@ -127,7 +128,10 @@ def verify_view(loaded: LoadedReceipt) -> dict:
     return verification_payload(
         verify_claims(
             plan_verification(loaded.record),
-            probes=local_probes(project_root=loaded.project_root),
+            probes=local_probes(
+                project_root=loaded.project_root,
+                run_root=loaded.data_root,
+            ),
         )
     )
 
