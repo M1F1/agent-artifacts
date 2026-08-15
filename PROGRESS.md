@@ -36,7 +36,8 @@
 - **Registry step: a pin move, and nothing else.** `2.6.0` adds no index field, capability or module,
   so a registry built on `2.5.0` validates on `2.6.0` and the reverse. Registry B's PR is green
   against the real tag; the consumer repository's is green against the published wheel, reconciling
-  eleven installations. Neither is merged: that is the maintainer's step.
+  eleven installations. **Both merged**, along with Registry A's own pin, on the maintainer's
+  instruction; every repository in the constellation now gates at `2.6.0`.
 - **Method note:** nearly every design premise this stream checked against the code proved partly
   false, and each refutation is recorded where it was found rather than edited away. Three of the six
   findings the design set out to close turned out not to be the absence it named; `LAF-58`'s premise —
@@ -1990,3 +1991,38 @@ None.
 - **Open, and deliberately not fixed here:** `LAF-62` itself. Whether `source add` should validate a
   committed index at all is a design question — the snapshot it publishes is recompiled either way —
   and answering it inside a cleanup pass would be the wrong place to decide it.
+
+### 2026-08-15 — an upstream repository, and vendoring two subtrees out of it
+
+The constellation had a gap the acceptance runs kept papering over: every artifact in both
+registries was authored inside the registry that publishes it. `aart registry vendor` existed,
+was tested, and was documented against a fictional upstream. Nothing had ever been vendored from a
+repository that did not know AART existed — which is precisely the case a company registry faces.
+
+- **The upstream is deliberately ordinary.**
+  [`agent-artifacts-upstream`](https://github.com/M1F1/agent-artifacts-upstream) at `v1.0.0`:
+  `README.md`, `LICENSE`, and two subtrees under `packages/`. No `aart-source.json`, no
+  `artifact.json`, no build, no release process beyond `git tag`. It is what the tutorial describes
+  and what a GitHub Enterprise repository looks like from the outside.
+- **Two subtrees, chosen for the two licence routes.** `packages/release-evidence` carries its own
+  `LICENSE` and `vendor-license` **discovered** `MIT` by reading it; `packages/branch-conventions`
+  carries none, and the identifier had to be **stated** with `--license MIT`. Both routes are now
+  exercised by something other than a test fixture.
+- **Both are pinned to a commit, not a ref.** `3706c2a5a679f17a3c3d4979b840fa86bc2a13e5` is what
+  `v1.0.0` meant at the moment of vendoring; `provenance.json` keeps the ref beside it so `revendor`
+  knows which moving name to re-resolve. The four `vendor-*` checks passed and the three standing
+  warnings were read rather than skipped: a successful vendor reports what was copied and claims
+  nothing about whether copying it was wise.
+- **The copy was checked by consuming it, not by trusting the review.** A scratch project added the
+  registry as a `source-local` source and installed both:
+  `.claude/skills/release-evidence/{SKILL.md,LICENSE,references/verification-checklist.md}` and
+  `.claude/guidelines/branch-conventions.md`. A skill delivers its tree; a guideline delivers one
+  managed file. `lock`, `build`, `audit` and `validate --strict --frozen` are green with the two new
+  packages in the index ([registry#9](https://github.com/M1F1/agent-artifacts-registry/pull/9)).
+- **`LAF-71` closes here.** Registry A's three workflows still gated at `v2.5.0` — the half of the
+  finding that had no PR while Registry B and the consumer had both moved
+  ([registry#10](https://github.com/M1F1/agent-artifacts-registry/pull/10)). No index rebuild:
+  `2.6.0` changes the setup engine and the redactor, not the registry contract.
+- **No new findings.** Nine commands ran across two repositories and everything refused what it
+  should and accepted what it should. That is worth recording precisely because the previous two live
+  passes each produced five, and a run that finds nothing is only evidence when the run was real.
