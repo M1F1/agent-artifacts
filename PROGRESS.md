@@ -2038,9 +2038,10 @@ list at the end trustworthy.
 
 | Item | Branch | State |
 |---|---|---|
-| `RS-12` | `fix/setup-docker-credentials-rs12` | code and unit evidence committed; live walk `LA-M-08`/`LA-M-09` queued as the next iteration |
+| `RS-12` | `fix/setup-docker-credentials-rs12` | done — code, unit evidence, and a live walk against two executables one commit apart ([v4](docs/testing/PROGRESS-live-acceptance-v4.md)) |
 
-**New findings this run:** `LAF-76`, `LAF-77` — both from implementing `RS-12`, both `open`.
+**New findings this run:** `LAF-76`, `LAF-77` (implementing `RS-12`), `LAF-78` (its live walk) — all
+`open`, none fixed.
 
 **Human-gated and left alone:** `LA-M-10` (a private pull that authenticates needs real
 credentials), `LA-M-11` (needs a second docker context), the curses passes.
@@ -2078,3 +2079,24 @@ base image cannot, and the run said only `docker pull failed`.
   `_minimal_env` gives a run. It never was — it carries `HOME` — and after this package it also
   lacks `DOCKER_CONFIG`, so `verify` can ask a different daemon than the run used. That is
   `LAF-66`'s shape again: a probe answering about another machine, in the reassuring direction.
+
+#### `RS-12` walked live — the same scenario against two executables one commit apart
+
+Unit tests prove a fix is in the code. They cannot prove the code is what runs, and this project has
+been wrong about exactly that before (`LAF-66`: a passing test drove a fake probe that looked
+nowhere real). So the walk is built as a difference:
+[`PROGRESS-live-acceptance-v4.md`](docs/testing/PROGRESS-live-acceptance-v4.md).
+
+- **The observation had to be discriminating.** A successful pull says nothing about whether a
+  config file was read. So the sandbox `config.json` names a credential helper that does not exist.
+  With the fix the run fails with `docker-credential-aart-nonexistent: executable file not found`;
+  without it the identical run reaches `configured` and pulls the image. A file that decides the
+  outcome on one side and is invisible on the other is `RS-12`, measured.
+- **The failure message, both ways.** A repository this machine cannot read: with the fix,
+  `pull access denied … may require 'docker login'`; without it, `docker pull failed`. The first
+  tells an operator what to do.
+- **Two scenarios stay blocked and say so.** `LA-M-10` needs a real credential — the agent supplies
+  none. `LA-M-11` needs a second docker context. Neither is marked passed by assumption.
+- **`LAF-78`, found in the harness:** `registry scaffold` cannot scaffold a setup-bearing artifact,
+  so every recipe is hand-written and its shape learned through four refusals. Recorded `low`
+  because each refusal names what is missing — the maintainer is slowed, never misled.
