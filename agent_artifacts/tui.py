@@ -49,6 +49,7 @@ from .consumer import (
     render_consumer_outcome,
     render_consumer_review,
 )
+from .consumer.application import CONSUMER_REVIEW_MISMATCH
 from .curation.model import (
     CurationAction,
     CurationRequest,
@@ -165,6 +166,18 @@ from .wizard import (
 # The three write actions the selector can drive; these are the verbs that build and dispatch a
 # Request.
 ACTIONS: Tuple[str, ...] = ("install", "update", "uninstall", "status")
+
+# `receipt` is offered from the same menu and is deliberately *not* a fifth wizard verb.  The four
+# above choose artifacts from a catalog and end at the wizard's Review; a receipt reads — or
+# reverses — the setup record of one artifact that is already installed, so it has no basket, no
+# install mode, and a review of its own.  Adding it to `ACTIONS` would put a value into the wizard
+# state machine that no stage after `action` knows what to do with.
+RECEIPT_MENU_ACTION = "receipt"
+RECEIPT_MENU_ACTIONS: Tuple[Tuple[str, str], ...] = (
+    ("show", "Print the record a setup run persisted for one installation"),
+    ("verify", "Ask this machine whether what that record claims is still true"),
+    ("undo", "Reverse what the record says the run did (review first)"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1683,7 +1696,9 @@ def _prompt_wizard_indices(
         )
 
 
-def _prompt_wizard_action(read: ReadFn, write: WriteFn) -> WizardInput | str:
+def _prompt_wizard_action(
+    read: ReadFn, write: WriteFn, *, choices: Tuple[str, ...] = ACTIONS
+) -> WizardInput | str:
     while True:
         line = _read_line(read, "Action (b=back, q=quit): ")
         if line is None:
@@ -1693,11 +1708,11 @@ def _prompt_wizard_action(read: ReadFn, write: WriteFn) -> WizardInput | str:
             return WizardInput("quit")
         if answer in ("b", "back"):
             return WizardInput("back")
-        if answer in ACTIONS:
+        if answer in choices:
             return answer
-        if answer.isdigit() and 1 <= int(answer) <= len(ACTIONS):
-            return ACTIONS[int(answer) - 1]
-        write(f"Please enter 1-{len(ACTIONS)}, an action name, 'b', or 'q'.")
+        if answer.isdigit() and 1 <= int(answer) <= len(choices):
+            return choices[int(answer) - 1]
+        write(f"Please enter 1-{len(choices)}, an action name, 'b', or 'q'.")
 
 
 def _prompt_wizard_scope(read: ReadFn, write: WriteFn) -> WizardInput | InstallScope:
@@ -1936,10 +1951,22 @@ def _run_user_text_wizard(
             session = wizard_advance(session)
             continue
         if session.current == "action":
+            menu = ACTIONS + (RECEIPT_MENU_ACTION,)
             write("Action:")
-            for index, action in enumerate(ACTIONS, start=1):
+            for index, action in enumerate(menu, start=1):
                 write(f"  {index:>2}. {action}")
-            selected_action = _prompt_wizard_action(read, write)
+            selected_action = _prompt_wizard_action(read, write, choices=menu)
+            if selected_action == RECEIPT_MENU_ACTION:
+                # Runs and returns here: a receipt has no basket and no wizard Review, so the
+                # session is never told about it and the operator lands back on this menu.
+                _run_receipt_text(
+                    read,
+                    write,
+                    project=project,
+                    user_home=user_home,
+                    profiles=session.profiles,
+                )
+                continue
             if isinstance(selected_action, WizardInput):
                 if selected_action.kind == "back":
                     session = wizard_back(session)
@@ -2479,6 +2506,182 @@ def _run_text(
                 session = result
                 continue
             return result
+
+
+def _receipt_data_root(user_home: Optional[str]) -> str:
+    """The data root a receipt reads, resolved the way every other TUI path resolves it."""
+
+    from .configuration.paths import Platform, resolve_config_paths
+
+    platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
+    paths = resolve_config_paths(
+        platform,
+        home=os.path.abspath(user_home or os.path.expanduser("~")),
+        xdg_config_home=os.environ.get("XDG_CONFIG_HOME"),
+        xdg_data_home=os.environ.get("XDG_DATA_HOME"),
+        xdg_cache_home=os.environ.get("XDG_CACHE_HOME"),
+    )
+    return paths.data_root
+
+
+def receipt_outcome(
+    action: str,
+    scope: str,
+    selector: str,
+    *,
+    profiles: Sequence[str] = (),
+    project: Optional[str] = None,
+    user_home: Optional[str] = None,
+    confirm: Callable[[Tuple[str, ...]], bool],
+) -> DomainResult[Tuple[str, ...]]:
+    """One receipt action, from a selector to the lines a front-end writes.
+
+    Both skins call this, so neither owns any part of a receipt: the resolution, the three
+    projections and the undo's consent gate all live here or in `receipt_service`, and what a
+    skin supplies is `confirm` — how *it* shows a review and asks. That is the only thing a
+    curses form and a line-oriented prompt genuinely do differently.
+    """
+
+    from .receipt_service import (
+        apply_undo,
+        load_receipt,
+        resolved_paths,
+        show_view,
+        undo_view,
+        verify_view,
+    )
+    from .setup_render import (
+        render_receipt_payload,
+        render_undo_payload,
+        render_verification_payload,
+    )
+
+    data_root = _receipt_data_root(user_home)
+    project_root, home = resolved_paths(
+        data_root=data_root, project=project, user_home=user_home
+    )
+    loaded = load_receipt(
+        data_root=data_root,
+        project_root=project_root,
+        user_home=home,
+        scope=scope,  # type: ignore[arg-type]
+        selector=selector,
+        profiles=tuple(profiles),
+    )
+    if isinstance(loaded, DomainErr):
+        return loaded
+
+    if action == "show":
+        return DomainOk(render_receipt_payload(show_view(loaded.value)))
+    if action == "verify":
+        return DomainOk(render_verification_payload(verify_view(loaded.value)))
+
+    payload, digest = undo_view(loaded.value)
+    review = render_undo_payload(payload)
+    if not confirm(review):
+        return DomainOk(review + ("Undo not applied; nothing was changed.",))
+
+    # `SI-1` over an interactive consent: the flag-mode path binds the decision with
+    # `--expect <digest>`, and the equivalent here is to recompute the undo after the answer and
+    # refuse if it is no longer the one that was read. Re-reading from disk, not from `loaded`,
+    # because what may have moved is the record itself.
+    reloaded = load_receipt(
+        data_root=data_root,
+        project_root=project_root,
+        user_home=home,
+        scope=scope,  # type: ignore[arg-type]
+        selector=selector,
+        profiles=tuple(profiles),
+    )
+    if isinstance(reloaded, DomainErr):
+        return reloaded
+    recomputed_payload, recomputed = undo_view(reloaded.value)
+    if recomputed != digest:
+        return DomainErr(
+            (
+                Diagnostic(
+                    CONSUMER_REVIEW_MISMATCH,
+                    Severity.ERROR,
+                    f"the undo changed since it was reviewed: read {digest}, "
+                    f"recomputed {recomputed}",
+                    remediation=("read the undo again and re-answer it",),
+                ),
+            )
+        )
+    del recomputed_payload
+
+    rolled = apply_undo(reloaded.value)
+    return DomainOk(
+        render_undo_payload(payload, applied=True)
+        + (f"Undo outcome: {rolled.status} — {rolled.detail}",)
+    )
+
+
+def _prompt_receipt_action(read: ReadFn, write: WriteFn) -> WizardInput | str:
+    write("Receipt action:")
+    for index, (name, description) in enumerate(RECEIPT_MENU_ACTIONS, start=1):
+        write(f"  {index:>2}. {name:<8} {description}")
+    names = tuple(name for name, _ in RECEIPT_MENU_ACTIONS)
+    while True:
+        line = _read_line(read, "Receipt action (b=back, q=quit): ")
+        if line is None:
+            return WizardInput("quit")
+        answer = line.strip().lower()
+        if answer in ("q", "quit"):
+            return WizardInput("quit")
+        if answer in ("b", "back", ""):
+            return WizardInput("back")
+        if answer in names:
+            return answer
+        if answer.isdigit() and 1 <= int(answer) <= len(names):
+            return names[int(answer) - 1]
+        write(f"Please enter 1-{len(names)}, an action name, 'b', or 'q'.")
+
+
+def _run_receipt_text(
+    read: ReadFn,
+    write: WriteFn,
+    *,
+    project: Optional[str] = None,
+    user_home: Optional[str] = None,
+    profiles: Sequence[str] = (),
+) -> None:
+    """Walk the three receipt actions at a line-oriented terminal, then return to the menu."""
+
+    action = _prompt_receipt_action(read, write)
+    if isinstance(action, WizardInput):
+        return
+    scope = _prompt_wizard_scope(read, write)
+    if isinstance(scope, WizardInput):
+        return
+    selector = _read_line(read, "Installed artifact (kind/name, b=back, q=quit): ")
+    if selector is None:
+        return
+    wanted = selector.strip()
+    if wanted.lower() in ("", "b", "back", "q", "quit"):
+        return
+
+    def confirm(review: Tuple[str, ...]) -> bool:
+        for line in review:
+            write(line)
+        write("Applying reverses the effects marked `reverses` above; nothing else is touched.")
+        answer = _read_line(read, "Apply this undo? [y/N]: ")
+        return answer is not None and answer.strip().lower() in ("y", "yes")
+
+    outcome = receipt_outcome(
+        action,
+        scope,
+        wanted,
+        profiles=profiles,
+        project=project,
+        user_home=user_home,
+        confirm=confirm,
+    )
+    if isinstance(outcome, DomainErr):
+        _write_domain_diagnostics(outcome, write)
+        return
+    for line in outcome.value:
+        write(line)
 
 
 def _prompt_role(
@@ -3886,6 +4089,87 @@ def _curses_review(curses, stdscr, session: WizardSession, lines: Sequence[str])
             offset = max(offset - body_height, 0)
 
 
+def _run_receipt_curses(
+    curses,
+    stdscr,
+    session: WizardSession,
+    *,
+    project: Optional[str],
+    user_home: Optional[str],
+) -> None:
+    """The same three receipt actions inside the full-screen wizard.
+
+    Every decision is `receipt_outcome`'s; this function only asks the three questions with
+    curses widgets and shows what comes back. The undo's consent is `_curses_review`, which is
+    the same gate the wizard's own Review uses, so an undo is approved the way everything else
+    in this skin is.
+    """
+
+    labels = tuple(f"{name} — {description}" for name, description in RECEIPT_MENU_ACTIONS)
+    event = _curses_single_event(curses, stdscr, "Receipt action", labels, session)
+    if event.kind != "confirm" or not event.selected:
+        return
+    action = RECEIPT_MENU_ACTIONS[event.selected[0]][0]
+
+    # In wizard mode the scope selector answers with a `WizardInput` carrying the index, and
+    # only in its standalone mode with the scope itself; both shapes reach here.
+    chosen = _curses_install_scope(
+        curses, stdscr, wizard=True, header=_curses_header(stdscr, session)
+    )
+    if isinstance(chosen, WizardInput):
+        if chosen.kind != "confirm" or not chosen.selected:
+            return
+        scope = INSTALL_SCOPE_CHOICES[chosen.selected[0]].scope
+    elif chosen is None:
+        return
+    else:
+        scope = chosen
+
+    typed = _curses_text_input(
+        curses, stdscr, session, "Installed artifact to read (kind/name):", maximum_length=200
+    )
+    if isinstance(typed, WizardInput) or not typed.strip():
+        return
+
+    def confirm(review: Tuple[str, ...]) -> bool:
+        return (
+            _curses_review(
+                curses,
+                stdscr,
+                session,
+                tuple(review)
+                + ("", "Enter applies this undo; n, b or q leaves everything as it is."),
+            )
+            is True
+        )
+
+    outcome = receipt_outcome(
+        action,
+        scope,
+        typed.strip(),
+        profiles=session.profiles,
+        project=project,
+        user_home=user_home,
+        confirm=confirm,
+    )
+    if isinstance(outcome, DomainErr):
+        _curses_notice(
+            stdscr,
+            session,
+            f"Receipt {action} failed",
+            tuple(
+                line
+                for diagnostic in outcome.diagnostics
+                for line in (
+                    f"{diagnostic.severity.value} [{diagnostic.code.value}]: {diagnostic.message}",
+                    *(f"  remediation: {item}" for item in diagnostic.remediation),
+                )
+            ),
+        )
+        return
+    _curses_notice(stdscr, session, f"Receipt {action}", outcome.value)
+
+
 def _run_user_curses_wizard(
     curses,
     stdscr,
@@ -3940,11 +4224,12 @@ def _run_user_curses_wizard(
             continue
 
         if session.current == "action":
+            menu = ACTIONS + (RECEIPT_MENU_ACTION,)
             event = _curses_single_event(
                 curses,
                 stdscr,
                 "Action",
-                ACTIONS,
+                menu,
                 session,
             )
             session = remember_position(session, "action", cursor=event.cursor, scroll=event.scroll)
@@ -3955,6 +4240,13 @@ def _run_user_curses_wizard(
                 if _curses_confirm_discard(curses, stdscr, session):
                     selection["cancelled"] = True
                     return session
+                continue
+            if menu[event.selected[0]] == RECEIPT_MENU_ACTION:
+                # As in the text flow: a receipt has no basket and no wizard Review, so it runs
+                # here and returns to this menu without entering the state machine.
+                _run_receipt_curses(
+                    curses, stdscr, session, project=project, user_home=user_home
+                )
                 continue
             action = ACTIONS[event.selected[0]]
             session = wizard_select(session, "action", action)
