@@ -17,7 +17,106 @@ from typing import Any, Mapping, Sequence, Tuple
 from agent_artifacts.setup import public_text
 from agent_artifacts.tui_layout import CONTENT_MEASURE, field_block, wrap
 
-__all__ = ["render_setup_payload"]
+__all__ = ["receipt_payload", "render_receipt_payload", "render_setup_payload"]
+
+
+def receipt_payload(record: Any, *, location: Any) -> dict[str, Any]:
+    """Project one persisted record into the value both `--json` and the text renderer read.
+
+    Built once, here, rather than in the command: `RR-2A` established that a text path
+    rendering different objects than the JSON path drifts, and a receipt read a week after the
+    run is exactly where that drift would not be noticed.
+    """
+
+    return {
+        "coordinate": location.coordinate,
+        "profile": location.profile,
+        "scope": location.scope,
+        "setup_state_ref": location.setup_state_ref,
+        "state_path": location.state_path,
+        "artifact": f"{record.artifact_type}/{record.artifact_name}",
+        "status": record.status,
+        "detail": record.detail,
+        "source_label": record.source_label,
+        "trust": record.trust,
+        "plan_hash": record.plan_hash,
+        "installer_path": record.installer_path,
+        "installer_hash": record.installer_hash,
+        "recipe_digest": record.recipe_digest,
+        "object_digest": record.object_digest,
+        "canonical_review_digest": record.canonical_review_digest,
+        "started_at": record.started_at,
+        "finished_at": record.finished_at,
+        "exit_status": record.exit_status,
+        "retry_command": record.retry_command,
+        "rollback_command": record.rollback_command,
+        "steps": [dict(step) for step in record.receipt],
+    }
+
+
+def render_receipt_payload(
+    payload: Mapping[str, Any],
+    *,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """Render a persisted setup record: every field the receipt payload carries."""
+
+    lines = wrap(
+        f"Setup receipt: {_text(payload.get('artifact'), fallback='unknown')}"
+        f"@{_text(payload.get('profile'), fallback='unknown')}"
+        f" ({_text(payload.get('scope'), fallback='unknown')})",
+        width=width,
+    )
+    lines += field_block(
+        (
+            ("coordinate", _text(payload.get("coordinate"), fallback="unknown")),
+            ("status", _text(payload.get("status"), fallback="unknown")),
+            ("details", _text(payload.get("detail"), fallback="none recorded")),
+            ("source", _text(payload.get("source_label"), fallback="unknown")),
+            ("trust", _text(payload.get("trust"), fallback="unknown")),
+            ("started", _text(payload.get("started_at"), fallback="not recorded")),
+            ("finished", _text(payload.get("finished_at"), fallback="not recorded")),
+            ("exit status", _text(payload.get("exit_status"), fallback="not recorded")),
+            ("plan hash", _text(payload.get("plan_hash"), fallback="not recorded")),
+            ("installer", _text(payload.get("installer_path"), fallback="not recorded")),
+            ("installer hash", _text(payload.get("installer_hash"), fallback="not recorded")),
+            ("recipe digest", _text(payload.get("recipe_digest"), fallback="not recorded")),
+            ("object digest", _text(payload.get("object_digest"), fallback="not recorded")),
+            (
+                "review digest",
+                _text(payload.get("canonical_review_digest"), fallback="not recorded"),
+            ),
+            ("record", _text(payload.get("state_path"), fallback="unknown")),
+        ),
+        indent=2,
+        width=width,
+    )
+    for label, key in (("retry", "retry_command"), ("rollback", "rollback_command")):
+        command = _text(payload.get(key))
+        if command:
+            lines += field_block(((label, command),), indent=2, width=width)
+
+    steps = _rows(payload, "steps")
+    if not steps:
+        # `LAF-45` again: a receipt with no steps is a real outcome — a run that planned and
+        # applied nothing — and must not look like a renderer that gave up.
+        return lines + ("Steps: none recorded; this run applied no effect.",)
+    lines += ("Steps",)
+    for index, step in enumerate(steps, start=1):
+        lines += wrap(
+            f"{index}. {_text(step.get('module'), fallback='unknown module')}"
+            f" — {_text(step.get('step_id'), fallback='unnamed step')}",
+            width=width,
+        )
+        known = ("module", "step_id")
+        fields = tuple(
+            (key, _text(step.get(key)))
+            for key in sorted(step)
+            if key not in known and _text(step.get(key))
+        )
+        if fields:
+            lines += field_block(fields, indent=3, width=width)
+    return lines + (f"Steps: {len(steps)}",)
 
 
 def _text(value: Any, *, fallback: str = "") -> str:

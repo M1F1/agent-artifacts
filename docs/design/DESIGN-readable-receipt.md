@@ -52,7 +52,7 @@ So this design carries two mechanisms:
 | Mechanism | Findings | What it is |
 |---|---|---|
 | The text renderer must not summarise what `--json` carries | `LAF-52`, `LAF-54`, and the rule that keeps `LAF-45` from recurring | A rendering rule, applied where the operator is standing |
-| The persisted record gets a reader | `LAF-53`, `LAF-58`, `LAF-55` | `receipt show`, `verify`, `undo` over `RR-1`'s read path |
+| The persisted record gets a reader | `LAF-53`, `LAF-58`, `LAF-55` | `marketplace receipt show`, `verify`, `undo` over `RR-1`'s read path |
 
 And one repair that belongs to neither: `LAF-59` is fixed where the bytes are captured, by keeping
 the end of a transcript rather than its beginning.
@@ -63,10 +63,15 @@ three, and the false half would have been discovered during implementation inste
 
 ## 3. What is added
 
-One command family, `aart setup receipt`, with three actions. All three are read paths over existing
-state except where stated.
+One command family, `aart marketplace receipt`, with three actions. All three are read paths over
+existing state except where stated.
 
-### 3.1 `receipt show`
+**Named `marketplace receipt`, not `setup receipt`.** The first draft of this design wrote the
+latter, and wiring it refuted the name: `setup` is already a `marketplace` lifecycle action, so a
+top-level `aart setup` would make two different operations share one word. A receipt is a read over
+one installation, which is what the `marketplace` family is for.
+
+### 3.1 `marketplace receipt show`
 
 Prints the persisted record for an installation: plan hash, timings, exit status, every step with its
 module, target and disposition, and the recorded detail.
@@ -147,7 +152,7 @@ orphaned run directories `LAF-61` describes, which `verify` reports and leaves a
 
 1. `marketplace setup` at the terminal — no `--json`, no second command — prints the effect list, the
    capabilities and the manual alternative before asking for approval, and prints a planning failure
-   as the failure rather than as a count. `receipt show` prints the same account afterwards.
+   as the failure rather than as a count. `marketplace receipt show` prints the same account afterwards.
 2. On a setup whose Keychain step ran without a terminal, `receipt verify` reports the item as
    present and empty — the condition `LAF-55` says is reported as success.
 3. `receipt undo` on a completed setup removes the image tag, the Keychain item and the shell block,

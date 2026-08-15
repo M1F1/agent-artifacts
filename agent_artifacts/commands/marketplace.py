@@ -53,6 +53,8 @@ from agent_artifacts.consumer.runtime_requirements import (
 )
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_to_data
 from agent_artifacts.domain.result import Err, Ok, Result
+from agent_artifacts.install_state.paths import install_state_paths
+from agent_artifacts.install_state.schema import parse_install_state
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
 from agent_artifacts.model import Request, SetupManualReference
 from agent_artifacts.protocol.json import canonical_json_bytes
@@ -60,7 +62,18 @@ from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.setup import project_setup_review, render_setup_review
-from agent_artifacts.setup_render import render_setup_payload
+from agent_artifacts.setup_receipt import (
+    RECEIPT_INVALID,
+    RECEIPT_NOT_INSTALLED,
+    locate_setup_record,
+    missing_record,
+    read_setup_record,
+)
+from agent_artifacts.setup_render import (
+    receipt_payload,
+    render_receipt_payload,
+    render_setup_payload,
+)
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -79,6 +92,7 @@ _LIFECYCLE_ACTIONS: dict[str, ConsumerAction] = {
     "setup": "install",
 }
 _REQUIRES_COORDINATES = frozenset({"install", "uninstall", "setup"})
+_NO_MANIFEST = "this scope has no installation state, so no setup run has been recorded in it"
 _MUTATING = frozenset({"install", "update", "uninstall", "setup"})
 
 
@@ -604,9 +618,150 @@ def _lifecycle(request: Request, action: str) -> int:
     return _common.OK
 
 
+def _receipt_error(code, message: str, remediation: tuple[str, ...] = ()) -> Err:
+    return Err(
+        (
+            Diagnostic(
+                code,
+                Severity.ERROR,
+                message,
+                remediation=remediation
+                or ("list what is installed with: aart marketplace status",),
+            ),
+        )
+    )
+
+
+def _receipt_candidates(state, *, selector: str, scope: str) -> list:
+    """Every installation the operator's selector could mean, in this scope.
+
+    A coordinate may be given fully qualified, with or without a version, or as the
+    ``kind/name`` tail. Ambiguity is reported rather than resolved by picking the first, because
+    a receipt printed for the wrong installation reads exactly like a correct one.
+    """
+
+    wanted = selector.split("@", 1)[0]
+    matched = []
+    for record in state.installations:
+        if record.scope != scope:
+            continue
+        coordinate = str(record.coordinate)
+        if coordinate == wanted or coordinate.endswith(f"/{wanted}"):
+            matched.append(record)
+    return matched
+
+
+def _receipt(request: Request) -> int:
+    operation = f"marketplace.receipt.{request.receipt_action or 'show'}"
+    if request.receipt_action != "show":
+        return _emit_error(
+            request,
+            Err(
+                (
+                    Diagnostic(
+                        RECEIPT_INVALID,
+                        Severity.ERROR,
+                        f"unsupported receipt action {request.receipt_action!r}",
+                        remediation=(
+                            "read a persisted record with: "
+                            "aart marketplace receipt show <coordinate>",
+                        ),
+                    ),
+                )
+            ),
+            operation,
+        )
+
+    runtime = load_runtime_configuration(request, content_required=False)
+    if isinstance(runtime, Err):
+        return _emit_error(request, runtime, operation)
+    data_root = runtime.value.paths.data_root
+    home = os.path.abspath(request.user_home or os.path.expanduser("~"))
+    project_root = os.path.abspath(request.project or os.getcwd())
+    state_paths = install_state_paths(
+        request.scope,
+        project_root=project_root,
+        user_home=home,
+        data_root=data_root,
+    )
+
+    manifest = Path(state_paths.destination_path)
+    if not manifest.is_file():
+        return _emit_error(request, _receipt_error(RECEIPT_NOT_INSTALLED, _NO_MANIFEST), operation)
+    parsed = parse_install_state(manifest.read_bytes())
+    if isinstance(parsed, Err):
+        return _emit_error(request, parsed, operation)
+
+    selector = request.names[0]
+    candidates = _receipt_candidates(parsed.value, selector=selector, scope=request.scope)
+    profiles = tuple(request.profiles)
+    if profiles:
+        candidates = [record for record in candidates if record.profile in profiles]
+    if not candidates:
+        return _emit_error(
+            request,
+            _receipt_error(
+                RECEIPT_NOT_INSTALLED,
+                f"no installation of {selector} in {request.scope} scope"
+                + (f" for profile {', '.join(profiles)}" if profiles else ""),
+                (
+                    "list what is installed with: aart marketplace status",
+                    "install it with: aart marketplace install",
+                ),
+            ),
+            operation,
+        )
+    if len(candidates) > 1:
+        found = ", ".join(sorted(f"{r.coordinate}#{r.profile}" for r in candidates))
+        return _emit_error(
+            request,
+            _receipt_error(
+                RECEIPT_INVALID,
+                f"{selector} names more than one installation in {request.scope} scope: {found}",
+                ("name one with: aart marketplace receipt show <coordinate> --profile <profile>",),
+            ),
+            operation,
+        )
+
+    installation = candidates[0]
+    located = locate_setup_record(
+        parsed.value,
+        coordinate=str(installation.coordinate),
+        profile=installation.profile,
+        scope=request.scope,
+        data_root=data_root,
+    )
+    if isinstance(located, Err):
+        return _emit_error(request, located, operation)
+    location = located.value
+
+    record_file = Path(location.state_path)
+    if not record_file.is_file():
+        return _emit_error(request, missing_record(location), operation)
+    record = read_setup_record(record_file.read_text(encoding="utf-8"), location=location)
+    if isinstance(record, Err):
+        return _emit_error(request, record, operation)
+
+    payload = receipt_payload(record.value, location=location)
+    _emit(
+        request,
+        operation,
+        {
+            "schema_version": 1,
+            "ok": True,
+            "operation": operation,
+            "receipt": payload,
+        },
+        render_receipt_payload(payload),
+    )
+    return _common.OK
+
+
 def run(request: Request) -> int:
     """Run one canonical marketplace command."""
 
+    if request.marketplace_action == "receipt":
+        return _receipt(request)
     if request.marketplace_action == "list":
         return _list(request)
     if request.marketplace_action == "health":

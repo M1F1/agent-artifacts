@@ -76,12 +76,18 @@ def locate_setup_record(
             ),
         )
     if not installation.setup_state_ref:
+        # Say only what the state proves.  `InstallationRecord` carries `setup_state_ref` and
+        # nothing about whether the artifact declares a recipe, so "declares no setup" would be
+        # a claim this reader cannot make — and is false for the common case of an artifact
+        # whose setup planning was refused.  Both readings get a remediation.
         return _error(
             RECEIPT_NO_SETUP,
-            f"{coordinate} is installed and declares no setup, so there is no receipt to read",
+            f"{coordinate} is installed and no setup run has been recorded for it",
             (
-                "check whether the artifact declares setup with: aart marketplace list",
-                "run declared setup with: aart marketplace setup",
+                "if it declares setup, run it with: aart marketplace setup",
+                "setup planning refused for an unverified source needs: "
+                "--authorize-untrusted-source",
+                "check whether it declares setup at all with: aart marketplace list",
             ),
         )
     return Ok(

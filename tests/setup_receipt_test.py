@@ -113,6 +113,27 @@ def test_an_uninstalled_coordinate_is_not_an_installation_without_setup() -> Non
     assert _remediation(located), "a refusal with no remediation is the residue RS-09 records"
 
 
+def test_an_installation_with_no_recorded_run_claims_only_what_the_state_proves() -> None:
+    # Measured live on 2026-08-15: the artifact *did* declare setup and planning was refused,
+    # while this refusal said it "declares no setup". InstallationRecord carries no such field,
+    # so the reader must not assert it.
+    state = _state([_installation(name="plain", setup_ref=None)])
+
+    located = locate_setup_record(
+        state,
+        coordinate="registry-a/mcp/plain",
+        profile="claude",
+        scope="project",
+        data_root=DATA_ROOT,
+    )
+
+    assert isinstance(located, Err)
+    message = " ".join(d.message for d in located.diagnostics)
+    assert "no setup run has been recorded" in message
+    assert "declares no setup" not in message
+    assert any("--authorize-untrusted-source" in line for line in _remediation(located))
+
+
 def test_an_installation_declaring_no_setup_says_so_in_its_own_words() -> None:
     state = _state([_installation(name="plain", setup_ref=None)])
 
