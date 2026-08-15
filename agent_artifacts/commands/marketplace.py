@@ -53,34 +53,29 @@ from agent_artifacts.consumer.runtime_requirements import (
 )
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_to_data
 from agent_artifacts.domain.result import Err, Ok, Result
-from agent_artifacts.install_state.paths import install_state_paths
-from agent_artifacts.install_state.schema import parse_install_state
-from agent_artifacts.io import fs
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
-from agent_artifacts.model import Request, SetupManualReference, SetupState
+from agent_artifacts.model import Request, SetupManualReference
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind
-from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
-from agent_artifacts.setup import dump_setup_state, project_setup_review, render_setup_review
-from agent_artifacts.setup_receipt import (
-    RECEIPT_INVALID,
-    RECEIPT_NOT_INSTALLED,
-    locate_setup_record,
-    missing_record,
-    read_setup_record,
+from agent_artifacts.receipt_service import (
+    RECEIPT_ACTIONS,
+    apply_undo,
+    load_receipt,
+    resolved_paths,
+    show_view,
+    undo_view,
+    unsupported_action,
+    verify_view,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
+from agent_artifacts.setup import project_setup_review, render_setup_review
 from agent_artifacts.setup_render import (
-    receipt_payload,
     render_receipt_payload,
     render_setup_payload,
     render_undo_payload,
     render_verification_payload,
 )
-from agent_artifacts.setup_runtime import production_runtime, rollback_record
-from agent_artifacts.setup_undo import plan_undo, undo_digest, undo_payload
-from agent_artifacts.setup_verify import plan_verification, verification_payload, verify_claims
-from agent_artifacts.setup_verify_probes import local_probes
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -99,7 +94,6 @@ _LIFECYCLE_ACTIONS: dict[str, ConsumerAction] = {
     "setup": "install",
 }
 _REQUIRES_COORDINATES = frozenset({"install", "uninstall", "setup"})
-_NO_MANIFEST = "this scope has no installation state, so no setup run has been recorded in it"
 _MUTATING = frozenset({"install", "update", "uninstall", "setup"})
 
 
@@ -625,52 +619,10 @@ def _lifecycle(request: Request, action: str) -> int:
     return _common.OK
 
 
-def _receipt_error(code, message: str, remediation: tuple[str, ...] = ()) -> Err:
-    return Err(
-        (
-            Diagnostic(
-                code,
-                Severity.ERROR,
-                message,
-                remediation=remediation
-                or ("list what is installed with: aart marketplace status",),
-            ),
-        )
-    )
-
-
-def _receipt_candidates(state, *, selector: str, scope: str) -> list:
-    """Every installation the operator's selector could mean, in this scope.
-
-    A coordinate may be given fully qualified, with or without a version, or as the
-    ``kind/name`` tail. Ambiguity is reported rather than resolved by picking the first, because
-    a receipt printed for the wrong installation reads exactly like a correct one.
-    """
-
-    wanted = selector.split("@", 1)[0]
-    matched = []
-    for record in state.installations:
-        if record.scope != scope:
-            continue
-        coordinate = str(record.coordinate)
-        if coordinate == wanted or coordinate.endswith(f"/{wanted}"):
-            matched.append(record)
-    return matched
-
-
-_RECEIPT_ACTIONS = frozenset({"show", "verify", "undo"})
-
-
-def _undo(request: Request, record, location, operation: str) -> int:
+def _undo(request: Request, loaded, operation: str) -> int:
     """Review-first, exactly as every other mutating action: `--yes` finalizes, nothing else."""
 
-    payload = undo_payload(
-        plan_undo(record),
-        coordinate=location.coordinate,
-        profile=location.profile,
-        scope=location.scope,
-    )
-    digest = undo_digest(payload)
+    payload, digest = undo_view(loaded)
 
     if not request.yes:
         _emit(
@@ -718,11 +670,7 @@ def _undo(request: Request, record, location, operation: str) -> int:
         )
         return _common.ERROR
 
-    rolled = rollback_record(record, production_runtime())
-    fs.write_atomic(
-        location.state_path,
-        (dump_setup_state(SetupState((rolled,))) + "\n").encode("utf-8"),
-    )
+    rolled = apply_undo(loaded)
     complete = rolled.status == "skipped"
     _emit(
         request,
@@ -738,113 +686,39 @@ def _undo(request: Request, record, location, operation: str) -> int:
             "undo": payload,
         },
         render_undo_payload(payload, applied=True)
-        + (f"Undo outcome: {rolled.status} — {rolled.detail}",),
+        + (f"Undo outcome: {rolled.status} \u2014 {rolled.detail}",),
     )
     return _common.OK if complete else _common.ERROR
 
 
 def _receipt(request: Request) -> int:
     operation = f"marketplace.receipt.{request.receipt_action or 'show'}"
-    if request.receipt_action not in _RECEIPT_ACTIONS:
-        return _emit_error(
-            request,
-            Err(
-                (
-                    Diagnostic(
-                        RECEIPT_INVALID,
-                        Severity.ERROR,
-                        f"unsupported receipt action {request.receipt_action!r}",
-                        remediation=(
-                            "read a persisted record with: "
-                            "aart marketplace receipt show <coordinate>",
-                            "check whether it is still true with: "
-                            "aart marketplace receipt verify <coordinate>",
-                        ),
-                    ),
-                )
-            ),
-            operation,
-        )
+    if request.receipt_action not in RECEIPT_ACTIONS:
+        return _emit_error(request, unsupported_action(request.receipt_action), operation)
 
     runtime = load_runtime_configuration(request, content_required=False)
     if isinstance(runtime, Err):
         return _emit_error(request, runtime, operation)
     data_root = runtime.value.paths.data_root
-    home = os.path.abspath(request.user_home or os.path.expanduser("~"))
-    project_root = os.path.abspath(request.project or os.getcwd())
-    state_paths = install_state_paths(
-        request.scope,
+    project_root, home = resolved_paths(
+        data_root=data_root, project=request.project, user_home=request.user_home
+    )
+    loaded = load_receipt(
+        data_root=data_root,
         project_root=project_root,
         user_home=home,
-        data_root=data_root,
-    )
-
-    manifest = Path(state_paths.destination_path)
-    if not manifest.is_file():
-        return _emit_error(request, _receipt_error(RECEIPT_NOT_INSTALLED, _NO_MANIFEST), operation)
-    parsed = parse_install_state(manifest.read_bytes())
-    if isinstance(parsed, Err):
-        return _emit_error(request, parsed, operation)
-
-    selector = request.names[0]
-    candidates = _receipt_candidates(parsed.value, selector=selector, scope=request.scope)
-    profiles = tuple(request.profiles)
-    if profiles:
-        candidates = [record for record in candidates if record.profile in profiles]
-    if not candidates:
-        return _emit_error(
-            request,
-            _receipt_error(
-                RECEIPT_NOT_INSTALLED,
-                f"no installation of {selector} in {request.scope} scope"
-                + (f" for profile {', '.join(profiles)}" if profiles else ""),
-                (
-                    "list what is installed with: aart marketplace status",
-                    "install it with: aart marketplace install",
-                ),
-            ),
-            operation,
-        )
-    if len(candidates) > 1:
-        found = ", ".join(sorted(f"{r.coordinate}#{r.profile}" for r in candidates))
-        return _emit_error(
-            request,
-            _receipt_error(
-                RECEIPT_INVALID,
-                f"{selector} names more than one installation in {request.scope} scope: {found}",
-                ("name one with: aart marketplace receipt show <coordinate> --profile <profile>",),
-            ),
-            operation,
-        )
-
-    installation = candidates[0]
-    located = locate_setup_record(
-        parsed.value,
-        coordinate=str(installation.coordinate),
-        profile=installation.profile,
         scope=request.scope,
-        data_root=data_root,
+        selector=request.names[0],
+        profiles=tuple(request.profiles),
     )
-    if isinstance(located, Err):
-        return _emit_error(request, located, operation)
-    location = located.value
-
-    record_file = Path(location.state_path)
-    if not record_file.is_file():
-        return _emit_error(request, missing_record(location), operation)
-    record = read_setup_record(record_file.read_text(encoding="utf-8"), location=location)
-    if isinstance(record, Err):
-        return _emit_error(request, record, operation)
+    if isinstance(loaded, Err):
+        return _emit_error(request, loaded, operation)
 
     if request.receipt_action == "undo":
-        return _undo(request, record.value, location, operation)
+        return _undo(request, loaded.value, operation)
 
     if request.receipt_action == "verify":
-        results = verify_claims(
-            plan_verification(record.value),
-            probes=local_probes(project_root=project_root),
-        )
-        verification = verification_payload(results)
+        verification = verify_view(loaded.value)
         _emit(
             request,
             operation,
@@ -853,14 +727,14 @@ def _receipt(request: Request) -> int:
                 # A false claim is a finding, and a finding must not report success to CI.
                 "ok": verification["false"] == 0,
                 "operation": operation,
-                "coordinate": location.coordinate,
+                "coordinate": loaded.value.location.coordinate,
                 "verification": verification,
             },
             render_verification_payload(verification),
         )
         return _common.OK if verification["false"] == 0 else _common.ERROR
 
-    payload = receipt_payload(record.value, location=location)
+    payload = show_view(loaded.value)
     _emit(
         request,
         operation,
