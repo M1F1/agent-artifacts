@@ -39,6 +39,13 @@ a *shipped open* heading in one of them must not be `closed` here:
 - checked: `docs/design/*.md`
 - checked: `docs/release/compatibility-v14.md`
 - checked: `docs/release/release-checklist-v14.md`
+- checked: `docs/release/github-release-v2.6.0.md`
+
+**A release note is checked until it is published, and never after.** `github-release-v2.6.0.md` is
+the text that will be pasted into the GitHub release, so until that happens it is a current document
+making current claims and belongs in this list. The moment it is published it becomes a dated record
+and the entry is removed, exactly like `github-release-v2.5.0.md` below. `LAF-74` is what putting it
+here found.
 
 **Released documents are deliberately absent.** `github-release-v2.5.0.md` and
 `release-checklist-v13.md` list `LAF-52`..`LAF-59` as shipped open, and that was true when they
@@ -86,6 +93,7 @@ does not have to agree with the present; a current document does.
 | `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
 | `LAF-70` | medium | triaging for `2.6.0` | `open` | — the machine that authors registry content runs AART `2.0.0` while Registry A's CI gates it at `2.5.0`; the author's tool is older than its own gate |
 | `LAF-71` | medium | triaging for `2.6.0` | `visible` | — both moves are re-aimed at `2.6.0` and say in the PR body what blocks them. Registry B PR #5 is green against the real `v2.6.0` tag; acceptance-repo PR #1 cannot go green until a GitHub release exists, and its body says so with the wheel digest to attach. Still unmerged, by the maintainer's decision |
+| `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
@@ -115,6 +123,21 @@ measured the probe against a real leftover directory and found it scanning
 That correction is the register earning its place. Under the old regime the `visible` claim would have
 lived in a release paragraph, agreed with nothing, and been re-discovered a release later as a new
 finding. Here it had one row, the row was wrong, and the row changed.
+
+**The release notes were wrong about the release, and the gate did not cover them.** `LAF-74`.
+`github-release-v2.6.0.md` still listed `LAF-63` under *known defects shipped open* after `RR-10`
+closed it, and told operators to *prefer recipes whose inputs are named without a namespace prefix
+until it is fixed* — advice about a defect that is not there, in the text about to be published.
+`docs-check` passed, because this list excluded released documents and a release note was assumed to
+be one.
+
+It is not, until it is published. Before that moment it is the most current document in the
+repository and the only one an operator outside the project will read. Adding it to the list failed
+`DOC009` immediately, which is the whole of the fix and the whole of the evidence.
+
+The exclusion below is still right for what it was written for. What was wrong was the word
+*released* doing two jobs: naming a document's genre, and asserting a fact about time. The entry
+comes out the moment the release is published, and then the original rule applies to it unchanged.
 
 **`LAF-61` is `visible` again, and this time on a different kind of evidence.** `RR-10D` gave the
 probe the run root the engine writes into. The claim being made is the same claim `RR-3` made and
