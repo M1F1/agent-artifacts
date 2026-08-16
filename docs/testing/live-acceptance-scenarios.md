@@ -75,6 +75,7 @@ the code.
 | `LAS-61` | A compatibility window declared by a release that is no longer the running one | `LA-R-37`..`LA-R-41` |
 | `LAS-33` | The last subscription removed while installed artifacts remain | `LA-S-11`, `LA-S-12`, `LA-S-13` |
 | `LAS-60` | A destination AART shares with the operator, emptied | `LA-U-31`..`LA-U-35` |
+| `LAS-31` | Evidence produced by one route, artifact produced by another | `LA-0-07`, `LA-0-08`, `LA-0-10` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -106,6 +107,10 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-0-12` | The flag defaults, authored | flag | D | `registry init` with neither version flag, then `registry validate` | `validate` passes; the control for `LA-0-11` |
 | `LA-0-13` | Every leaf invoked cold | flag | D | derive the leaves from `build_parser()`, run each with no arguments in an empty directory under a sandbox `HOME` | every leaf refuses or answers; no traceback reaches the operator, and the count of leaves is recorded |
 | `LA-0-14` | The machine channel, cold | flag | D | every leaf that accepts `--json`, run with it in the same empty state; parse stdout | valid JSON on stdout, carrying `schema_version`, the operation, and a typed code per diagnostic. A leaf with no `--json` is named, with what its consumer is |
+| `LA-0-07` | The digest describes a file that exists | flag | D | `python scripts/release.py wheel-digest` in a clean clone; `shasum -a 256` the path it names | the printed digest equals the digest of the file named on the second line |
+| `LA-0-08` | The earlier executable leaves nothing | flag | D | the same command from `main`, then `python scripts/build_wheel.py` | digest printed, `dist/` absent; the wheel a publisher then builds has a **different** digest under the same name |
+| `LA-0-09` | The emitted wheel is the publishable one | flag | D | install what `wheel-digest` wrote into a clean venv; read `aart --version` and `_commit.COMMIT` | version matches; the stamp equals the checkout's `HEAD`, unlike a plain `build_wheel.py` build |
+| `LA-0-10` | A stale wheel in `dist/` is replaced | flag | D | `build_wheel.py`, then `wheel-digest`, then hash `dist/` | the file left in `dist/` is the one just hashed, not the earlier build |
 
 ## Phase R — registry authoring
 
