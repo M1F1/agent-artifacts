@@ -77,7 +77,7 @@ does not have to agree with the present; a current document does.
 | `RS-05` | low | `2.3.0` prose | `open` | — |
 | `RS-06` | low | `2.3.0` prose | `open` | — |
 | `RS-07` | medium | `2.2.0` prose | `open` | — |
-| `RS-08` | medium | `2.2.0` prose | `open` | — |
+| `RS-08` | medium | `2.2.0` prose | `closed` | a root `aart-registry.json` that is present must be a regular file that parses, or the subscription is refused — the decision the `2.2.0` plan said needed taking is recorded in `DESIGN-subscription-identity-binding.md` §2. `tests/identity_agreement_test.py::test_rs08_*` cover the three broken shapes and the healthy one; live `LA-S-14`..`LA-S-16` in [`PROGRESS-live-acceptance-v9.md`](PROGRESS-live-acceptance-v9.md), where the `main` wheel admits the source, installs from it, and writes an uncorroborated `declared_id` into the consumer's manifest |
 | `RS-09` | medium | `2.2.0` prose | `open` | — the three receipt refusals all carry remediation, which is the rule rather than the fix; `registry`'s own refusals are untouched |
 | `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below |
 | `RS-11` | low | `2.5.0` prose | `open` | — |

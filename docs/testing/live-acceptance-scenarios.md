@@ -56,10 +56,18 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-58` | A reserved marker file is present and cannot be read | `LA-S-14`, `LA-S-15`, `LA-S-16` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
 way the system can be pushed.
+
+**The numbering continues across runs, not within this file.** `LAS-31`..`LAS-40` are defined in
+[PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md), `LAS-41`..`LAS-48` in
+[v3](PROGRESS-live-acceptance-v3.md), and `LAS-49`..`LAS-56` in
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts above the
+highest id in use anywhere, not at the next number after the table above. That the table stops at
+`LAS-30` while the namespace runs past `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -123,6 +131,9 @@ way the system can be pushed.
 | `LA-S-08` | **Unqualified collision fails** | flag | D | resolve the colliding name unqualified | fails with an actionable message |
 | `LA-S-09` | **Qualified collision resolves** | flag | D | resolve the same name qualified by source | resolves to the intended artifact |
 | `LA-S-10` | Marketplace health | flag | D | `marketplace health --environment …` | reports per-source health |
+| `LA-S-14` | **An unreadable registry marker is refused** | flag | D | `source add` a local source whose root `aart-registry.json` is missing a required field, is not JSON, and is a directory | each is refused, naming the file and what the parser could not read; nothing is configured |
+| `LA-S-15` | The same break upstream, at sync | flag | D | subscribe while healthy, break the marker, `source sync` | the sync fails and the working subscription survives — last-known-good snapshot, `status` still `current` |
+| `LA-S-16` | A source with no marker is unaffected | flag | D | `source add` the same source with no `aart-registry.json` | added and published; the refusal is about a marker that is there, not one that is absent |
 
 ## Phase U — user lifecycle
 

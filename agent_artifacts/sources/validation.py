@@ -39,6 +39,14 @@ def validate_source_candidate(
     # no consumer-side gate compared the two documents that declare it — the publisher's own
     # `registry validate --strict --frozen` did, and the one-way adaptation rule says a consumer
     # does not soften a rule the publisher's tooling enforces.
+    # `RS-08`: a marker that is there must be readable. `SI-5` compared the two identities only when
+    # both documents parsed, which left a third state nobody chose — a broken `aart-registry.json`
+    # skipped the comparison in silence, and the file that declares the identity the whole
+    # subscription pins was never read. On the registry path the workspace validation refuses first;
+    # this is the same refusal on the direct/local path, where nothing refused at all.
+    unreadable = _unreadable_registry_marker(request)
+    if unreadable is not None:
+        return Err((unreadable,))
     disagreement = _identity_disagreement(request)
     if disagreement is not None:
         return Err((disagreement,))
@@ -64,13 +72,60 @@ def _root_file(request: SourceValidationRequest, path: str) -> Result[bytes]:
     return Ok(entry.content)
 
 
+def _root_entry(request: SourceValidationRequest, path: str):
+    return next(
+        (item for item in request.candidate.snapshot.entries if str(item.path) == path),
+        None,
+    )
+
+
+def _unreadable_registry_marker(request: SourceValidationRequest) -> Diagnostic | None:
+    """The refusal when a root `aart-registry.json` is present and cannot be read (`RS-08`).
+
+    Absence is not the case this answers: a source publishing `aart-source.json` alone is an
+    ordinary native source and stays one.  What is refused is a snapshot that reserves the registry
+    marker's name and then does not honour it — a directory under that name, or a document that
+    does not parse.  Either way the identity comparison below has nothing to compare, and admitting
+    the subscription anyway is the silence `RS-08` records.
+    """
+
+    entry = _root_entry(request, _REGISTRY_MARKER)
+    if entry is None:
+        return None
+    if entry.kind is not SnapshotEntryKind.FILE:
+        return _marker_refusal(f"{_REGISTRY_MARKER} is present and is not a regular file")
+    parsed = parse_registry_manifest(entry.content)
+    if isinstance(parsed, Err):
+        # The parser's own first line, kept: *that it does not parse* is the refusal, and *why* is
+        # the only part the maintainer can act on.
+        return _marker_refusal(
+            f"{_REGISTRY_MARKER} is present and does not parse",
+            detail=parsed.diagnostics[0].message,
+        )
+    return None
+
+
+def _marker_refusal(message: str, *, detail: str | None = None) -> Diagnostic:
+    stated = f"{message}, so the identity this source declares cannot be checked"
+    return Diagnostic(
+        SOURCE_INVALID,
+        Severity.ERROR,
+        stated if detail is None else f"{stated}: {detail}",
+        remediation=(
+            "in the registry, run `aart registry validate --strict --frozen` there before "
+            "republishing",
+            f"or remove {_REGISTRY_MARKER} if this source is not a registry",
+        ),
+    )
+
+
 def _identity_disagreement(request: SourceValidationRequest) -> Diagnostic | None:
     """The refusal when the two identity documents disagree, ``None`` when there is nothing to compare.
 
     "Nothing to compare" is deliberately narrow: only a snapshot that carries both markers as
     regular files, each parsing as its own protocol document, has an agreement to check.  A source
     publishing `aart-source.json` alone is not a registry and is unaffected; a malformed
-    `aart-registry.json` is the registry path's refusal to make, not this one's.
+    `aart-registry.json` is refused before this runs, by `_unreadable_registry_marker`.
     """
 
     registry_file = _root_file(request, _REGISTRY_MARKER)
