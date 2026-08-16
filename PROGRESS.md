@@ -61,6 +61,8 @@
   repairing nothing. See *Overnight
 - **Next task:** the overnight residue run continues with `LAF-47`/`RS-10` (design note first,
   committed alone), then the cheap ones — `RS-04`, `RS-02`, `LAF-49`. See *Overnight
+- **Next task:** the overnight residue run continues with the `RS-11`/`RS-13`/`RS-14`/`RS-15` options
+  note; see *Overnight run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -538,6 +540,8 @@ note that says so in full: it measures all four refusals, recommends leaving the
 names the two observations that would change that.
 `LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4). Every one has a register row saying where
 it came from.
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5). Every one has
+a register row saying where it came from. **`LAF-85` is the one to read first:** something wrote to
 untouched — it needs a live run against a second GHE host, which this run cannot make.
 
 ## Work log
@@ -2209,6 +2213,7 @@ Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. O
   calls it, and `verify` calls it. Composing the sentence twice is precisely how `LAF-65` happened.
 - **Walked live** — `docs/testing/PROGRESS-live-acceptance-v6.md`, which lives on the
   `fix/receipt-verify-stale-rollback-laf73` branch and is therefore not linked from here,
+- **Walked live** — [`PROGRESS-live-acceptance-v6.md`](docs/testing/PROGRESS-live-acceptance-v6.md),
   scenarios `LA-M-12`..`LA-M-15`, stressor `LAS-32`. A real registry, a real install, a real setup
   writing a managed block into a sandbox home. With the record aged to the pre-`2.6.0` sentence, the
   `main` wheel reports `true=3, false=0` and says nothing; the branch reports `true=3, false=1`,

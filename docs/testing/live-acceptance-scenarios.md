@@ -71,6 +71,7 @@ the code.
 | `LAS-57` | A check that found nothing, against a check that never ran | `LA-R-31`, `LA-R-32`, `LA-R-33` |
 | `LAS-58` | A reserved marker file is present and cannot be read | `LA-S-14`, `LA-S-15`, `LA-S-16` |
 | `LAS-59` | The same defect reached by authoring instead of by copying | `LA-R-34`, `LA-R-35`, `LA-R-36` |
+| `LAS-32` | A persisted record read by a later executable than wrote it | `LA-M-12`, `LA-M-13`, `LA-M-14`, `LA-M-15` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -221,6 +222,10 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-M-09` | A private image without credentials says why | flag | D | same recipe against an image in a namespace this machine cannot read, `DOCKER_CONFIG` pointed at an empty directory | the recorded detail carries docker's own words — `pull access denied` — not a bare `docker pull failed` |
 | `LA-M-10` | A private image with credentials | flag | H | credentials supplied by Michal; the company base image | the pull authenticates. **Human-gated**: the agent supplies no credentials |
 | `LA-M-11` | Rollback removes the tag from the daemon that built it | flag | H | `docker.build@1` under a non-default docker context, then rollback | the tag is removed from the context that holds it. **Human-gated**: needs a second daemon or context on the machine |
+| `LA-M-12` | A fresh record verifies its own rollback line | flag | D | real `marketplace setup`, then `receipt verify` | the `rollback-command-runs` claim is `true`; the recorded command is the one this executable accepts |
+| `LA-M-13` | A record written before the undo command | flag | D | set the record's `rollback_command` to the pre-`2.6.0` sentence, then `receipt verify` | the claim is `false`, names the command that works today, and the record file's digest is unchanged |
+| `LA-M-14` | The earlier executable says nothing | flag | D | the same aged record, `receipt verify` from the `main` wheel | no such claim; `true=3, false=0` where the fix reports `true=3, false=1` |
+| `LA-M-15` | The advice the claim gives works | flag | D | run the command the claim names | the managed block and the file the run created are gone |
 
 ---
 

@@ -228,6 +228,8 @@ class TokenContainmentTest(unittest.TestCase):
             read_text=lambda _path: None,
             path_present=lambda _path: False,
             orphan_run_directories=lambda _plan_hash: (),
+            # `LAF-73`: answering `False` is the reporting path, which is the one that renders text.
+            command_accepted=lambda _command: False,
         )
         results = verify_claims(plan_verification(self.record), probes=probes)
         payload = verification_payload(results)
@@ -408,6 +410,7 @@ class RecordedTokenIsReportedTest(unittest.TestCase):
             read_text=lambda _path: "",
             path_present=lambda _path: True,
             orphan_run_directories=lambda _plan_hash: (),
+            command_accepted=lambda _command: True,
         )
 
         payload = verification_payload(verify_claims(plan_verification(record), probes=probes))
