@@ -527,6 +527,33 @@ def _strip_managed_block(record: InstallationRecord, content: bytes) -> bytes | 
     return stripped.encode("utf-8")
 
 
+def _is_bare_container_chain(document: JsonValue, json_path: str) -> bool:
+    """True when `document` holds nothing but the empty containers on `json_path`.
+
+    `LAF-47`/`RS-10`: the emptiness that matters is the file's, not the container's. Every shipped
+    profile merges under a path — `mcpServers`, `hooks.PreToolUse` — so a document tested for
+    emptiness at its root is never empty after the last identity goes, and the removal below could
+    not fire for any profile AART ships.
+
+    Walking the chain rather than descending to the leaf is deliberate. One extra key at any level
+    means the file holds something this effect did not put there, and a file with anything in it is
+    kept whoever wrote it.
+    """
+
+    node = document
+    for part in json_path.split(".") if json_path else ():
+        if not isinstance(node, JsonObject) or len(node.entries) != 1:
+            return False
+        key, node = node.entries[0]
+        if key != part:
+            return False
+    if isinstance(node, JsonObject):
+        return not node.entries
+    if isinstance(node, JsonArray):
+        return not node.items
+    return False
+
+
 def _plan_removal(
     record: InstallationRecord,
     effect: EffectProof,
@@ -575,7 +602,10 @@ def _plan_removal(
         updated, result = _remove_merge_identity(effect, parsed.value)
         if result != "removed" or updated is None:
             return None, f"managed merge cannot be reversed: {effect.destination}"
-        if effect.created_destination and isinstance(updated, JsonObject) and not updated.entries:
+        # Three conditions, and the third is what makes the first safe to act on: a file AART
+        # created is still a file an operator may have written into afterwards. A destination that
+        # existed before this effect wrote it is never removed, empty or not.
+        if effect.created_destination and _is_bare_container_chain(updated, effect.json_path or ""):
             return UninstallOperation(effect, absolute, snapshot, "remove"), None
         return UninstallOperation(
             effect,

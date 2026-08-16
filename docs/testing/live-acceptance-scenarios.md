@@ -56,10 +56,18 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-60` | A destination AART shares with the operator, emptied | `LA-U-31`..`LA-U-35` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
 way the system can be pushed.
+
+**The numbering continues across runs, not within this file.** `LAS-31`..`LAS-40` are defined in
+[PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md), `LAS-41`..`LAS-48` in
+[v3](PROGRESS-live-acceptance-v3.md), and `LAS-49`..`LAS-56` in
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts above the
+highest id in use anywhere, not at the next number after the table above. That the table stops at
+`LAS-30` while the namespace runs past `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -158,6 +166,11 @@ way the system can be pushed.
 | `LA-U-28` | **Real `~` round trip** | flag | D→H | inventory `~/.claude`; install/status/uninstall `--scope user`; re-inventory | inventories identical |
 | `LA-U-29` | Whole bundle installs | flag | D | `install --bundle residuality` | all 10 skills + guideline land; `../using-residues/` resolves from each stage skill |
 | `LA-U-30` | **Partial bundle leaves a dangling reference** | flag | D | install `residual-03-stressors` **without** `using-residues` | record whether anything warns; a structurally valid artifact with a broken sibling path is the residue to look for |
+| `LA-U-31` | **The created merge file goes with its last identity** | flag | D | clean repo; install one `mcp`; uninstall; `git status --porcelain` | `.mcp.json` is gone and the repository is clean, not `{"mcpServers":{}}` left untracked |
+| `LA-U-32` | The same for a list merge | flag | D | clean repo; install one `hook`; uninstall | `.claude/settings.json` is gone, not `{"hooks":{"PreToolUse":[]}}` |
+| `LA-U-33` | **The operator's own file is never removed** | flag | D | commit `.mcp.json` as `{"mcpServers":{}}` **before** installing; install; uninstall | the file survives byte-identical; `git status` clean because nothing changed, not because nothing is there |
+| `LA-U-34` | A created file holding anything else is kept | flag | D | install; add a key AART did not write; uninstall | the file survives with that key intact and the container empty |
+| `LA-U-35` | **Reclamation depends on uninstall order** | flag | D | install two `mcp` artifacts separately, uninstall in install order, then repeat in reverse | install order: the file stays; reverse order: it goes. Record the asymmetry — the effect that created the file is the only one entitled to remove it |
 
 ## Phase M — setup and MCP · human-driven
 

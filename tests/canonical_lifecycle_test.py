@@ -817,7 +817,10 @@ class CanonicalLifecycleTest(unittest.TestCase):
 
             assert isinstance(removed, Ok), removed
             self.assertEqual(removed.value.status, LifecycleStatus.REMOVED)
-            self.assertEqual(json.loads(config_path.read_text()), {"mcpServers": {}})
+            # The subject here is that a `null` value is *found* and taken out. What it leaves is
+            # AART's own file with nothing in it, which `LAF-47` now reclaims — this assertion used
+            # to read `{"mcpServers": {}}`, which was the residue rather than the requirement.
+            self.assertFalse(config_path.exists())
 
     def test_install_does_not_treat_an_existing_json_null_key_as_absent(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -1165,3 +1168,118 @@ class CanonicalLifecycleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CreatedMergeFileReclamationTest(unittest.TestCase):
+    """`LAF-47` and `RS-10`: the merge file AART made, emptied and then left behind.
+
+    Design: `docs/design/DESIGN-uninstall-file-reclamation.md`. Removal needs all three of: the
+    effect created the destination, the merge was already proven reversible, and what remains is the
+    bare container chain on that effect's own `json_path`.
+    """
+
+    def _uninstall(self, project: Path, paths, location, adapter) -> None:
+        state = _state(project)
+        record = state.installations[0]
+        planned = prepare_uninstall(record, state, location, paths, adapter)
+        assert isinstance(planned, Ok), planned
+        removed = finalize_uninstall(planned.value, planned.value.review_digest, adapter)
+        assert isinstance(removed, Ok), removed
+        self.assertEqual(removed.value.status, LifecycleStatus.REMOVED)
+
+    def test_laf47_a_created_key_merge_file_goes_when_its_last_identity_goes(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, paths, location, _request, _catalog, _effective, adapter = _install(
+                _fixture(root, "mcp")
+            )
+            destination = project / ".mcp.json"
+            self.assertTrue(destination.exists())
+
+            self._uninstall(project, paths, location, adapter)
+
+            self.assertFalse(destination.exists())
+
+    def test_rs10_a_created_list_merge_file_goes_the_same_way(self) -> None:
+        """The general form: `key` mode leaves `{}`, `list` mode leaves `[]`, both are the file."""
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, paths, location, _request, _catalog, _effective, adapter = _install(
+                _fixture(root, "hook")
+            )
+            destination = project / ".claude/settings.json"
+            self.assertTrue(destination.exists())
+
+            self._uninstall(project, paths, location, adapter)
+
+            self.assertFalse(destination.exists())
+
+    def test_laf47_a_file_that_existed_before_the_install_is_never_removed(self) -> None:
+        """The condition that keeps the rule safe. The operator's own file is theirs."""
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            fixture = _fixture(root, "mcp")
+            project = fixture[0]
+            destination = project / ".mcp.json"
+            # The same bytes the uninstall would otherwise be entitled to delete.
+            destination.write_text('{"mcpServers":{}}')
+
+            _project, paths, location, _request, _catalog, _effective, adapter = _install(fixture)
+            self._uninstall(project, paths, location, adapter)
+
+            self.assertTrue(destination.exists())
+            self.assertEqual(json.loads(destination.read_text()), {"mcpServers": {}})
+
+    def test_laf47_a_created_file_holding_anything_else_is_kept(self) -> None:
+        """A file AART made is still a file the operator may have written into afterwards."""
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, paths, location, _request, _catalog, _effective, adapter = _install(
+                _fixture(root, "mcp")
+            )
+            destination = project / ".mcp.json"
+            document = json.loads(destination.read_text())
+            document["$schema"] = "https://example.invalid/mcp.json"
+            destination.write_text(json.dumps(document))
+
+            self._uninstall(project, paths, location, adapter)
+
+            self.assertTrue(destination.exists())
+            self.assertEqual(
+                json.loads(destination.read_text()),
+                {"mcpServers": {}, "$schema": "https://example.invalid/mcp.json"},
+            )
+
+    def test_laf47_an_effect_that_did_not_create_the_file_never_removes_it(self) -> None:
+        """The limit the design names, in the state that produces it.
+
+        `created_destination` is recorded per effect. The second artifact installed into one file
+        records `false`, correctly — the file was there. Uninstall in that order and the last effect
+        out is this one, while the record that said `true` went with the first uninstall. The file
+        then stays, and this test exists so that stays a decision rather than a surprise.
+        """
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, paths, location, _request, _catalog, _effective, adapter = _install(
+                _fixture(root, "mcp")
+            )
+            destination = project / ".mcp.json"
+            original = _state(project).installations[0]
+            record = replace(
+                original,
+                effects=(replace(original.effects[0], created_destination=False),),
+            )
+            state = InstallState(2, (record,))
+            (project / ".agent-artifacts/manifest.json").write_bytes(install_state_bytes(state))
+
+            planned = prepare_uninstall(record, state, location, paths, adapter)
+            assert isinstance(planned, Ok), planned
+            removed = finalize_uninstall(planned.value, planned.value.review_digest, adapter)
+            assert isinstance(removed, Ok), removed
+
+            self.assertTrue(destination.exists())
+            self.assertEqual(json.loads(destination.read_text()), {"mcpServers": {}})

@@ -1,6 +1,8 @@
 # Design: what uninstall may remove
 
-Status: accepted — implementation not started.
+Status: accepted — implemented and walked live
+([PROGRESS-live-acceptance-v11.md](../testing/PROGRESS-live-acceptance-v11.md)). The case §4 leaves
+open is `LAF-89`; the directory question §5 leaves open is `LAF-88`.
 
 Answers `LAF-47` and `RS-10`, which are one finding seen from two sides. `LAF-47` is the observation:
 uninstalling the last `mcp` artifact leaves `.mcp.json` behind as `{"mcpServers": {}}`. `RS-10` is the
@@ -100,7 +102,9 @@ The remaining case — the file was created by AART, and the last artifact out i
 created it — is **left open deliberately**, because closing it needs a durable per-destination
 ownership fact in the install state, which is a state-schema change and belongs with the version
 boundary work (`LAF-62`, cluster C4). Until then that case behaves exactly as it does today: the file
-stays. The finding rows should say so rather than claiming more than the fix delivers.
+stays. The finding rows should say so rather than claiming more than the fix delivers — they do, as
+`LAF-89`, and `LA-U-35` walks the asymmetry in both directions: install order leaves the file,
+reverse order removes it.
 
 ## 5. What this does not do
 
@@ -120,7 +124,8 @@ stays. The finding rows should say so rather than claiming more than the fix del
 - **It does not decide directory reclamation.** `.claude/` survives today because it holds
   `settings.json`. Once that file goes, whether the directory goes with it is decided by the existing
   teardown (`lifecycle/io.py:80`, `rmdir` used as its own guard), and the implementation must show
-  which happens rather than assume.
+  which happens rather than assume. *It did: the directory stays, empty. `git status --porcelain` is
+  clean because git does not track empty directories. Recorded as `LAF-88`, not fixed here.*
 
 ## 6. Why not the alternatives
 

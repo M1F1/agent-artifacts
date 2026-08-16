@@ -57,7 +57,7 @@ does not have to agree with the present; a current document does.
 |---|---|---|---|---|
 | `LAF-43` | medium | `2.4.0` live acceptance | `deferred` | — cluster C5; `DESIGN-readable-receipt.md` §5 leaves it for its own stream |
 | `LAF-45` | medium | `2.4.0` live acceptance | `open` | — the rule it teaches is applied to the new commands; `audit --check-upstream` itself is untouched |
-| `LAF-47` | medium | `2.4.0` live acceptance | `open` | — see *Corrections* below. Designed but not implemented: [DESIGN-uninstall-file-reclamation.md](../design/DESIGN-uninstall-file-reclamation.md) states the rule and shows the existing removal branch cannot fire, because it tests the whole document for emptiness while every profile merges under a `json_path` |
+| `LAF-47` | medium | `2.4.0` live acceptance | `closed` | [DESIGN-uninstall-file-reclamation.md](../design/DESIGN-uninstall-file-reclamation.md); the emptiness test walks the effect's own `json_path` instead of the document root, so the removal that could never fire now does. `tests/canonical_lifecycle_test.py::CreatedMergeFileReclamationTest`, and live acceptance v11 `LA-U-31`: install one `mcp` into a clean repository, uninstall it, `git status --porcelain` is empty where `main` reports `?? .mcp.json`. The order-dependent case it does not close is `LAF-89` |
 | `LAF-49` | low | `2.4.0` live acceptance | `open` | — |
 | `LAF-52` | high | `2.5.0` live acceptance | `closed` | `RR-2A`; `tests/setup_render_test.py`, and `marketplace setup` at a terminal prints the failure detail, the artifact key and the manual route |
 | `LAF-53` | high | `2.5.0` live acceptance | `closed` | `RR-4`; `aart marketplace receipt undo <coordinate>` |
@@ -79,7 +79,7 @@ does not have to agree with the present; a current document does.
 | `RS-07` | medium | `2.2.0` prose | `open` | — |
 | `RS-08` | medium | `2.2.0` prose | `open` | — |
 | `RS-09` | medium | `2.2.0` prose | `open` | — the three receipt refusals all carry remediation, which is the rule rather than the fix; `registry`'s own refusals are untouched |
-| `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below. Same design as `LAF-47`, which it generalises: both merge modes leave their file, `key` as an empty object and `list` as an empty array |
+| `RS-10` | medium | `2.2.0` prose | `closed` | Same change as `LAF-47`, which it generalises; the rule is written for any merge effect, not for `mcp`. Live acceptance v11 `LA-U-32` walks the `list` half: `.claude/settings.json` is removed where `main` leaves `{"hooks":{"PreToolUse":[]}}`. `LAF-89` is the case left open |
 | `RS-11` | low | `2.5.0` prose | `open` | — |
 | `RS-12` | medium | `2.5.0` prose | `open` | — |
 | `RS-13` | low | `2.5.0` prose | `open` | — |
@@ -96,6 +96,8 @@ does not have to agree with the present; a current document does.
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
+| `LAF-88` | low | live acceptance v11 (`LA-U-31`) | `open` | — the emptied directory outlives the file it held: `.claude/settings.json` is removed and `.claude/` stays behind, empty. `git status --porcelain` is clean because git does not track empty directories, so the `LAF-17` standard is met and the directory is still on disk |
+| `LAF-89` | low | live acceptance v11 (`LA-U-35`) | `open` | — whether the created merge file is reclaimed depends on uninstall order. `created_destination` is per effect, the second artifact into one file records `false`, and the record carrying `true` is deleted by the first uninstall. Named in `DESIGN-uninstall-file-reclamation.md` §4 as the case that fix does not close; closing it needs a durable per-destination ownership fact in the install state, which is a schema change belonging with `LAF-62` |
 
 ## Corrections this register forced
 
@@ -107,11 +109,17 @@ that a premise did not survive being checked, and the reason the register is wor
 `marketplace uninstall` reduces to `{"mcpServers": {}}` and leaves. `plan_verification` reads a
 **setup** record, and the one claim it makes for `json.managed-merge@1` is that the path exists — which
 is `true` for an emptied file exactly as it is for a full one. Nothing in the shipped response makes
-either finding observable, so both are `open` here and not `visible`.
+either finding observable, so neither was ever `visible`.
 
 The design sentence is wrong rather than imprecise, and it is left standing with this correction
 beside it, because a design edited until it agrees with the code stops being evidence of what was
 believed when it was written.
+
+**Both rows are now `closed`, and not by the route that sentence predicted.** The answer was to
+remove the file rather than to report it:
+[DESIGN-uninstall-file-reclamation.md](../design/DESIGN-uninstall-file-reclamation.md), walked in
+live acceptance v11. The correction above still stands as written — `verify` reads a setup record and
+these are install effects, and no amount of reporting was ever going to reach them.
 
 **`LAF-61` was recorded `visible` and the live run took it back.** `RR-3` shipped a probe for orphaned
 run directories and this register recorded the finding as observable on the strength of it. `RR-9`

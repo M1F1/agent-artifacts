@@ -396,11 +396,12 @@ each of them, so expect conflicts in those two files and take both sides.
 | 9 | `LAF-45` — a completed `--check-upstream` printed nothing, so success looked like a dropped flag | `fix/audit-upstream-says-it-checked-laf45` | done, walked live (v8). `LAF-45` closes |
 | 10 | `RS-08` — a broken `aart-registry.json` skipped the identity check instead of failing it | `fix/broken-registry-descriptor-fails-rs08` | done, walked live (v9). `RS-08` closes |
 | 11 | `RS-01` — an `mcp` package written by hand was never checked, only a vendored one | `fix/owned-mcp-descriptor-is-checked-rs01` | done, walked live (v10). `RS-01` closes |
-| 12 | `LAF-47`/`RS-10` — uninstall leaves the merge file behind, emptied | `fix/uninstall-removes-the-file-it-made` | **design note only, committed alone as the brief asks.** Both stay `open`; the note says what to remove and on what evidence, and names one case it deliberately leaves |
+| 12 | `LAF-47`/`RS-10` — uninstall leaves the merge file behind, emptied | `fix/uninstall-removes-the-file-it-made` | two commits: the design note alone, then the fix. Walked live (v11). Both close; the case the design names stays open as `LAF-89` |
 
 **New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
 `LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5), `LAF-86`
-(from 8), `LAF-87` (from 9). Every one has a register row saying where it came from.
+(from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12). Every one has a register row saying
+where it came from.
 **`LAF-85` is the one to read first:** something wrote to
 your real data root during this run, and the quality gates have been measured clear of it.
 
@@ -2347,3 +2348,34 @@ findings stay `open`.
   require the register row to say so too rather than claim more than the fix delivers.
 - **No new findings.** The design note is `docs/design/DESIGN-uninstall-file-reclamation.md`; both
   register rows point at it and stay `open`.
+
+### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` implemented
+
+Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the commit before it.
+
+- **The fix is one predicate.** The emptiness test now walks the effect's own `json_path` instead of
+  testing the document root, so `{"mcpServers": {}}` after the last identity goes is recognised as an
+  empty file rather than a document with one key in it. The removal branch that shipped in `2.2.0`
+  and could never fire now fires.
+- **Walking the chain, not descending to the leaf.** One extra key at any level means the file holds
+  something this effect did not put there, and a file with anything in it is kept whoever wrote it.
+  That is the condition that makes acting on `created_destination` safe.
+- **Five scenarios, five passes.** `LA-U-31`..`LA-U-35` in
+  `docs/testing/PROGRESS-live-acceptance-v11.md`, on this branch. Same registry, authored and
+  committed by a wheel built from `main`. After install and uninstall of the same two artifacts in
+  the same clean repository, `main` leaves `?? .claude/` and `?? .mcp.json` and the branch leaves
+  nothing.
+- **The refusals were measured, not asserted.** A `.mcp.json` committed as `{"mcpServers":{}}`
+  *before* any install survives install and uninstall byte-identical. A file AART created that an
+  operator has since written into survives with their key intact and the container emptied.
+- **A test that asserted the residue was corrected.**
+  `test_key_merge_with_json_null_is_present_and_can_be_removed` ended by asserting the file was left
+  as `{"mcpServers": {}}`. Its subject is that a `null` value is found and taken out; what it was
+  pinning at the end was the defect. It now asserts the file is gone.
+- **Two new findings, recorded and not fixed.** `LAF-88`: the emptied directory outlives the file —
+  `.claude/settings.json` goes and `.claude/` stays, empty, invisible to `git status` because git
+  does not track empty directories. `LAF-89`: whether the file is reclaimed depends on uninstall
+  order, because `created_destination` is per effect and the record that carries `true` is deleted by
+  the first uninstall. `LA-U-35` walks the asymmetry both ways — install order leaves the file,
+  reverse order removes it. The design named this case before the walk found it, and the register row
+  says so rather than letting `closed` imply more than the fix delivers.
