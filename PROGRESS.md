@@ -70,6 +70,8 @@
   (`RS-08`, `RS-01`). See *Overnight
 - **Next task:** the overnight residue run continues with the `LAF-47`/`RS-10` implementation the
   design note now specifies, then the cheap ones — `RS-04`, `RS-02`, `LAF-49`. See *Overnight
+- **Next task:** the overnight residue run continues with the remaining cheap ones — `RS-02`, then
+  `LAF-49`. See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
