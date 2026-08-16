@@ -74,6 +74,19 @@ registry snapshot whose `registry_id` and `source_id` disagree is refused at acq
 diagnostic naming both values and the file each came from. This is the one-way adaptation rule
 applied consistently: the consumer does not soften a rule the publisher's own tooling enforces.
 
+**A root `aart-registry.json` that is present must be readable.** The rule above says *whenever both
+documents are present*, and `2.2.0` implemented it as *whenever both documents parse* — so a broken
+registry marker left a third state nobody chose: the comparison was skipped and the subscription
+admitted in silence. The plan recorded that as `RS-08` and said it deserved its own decision, because
+the fix is a new refusal rather than a tightening of this one. The decision is taken here: a snapshot
+carrying a root entry named `aart-registry.json` must have it as a regular file that parses as a
+registry manifest, or the subscription is refused, naming the file and what the parser could not
+read. Absence is untouched — a source publishing only `aart-source.json` is an ordinary native source
+and stays one. What is refused is a snapshot that takes the marker's reserved name and then does not
+honour it, since the identity the whole model pins is exactly what cannot be read there. On the
+registry path the workspace validation already refused first; this makes the direct and local paths
+say the same thing.
+
 ## 3. One vocabulary for resolution failure
 
 ### The residue

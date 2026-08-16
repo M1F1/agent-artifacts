@@ -51,6 +51,8 @@
 - **Last updated:** 2026-08-15
 - **Next task:** the overnight residue run continues with the validation cluster (`RS-08`, then
   `RS-01`). See *Overnight
+- **Next task:** the overnight residue run continues with `RS-01`, then `LAF-47`/`RS-10` (design
+  note first, committed alone). See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -514,6 +516,8 @@ state the arithmetic in the scenarios file so the next run does not repeat it; b
 took one of `LAS-31`, `LAS-32`, `LAS-33` for a new meaning tonight and need renumbering to `LAS-58`+
 before they merge. Branch 9 starts at `LAS-57` and states the arithmetic in the scenarios file so the
 next run does not repeat it.
+highest id in use before they merge. Branches 9 and 10 take `LAS-57` and `LAS-58` and state the
+arithmetic in the scenarios file so the next run does not repeat it.
 
 **Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
 and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
@@ -2262,6 +2266,8 @@ package, split: the refusals, with the report findings left for the next one.
 - **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
   and every claim here is driven through the shipped CLI parser and the shipped renderers.
 ### 2026-08-16 — overnight residue run, `RS-09` (second half, `RS-09` closes)
+
+
 Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
 halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
 not pushed.
@@ -2351,6 +2357,9 @@ Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
   run will read it.
 ### 2026-08-16 — overnight residue run, `RS-08`
 Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
+
+
+
 - **The decision the `2.2.0` plan asked for, taken.** `SI-5` said the identity agreement is checked
   *whenever both documents are present*, and implemented it as *whenever both documents parse*. That
   left a third state nobody chose: a source shaped like a registry whose `aart-registry.json` is
@@ -2369,6 +2378,7 @@ Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
 - **Walked live, and the earlier wheel shows the cost.** `LA-S-14`..`LA-S-16` in
   `docs/testing/PROGRESS-live-acceptance-v9.md`, on branch
   `fix/broken-registry-descriptor-fails-rs08`. On `main` the same
+  [PROGRESS-live-acceptance-v9.md](docs/testing/PROGRESS-live-acceptance-v9.md). On `main` the same
   source is added, an artifact installs from it, and the consumer's manifest records
   `declared_id: la-rs08-source` — an identity read from one document while the document that exists
   to corroborate it could not be read. Three broken shapes refuse on the branch (missing field, not

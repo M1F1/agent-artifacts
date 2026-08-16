@@ -69,6 +69,7 @@ the code.
 | `LAS-72` | A repository that can only be reached without a network | `LA-S-17` |
 | `LAS-73` | A source tree holding a file type the snapshot format cannot carry | `LA-S-18` |
 | `LAS-57` | A check that found nothing, against a check that never ran | `LA-R-31`, `LA-R-32`, `LA-R-33` |
+| `LAS-58` | A reserved marker file is present and cannot be read | `LA-S-14`, `LA-S-15`, `LA-S-16` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -80,6 +81,9 @@ way the system can be pushed.
 [setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts at `LAS-57`,
 not at the next number after the table above. That the table above stops at `LAS-30` while the
 namespace runs to `LAS-56` is what `LAF-87` records.
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts above the
+highest id in use anywhere, not at the next number after the table above. That the table stops at
+`LAS-30` while the namespace runs past `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -154,6 +158,9 @@ namespace runs to `LAS-56` is what `LAF-87` records.
 | `LA-S-10` | Marketplace health | flag | D | `marketplace health --environment …` | reports per-source health |
 | `LA-S-17` | A local repository offered as an upstream | flag | D | `source add --kind source-git` and `--kind registry-git` with `file:///…` and with a plain absolute path to a real Git repository | refused, and the refusal says which part of the location is unacceptable |
 | `LA-S-18` | A source tree containing a symlink | flag | D | `source add --kind source-local` on a tree with one symlink under an artifact payload | refused, naming the path and the reason; nothing is added |
+| `LA-S-14` | **An unreadable registry marker is refused** | flag | D | `source add` a local source whose root `aart-registry.json` is missing a required field, is not JSON, and is a directory | each is refused, naming the file and what the parser could not read; nothing is configured |
+| `LA-S-15` | The same break upstream, at sync | flag | D | subscribe while healthy, break the marker, `source sync` | the sync fails and the working subscription survives — last-known-good snapshot, `status` still `current` |
+| `LA-S-16` | A source with no marker is unaffected | flag | D | `source add` the same source with no `aart-registry.json` | added and published; the refusal is about a marker that is there, not one that is absent |
 
 ## Phase U — user lifecycle
 

@@ -129,6 +129,95 @@ class IdentityAgreementTest(unittest.TestCase):
             _, listed = _source(env, "source", "list")
             self.assertNotIn("mirror", [item["alias"] for item in listed["sources"]])
 
+    def test_rs08_a_registry_marker_that_does_not_parse_is_refused(self) -> None:
+        """`RS-08`: the skipped check, taken as its own decision.
+
+        `SI-5` compared the two identities only when both documents parsed, so a source shaped like
+        a registry whose `aart-registry.json` is broken was admitted in silence — the one file that
+        declares the identity the whole subscription model pins went unread, and nothing said so.
+        A marker that is present must parse; there is no third state where it is ignored.
+        """
+
+        with _environment() as env:
+            mirror = self._source_copy(env.root, "broken-marker-mirror")
+            (mirror / "aart-registry.json").write_text(
+                json.dumps({"schema_version": 1, "registry_id": _DECLARED}), encoding="utf-8"
+            )
+
+            code, payload = _source(
+                env,
+                "source",
+                "add",
+                "--alias",
+                "mirror",
+                "--kind",
+                "source-local",
+                "--location",
+                str(mirror),
+            )
+
+            self.assertEqual(code, 1, payload)
+            diagnostic = self._only_diagnostic(payload)
+            self.assertEqual(diagnostic["code"], "source-invalid")
+            self.assertIn("aart-registry.json", diagnostic["message"])
+            self.assertIn("does not parse", diagnostic["message"])
+            self.assertTrue(diagnostic["remediation"], diagnostic)
+            _, listed = _source(env, "source", "list")
+            self.assertNotIn("mirror", [item["alias"] for item in listed["sources"]])
+
+    def test_rs08_a_marker_that_is_not_json_at_all_is_refused(self) -> None:
+        with _environment() as env:
+            mirror = self._source_copy(env.root, "not-json-mirror")
+            (mirror / "aart-registry.json").write_text("this is not a registry", encoding="utf-8")
+
+            code, payload = _source(
+                env,
+                "source",
+                "add",
+                "--alias",
+                "mirror",
+                "--kind",
+                "source-local",
+                "--location",
+                str(mirror),
+            )
+
+            self.assertEqual(code, 1, payload)
+            self.assertIn("does not parse", self._only_diagnostic(payload)["message"])
+
+    def test_rs08_a_marker_broken_after_subscription_is_refused_by_sync(self) -> None:
+        """The subscription is re-validated on every sync, so the gap closes on both paths."""
+
+        with _environment() as staging:
+            source = self._source_copy(staging.root, "breaking-marker-source")
+
+            with _environment(source) as env:
+                (source / "aart-registry.json").write_text("{", encoding="utf-8")
+
+                code, payload = _source(env, "source", "sync", "--alias", "reference")
+
+                self.assertEqual(code, 1, payload)
+                self.assertFalse(payload["sources"][0]["ok"], payload)
+                diagnostic = self._only_diagnostic(payload["sources"][0])
+                self.assertEqual(diagnostic["code"], "source-invalid")
+                self.assertIn("does not parse", diagnostic["message"])
+
+    def test_rs08_a_parseable_marker_that_agrees_is_still_accepted(self) -> None:
+        """The new refusal must not be a second way to reject a healthy registry."""
+
+        with _environment() as staging:
+            source = self._source_copy(staging.root, "still-fine-source")
+            (source / "aart-registry.json").write_text(
+                _registry_document(_DECLARED), encoding="utf-8"
+            )
+
+            with _environment(source) as env:
+                code, payload = env.run(
+                    "marketplace", "install", _COORDINATE, "--profile", "claude", "--yes"
+                )
+
+                self.assertEqual(code, 0, payload)
+
     def _only_diagnostic(self, payload) -> dict:
         diagnostics = payload["diagnostics"]
         self.assertEqual(len(diagnostics), 1, payload)
