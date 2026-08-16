@@ -73,7 +73,7 @@ does not have to agree with the present; a current document does.
 | `RS-01` | medium | `2.3.0` prose | `open` | — |
 | `RS-02` | low | `2.3.0` prose | `open` | — |
 | `RS-03` | medium | `2.3.0` prose | `deferred` | — cluster C5, with `LAF-43` |
-| `RS-04` | low | `2.3.0` prose | `open` | — |
+| `RS-04` | low | `2.3.0` prose | `closed` | the refusal carries remediation, and which one depends on what is already there: a vendored copy is sent to `aart registry revendor <kind> <name> --artifact-version <version>`, an authored package is told it records no upstream and offered the two things that do work. `tests/registry_vendor_command_test.py::VendorCommandTest::test_rs04_the_refusal_names_revendor_when_the_package_is_a_vendored_copy` and `::test_rs04_an_owned_package_is_not_sent_to_revendor` |
 | `RS-05` | low | `2.3.0` prose | `open` | — |
 | `RS-06` | low | `2.3.0` prose | `open` | — |
 | `RS-07` | medium | `2.2.0` prose | `open` | — |

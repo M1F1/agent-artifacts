@@ -259,6 +259,57 @@ class VendorCommandTest(unittest.TestCase):
             self.assertIn("artifact package already exists: mcp/atlassian", output)
             self.assertEqual(_tree_bytes(root), before)
 
+    def test_rs04_the_refusal_names_revendor_when_the_package_is_a_vendored_copy(self) -> None:
+        """`RS-04`: `vendor` is create-only, so the maintainer who ran it wanted the other command.
+
+        Movement is the ordinary reason to run `vendor` twice, and `revendor` is the command that
+        adopts it. A refusal that stops at *already exists* leaves the operator to find that out.
+        """
+
+        with self._registry() as root:
+            self.assertEqual(_run(*_vendor_command(root, "--yes"))[0], 0)
+
+            code, output = _run(*_vendor_command(root, "--yes"))
+
+            self.assertEqual(code, 1)
+            self.assertIn("remediation:", output)
+            self.assertIn("aart registry revendor mcp atlassian", output)
+            # `revendor` plans nothing without the version this registry will publish, so the
+            # sentence that names it has to name that too.
+            self.assertIn("--artifact-version", output)
+
+    def test_rs04_an_owned_package_is_not_sent_to_revendor(self) -> None:
+        """`revendor` re-resolves a recorded upstream. An authored package has none to re-resolve."""
+
+        # `wrapper=False`: the scaffold authors the whole package, including the descriptor the
+        # other tests write by hand for `vendor` to adopt.
+        with self._registry(wrapper=False) as root:
+            self.assertEqual(
+                _run(
+                    "registry",
+                    "scaffold",
+                    "--source",
+                    str(root),
+                    "mcp",
+                    "atlassian",
+                    "--summary",
+                    "Atlassian MCP server.",
+                    "--profile",
+                    "claude",
+                    "--platform",
+                    "darwin",
+                    "--yes",
+                )[0],
+                0,
+            )
+
+            code, output = _run(*_vendor_command(root, "--yes"))
+
+            self.assertEqual(code, 1)
+            self.assertIn("artifact package already exists: mcp/atlassian", output)
+            self.assertNotIn("revendor", output)
+            self.assertIn("remediation:", output)
+
     def test_a_declared_setup_recipe_with_no_recipe_authored_refuses(self) -> None:
         with self._registry() as root:
             code, output = _run(

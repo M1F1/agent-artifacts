@@ -115,8 +115,45 @@ REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
 
 
-def _error(message: str) -> Err:
-    return Err((Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message),))
+def _error(message: str, *, remediation: tuple[str, ...] = ()) -> Err:
+    return Err(
+        (Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message, remediation=remediation),)
+    )
+
+
+def _is_vendored_package(files: dict[str, SnapshotEntry], base: str) -> bool:
+    """Whether the package at `base` records a vendoring, as opposed to being authored in place."""
+
+    provenance = files.get(f"{base}/provenance.json")
+    if provenance is None or provenance.kind is not SnapshotEntryKind.FILE:
+        return False
+    parsed = parse_provenance(provenance.content, path=f"{base}/provenance.json")
+    return isinstance(parsed, Ok) and parsed.value.importer.id == VENDOR_IMPORTER_ID
+
+
+def _existing_package_remediation(
+    files: dict[str, SnapshotEntry],
+    base: str,
+    identity: ArtifactIdentity,
+) -> tuple[str, ...]:
+    """`RS-04`: `vendor` is create-only, so say which command is not.
+
+    Upstream moving is the ordinary reason to run `vendor` a second time, and `revendor` is the
+    command that adopts movement — but only for a copy that records where it came from. An authored
+    package has no upstream to re-resolve, so it is told the other thing instead of being sent to a
+    command that would refuse it.
+    """
+
+    if _is_vendored_package(files, base):
+        return (
+            f"to take a newer upstream into this copy, run `aart registry revendor "
+            f"{identity.kind} {identity.name} --artifact-version <version>`, which re-resolves the "
+            f"ref this package records; `vendor` creates a package and never replaces one",
+        )
+    return (
+        f"{base} was authored here and records no upstream, so vendor under a name this registry "
+        f"does not use, or remove that package first if you meant to replace it",
+    )
 
 
 def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
@@ -572,7 +609,10 @@ def plan_artifact_vendor(
     # An existing manifest is an existing package: adopting the maintainer's authored wrapper is the
     # point, so their `payload/` and `setup/` files must not read as one.
     if f"{base}/artifact.json" in files.value:
-        return _error(f"artifact package already exists: {identity.kind}/{identity.name}")
+        return _error(
+            f"artifact package already exists: {identity.kind}/{identity.name}",
+            remediation=_existing_package_remediation(files.value, base, identity),
+        )
     taken = take_subtree(acquisition.snapshot, path)
     if isinstance(taken, Err):
         return taken
