@@ -1260,33 +1260,48 @@ def vendored_copy_diagnostics(
     return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
 
 
-def vendored_delivery_diagnostics(
+def package_delivery_diagnostics(
     files: dict[str, SnapshotEntry],
-    vendored: VendoredArtifactOrigin,
+    base: str,
+    manifest: ArtifactManifest,
+    *,
+    vendored: bool,
 ) -> tuple[Diagnostic, ...]:
-    """Report a vendored descriptor that launches a file consumers never receive (VI-4).
+    """Report a descriptor that launches a file consumers never receive (VI-4).
 
     An error rather than a warning: unlike a missing licence, this is not a fact about the world the
     maintainer may accept. It is an artifact that cannot start on any consumer machine.
+
+    `RS-01`: `VI-5` hung this off the vendoring delivery finding, so an `mcp` package authored in
+    place was never looked at. Nothing in the consequence depends on where the bytes came from — the
+    merge writes an empty entry either way — so the check runs for every package the audit walks.
+
+    The audit is where it runs, not `registry validate`. `validate_registry_workspace` is also the
+    consumer's gate on a candidate source, so a new hard failure there makes every registry already
+    carrying such a descriptor unloadable on upgrade, for its subscribers as well as its maintainer.
+    That is the protocol break `VI-5` rejected. `registry audit` is maintainer-side and is what the
+    generated registry CI runs.
     """
 
-    prefix = f"{vendored.base}/{vendored.manifest.payload.root}/"
+    prefix = f"{base}/{manifest.payload.root}/"
     finding = describe_delivery(
-        vendored.manifest.identity.kind,
+        manifest.identity.kind,
         {
-            raw.removeprefix(f"{vendored.base}/"): entry.content
+            raw.removeprefix(f"{base}/"): entry.content
             for raw, entry in files.items()
             if raw.startswith(prefix) and entry.kind is SnapshotEntryKind.FILE
         },
     )
     if finding is None:
         return ()
-    identity = vendored.manifest.identity
+    identity = manifest.identity
     diagnostics: list[Diagnostic] = []
     if finding.referenced:
-        diagnostics.append(_diagnostic(delivery_reference_message(identity, finding)))
+        diagnostics.append(
+            _diagnostic(delivery_reference_message(identity, finding, vendored=vendored))
+        )
     if finding.starts_nothing:
-        diagnostics.append(_diagnostic(mcp_descriptor_message(identity)))
+        diagnostics.append(_diagnostic(mcp_descriptor_message(identity, vendored=vendored)))
     return tuple(diagnostics)
 
 
@@ -1544,7 +1559,14 @@ def audit_registry_workspace(
                     # The copy against the record, before anything is said about upstream: a copy
                     # that is not the copy cannot be discussed as current or behind (design §5).
                     diagnostics.extend(vendored_copy_diagnostics(files.value, vendored))
-                    diagnostics.extend(vendored_delivery_diagnostics(files.value, vendored))
+        # Outside the vendored branch on purpose (RS-01): what a consumer receives from an `mcp`
+        # package is a property of the package, and an authored descriptor gets it wrong as easily
+        # as a copied one.
+        diagnostics.extend(
+            package_delivery_diagnostics(
+                files.value, base, manifest.value, vendored=vendored is not None
+            )
+        )
         if manifest.value.license is None:
             diagnostics.append(
                 _diagnostic(

@@ -203,6 +203,30 @@ This narrows to vendored packages, because that is where the delivery finding is
 `mcp` package authored in place with the same mistake is still unchecked, and is recorded as a
 residue rather than fixed by widening `validate` in this release.
 
+### The owned package is checked too
+
+*Amended after `2.6.0`, closing the residue `RS-01` the paragraph above records. The paragraph
+stands as written: it is what `2.4.0` shipped.*
+
+The narrowing was an accident of where the code sat, not a decision about what is wrong. The finding
+is computed inside the branch that reads a vendored package's `provenance.json`, so a maintainer who
+writes `payload/mcp.json` by hand — the ordinary way to author an `mcp` artifact, and what `registry
+scaffold mcp` sets up — never reached it. Nothing in the consequence depends on where the bytes came
+from: the install merges `descriptor["server"]`, and a descriptor shaped like the harness file
+delivers `{}` whether it was copied from upstream or typed in place.
+
+`registry audit` now runs the delivery check for every artifact package it walks. Two things stayed
+deliberate:
+
+- **It is `audit`, not `validate`.** `validate_registry_workspace` is not only the publisher's gate;
+  the consumer runs it over a candidate source through `validate_registry_source_candidate`. A new
+  hard failure there makes every registry that already carries such a descriptor unloadable on
+  upgrade, on the subscriber's side too — the protocol break the paragraph above rejected, arrived
+  at by a different route. `audit` is maintainer-side, and is the command the generated registry CI
+  runs.
+- **An owned package is not called vendored.** The message drops the word rather than sending a
+  maintainer looking for an upstream that does not exist; the fault and the remedy are identical.
+
 ### The assessment scans what the consumer will not run
 
 For `mcp`, the vendor review's assessment covers the whole copied subtree while the install delivers

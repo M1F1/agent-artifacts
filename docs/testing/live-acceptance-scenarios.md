@@ -70,6 +70,7 @@ the code.
 | `LAS-73` | A source tree holding a file type the snapshot format cannot carry | `LA-S-18` |
 | `LAS-57` | A check that found nothing, against a check that never ran | `LA-R-31`, `LA-R-32`, `LA-R-33` |
 | `LAS-58` | A reserved marker file is present and cannot be read | `LA-S-14`, `LA-S-15`, `LA-S-16` |
+| `LAS-59` | The same defect reached by authoring instead of by copying | `LA-R-34`, `LA-R-35`, `LA-R-36` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -141,6 +142,9 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-R-31` | **A completed upstream check says so** | flag | D | `registry audit --check-upstream` on a registry that vendors nothing | one `info` line stating the check ran and found nothing to check |
 | `LA-R-32` | The same audit without the flag | flag | D | `registry audit` on the same registry | no such line — its absence is what tells an operator the check did not run |
 | `LA-R-33` | The counts on a real vendored copy | flag | D | `registry audit --check-upstream` on a registry holding a vendored package, upstream current | `n up-to-date, 0 changed, 0 unreachable`; needs an upstream the runner controls, which `LAF-43` denies |
+| `LA-R-34` | **An authored descriptor that starts nothing is named** | flag | D | scaffold `mcp`, replace `payload/mcp.json` with the harness shape `{"mcpServers": …}`, `registry audit` | the audit fails and names the package and the shape the descriptor needs; no vendoring anywhere in the registry |
+| `LA-R-35` | An authored descriptor launching a withheld file | flag | D | scaffold a second `mcp`, point `command`/`args` at `payload/index.js`, `registry audit` | the audit fails and names the file the consumer never receives |
+| `LA-R-36` | **The refusal stops at the maintainer's boundary** | flag | D | on the same registry: `registry validate --strict --frozen`, then `source add` + `marketplace install` of the faulty artifact from a consumer project | validate passes, the subscription and install still succeed, and the merged entry is the empty object the audit describes |
 
 ## Phase S — sources
 

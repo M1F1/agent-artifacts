@@ -536,7 +536,7 @@ class LocalCurationService:
             f"descriptor names a withheld payload file: {item}" for item in finding.referenced
         )
         if finding.starts_nothing:
-            details.append(mcp_descriptor_message(identity))
+            details.append(mcp_descriptor_message(identity, vendored=True))
         return CurationCheck(
             "vendor-delivery",
             not finding.referenced and not finding.starts_nothing,

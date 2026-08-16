@@ -59,6 +59,8 @@
 - **Next task:** the overnight queue is empty. The run continues on the brief's fallback —
   re-checking this register's own `closed` rows against the evidence each one names, oldest first,
   repairing nothing. See *Overnight
+- **Next task:** the overnight residue run continues with `LAF-47`/`RS-10` (design note first,
+  committed alone), then the cheap ones — `RS-04`, `RS-02`, `LAF-49`. See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -527,6 +529,7 @@ before they merge. Branch 9 starts at `LAS-57` and states the arithmetic in the 
 next run does not repeat it.
 highest id in use before they merge. Branches 9 and 10 take `LAS-57` and `LAS-58` and state the
 arithmetic in the scenarios file so the next run does not repeat it.
+state the arithmetic in the scenarios file so the next run does not repeat it.
 
 **Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
 and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
@@ -2278,6 +2281,8 @@ package, split: the refusals, with the report findings left for the next one.
 - **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
   and every claim here is driven through the shipped CLI parser and the shipped renderers.
 ### 2026-08-16 — overnight residue run, `RS-09` (second half, `RS-09` closes)
+
+
 Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
 halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
 not pushed.
@@ -2422,6 +2427,7 @@ Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
 - **Walked live, three passes.** `LA-R-34`..`LA-R-36` in
   `docs/testing/PROGRESS-live-acceptance-v10.md`, on branch
   `fix/owned-mcp-descriptor-is-checked-rs01`. The registry — three `mcp`
+  `docs/testing/PROGRESS-live-acceptance-v10.md`, on this branch. The registry — three `mcp`
   packages, nothing vendored — was created, scaffolded, locked, built and committed by a wheel built
   from `main`, so the finding cannot be an artefact of how the package was written. On `main`:
   `registry audit: passed`, exit `0`. On the branch: two errors naming `mcp/atlassian` and
