@@ -4109,19 +4109,10 @@ def _run_receipt_curses(
         return
     action = RECEIPT_MENU_ACTIONS[event.selected[0]][0]
 
-    # In wizard mode the scope selector answers with a `WizardInput` carrying the index, and
-    # only in its standalone mode with the scope itself; both shapes reach here.
-    chosen = _curses_install_scope(
-        curses, stdscr, wizard=True, header=_curses_header(stdscr, session)
-    )
-    if isinstance(chosen, WizardInput):
-        if chosen.kind != "confirm" or not chosen.selected:
-            return
-        scope = INSTALL_SCOPE_CHOICES[chosen.selected[0]].scope
-    elif chosen is None:
+    chosen = _curses_install_scope_event(curses, stdscr, header=_curses_header(stdscr, session))
+    if chosen.kind != "confirm" or not chosen.selected:
         return
-    else:
-        scope = chosen
+    scope = INSTALL_SCOPE_CHOICES[chosen.selected[0]].scope
 
     typed = _curses_text_input(
         curses, stdscr, session, "Installed artifact to read (kind/name):", maximum_length=200
@@ -4257,34 +4248,14 @@ def _run_user_curses_wizard(
 
         if session.current == "scope":
             cursor, scroll = _position(session, "scope")
-            try:
-                result = _curses_install_scope(
-                    curses,
-                    stdscr,
-                    wizard=True,
-                    initial_cursor=cursor,
-                    initial_scroll=scroll,
-                    header=_curses_header(stdscr, session),
-                )
-            except TypeError as error:
-                if "unexpected keyword argument" not in str(error):
-                    raise
-                result = _curses_install_scope(curses, stdscr)
-            if isinstance(result, WizardInput):
-                event = result
-                scope = INSTALL_SCOPE_CHOICES[event.selected[0]].scope if event.selected else None
-            else:
-                scope = result
-                event = (
-                    WizardInput("quit", cursor=cursor, scroll=scroll)
-                    if scope is None
-                    else WizardInput(
-                        "confirm",
-                        (0 if scope == "project" else 1,),
-                        0 if scope == "project" else 1,
-                        scroll,
-                    )
-                )
+            event = _curses_install_scope_event(
+                curses,
+                stdscr,
+                initial_cursor=cursor,
+                initial_scroll=scroll,
+                header=_curses_header(stdscr, session),
+            )
+            scope = INSTALL_SCOPE_CHOICES[event.selected[0]].scope if event.selected else None
             session = remember_position(session, "scope", cursor=event.cursor, scroll=event.scroll)
             if event.kind == "back":
                 session = wizard_back(session)
@@ -5716,33 +5687,39 @@ def _curses_onboarding(curses, stdscr) -> WizardInput:
             offset = max(offset - body_height, 0)
 
 
-def _curses_install_scope(
+def _curses_install_scope_event(
     curses,
     stdscr,
     *,
-    wizard: bool = False,
     initial_cursor: int = 0,
     initial_scroll: int = 0,
     header: Sequence[str] = (),
-):
-    """Scope selector with Project under the initial cursor."""
+) -> WizardInput:
+    """Scope selector with Project under the initial cursor. Always a `WizardInput`.
+
+    `selected[0]` indexes `INSTALL_SCOPE_CHOICES`; `kind` is `confirm`, `back` or `quit`.
+
+    `LAF-64`: this used to take `wizard=True` and answer with the `InstallScope` itself when the
+    flag was absent — one function, two return types, and nothing in the signature saying which.
+    A second caller written the obvious way (`if isinstance(result, WizardInput): return`) compiled,
+    typechecked, and read every successful selection as a cancel. The flag is gone rather than
+    documented, because a caller cannot misread a type it never receives. The scope-only shape went
+    with it: its only reader was a fallback for a stubbed function, and nothing asks for it.
+    """
 
     labels = [f"{choice.label} — {choice.description}" for choice in INSTALL_SCOPE_CHOICES]
-    selected = _curses_singleselect(
+    event = _curses_singleselect(
         curses,
         stdscr,
         "Installation scope",
         labels,
-        wizard=wizard,
+        wizard=True,
         initial_cursor=initial_cursor,
         initial_scroll=initial_scroll,
         header=header,
     )
-    if isinstance(selected, WizardInput):
-        return selected
-    if selected is None:
-        return None
-    return INSTALL_SCOPE_CHOICES[selected].scope
+    assert isinstance(event, WizardInput)
+    return event
 
 
 def _curses_install_mode(

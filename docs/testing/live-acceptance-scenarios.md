@@ -247,6 +247,19 @@ recorded during the first pass and appended here — until then the steps are st
 7. Re-enter, choose uninstall, confirm the review screen states removals before applying.
 8. Quit mid-flow once → assert nothing changed.
 
+### `LA-U-27a` — the scope selector, after `LAF-64`
+
+Added when `LAF-64` closed. The selector is the one screen whose plumbing changed, and the change is
+invisible from outside unless these three still hold:
+
+1. At the **Installation scope** screen, Enter on *Project* advances with Project selected, and
+   Enter on *User* advances with User selected.
+2. Backspace at that screen goes back a stage and does **not** cancel the wizard.
+3. `q` at that screen quits, and nothing is installed.
+
+Any of the three answering "cancel" where it used to answer "chosen" is the defect `LAF-64`
+described, arriving from the other side.
+
 ---
 
 ## Recording rules
