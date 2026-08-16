@@ -56,6 +56,9 @@
 - **Next task:** the overnight residue run continues with `LAF-73`; see *Overnight run 2026-08-15 →
   16* below for what is done and on which branch. `LAF-61` and the human-gated passes — the curses
   front-end and the MCP credential run — still wait for the maintainer
+- **Next task:** the overnight queue is empty. The run continues on the brief's fallback —
+  re-checking this register's own `closed` rows against the evidence each one names, oldest first,
+  repairing nothing. See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -506,6 +509,9 @@ saying where it came from — `LAF-76`..`LAF-90` only from iteration 32, which f
 wizard's own suggested defaults gets a registry that the AART which created it then refuses to read.
 It is reproducible without a terminal and the register row carries both halves.
 (from 8), `LAF-87` (from 9). Every one has a register row saying where it came from.
+(from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12), `LAF-90` (from 14). Every one has a
+register row saying where it came from.
+**`LAF-90` is the highest-severity thing found tonight:** an operator who accepts the curses
 **`LAF-85` is the one to read first:** something wrote to
 your real data root during this run, and the quality gates have been measured clear of it.
 
@@ -2185,6 +2191,8 @@ repository that did not know AART existed — which is precisely the case a comp
 
 ### 2026-08-16 — overnight residue run, `LAF-73`
 Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+
 - **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
   `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
   command reverses a completed setup*, and the same executable that holds both facts said nothing.
@@ -2211,6 +2219,9 @@ Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. O
   unidentified and now tracked rather than shrugged at a second time.
 ### 2026-08-16 — overnight residue run, the recipe-format options note
 Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work package, no code.
+
+
+
 - **Four findings, one decision.** `RS-11`, `RS-13`, `RS-14`, `RS-15` are what the triage brief says
   they are: the same postponed decision seen from four sides. The note treats them as one and is
   filed as `docs/design/OPTIONS-recipe-format-change.md`, on the `docs/recipe-format-options`
@@ -2239,6 +2250,9 @@ Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work packa
 ### 2026-08-16 — overnight residue run, `RS-09` (first half)
 Branch `fix/registry-refusals-carry-remediation-rs09`, cut from `main`, not pushed. One work
 package, split: the refusals, with the report findings left for the next one.
+
+
+
 - **The family that says the most after a success said nothing after a refusal.** `registry` emits
   follow-up commands when an action works. Its 37 refusals carried an empty `remediation` in both
   renderers, so the operator who most needed a next step was the one who got none.
@@ -2267,6 +2281,9 @@ package, split: the refusals, with the report findings left for the next one.
 Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
 halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
 not pushed.
+
+
+
 - **A report is where `validate` and `audit` state a problem.** The first half gave every `Err` a
   next step. These two commands do not refuse — they hand back a report, and its 33 findings named
   no next step at all. The dead end was the same one, in the commands a maintainer runs most.
@@ -2286,6 +2303,9 @@ not pushed.
 - **No new findings.**
 ### 2026-08-16 — overnight residue run, `RS-07`
 Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
+
+
+
 - **The refusal answered the wrong question.** `source remove` is the exit the product offers, and
   `DESIGN-source-subscription-lifecycle.md` §4 promises the project stays legible afterwards. Remove
   the *last* subscription and the next `marketplace status` refused with *this content operation
@@ -2311,6 +2331,9 @@ Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
   help. Recorded, not fixed: naming the right command there is a different package.
 ### 2026-08-16 — overnight residue run, `LAF-45`
 Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
+
+
+
 - **The command that exists to report said nothing on success.** `registry audit --check-upstream`
   printed a line per vendored artifact when one was behind or unreachable, and nothing at all when
   every copy was current. An operator reading a CI log could not tell that from a command line the
@@ -2344,6 +2367,9 @@ Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
   run will read it.
 ### 2026-08-16 — overnight residue run, `RS-08`
 Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
+
+
+
 - **The decision the `2.2.0` plan asked for, taken.** `SI-5` said the identity agreement is checked
   *whenever both documents are present*, and implemented it as *whenever both documents parse*. That
   left a third state nobody chose: a source shaped like a registry whose `aart-registry.json` is
@@ -2373,6 +2399,9 @@ Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
 - **No new findings.**
 ### 2026-08-16 — overnight residue run, `RS-01`
 Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
+
+
+
 - **The narrowing was an accident, not a decision.** `VI-5` refuses a `payload/mcp.json` that
   declares no server, and `VI-4` refuses one that launches a file the consumer never receives. Both
   were computed inside the branch of the audit that reads a *vendored* package's `provenance.json`,
@@ -2410,6 +2439,9 @@ Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
 Branch `fix/uninstall-removes-the-file-it-made`, cut from `main`, not pushed. **The note only.** The
 brief asks for it committed on its own before any code, and that is what this commit is. Both
 findings stay `open`.
+
+
+
 - **Reproduced first, on a real wheel.** Install one `mcp` and one `hook` artifact into a clean git
   repository, uninstall both: `.agent-artifacts/` and `.claude/hooks/guard/` are reclaimed, and
   `.mcp.json` survives as `{"mcpServers":{}}` while `.claude/settings.json` survives as
@@ -2439,6 +2471,9 @@ findings stay `open`.
   register rows point at it and stay `open`.
 ### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` implemented
 Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the commit before it.
+
+
+
 - **The fix is one predicate.** The emptiness test now walks the effect's own `json_path` instead of
   testing the document root, so `{"mcpServers": {}}` after the last identity goes is recognised as an
   empty file rather than a document with one key in it. The removal branch that shipped in `2.2.0`
@@ -2468,6 +2503,9 @@ Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the 
   says so rather than letting `closed` imply more than the fix delivers.
 ### 2026-08-16 — overnight residue run, `RS-04`
 Branch `fix/vendor-refusal-names-revendor-rs04`, cut from `main`, not pushed.
+
+
+
 - **The refusal now says which command is not create-only.** Upstream moving is the ordinary reason
   to run `vendor` a second time, and `revendor` is what adopts movement. *artifact package already
   exists* was true and stopped there.
@@ -2484,6 +2522,9 @@ Branch `fix/vendor-refusal-names-revendor-rs04`, cut from `main`, not pushed.
 - **No new findings.**
 ### 2026-08-16 — overnight residue run, `RS-02`
 Branch `fix/registry-requests-stop-stamping-dead-bounds-rs02`, cut from `main`, not pushed.
+
+
+
 - **A window is now derived, never typed.** The command boundary substituted the literals `1.0.0`
   and `2.0.0` whenever a registry request arrived without a compatibility window — which is every
   action except `init`, because `--minimum-version` and `--maximum-version` exist on `init` alone.
@@ -2513,6 +2554,9 @@ Branch `fix/registry-requests-stop-stamping-dead-bounds-rs02`, cut from `main`, 
 ### 2026-08-16 — overnight residue run, `LAF-49`
 Branch `fix/document-the-git-environment-laf49`, cut from `main`, not pushed. The last item in the
 brief's queue.
+
+
+
 - **Nothing about the behaviour changed, and nothing should have.** AART runs system Git with an
   allowlisted environment — `HOME`, `PATH`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`, `SYSTEMROOT` — so
   `https_proxy` never reaches it. That is deliberate: a proxy URL is one of the ordinary places a

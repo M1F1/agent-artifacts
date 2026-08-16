@@ -141,6 +141,12 @@ All three are also reachable from `aart` with no arguments, under **Action → r
 A registry is an ordinary Git checkout. AART can prepare and verify changes, but never commits or
 pushes them. An empty Git repository is not a registry until its `aart-registry.json` marker exists.
 
+AART reaches every remote by running system Git, with an allowlisted environment rather than the
+operator's. If a repository clones at a shell prompt but not through AART, the environment is where
+to look: [the environment AART gives Git](docs/configuration/git-environment-v1.md) lists what is
+passed, what is dropped, and what to configure instead — `https_proxy` is dropped, and behind a
+proxy that is the whole failure.
+
 ```sh
 # Create a registry
 aart registry init --source . --source-id company --display-name "Company Registry"
