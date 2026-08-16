@@ -74,6 +74,7 @@ the code.
 | `LAS-32` | A persisted record read by a later executable than wrote it | `LA-M-12`, `LA-M-13`, `LA-M-14`, `LA-M-15` |
 | `LAS-61` | A compatibility window declared by a release that is no longer the running one | `LA-R-37`..`LA-R-41` |
 | `LAS-33` | The last subscription removed while installed artifacts remain | `LA-S-11`, `LA-S-12`, `LA-S-13` |
+| `LAS-60` | A destination AART shares with the operator, emptied | `LA-U-31`..`LA-U-35` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -216,6 +217,11 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-U-38` | An origin withdrawn | flag | D | `source add`, one command that resolves an artifact, then `source remove --yes`; count what is left under the object store | the content of a removed source is gone, or a command can say it is still there and remove it |
 | `LA-U-39` | The managed block, four ways | flag | D | install and uninstall a `memory` artifact at project scope in four states: no instruction file; an unowned file present; an unowned file with `--force`; and a forced install whose file the operator then edits by hand | each uninstall removes the block and nothing else — the file AART made goes, the file it did not stays with the operator's bytes intact |
 | `LA-U-40` | The config merge, three ways | flag | D | install and uninstall `mcp` artifacts whose effect is `merge-json`: one alone; two, uninstalled in install order and in reverse; and one into a `.mcp.json` the operator wrote first | the file AART created does not outlive the last entry in it; the operator's own entries survive; the order of uninstall does not change the result |
+| `LA-U-31` | **The created merge file goes with its last identity** | flag | D | clean repo; install one `mcp`; uninstall; `git status --porcelain` | `.mcp.json` is gone and the repository is clean, not `{"mcpServers":{}}` left untracked |
+| `LA-U-32` | The same for a list merge | flag | D | clean repo; install one `hook`; uninstall | `.claude/settings.json` is gone, not `{"hooks":{"PreToolUse":[]}}` |
+| `LA-U-33` | **The operator's own file is never removed** | flag | D | commit `.mcp.json` as `{"mcpServers":{}}` **before** installing; install; uninstall | the file survives byte-identical; `git status` clean because nothing changed, not because nothing is there |
+| `LA-U-34` | A created file holding anything else is kept | flag | D | install; add a key AART did not write; uninstall | the file survives with that key intact and the container empty |
+| `LA-U-35` | **Reclamation depends on uninstall order** | flag | D | install two `mcp` artifacts separately, uninstall in install order, then repeat in reverse | install order: the file stays; reverse order: it goes. Record the asymmetry — the effect that created the file is the only one entitled to remove it |
 
 ## Phase M — setup and MCP · human-driven
 

@@ -68,6 +68,8 @@
   git runs without `https_proxy` and nothing documents it. See *Overnight
 - **Next task:** the overnight residue run continues with `LAF-45`, then the validation cluster
   (`RS-08`, `RS-01`). See *Overnight
+- **Next task:** the overnight residue run continues with the `LAF-47`/`RS-10` implementation the
+  design note now specifies, then the cheap ones — `RS-04`, `RS-02`, `LAF-49`. See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -521,6 +523,8 @@ It is reproducible without a terminal and the register row carries both halves.
 (from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12), `LAF-90` (from 14). Every one has a
 register row saying where it came from.
 **`LAF-90` is the highest-severity thing found tonight:** an operator who accepts the curses
+(from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12). Every one has a register row saying
+where it came from.
 **`LAF-85` is the one to read first:** something wrote to
 your real data root during this run, and the quality gates have been measured clear of it.
 
@@ -2506,6 +2510,7 @@ Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the 
 - **Five scenarios, five passes.** `LA-U-31`..`LA-U-35` in
   `docs/testing/PROGRESS-live-acceptance-v11.md`, on branch
   `fix/uninstall-removes-the-file-it-made`. Same registry, authored and
+  `docs/testing/PROGRESS-live-acceptance-v11.md`, on this branch. Same registry, authored and
   committed by a wheel built from `main`. After install and uninstall of the same two artifacts in
   the same clean repository, `main` leaves `?? .claude/` and `?? .mcp.json` and the branch leaves
   nothing.
