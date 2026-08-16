@@ -58,7 +58,7 @@ does not have to agree with the present; a current document does.
 | `LAF-43` | medium | `2.4.0` live acceptance | `deferred` | — cluster C5; `DESIGN-readable-receipt.md` §5 leaves it for its own stream |
 | `LAF-45` | medium | `2.4.0` live acceptance | `open` | — the rule it teaches is applied to the new commands; `audit --check-upstream` itself is untouched |
 | `LAF-47` | medium | `2.4.0` live acceptance | `open` | — see *Corrections* below |
-| `LAF-49` | low | `2.4.0` live acceptance | `open` | — |
+| `LAF-49` | low | `2.4.0` live acceptance | `closed` | `docs/configuration/git-environment-v1.md` names what the Git subprocess receives, what it does not, and the `git config --global http.proxy` route that works because `HOME` is passed; the README points at it from *Maintaining a registry*. The behaviour is unchanged and deliberate — this row was always a documentation gap. `tests/git_environment_docs_test.py` reads the page's three tables and compares them against `_ALLOWED_ENVIRONMENT` and the real `_safe_environment`, so a variable added to the code and not to the page fails the suite |
 | `LAF-52` | high | `2.5.0` live acceptance | `closed` | `RR-2A`; `tests/setup_render_test.py`, and `marketplace setup` at a terminal prints the failure detail, the artifact key and the manual route |
 | `LAF-53` | high | `2.5.0` live acceptance | `closed` | `RR-4`; `aart marketplace receipt undo <coordinate>` |
 | `LAF-54` | high | `2.5.0` live acceptance | `closed` | `RR-2A`; `marketplace setup` without `--yes` prints the effect list, the capabilities and the manual alternative before asking for approval |

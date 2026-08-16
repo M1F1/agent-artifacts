@@ -13,9 +13,12 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight queue is empty. The run continues on the brief's fallback —
+  re-checking this register's own `closed` rows against the evidence each one names, oldest first,
+  repairing nothing. See *Overnight
+  run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
+  the human-gated passes — the curses front-end and the MCP credential run — wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -374,6 +377,54 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 ## Blockers
 
 None.
+
+## Overnight run 2026-08-15 → 16
+
+The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
+another; they can be reviewed and merged in any order. `PROGRESS.md` and the register are touched by
+each of them, so expect conflicts in those two files and take both sides.
+
+| # | Item | Branch | State |
+|---|---|---|---|
+| 1 | `RS-12` — setup steps ran without `HOME`, so docker could not read `config.json` | `fix/setup-docker-credentials-rs12` | done, walked live (v4) |
+| 2 | `LAF-64` — the scope selector returned two types | `fix/curses-install-scope-laf64` | done, headless part walked; curses skin human-gated |
+| 3 | `LAF-75` — `wheel-digest` printed the digest of a wheel it deleted | `fix/wheel-digest-emits-what-it-hashes-laf75` | done, walked live (v5) |
+| 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
+| 5 | `LAF-73` — an old record still says there is no undo | `fix/receipt-verify-stale-rollback-laf73` | done, walked live (v6) |
+| 6 | `RS-11`/`RS-13`/`RS-14`/`RS-15` — the recipe format is closed | `docs/recipe-format-options` | options note written, nothing implemented; all four stay `open` |
+| 7 | `RS-09` — a refused `registry` command said nothing about what to do next | `fix/registry-refusals-carry-remediation-rs09` | done in two commits on one branch: refusals, then the `validate`/`audit` report findings. `RS-09` closes |
+| 8 | `RS-07` — `status` refused to read the project once the last source was removed | `fix/status-names-the-missing-source-rs07` | done, walked live (v7). `RS-07` closes |
+| 9 | `LAF-45` — a completed `--check-upstream` printed nothing, so success looked like a dropped flag | `fix/audit-upstream-says-it-checked-laf45` | done, walked live (v8). `LAF-45` closes |
+| 10 | `RS-08` — a broken `aart-registry.json` skipped the identity check instead of failing it | `fix/broken-registry-descriptor-fails-rs08` | done, walked live (v9). `RS-08` closes |
+| 11 | `RS-01` — an `mcp` package written by hand was never checked, only a vendored one | `fix/owned-mcp-descriptor-is-checked-rs01` | done, walked live (v10). `RS-01` closes |
+| 12 | `LAF-47`/`RS-10` — uninstall leaves the merge file behind, emptied | `fix/uninstall-removes-the-file-it-made` | two commits: the design note alone, then the fix. Walked live (v11). Both close; the case the design names stays open as `LAF-89` |
+| 13 | `RS-04` — `vendor` refused without naming `revendor`, the command that would work | `fix/vendor-refusal-names-revendor-rs04` | done. `RS-04` closes. No live walk: a reworded refusal, which the brief excludes |
+| 14 | `RS-02` — every registry request carried a compatibility window from an AART that no longer runs | `fix/registry-requests-stop-stamping-dead-bounds-rs02` | done, walked live (v12). `RS-02` closes. The same literals in the curses wizard are a new finding, `LAF-90` |
+| 15 | `LAF-49` — Git runs without `https_proxy` and nothing said so | `fix/document-the-git-environment-laf49` | done. `LAF-49` closes as the documentation gap it always was; no behaviour changed. No live walk — the brief excludes a document |
+
+**New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5), `LAF-86`
+(from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12), `LAF-90` (from 14). Every one has a
+register row saying where it came from.
+**`LAF-90` is the highest-severity thing found tonight:** an operator who accepts the curses
+wizard's own suggested defaults gets a registry that the AART which created it then refuses to read.
+It is reproducible without a terminal and the register row carries both halves.
+**`LAF-85` is the one to read first:** something wrote to
+your real data root during this run, and the quality gates have been measured clear of it.
+
+**Before you merge, read `LAF-87`.** The live-acceptance stressor ids continue across four separate
+documents, and the scenarios file's own table stops at `LAS-30` as if `LAS-31` were free. It is not —
+`LAS-31`..`LAS-56` are already taken by the v2, v3 and setup-build records. Branches 3, 5 and 8 each
+took one of `LAS-31`, `LAS-32`, `LAS-33` for a new meaning tonight and need renumbering above the
+highest id in use before they merge. Branches 9, 10 and 11 take `LAS-57`, `LAS-58` and `LAS-59` and
+state the arithmetic in the scenarios file so the next run does not repeat it; branch 12 takes
+`LAS-60` and branch 14 takes `LAS-61` on the same rule.
+
+**Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
+and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
+untouched — it needs a live run against a second GHE host, which this run cannot make. Item 6 is the
+note that says so in full: it measures all four refusals, recommends leaving them open for now, and
+names the two observations that would change that.
 
 ## Work log
 
@@ -2026,3 +2077,392 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-73`
+
+Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+- **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
+  `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
+  command reverses a completed setup*, and the same executable that holds both facts said nothing.
+  An operator reading an old receipt does by hand what one command does.
+- **A claim in `verify`, which is the shape `RR-10F` set.** `receipt verify` now asks whether the
+  recorded rollback line is a command this executable accepts. When it is not, the report says so
+  and names the command that works today, composed from the record's own coordinates. The record is
+  not touched: a persisted record is evidence of what a run reported, and rewriting it would destroy
+  the thing receipts exist to be.
+- **One source for the command string.** `rollback_command_for` composes it, `rollback_command`
+  calls it, and `verify` calls it. Composing the sentence twice is precisely how `LAF-65` happened.
+- **Walked live** — `docs/testing/PROGRESS-live-acceptance-v6.md`, which lives on the
+  `fix/receipt-verify-stale-rollback-laf73` branch and is therefore not linked from here,
+  scenarios `LA-M-12`..`LA-M-15`, stressor `LAS-32`. A real registry, a real install, a real setup
+  writing a managed block into a sandbox home. With the record aged to the pre-`2.6.0` sentence, the
+  `main` wheel reports `true=3, false=0` and says nothing; the branch reports `true=3, false=1`,
+  names the undo command, exits `1`, and leaves the record file's sha256 unchanged. The command it
+  names was then run: the block and the file are gone.
+- **`LAF-73` closes; two findings recorded, not fixed.** `LAF-84`: a completed undo leaves the
+  record reading `skipped`, a word that in this vocabulary means the setup never ran. `LAF-85`:
+  something wrote to the real user data root at `23:34`–`23:36` during this unattended session while
+  every live scenario ran under a sandbox `HOME`; `make integration`, `unit`, `validate` and
+  `packaging-check` were each measured afterwards and touched nothing there, so the writer is
+  unidentified and now tracked rather than shrugged at a second time.
+
+### 2026-08-16 — overnight residue run, the recipe-format options note
+
+Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work package, no code.
+
+- **Four findings, one decision.** `RS-11`, `RS-13`, `RS-14`, `RS-15` are what the triage brief says
+  they are: the same postponed decision seen from four sides. The note treats them as one and is
+  filed as `docs/design/OPTIONS-recipe-format-change.md`, on the `docs/recipe-format-options`
+  branch and therefore not linked from here. Nothing
+  is implemented, and all four rows stay `open` — `RS-11` was explicitly out of scope for this run.
+- **The refusals are measured, not remembered.** Each of the four was produced by handing a real
+  recipe to the shipped parser and to the canonical-tree check, and the note quotes the parser's own
+  words with the file and line that says them.
+- **Two claims were narrowed by the measurement.** `RS-13` blocks nothing: a `file.managed-block@1`
+  step on `~/.zshrc` parses and plans today, so the missing module is a convenience. `RS-15` is
+  about the package *root*: further files under `payload/` are already accepted for `skill`, `mcp`
+  and `hook`, and `SETUP.md` was refused by that same allowlist until `LAF-27` added it — which is
+  the fix shape, already walked once.
+- **What the change would actually cost.** Not the code. `schema_version` and `protocol_version`
+  must both be exactly `2`, and this project ships one revision of a protocol and refuses the rest.
+  So changing what a recipe may say means every published recipe rises in step, and a registry
+  rebuilt on the new revision stops being readable to consumers who have not upgraded — the
+  `LAF-60`/`LAF-62` rollout, seen twice. That bill is the same for one change or four, which is the
+  argument for doing them together or not at all.
+- **The recommendation is to wait, and the note says what for.** Two observations, neither of which
+  exists in any run: a second GHE host, which is what produces a per-operator value that is not a
+  secret; and an operator who completed a setup wrongly because the recipe could not ask for a
+  username, rather than merely reading a paragraph in `SETUP.md`. Without those, `RS-11` buys
+  comfort rather than correctness, and low-and-open is a complete answer.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-09` (first half)
+
+Branch `fix/registry-refusals-carry-remediation-rs09`, cut from `main`, not pushed. One work
+package, split: the refusals, with the report findings left for the next one.
+
+- **The family that says the most after a success said nothing after a refusal.** `registry` emits
+  follow-up commands when an action works. Its 37 refusals carried an empty `remediation` in both
+  renderers, so the operator who most needed a next step was the one who got none.
+- **The test reads the shipped modules, not a list.** `RegistryRefusalRemediationTest` walks the
+  syntax of `registry_commands/planning.py` and `commands/registry.py` and fails on any `_error`
+  built without a next step. A list of the refusals that carry one would be true the day it was
+  written; this covers the refusal added next month. It failed on 37 sites before the fix.
+- **Shared lines, not one sentence per site.** Fifteen constants cover thirty-seven refusals,
+  because the operator's next step is the same wherever the same problem is stated — the lesson
+  `SI-6` already paid for on the object store. The one exception interpolates the package it is
+  about, so the command it names can be run as written.
+- **The existing guard caught two mistakes while I wrote them.** `EveryVisibleCommandMentionTest`
+  parses every `aart …` the package prints: it rejected `aart registry refresh`, which does not
+  exist — the action is `refresh-native` — and every command ending in `--source .`, because a
+  trailing period is stripped as punctuation and leaves the flag without a value. Both were mine,
+  both were caught before they could reach an operator.
+- **The parity test then found the second half of the defect.** `_emit_report` — how `validate` and
+  `audit` state a refusal in text — printed the message and dropped the remediation, while the JSON
+  envelope carried it. That is `LAF-52`'s shape one command family over, and it is fixed here.
+- **`RS-09` stays `open`, on purpose.** The 34 findings `validate` and `audit` collect through
+  `_diagnostic` still carry nothing. That is the next package, and the register row says so rather
+  than claiming a closure the operator would not see.
+- **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
+  and every claim here is driven through the shipped CLI parser and the shipped renderers.
+
+### 2026-08-16 — overnight residue run, `RS-09` (second half, `RS-09` closes)
+
+Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
+halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
+not pushed.
+
+- **A report is where `validate` and `audit` state a problem.** The first half gave every `Err` a
+  next step. These two commands do not refuse — they hand back a report, and its 33 findings named
+  no next step at all. The dead end was the same one, in the commands a maintainer runs most.
+- **The guard widened to `_diagnostic` and went red on 33 sites.** Same shape as before: it reads
+  the syntax of the shipped module rather than a list, so the finding added next month is covered.
+- **Warnings get a next step too, and some of them say *nothing to correct*.** A warning like
+  *registry contains no external references* describes the limit of what the audit could check, not
+  a defect. Saying which of the two it is, in the line itself, is the whole value: an operator
+  otherwise cannot tell a gap in the registry from a gap in the audit.
+- **The second CLI walk covers the report path.** `registry audit` on the `registry-v1` fixture
+  prints three warnings and now three remediation lines, one per finding, and the test asserts the
+  counts match rather than that *some* remediation appeared. Reproduction for the error path:
+  `aart registry validate --strict` on a registry whose `aart.lock.json` is missing prints
+  *compiled index requires a valid committed lock* with the lock-then-build sequence, and
+  *compiled registry requires lock and index* with the rebuild.
+- **`RS-09` closes.** Both renderers, both surfaces, guarded in the shipped modules.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-07`
+
+Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
+
+- **The refusal answered the wrong question.** `source remove` is the exit the product offers, and
+  `DESIGN-source-subscription-lifecycle.md` §4 promises the project stays legible afterwards. Remove
+  the *last* subscription and the next `marketplace status` refused with *this content operation
+  requires at least one enabled source* — a statement about the configuration in answer to a
+  question about the project, while the installed skill sat on disk two directories away.
+- **`status` is not a content operation.** It reads the manifest and reports it; it fetches nothing.
+  `uninstall` was exempted in `2.2.0` because the design names it, and `status` — the same kind of
+  question — was left behind. The fix is one frozen set, `_PROJECT_LOCAL`, and `content_required`
+  reading it, so the two commands that answer from the project answer without a source and every
+  other lifecycle action keeps refusing.
+- **The design now takes the decision it was recorded as not taking.** §4 states which commands stay
+  answerable when the removed alias was the only one, and says plainly that `2.2.0` decided this for
+  `uninstall` alone.
+- **Walked live, and the two wheels disagree by exactly one line.** `LA-S-11`..`LA-S-13` in
+  `docs/testing/PROGRESS-live-acceptance-v7.md`, on branch
+  `fix/status-names-the-missing-source-rs07`: the `main` wheel
+  refuses with exit `1`, the branch wheel reports `source-unavailable` with exit `0`, and the
+  coordinate it prints is then handed to `uninstall` — with no source configured — which reviews,
+  applies, and leaves the project empty. `install`, `update`, `list` and `setup` still refuse.
+- **One new finding, `LAF-86`.** `uninstall` with no coordinate advises `marketplace list`. That
+  command browses the *sources*, not the project, and refuses outright when none is configured — so
+  the operator who just removed their last subscription is pointed at the one command that cannot
+  help. Recorded, not fixed: naming the right command there is a different package.
+
+### 2026-08-16 — overnight residue run, `LAF-45`
+
+Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
+
+- **The command that exists to report said nothing on success.** `registry audit --check-upstream`
+  printed a line per vendored artifact when one was behind or unreachable, and nothing at all when
+  every copy was current. An operator reading a CI log could not tell that from a command line the
+  flag had been dropped out of — and on the `main` wheel the two outputs are byte-identical, which
+  this run measured rather than assumed.
+- **One line, at the end, only when asked.** The audit now closes with an `info` note: *checked 1
+  vendored artifact against its upstream: 1 up-to-date, 0 changed, 0 unreachable*, or *no vendored
+  artifacts to check against upstream* when the registry vendors none. Without the flag there is no
+  note, so its absence still means something.
+- **It is a note, not a finding.** New code `registry-audit-note` at severity `info`: it carries no
+  remediation because nothing here asks anyone to act, and `passed` already ignores everything below
+  `error`, so an audit that was passing keeps passing.
+- **The dispositions come from `revendor`'s own vocabulary.** `_vendored_upstream_findings` now
+  returns `up-to-date` / `changed` / `unreachable` alongside its diagnostics, so one answer about one
+  copy does not get two names depending on which command asked.
+- **A test that asserted the defect was corrected.** `test_an_unmoved_upstream_raises_no_drift_finding`
+  asserted the word *upstream* appeared nowhere — which is silence-on-success written down as if it
+  were the requirement. It now asserts what it means: no *finding*, and the note is separate.
+- **Live: two passes and one honest blocked.** `LA-R-31`/`LA-R-32` in
+  `docs/testing/PROGRESS-live-acceptance-v8.md`, on branch
+  `fix/audit-upstream-says-it-checked-laf45`. `LA-R-33` — the
+  counts on a real vendored copy — is `blocked` by `LAF-43`: vendoring refuses a local repository,
+  so no sandbox registry can hold a real vendored package, and this run may not publish to a remote.
+  The three dispositions are covered hermetically through the real CLI instead, and the record says
+  so rather than implying live coverage it does not have.
+- **One new finding, `LAF-87`, and it affects tonight's other branches.** The live-acceptance
+  stressor ids run to `LAS-56` across four documents while the scenarios file's table stops at
+  `LAS-30`. Three branches from this run each re-used an id that already means something else.
+  Recorded, not fixed; this branch starts at `LAS-57` and writes the arithmetic down where the next
+  run will read it.
+
+### 2026-08-16 — overnight residue run, `RS-08`
+
+Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
+
+- **The decision the `2.2.0` plan asked for, taken.** `SI-5` said the identity agreement is checked
+  *whenever both documents are present*, and implemented it as *whenever both documents parse*. That
+  left a third state nobody chose: a source shaped like a registry whose `aart-registry.json` is
+  broken was admitted in silence. The plan recorded it as `RS-08` and said closing it needed a new
+  refusal — its own decision, not a side effect. It is now in
+  `DESIGN-subscription-identity-binding.md` §2.
+- **A marker that is there must be readable.** A root entry named `aart-registry.json` must be a
+  regular file that parses as a registry manifest. Absence is untouched: a source publishing only
+  `aart-source.json` is an ordinary native source and stays one. What is refused is a snapshot that
+  takes the marker's reserved name and does not honour it.
+- **The refusal says what the parser could not read.** *aart-registry.json is present and does not
+  parse, so the identity this source declares cannot be checked: missing required field
+  'default_channel'* — the parser's own first line, because *that* it failed is the refusal and
+  *why* is the only part a maintainer can act on. Two remediation lines: validate and republish, or
+  remove the file if this source is not a registry.
+- **Walked live, and the earlier wheel shows the cost.** `LA-S-14`..`LA-S-16` in
+  `docs/testing/PROGRESS-live-acceptance-v9.md`, on branch
+  `fix/broken-registry-descriptor-fails-rs08`. On `main` the same
+  source is added, an artifact installs from it, and the consumer's manifest records
+  `declared_id: la-rs08-source` — an identity read from one document while the document that exists
+  to corroborate it could not be read. Three broken shapes refuse on the branch (missing field, not
+  JSON, a directory under that name); a source with no marker is unaffected.
+- **The refusal withholds, it does not destroy.** A subscription made while healthy whose marker
+  breaks later fails its `sync` and keeps its last-known-good snapshot: `source list` still healthy,
+  `marketplace status` still `current`, the installed file still on disk.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-01`
+
+Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
+
+- **The narrowing was an accident, not a decision.** `VI-5` refuses a `payload/mcp.json` that
+  declares no server, and `VI-4` refuses one that launches a file the consumer never receives. Both
+  were computed inside the branch of the audit that reads a *vendored* package's `provenance.json`,
+  so an `mcp` package authored in place — the ordinary way, and what `registry scaffold mcp` sets
+  you up to do — reached neither. Nothing in the consequence depends on where the bytes came from:
+  the install merges `descriptor["server"]` either way.
+- **`registry audit` now runs the delivery check for every package it walks.** One call moved out of
+  the vendored branch; the function takes the package base and its manifest instead of a vendoring
+  record, and a `vendored` flag decides one word in the message.
+- **It is `audit`, not `validate`, and that is the whole design decision.**
+  `validate_registry_workspace` is not only the publisher's gate — the consumer runs it over a
+  candidate source through `validate_registry_source_candidate`. A new hard failure there makes every
+  registry already carrying such a descriptor unloadable on upgrade, on the subscriber's side too:
+  the protocol break `VI-5` rejected, arrived at from the other direction. Recorded in
+  `DESIGN-vendored-copy-integrity.md` §7 as an amendment that leaves the `2.4.0` paragraph standing.
+- **An owned package is not called vendored.** Same fault, same remedy, but the message drops the
+  word rather than sending a maintainer looking for an upstream that does not exist.
+- **Walked live, three passes.** `LA-R-34`..`LA-R-36` in
+  `docs/testing/PROGRESS-live-acceptance-v10.md`, on branch
+  `fix/owned-mcp-descriptor-is-checked-rs01`. The registry — three `mcp`
+  packages, nothing vendored — was created, scaffolded, locked, built and committed by a wheel built
+  from `main`, so the finding cannot be an artefact of how the package was written. On `main`:
+  `registry audit: passed`, exit `0`. On the branch: two errors naming `mcp/atlassian` and
+  `mcp/jira`, exit `1`, and the third, healthy package named by neither.
+- **The harm was measured rather than asserted.** `LA-R-36` installs the refused artifact from a
+  consumer project on the *branch* wheel. `registry validate --strict --frozen` passes, the
+  subscription succeeds, the install succeeds, and the project's `.mcp.json` ends up holding
+  `"atlassian": {}` — a named server that starts no process. That empty object is why the audit error
+  exists and why it is not a load-time refusal.
+- **No new findings.** One thing worth a reader's eye is written into the v10 record rather than the
+  register: `marketplace list` labels the empty-server artifact `[healthy]`, because that word means
+  reconciliation health, not runnability. It is the `VI-5` decision working as chosen, and it is also
+  why this check has to live on the maintainer's side.
+
+### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` design note
+
+Branch `fix/uninstall-removes-the-file-it-made`, cut from `main`, not pushed. **The note only.** The
+brief asks for it committed on its own before any code, and that is what this commit is. Both
+findings stay `open`.
+
+- **Reproduced first, on a real wheel.** Install one `mcp` and one `hook` artifact into a clean git
+  repository, uninstall both: `.agent-artifacts/` and `.claude/hooks/guard/` are reclaimed, and
+  `.mcp.json` survives as `{"mcpServers":{}}` while `.claude/settings.json` survives as
+  `{"hooks":{"PreToolUse":[]}}`. `git status --porcelain` reports two untracked paths on a repository
+  that was clean. So `RS-10` is right that this is not an `mcp` quirk: `key` mode leaves an empty
+  object and `list` mode an empty array.
+- **The code for this exists and cannot fire.** `lifecycle/application.py:578` removes the
+  destination when the effect created it and the result is empty — but it tests the **whole
+  document**, and every merge target in every shipped profile writes under a `json_path`
+  (`mcpServers`, `hooks.PreToolUse`, `mcp`, `hooks.BeforeTool`). After the last removal the document
+  is `{"mcpServers": {}}`, which is not empty, so the branch is dead code for a merge at the
+  document root that no profile asks for.
+- **The evidence question is the real one, and it has a sharp answer.** `created_destination` is
+  recorded per *effect*. Install two `mcp` artifacts separately and the first records `true`, the
+  second `false` — correctly, the file was there. Uninstall in that order and the last effect out is
+  the one that says `false`, while the record that said `true` was deleted with the first uninstall.
+  The evidence for a file's origin can be destroyed before the file is last touched.
+- **The rule the note settles on.** Remove only when the effect being reversed created the file, the
+  merge was already proven reversible, and what remains is exactly the empty container chain on that
+  effect's own `json_path` and nothing else. The third condition is what makes the first safe to act
+  on: a file AART made is still a file an operator may have written into.
+- **What it leaves, on purpose.** The reverse-order case above. Closing it needs a durable
+  per-destination ownership fact in the install state, which is a state-schema change belonging to
+  the version-boundary stream (`LAF-62`, cluster C4). The note says so, and the acceptance criteria
+  require the register row to say so too rather than claim more than the fix delivers.
+- **No new findings.** The design note is `docs/design/DESIGN-uninstall-file-reclamation.md`; both
+  register rows point at it and stay `open`.
+
+### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` implemented
+
+Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the commit before it.
+
+- **The fix is one predicate.** The emptiness test now walks the effect's own `json_path` instead of
+  testing the document root, so `{"mcpServers": {}}` after the last identity goes is recognised as an
+  empty file rather than a document with one key in it. The removal branch that shipped in `2.2.0`
+  and could never fire now fires.
+- **Walking the chain, not descending to the leaf.** One extra key at any level means the file holds
+  something this effect did not put there, and a file with anything in it is kept whoever wrote it.
+  That is the condition that makes acting on `created_destination` safe.
+- **Five scenarios, five passes.** `LA-U-31`..`LA-U-35` in
+  `docs/testing/PROGRESS-live-acceptance-v11.md`, on branch
+  `fix/uninstall-removes-the-file-it-made`. Same registry, authored and
+  committed by a wheel built from `main`. After install and uninstall of the same two artifacts in
+  the same clean repository, `main` leaves `?? .claude/` and `?? .mcp.json` and the branch leaves
+  nothing.
+- **The refusals were measured, not asserted.** A `.mcp.json` committed as `{"mcpServers":{}}`
+  *before* any install survives install and uninstall byte-identical. A file AART created that an
+  operator has since written into survives with their key intact and the container emptied.
+- **A test that asserted the residue was corrected.**
+  `test_key_merge_with_json_null_is_present_and_can_be_removed` ended by asserting the file was left
+  as `{"mcpServers": {}}`. Its subject is that a `null` value is found and taken out; what it was
+  pinning at the end was the defect. It now asserts the file is gone.
+- **Two new findings, recorded and not fixed.** `LAF-88`: the emptied directory outlives the file —
+  `.claude/settings.json` goes and `.claude/` stays, empty, invisible to `git status` because git
+  does not track empty directories. `LAF-89`: whether the file is reclaimed depends on uninstall
+  order, because `created_destination` is per effect and the record that carries `true` is deleted by
+  the first uninstall. `LA-U-35` walks the asymmetry both ways — install order leaves the file,
+  reverse order removes it. The design named this case before the walk found it, and the register row
+  says so rather than letting `closed` imply more than the fix delivers.
+
+### 2026-08-16 — overnight residue run, `RS-04`
+
+Branch `fix/vendor-refusal-names-revendor-rs04`, cut from `main`, not pushed.
+
+- **The refusal now says which command is not create-only.** Upstream moving is the ordinary reason
+  to run `vendor` a second time, and `revendor` is what adopts movement. *artifact package already
+  exists* was true and stopped there.
+- **Which remediation depends on what is actually there.** A package carrying vendor provenance is
+  sent to `aart registry revendor <kind> <name> --artifact-version <version>`, with the reason it
+  needs that flag — `revendor` re-resolves the recorded ref and plans nothing without the version
+  this registry will publish. A package authored in place is told it records no upstream, and offered
+  the two things that do work: a name this registry does not use, or removing the package first.
+- **Sending an authored package to `revendor` would have been a second wrong answer.** `revendor`
+  re-resolves a recorded upstream; there is none, so it would refuse in its turn. The test asserts
+  the word does not appear in that case.
+- **No live walk.** The brief excludes a reworded refusal, and this is one: no behaviour changes, the
+  same exit code, the same message, one remediation line added.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-02`
+
+Branch `fix/registry-requests-stop-stamping-dead-bounds-rs02`, cut from `main`, not pushed.
+
+- **A window is now derived, never typed.** The command boundary substituted the literals `1.0.0`
+  and `2.0.0` whenever a registry request arrived without a compatibility window — which is every
+  action except `init`, because `--minimum-version` and `--maximum-version` exist on `init` alone.
+  Both literals now come from the one place that derives them from the running executable, and the
+  flag skin imports the same pair instead of computing its own ceiling. Three definitions of the
+  same rule are how a fourth went stale.
+- **The values were dead, and the run says so rather than assuming it.** `LA-R-40` scaffolds the
+  same artifact under a `main` wheel and under the branch wheel and compares the trees: byte
+  identical. A difference there would have meant something did read them and the register row was
+  wrong.
+- **The walk was worth its minutes for one reason.** The fix moves an import into `cli.py`, the
+  entry point. An import that resolves under the test runner and not under an installed wheel is a
+  failure every unit test passes through, so `LA-R-37` starts the real executable first. Five
+  scenarios, five passes, `docs/testing/PROGRESS-live-acceptance-v12.md`.
+- **What proves it:** `tests/registry_cli_test.py::RegistryCliTest::test_rs02_no_registry_action_declares_a_window_that_excludes_the_running_aart`
+  asserts the invariant across `scaffold`, `vendor` and `promote-native` rather than pinning one
+  literal, so an action added later inherits it. The second test holds the other side: an author who
+  really supports a wider range still gets the range they asked for.
+- **One new finding, recorded and not fixed. `LAF-90`, and it is the serious one.** The curses
+  wizard offers the same two literals as its defaults for `registry init`. There they are not dead:
+  an operator who presses return at both prompts authors a registry declaring `>=1.0.0,<2.0.0`, and
+  `registry validate` on that registry answers *registry workspace is incompatible with this AART
+  version*. The tool writes a registry it then refuses to read. Both halves were reproduced without
+  a terminal — the wizard's question loop takes its reader as an argument — so only the screen
+  itself is human-gated. `RS-02` fixed the flag path; the wizard is a separate package and was left
+  alone.
+
+### 2026-08-16 — overnight residue run, `LAF-49`
+
+Branch `fix/document-the-git-environment-laf49`, cut from `main`, not pushed. The last item in the
+brief's queue.
+
+- **Nothing about the behaviour changed, and nothing should have.** AART runs system Git with an
+  allowlisted environment — `HOME`, `PATH`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`, `SYSTEMROOT` — so
+  `https_proxy` never reaches it. That is deliberate: a proxy URL is one of the ordinary places a
+  credential hides, and `https://user:token@proxy.example:3128` is a supported form. `LAF-49` was
+  never a request to pass it through. It was that nobody was told.
+- **The cost is specific, so the page names it.** On a network whose only egress is a proxy, every
+  command that touches a remote fails with Git's transport error and no mention of a proxy — and
+  the operator exported the variable themselves, so it looks like it is in effect.
+  `docs/configuration/git-environment-v1.md` states what is passed, what is dropped, why, and the
+  route that works: `git config --global http.proxy`, which works precisely because `HOME` is
+  passed. It covers the SSH case and the credentialed-proxy case too.
+- **A document nobody links is barely better than no document.** The README's *Maintaining a
+  registry* section now points at it with the symptom attached — clones at the prompt, fails under
+  AART.
+- **What proves it, and what keeps it true:** `tests/git_environment_docs_test.py` reads the three
+  tables on the page and checks them against the code — the allowlist against
+  `_ALLOWED_ENVIRONMENT`, every variable the page calls dropped against what `_safe_environment`
+  actually returns, and the forced values against the values Git really sees. Prose can be right
+  once and drift; this cannot drift without failing the suite.
+- **No live walk.** The brief excludes a document, and the proxy scenario needs an egress-restricted
+  network this run cannot build. The claims are driven against the real function instead.
+- **No new findings.**
