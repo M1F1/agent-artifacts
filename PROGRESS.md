@@ -3747,3 +3747,23 @@ asks for. `LAF-90` was the highest-priority defect on the morning list.
   instead of the installed wheel, because `python -c` puts the current directory on `sys.path`. Both
   sides passed, which proved nothing. Re-run from outside the repository with
   `agent_artifacts.__file__` printed, the sides separate. Caught, not shipped.
+
+### 2026-08-16 — `2.6.1` prepared and released
+
+The overnight run's fourteen branches were merged into `main` and pushed, and `main` was cut as
+`2.6.1`. A patch release: fifteen recorded defects stop happening and nothing is added.
+
+- **Version.** `2.6.1` in `pyproject.toml`, `agent_artifacts/__init__.py` and
+  `runtime_contract.py`, set with `scripts/version.py set --write`. `scripts/release.py` moved to
+  `EXPECTED_VERSION = "2.6.1"` and `RELEASE_CONTRACT_VERSION = 15`.
+- **Documents.** `docs/release/schema-freeze-v15.json` (generated), `compatibility-v15.md`,
+  `release-checklist-v15.md`, `github-release-v2.6.1.md`, and a `CHANGELOG.md` section. The
+  register's `- checked:` list now names the v15 pair; the v14 pair leaves it, because a dated
+  record is not edited to agree with today.
+- **Why patch.** The v15 freeze differs from v14 in **one input and no protocol version** —
+  `agent_artifacts/setup.py`, where `rollback_command` was split so a persisted record can compose
+  the same sentence from its own coordinates. Verified by comparing the two freeze files rather
+  than asserted.
+- **What ships open is stated, not rounded down.** Fifty-seven, one `major` and two `high`, and the
+  release notes name four: `LAF-15`, the garbage-collection cluster, `LAF-85`, and `LAF-101` — the
+  last of which is the register admitting it is itself incomplete.

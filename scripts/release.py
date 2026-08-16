@@ -22,8 +22,8 @@ PYTHON = sys.executable
 # The release series this checklist governs.  REL01's `1.0.0` evidence is immutable: its
 # schema freeze, checklist, and release notes are never regenerated or edited.  A new release
 # series adds its own contract here and its own versioned documents beside the frozen ones.
-EXPECTED_VERSION = "2.6.0"
-RELEASE_CONTRACT_VERSION = 14
+EXPECTED_VERSION = "2.6.1"
+RELEASE_CONTRACT_VERSION = 15
 REFERENCE_REGISTRY_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry"
 SCHEMA_FREEZE_PATH = f"docs/release/schema-freeze-v{RELEASE_CONTRACT_VERSION}.json"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")

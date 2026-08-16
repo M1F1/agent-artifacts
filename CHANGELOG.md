@@ -3,6 +3,83 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.6.1 — 2026-08-16
+
+Fifteen recorded defects stop happening. Nothing is added: no command, no flag, no field, no schema,
+no protocol version, and no obligation for a registry maintainer in either direction. The v15 freeze
+carries protocol versions identical to v14 and differs in exactly one input,
+`agent_artifacts/setup.py`, where `rollback_command` was split so a persisted record can compose the
+same sentence from its own coordinates.
+
+Composed from [`residue-register.md`](docs/testing/residue-register.md) during one unattended
+overnight run. The register's open rows were taken in priority order, each on its own branch, each
+with a failing test first, and — for anything larger than a message string or a document — a live
+walk against a real locally built wheel installed into a throwaway venv, with no patched executable
+and no monkeypatching at the boundary. Ten such runs, `v4` through `v13`; nine of them walk both a
+branch wheel and a `main` wheel so the record distinguishes the change rather than describing the
+product.
+
+### Fixed
+
+- A setup step that pulls from a private registry can authenticate. The docker adapters were given a
+  sanitised environment that dropped `HOME` and `DOCKER_CONFIG`, so `docker pull` could not find the
+  credentials the operator had already stored, and the failure named neither (`RS-12`).
+- `release wheel-digest` hands over the wheel whose digest it printed. It built a wheel in a
+  temporary directory, hashed it, deleted it, and left the operator to upload a different one built
+  by `build_wheel.py`; `--output` writes the stamped artifact where the digest can be checked against
+  the file that is actually published (`LAF-75`).
+- The install-scope selector answers with one type. It returned either a scope or `None` for cancel
+  and `None` for *keep the default*, so a caller could not tell a choice from a refusal (`LAF-64`).
+- `docs-check` fails in both directions. It failed a document that called an open finding shipped
+  open, and passed one that called an open finding `closed` — the direction that asserts a safety
+  which is not there. `DOC010` is the second direction, and it reproduces on the row that stayed
+  wrong for a whole release while the gate was green (`LAF-69`).
+- `receipt verify` states the rollback command **this** executable accepts, composed from the
+  persisted record's own coordinates rather than from a sentence written for a run in flight
+  (`LAF-73`).
+- Every `registry` refusal and every `validate`/`audit` finding carries a next step. They named what
+  was wrong and stopped there (`RS-09`).
+- `marketplace status` reads the project after the last subscription is removed, and names the source
+  it could not find instead of reporting an empty project (`RS-07`).
+- `audit --check-upstream` says it checked when everything is current, so a pass is distinguishable
+  from a dropped flag (`LAF-45`).
+- A malformed `aart-registry.json` fails the identity check instead of being skipped as though the
+  file were absent (`RS-08`).
+- An `mcp` package written by hand is checked like a vendored one — the vendoring-specific advice is
+  no longer attached to packages that were never vendored (`RS-01`).
+- `marketplace uninstall` removes a `.mcp.json` or `.claude/settings.json` that AART itself created
+  and has just emptied, and still never removes one that existed before the install (`LAF-47`,
+  `RS-10`).
+- The `vendor` refusal on an existing package names `revendor`, the command that would work
+  (`RS-04`).
+- A registry request stops stamping a compatibility window taken from an AART that no longer runs;
+  the default window is derived from the running executable (`RS-02`).
+- The wizard suggests a window the running executable is inside. `registry init` offered
+  `1.0.0`/`2.0.0` by pressing return, wrote them, and then `registry validate` — the first command
+  its own success message recommends — refused the registry it had just created (`LAF-90`).
+- The Git environment AART hands a subprocess is documented (`LAF-49`).
+
+### Known defects shipped open
+
+Fifty-seven, of which one is `major` and two are `high`. The count is larger than at `2.6.0` because
+the same run that closed fifteen findings spent the rest of its budget measuring the product and the
+record, and measurement produces findings. Three bound what this release should be trusted to do:
+
+- `LAF-15` (`major`): `security scan` requires a canonical object envelope that no `aart` command
+  emits. The scanner is correct when fed one by hand; nothing ships that produces one.
+- `LAF-105`, `LAF-116`, `LAF-117`: the object store's garbage collector exists, is specified, and has
+  no caller, while a plan-only review, `marketplace status` and `source remove` all leave content on
+  disk. Nothing an operator can run removes any of it.
+- `LAF-85` (`high`): an unidentified writer touched the real data root during an unattended session.
+  Re-read read-only the next day — nothing has changed since, the trace is reproduced by an ordinary
+  install-then-uninstall, and the first, more alarming reading was refuted. What wrote is still
+  unknown.
+- `LAF-101` (`high`): the register itself is incomplete. It was seeded from one walk's findings table
+  and took the open rows, so three findings from that walk — two of them `major` — exist only as a
+  sentence in a run log. That is the form of record this register was written to replace.
+
+The rest, with dispositions and reproductions, in the residue register.
+
 ## 2.6.0 — 2026-08-15
 
 The persisted setup receipt gets a reader. `2.2.0` began writing a complete, redacted, plan-bound
