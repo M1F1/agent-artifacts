@@ -68,10 +68,18 @@ the code.
 | `LAS-71` | A shared config file two artifacts and the operator all write into | `LA-U-40` |
 | `LAS-72` | A repository that can only be reached without a network | `LA-S-17` |
 | `LAS-73` | A source tree holding a file type the snapshot format cannot carry | `LA-S-18` |
+| `LAS-57` | A check that found nothing, against a check that never ran | `LA-R-31`, `LA-R-32`, `LA-R-33` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
 way the system can be pushed.
+
+**The numbering continues across runs, not within this file.** `LAS-31`..`LAS-40` are defined in
+[PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md), `LAS-41`..`LAS-48` in
+[v3](PROGRESS-live-acceptance-v3.md), and `LAS-49`..`LAS-56` in
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts at `LAS-57`,
+not at the next number after the table above. That the table above stops at `LAS-30` while the
+namespace runs to `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -126,6 +134,9 @@ way the system can be pushed.
 | `LA-R-30` | Compatibility floor is stated | flag | D | `registry test --compatibility minimum`; per-artifact compatibility of the imported bundle | the floor and the offending artifact are both named in the failure |
 | `LA-R-42` | The analyzer surface, taken at its word | flag | D | `security analyzers`, then `security suites`, then read `security scan --help` for any way to select a suite or a provider | either a flag that runs what the first two commands advertise, or the two listings say plainly that nothing runs them |
 | `LA-R-43` | A command that skips the layer that owns it | flag | D | `registry init` in a throwaway Git checkout, then `registry format`; separately, ask which function the command reached | `format` succeeds *and* the application-layer entry point for it has a caller — one runtime reaching one layer |
+| `LA-R-31` | **A completed upstream check says so** | flag | D | `registry audit --check-upstream` on a registry that vendors nothing | one `info` line stating the check ran and found nothing to check |
+| `LA-R-32` | The same audit without the flag | flag | D | `registry audit` on the same registry | no such line — its absence is what tells an operator the check did not run |
+| `LA-R-33` | The counts on a real vendored copy | flag | D | `registry audit --check-upstream` on a registry holding a vendored package, upstream current | `n up-to-date, 0 changed, 0 unreachable`; needs an upstream the runner controls, which `LAF-43` denies |
 
 ## Phase S — sources
 

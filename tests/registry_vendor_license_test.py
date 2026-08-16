@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -37,6 +38,7 @@ from tests.registry_vendoring_projection_test import (
 )
 
 _PACKAGE = "artifacts/mcp/atlassian"
+_REGISTRY_FIXTURE = Path(__file__).parent / "fixtures" / "protocol" / "registry-v1"
 _MIT = (
     b"MIT License\n\nCopyright (c) 2024 Example\n\nPermission is hereby granted, free of charge, "
     b"to any person obtaining a copy of this software and associated documentation files.\n"
@@ -327,6 +329,8 @@ class VendoredAuditTest(_RegistryFixture):
             self.assertNotIn("behind upstream", messages)
 
     def test_an_unmoved_upstream_raises_no_drift_finding(self) -> None:
+        """No *finding*, which is not the same as no output — see the `LAF-45` tests below."""
+
         with self._audited(_licensed(("LICENSE", _MIT))) as root:
             with patch(
                 "agent_artifacts.commands.registry.default_native_acquirer",
@@ -337,7 +341,84 @@ class VendoredAuditTest(_RegistryFixture):
                 )
 
             self.assertEqual(code, 0, output)
-            self.assertNotIn("upstream", " ".join(_audit_messages(output)))
+            findings = [
+                message for message in _audit_messages(output) if not message.startswith("info: ")
+            ]
+            self.assertNotIn("upstream", " ".join(findings))
+
+    def test_laf45_a_completed_check_says_so_when_every_copy_is_current(self) -> None:
+        """`LAF-45`: silence on success is indistinguishable from a flag that was never passed.
+
+        This is the whole finding. An operator running the audit in CI saw exactly nothing about
+        the vendored artifacts when they were current, and exactly nothing when `--check-upstream`
+        was dropped from the command line — two different states, one output.
+        """
+
+        with self._audited(_licensed(("LICENSE", _MIT))) as root:
+            with patch(
+                "agent_artifacts.commands.registry.default_native_acquirer",
+                _acquire(_licensed(("LICENSE", _MIT))),
+            ):
+                code, output = _run(
+                    "registry", "audit", "--source", str(root), "--check-upstream", "--json"
+                )
+
+            self.assertEqual(code, 0, output)
+            self.assertIn(
+                "info: checked 1 vendored artifact against its upstream: "
+                "1 up-to-date, 0 changed, 0 unreachable",
+                _audit_messages(output),
+            )
+
+    def test_laf45_the_audit_says_nothing_of_the_kind_without_the_flag(self) -> None:
+        """The line is only worth printing if its absence means the check did not run."""
+
+        with self._audited(_licensed(("LICENSE", _MIT))) as root:
+            code, output = _run("registry", "audit", "--source", str(root), "--json")
+
+            self.assertEqual(code, 0, output)
+            self.assertNotIn("checked", " ".join(_audit_messages(output)))
+
+    def test_laf45_the_summary_counts_a_copy_that_is_behind(self) -> None:
+        with self._audited(_licensed(("LICENSE", _MIT))) as root:
+            with patch(
+                "agent_artifacts.commands.registry.default_native_acquirer",
+                _acquire(_moved_repository(), _MOVED_COMMIT),
+            ):
+                code, output = _run(
+                    "registry", "audit", "--source", str(root), "--check-upstream", "--json"
+                )
+
+            self.assertEqual(code, 0, output)
+            messages = _audit_messages(output)
+            self.assertIn(
+                "info: checked 1 vendored artifact against its upstream: "
+                "0 up-to-date, 1 changed, 0 unreachable",
+                messages,
+            )
+            # The summary states the count; the warning is still the thing that names which copy.
+            self.assertIn(
+                "warning: vendored artifact is behind upstream: mcp/atlassian copies "
+                f"servers/atlassian at {_COMMIT[:12]}, and v1.4.0 now resolves to "
+                f"{_MOVED_COMMIT[:12]}",
+                messages,
+            )
+
+    def test_laf45_an_origin_that_could_not_be_read_is_counted_as_unreachable(self) -> None:
+        """An unreadable origin must not be counted as a copy that was compared and matched."""
+
+        with self._audited(_licensed(("LICENSE", _MIT))) as root:
+            with patch("agent_artifacts.commands.registry.default_native_acquirer", _unreachable):
+                code, output = _run(
+                    "registry", "audit", "--source", str(root), "--check-upstream", "--json"
+                )
+
+            self.assertEqual(code, 0, output)
+            self.assertIn(
+                "info: checked 1 vendored artifact against its upstream: "
+                "0 up-to-date, 0 changed, 1 unreachable",
+                _audit_messages(output),
+            )
 
     def test_a_hand_edited_vendoring_record_fails_the_audit(self) -> None:
         """The record the next re-vendor reads is checked against the digest written with it."""
@@ -352,6 +433,24 @@ class VendoredAuditTest(_RegistryFixture):
 
             self.assertEqual(code, 1, output)
             self.assertIn("edited by hand", " ".join(_audit_messages(output)))
+
+
+class UnvendoredAuditTest(unittest.TestCase):
+    """`LAF-45` at its worst: a registry that vendors nothing said nothing either way."""
+
+    def test_laf45_a_registry_with_nothing_vendored_still_says_the_check_ran(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "registry"
+            shutil.copytree(_REGISTRY_FIXTURE, root)
+
+            code, output = _run(
+                "registry", "audit", "--source", str(root), "--check-upstream", "--json"
+            )
+
+            self.assertEqual(code, 0, output)
+            self.assertIn(
+                "info: no vendored artifacts to check against upstream", _audit_messages(output)
+            )
 
 
 if __name__ == "__main__":

@@ -49,6 +49,8 @@
   [overnight run](#2026-08-15--16--overnight-residue-run) at the bottom of this file; everything it
   produces sits on local branches, unpushed, for review
 - **Last updated:** 2026-08-15
+- **Next task:** the overnight residue run continues with the validation cluster (`RS-08`, then
+  `RS-01`). See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -429,6 +431,8 @@ merge-tree`, no branch touched (row 49):
   and `RS-04` all rewrite the same refusals.
 - `PROGRESS.md` conflicts in all 13, always as appends at the end plus the table: keep both, one
   table.
+another; they can be reviewed and merged in any order. `PROGRESS.md` and the register are touched by
+each of them, so expect conflicts in those two files and take both sides.
 
 | # | Item | Branch | State |
 |---|---|---|---|
@@ -496,6 +500,7 @@ saying where it came from — `LAF-76`..`LAF-90` only from iteration 32, which f
 **`LAF-90` is the highest-severity thing found in the implementation queue:** an operator who accepts the curses
 wizard's own suggested defaults gets a registry that the AART which created it then refuses to read.
 It is reproducible without a terminal and the register row carries both halves.
+(from 8), `LAF-87` (from 9). Every one has a register row saying where it came from.
 **`LAF-85` is the one to read first:** something wrote to
 your real data root during this run, and the quality gates have been measured clear of it.
 
@@ -506,6 +511,9 @@ took one of `LAS-31`, `LAS-32`, `LAS-33` for a new meaning tonight and need renu
 highest id in use before they merge. Branches 9, 10 and 11 take `LAS-57`, `LAS-58` and `LAS-59` and
 state the arithmetic in the scenarios file so the next run does not repeat it; branch 12 takes
 `LAS-60` and branch 14 takes `LAS-61` on the same rule.
+took one of `LAS-31`, `LAS-32`, `LAS-33` for a new meaning tonight and need renumbering to `LAS-58`+
+before they merge. Branch 9 starts at `LAS-57` and states the arithmetic in the scenarios file so the
+next run does not repeat it.
 
 **Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
 and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
@@ -2167,6 +2175,8 @@ repository that did not know AART existed — which is precisely the case a comp
 
 ### 2026-08-16 — overnight residue run, `LAF-73`
 Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+
 - **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
   `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
   command reverses a completed setup*, and the same executable that holds both facts said nothing.
@@ -2193,6 +2203,9 @@ Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. O
   unidentified and now tracked rather than shrugged at a second time.
 ### 2026-08-16 — overnight residue run, the recipe-format options note
 Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work package, no code.
+
+
+
 - **Four findings, one decision.** `RS-11`, `RS-13`, `RS-14`, `RS-15` are what the triage brief says
   they are: the same postponed decision seen from four sides. The note treats them as one and is
   filed as `docs/design/OPTIONS-recipe-format-change.md`, on the `docs/recipe-format-options`
@@ -2221,6 +2234,9 @@ Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work packa
 ### 2026-08-16 — overnight residue run, `RS-09` (first half)
 Branch `fix/registry-refusals-carry-remediation-rs09`, cut from `main`, not pushed. One work
 package, split: the refusals, with the report findings left for the next one.
+
+
+
 - **The family that says the most after a success said nothing after a refusal.** `registry` emits
   follow-up commands when an action works. Its 37 refusals carried an empty `remediation` in both
   renderers, so the operator who most needed a next step was the one who got none.
@@ -2249,6 +2265,9 @@ package, split: the refusals, with the report findings left for the next one.
 Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
 halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
 not pushed.
+
+
+
 - **A report is where `validate` and `audit` state a problem.** The first half gave every `Err` a
   next step. These two commands do not refuse — they hand back a report, and its 33 findings named
   no next step at all. The dead end was the same one, in the commands a maintainer runs most.
@@ -2268,6 +2287,9 @@ not pushed.
 - **No new findings.**
 ### 2026-08-16 — overnight residue run, `RS-07`
 Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
+
+
+
 - **The refusal answered the wrong question.** `source remove` is the exit the product offers, and
   `DESIGN-source-subscription-lifecycle.md` §4 promises the project stays legible afterwards. Remove
   the *last* subscription and the next `marketplace status` refused with *this content operation
@@ -2293,6 +2315,9 @@ Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
   help. Recorded, not fixed: naming the right command there is a different package.
 ### 2026-08-16 — overnight residue run, `LAF-45`
 Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
+
+
+
 - **The command that exists to report said nothing on success.** `registry audit --check-upstream`
   printed a line per vendored artifact when one was behind or unreachable, and nothing at all when
   every copy was current. An operator reading a CI log could not tell that from a command line the
@@ -2314,6 +2339,7 @@ Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
 - **Live: two passes and one honest blocked.** `LA-R-31`/`LA-R-32` in
   `docs/testing/PROGRESS-live-acceptance-v8.md`, on branch
   `fix/audit-upstream-says-it-checked-laf45`. `LA-R-33` — the
+  [PROGRESS-live-acceptance-v8.md](docs/testing/PROGRESS-live-acceptance-v8.md). `LA-R-33` — the
   counts on a real vendored copy — is `blocked` by `LAF-43`: vendoring refuses a local repository,
   so no sandbox registry can hold a real vendored package, and this run may not publish to a remote.
   The three dispositions are covered hermetically through the real CLI instead, and the record says
