@@ -56,10 +56,18 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-59` | The same defect reached by authoring instead of by copying | `LA-R-34`, `LA-R-35`, `LA-R-36` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
 way the system can be pushed.
+
+**The numbering continues across runs, not within this file.** `LAS-31`..`LAS-40` are defined in
+[PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md), `LAS-41`..`LAS-48` in
+[v3](PROGRESS-live-acceptance-v3.md), and `LAS-49`..`LAS-56` in
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts above the
+highest id in use anywhere, not at the next number after the table above. That the table stops at
+`LAS-30` while the namespace runs past `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -108,6 +116,9 @@ way the system can be pushed.
 | `LA-R-28` | Manifest vs heuristic import | flag | D | `upstream scan --mode auto` on the residuality repo (has `agent-artifacts.import.json`) and on a manifest-less collection | `auto` picks manifest for the first, heuristic for the second; the choice is explainable |
 | `LA-R-29` | **Legacy manifest is rejected, not absorbed** | flag | D | import the residuality repo if its manifest predates the current protocol floor | **typed migration error naming what to change.** Rejection is the pass condition, not a finding (design §8, one-way adaptation). The finding is silent absorption |
 | `LA-R-30` | Compatibility floor is stated | flag | D | `registry test --compatibility minimum`; per-artifact compatibility of the imported bundle | the floor and the offending artifact are both named in the failure |
+| `LA-R-34` | **An authored descriptor that starts nothing is named** | flag | D | scaffold `mcp`, replace `payload/mcp.json` with the harness shape `{"mcpServers": …}`, `registry audit` | the audit fails and names the package and the shape the descriptor needs; no vendoring anywhere in the registry |
+| `LA-R-35` | An authored descriptor launching a withheld file | flag | D | scaffold a second `mcp`, point `command`/`args` at `payload/index.js`, `registry audit` | the audit fails and names the file the consumer never receives |
+| `LA-R-36` | **The refusal stops at the maintainer's boundary** | flag | D | on the same registry: `registry validate --strict --frozen`, then `source add` + `marketplace install` of the faulty artifact from a consumer project | validate passes, the subscription and install still succeed, and the merged entry is the empty object the audit describes |
 
 ## Phase S — sources
 

@@ -70,7 +70,7 @@ does not have to agree with the present; a current document does.
 | `LAF-62` | medium | `2.5.0` publication | `deferred` | — cluster C4; needs the index-version boundary stream |
 | `LAF-63` | high | implementing `RR-2A` | `closed` | `RR-10A`; one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix, `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_redacted` |
 | `LAF-64` | medium | implementing `RR-5` | `open` | — |
-| `RS-01` | medium | `2.3.0` prose | `open` | — |
+| `RS-01` | medium | `2.3.0` prose | `closed` | `registry audit` runs the delivery check for every artifact package it walks, not only inside the vendored branch; `tests/registry_vendor_delivery_test.py::OwnedMcpDeliveryTest`, and live acceptance v10 `LA-R-34`/`LA-R-35` on a registry authored entirely by the `main` wheel. `registry validate` is unchanged on purpose (`LA-R-36`): it is also the consumer's gate |
 | `RS-02` | low | `2.3.0` prose | `open` | — |
 | `RS-03` | medium | `2.3.0` prose | `deferred` | — cluster C5, with `LAF-43` |
 | `RS-04` | low | `2.3.0` prose | `open` | — |

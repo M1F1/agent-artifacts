@@ -111,7 +111,7 @@ class DeliveryDescriptionTest(unittest.TestCase):
         finding = describe_delivery("mcp", _payload(document))
         assert finding is not None
         self.assertTrue(finding.starts_nothing)
-        message = mcp_descriptor_message(ArtifactIdentity("mcp", "atlassian"))
+        message = mcp_descriptor_message(ArtifactIdentity("mcp", "atlassian"), vendored=True)
         self.assertIn('"server"', message)
 
     def test_a_declared_server_is_not_reported_as_starting_nothing(self) -> None:
@@ -128,7 +128,9 @@ class DeliveryDescriptionTest(unittest.TestCase):
     def test_the_message_names_the_command_and_what_is_actually_installed(self) -> None:
         finding = describe_delivery("mcp", _payload(_descriptor("node", "payload/index.js")))
         assert finding is not None
-        message = delivery_reference_message(ArtifactIdentity("mcp", "atlassian"), finding)
+        message = delivery_reference_message(
+            ArtifactIdentity("mcp", "atlassian"), finding, vendored=True
+        )
         self.assertIn("payload/index.js", message)
         self.assertIn("only the server entry from payload/mcp.json", message)
 
@@ -250,6 +252,101 @@ class VendorDeliveryReviewTest(unittest.TestCase):
         with self._vendored(_descriptor("npx", "-y", "@example/srv")) as root:
             self.assertEqual(self._vendor(root)[0], 0)
 
+            code, output = _run("registry", "audit", "--source", str(root))
+
+            self.assertEqual(code, 0, output)
+
+
+class OwnedMcpDeliveryTest(unittest.TestCase):
+    """`RS-01`: the same descriptor, authored in place instead of vendored.
+
+    `VI-5` hung the check off the vendoring delivery finding, so an `mcp` package a maintainer wrote
+    themselves was never checked at all. Nothing about the consequence depends on where the bytes
+    came from: the merge writes an empty entry either way, and the artifact starts nothing.
+    """
+
+    @contextlib.contextmanager
+    def _owned(self, document: bytes | None = None, **payload: bytes):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "registry"
+            root.mkdir()
+            subprocess.run(
+                ("git", "-C", str(root), "init", "-q"),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.assertEqual(
+                _run(
+                    "registry",
+                    "init",
+                    "--source",
+                    str(root),
+                    "--source-id",
+                    "company-registry",
+                    "--display-name",
+                    "Company Registry",
+                    "--yes",
+                )[0],
+                0,
+            )
+            # Scaffolded, not hand-written: the package under test is the one the tool itself tells
+            # a maintainer to author, so the finding cannot be an artefact of a bad fixture.
+            self.assertEqual(
+                _run(
+                    "registry",
+                    "scaffold",
+                    "--source",
+                    str(root),
+                    "mcp",
+                    "atlassian",
+                    "--summary",
+                    "Atlassian MCP server.",
+                    "--profile",
+                    "claude",
+                    "--platform",
+                    "darwin",
+                    "--yes",
+                )[0],
+                0,
+            )
+            if document is not None:
+                (root / _PACKAGE / "payload/mcp.json").write_bytes(document)
+            for name, content in payload.items():
+                (root / _PACKAGE / "payload" / name).write_bytes(content)
+            yield root
+
+    def test_rs01_an_owned_descriptor_that_starts_nothing_fails_the_audit(self) -> None:
+        harness_shaped = json.dumps({"mcpServers": {"atlassian": {"command": "npx"}}}).encode()
+        with self._owned(harness_shaped) as root:
+            code, output = _run("registry", "audit", "--source", str(root))
+
+            self.assertEqual(code, 1, output)
+            self.assertIn("installing it writes an empty entry", output)
+            self.assertIn("mcp/atlassian", output)
+
+    def test_rs01_an_owned_descriptor_naming_its_own_payload_file_fails_too(self) -> None:
+        """The withheld-payload half of the same check, `VI-4`'s finding on an owned package."""
+
+        with self._owned(
+            _descriptor("node", "payload/index.js"), **{"index.js": b"serve();\n"}
+        ) as root:
+            code, output = _run("registry", "audit", "--source", str(root))
+
+            self.assertEqual(code, 1, output)
+            self.assertIn("payload/index.js", output)
+
+    def test_rs01_the_finding_does_not_call_an_owned_package_vendored(self) -> None:
+        harness_shaped = json.dumps({"mcpServers": {"atlassian": {"command": "npx"}}}).encode()
+        with self._owned(harness_shaped) as root:
+            _code, output = _run("registry", "audit", "--source", str(root))
+
+            self.assertNotIn("vendored mcp descriptor", output)
+
+    def test_rs01_the_scaffolded_descriptor_still_passes(self) -> None:
+        """The refusal must not fail the package the tool itself generates."""
+
+        with self._owned() as root:
             code, output = _run("registry", "audit", "--source", str(root))
 
             self.assertEqual(code, 0, output)

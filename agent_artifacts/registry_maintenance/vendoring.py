@@ -423,22 +423,31 @@ def describe_delivery(kind: str, payload: Mapping[str, bytes]) -> DeliveryFindin
     )
 
 
-def mcp_descriptor_message(identity: ArtifactIdentity) -> str:
-    """The one sentence for a descriptor that installs successfully and starts nothing."""
+def mcp_descriptor_message(identity: ArtifactIdentity, *, vendored: bool) -> str:
+    """The one sentence for a descriptor that installs successfully and starts nothing.
+
+    `RS-01`: the fault is in the descriptor, not in how the bytes arrived, so the sentence is the
+    same for a package the maintainer authored. Only the noun changes — calling an authored package
+    "vendored" would send its maintainer looking for an upstream that does not exist.
+    """
 
     return (
-        f"vendored mcp descriptor declares no server, so installing it writes an empty entry: "
-        f'{identity} needs payload/mcp.json shaped {{"name": …, "server": {{"command": …}}}}; '
-        "a document shaped like the harness file it merges into installs and starts nothing"
+        f"{'vendored ' if vendored else ''}mcp descriptor declares no server, so installing it "
+        f'writes an empty entry: {identity} needs payload/mcp.json shaped {{"name": …, '
+        f'"server": {{"command": …}}}}; a document shaped like the harness file it merges into '
+        "installs and starts nothing"
     )
 
 
-def delivery_reference_message(identity: ArtifactIdentity, finding: DeliveryFinding) -> str:
+def delivery_reference_message(
+    identity: ArtifactIdentity, finding: DeliveryFinding, *, vendored: bool
+) -> str:
     """The one sentence for a configuration that cannot work on any consumer machine."""
 
     named = ", ".join(finding.referenced)
     return (
-        f"vendored mcp descriptor names a copied payload file consumers never receive: "
+        f"{'vendored ' if vendored else ''}mcp descriptor names a "
+        f"{'copied ' if vendored else ''}payload file consumers never receive: "
         f"{identity} launches {named}, and installing this artifact writes only the server entry "
         "from payload/mcp.json. State a command the consumer's machine already resolves"
     )
