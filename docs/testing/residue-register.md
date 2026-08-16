@@ -32,13 +32,26 @@ added here the first time an older id is referred to again.
 
 ## Checked documents
 
-These are the documents `docs_check` requires to agree with the table below — a finding listed under
-a *shipped open* heading in one of them must not be `closed` here:
+These are the documents `docs_check` requires to agree with the table below, in **both** directions —
+a finding listed under a *shipped open* heading in one of them must not be `closed` here (`DOC009`),
+and a disposition one of them claims must be the disposition recorded here (`DOC010`):
 
 - checked: `docs/plan/*.md`
 - checked: `docs/design/*.md`
 - checked: `docs/release/compatibility-v14.md`
 - checked: `docs/release/release-checklist-v14.md`
+
+**How a document states a disposition.** In one table cell, holding one word in backticks and
+nothing else, beside the finding it is about — the shape `compatibility-v14.md` already uses:
+
+| Finding | Now | Established by |
+|---|---|---|
+| `LAF-99` — the example | `closed` | what establishes it |
+
+That cell is a claim about today and `DOC010` checks it. A sentence *about* a finding is not a
+claim in this sense and is not read: **`LAF-83`** is the residue of that decision, and the reason
+for it is that deciding a disposition by reading prose is the thing this register was written to
+stop documents doing.
 
 **A release note is checked until it is published, and never after.** `github-release-v2.6.0.md` was
 in this list while it was still the text about to be pasted into a release — a current document
@@ -89,7 +102,7 @@ does not have to agree with the present; a current document does.
 | `LAF-66` | high | `2.6.0` live acceptance | `closed` | `RR-10D`; the probe takes the run root the engine writes into, answers `unknown` when it has no root to read, and `tests/setup_verify_test.py::test_laf66_the_probe_reads_the_root_the_engine_writes_into` drives the real writer and the real reader together |
 | `LAF-67` | medium | `2.6.0` live acceptance | `open` | — still true, re-measured against the live registries rather than the walk. Registry A publishes three setup recipes — `mcp/github-docker`, `mcp/github-enterprise-docker`, `mcp/postgres-docker` — and every one of them uses `docker.pull@1`; Registry B publishes none. No published artifact uses `docker.build@1`, so the two acceptance criteria that need one are still unreachable against published content. Re-read `2026-08-16` |
 | `LAF-68` | medium | `2.6.0` live acceptance | `closed` | — [#1](https://github.com/M1F1/agent-artifacts-live-acceptance-project/pull/1) merged: the acceptance runner is on `2.6.0` and reconciles eleven installations against the published wheel, so `main` no longer pins a runner three releases behind the tool it exercises |
-| `LAF-69` | high | using this register | `open` | — `DOC009` fails a document that calls a `closed` finding open, and not one that calls an `open` finding closed or visible |
+| `LAF-69` | high | using this register | `closed` | `DOC010` fails a checked document whose disposition cell disagrees with this table, so the gate now runs both ways. Reproduction: flip `LAF-61` here to `open` — the state it was actually in — and `docs_check` names `compatibility-v14.md:160`, the row that stayed wrong for a release while `docs-check` passed. `tests/quality_gates_test.py::ResidueRegisterGateTest`, one test per direction. The prose half of the original case is carved out as `LAF-83` |
 | `LAF-70` | medium | triaging for `2.6.0` | `closed` | — the authoring machine runs `2.6.0`, installed from the published release asset after verifying its digest against `wheel-digest`. Registry A's CI gates at `2.5.0` and its pin move is the remaining half, tracked as `LAF-71` |
 | `LAF-71` | medium | triaging for `2.6.0` | `open` | — **this row said `closed` and its evidence does not reproduce.** Two of the three moves are real: the acceptance repository [#1](https://github.com/M1F1/agent-artifacts-live-acceptance-project/pull/1) installs `2.6.0` from the published wheel, and Registry A's three workflows [#10](https://github.com/M1F1/agent-artifacts-registry/pull/10) pin `v2.6.0` on `main`. Registry B does not: all three of its workflows pin `v2.5.0`, because [#5](https://github.com/M1F1/agent-artifacts-registry-2/pull/5) moved them from `v2.0.0` to `v2.5.0` while being titled *Move the CI pin to 2.6.0*. Re-checked `2026-08-16`; the mis-read is `LAF-92` |
 | `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
@@ -204,3 +217,16 @@ something this table records as `closed`, and says nothing about a document clai
 `visible` for something this table records as `open` — the direction that asserts a safety which is
 not there. Both documents were corrected by hand. That is `LAF-69`, and until it closes, the sentence
 above about this file being *enforced* means enforced against stale pessimism only.
+
+**`LAF-69` is closed, and the measurement is the same case run again.** `DOC010` reads the
+disposition cell of a checked document and requires it to equal this table. Put `LAF-61` back to
+`open` in a copy of these documents and the gate names `compatibility-v14.md:160` — the row that
+went a whole release unchallenged. What it does *not* catch is the checklist's sentence, because it
+reads cells and not prose; that half is `LAF-83`, recorded rather than quietly counted as fixed.
+
+**And the paragraph at the top of this file overstates the gate.** It says `docs_check` fails when a
+document names a finding this file does not carry. No rule does that: a checked document may name
+`LAF-99`, claim it `closed`, and every check stays silent, because a lookup that misses returns
+nothing and nothing is what it is compared against. That is `LAF-82`. The sentence stays as written
+and this correction stands beside it, on the same principle as the design correction above — the
+claim is evidence of what was believed, and the row is what says whether it is true.

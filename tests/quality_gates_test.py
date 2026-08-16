@@ -157,6 +157,84 @@ class ResidueRegisterGateTest(unittest.TestCase):
         )
         self.assertIn("DOC009", self._codes(root))
 
+    def test_laf69_a_document_calling_an_open_finding_closed_fails(self):
+        """The direction `DOC009` never covered: a claim of safety that is not there.
+
+        `DOC009` catches stale pessimism — a document still listing something the register has
+        closed. The reverse went unnoticed for a whole release: the register moved `LAF-61` back
+        to `open` and two release documents kept saying it was handled.
+        """
+
+        root = self._root(
+            self.HEADER + "| `LAF-52` | high | run | `open` | — |\n",
+            {
+                "docs/plan/PLAN-x.md": (
+                    "## Residues this release closes\n\n"
+                    "| Finding | Now | Established by |\n|---|---|---|\n"
+                    "| `LAF-52` — a planning failure reported as a number | `closed` | a claim |\n"
+                )
+            },
+        )
+        self.assertIn("DOC010", self._codes(root))
+
+    def test_laf69_a_document_calling_an_open_finding_visible_fails(self):
+        # The case that happened: `visible` is not `closed`, and neither of them is `open`.
+        root = self._root(
+            self.HEADER + "| `LAF-61` | medium | run | `open` | — |\n",
+            {
+                "docs/plan/PLAN-x.md": (
+                    "| Finding | Now | Established by |\n|---|---|---|\n"
+                    "| `LAF-61` — a working copy left behind | `visible` | `receipt verify` |\n"
+                )
+            },
+        )
+        self.assertIn("DOC010", self._codes(root))
+
+    def test_a_document_that_agrees_with_the_register_passes(self):
+        root = self._root(
+            self.HEADER + "| `LAF-61` | medium | run | `visible` | a probe |\n",
+            {
+                "docs/plan/PLAN-x.md": (
+                    "| Finding | Now | Established by |\n|---|---|---|\n"
+                    "| `LAF-61` — a working copy left behind | `visible` | `receipt verify` |\n"
+                )
+            },
+        )
+        self.assertEqual(self._codes(root), set())
+
+    def test_a_released_document_may_still_claim_a_closure_the_register_denies(self):
+        # Symmetry with the rule above it: a dated record is not edited to agree with today,
+        # in either direction.
+        root = self._root(
+            self.HEADER + "| `LAF-52` | high | run | `open` | — |\n",
+            {"docs/plan/kept.md": "# nothing here\n"},
+        )
+        (root / "docs" / "release").mkdir(parents=True)
+        (root / "docs" / "release" / "github-release-v2.5.0.md").write_text(
+            "| Finding | Now |\n|---|---|\n| `LAF-52` | `closed` |\n", encoding="utf-8"
+        )
+        self.assertEqual(self._codes(root), set())
+
+    def test_a_document_recounting_a_past_state_is_not_a_claim_about_today(self):
+        """Only the structured form is a claim: one cell, one disposition, nothing else in it.
+
+        Documents describe findings at length, and a history — *was `visible`, then reopened* — is
+        the register's own story. Reading a disposition out of prose is what the register exists to
+        stop documents doing, so the gate reads the table cell and nothing else.
+        """
+
+        root = self._root(
+            self.HEADER + "| `LAF-61` | medium | run | `open` | — |\n",
+            {
+                "docs/plan/PLAN-x.md": (
+                    "`LAF-61` was `visible` until the probe was measured.\n\n"
+                    "| Finding | History |\n|---|---|\n"
+                    "| `LAF-61` | claimed `visible`, then `open` again |\n"
+                )
+            },
+        )
+        self.assertEqual(self._codes(root), set())
+
     def test_one_id_recorded_twice_fails(self):
         root = self._root(
             self.HEADER

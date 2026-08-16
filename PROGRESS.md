@@ -53,6 +53,9 @@
   `RS-01`). See *Overnight
 - **Next task:** the overnight residue run continues with `RS-01`, then `LAF-47`/`RS-10` (design
   note first, committed alone). See *Overnight
+- **Next task:** the overnight residue run continues with `LAF-73`; see *Overnight run 2026-08-15 →
+  16* below for what is done and on which branch. `LAF-61` and the human-gated passes — the curses
+  front-end and the MCP credential run — still wait for the maintainer
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -524,6 +527,9 @@ and the MCP credential run (`LA-M-10`, a private image with real credentials). `
 untouched — it needs a live run against a second GHE host, which this run cannot make. Item 6 is the
 note that says so in full: it measures all four refusals, recommends leaving them open for now, and
 names the two observations that would change that.
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4). Every one has a register row saying where
+it came from.
+untouched — it needs a live run against a second GHE host, which this run cannot make.
 
 ## Work log
 
