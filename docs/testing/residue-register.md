@@ -57,7 +57,7 @@ does not have to agree with the present; a current document does.
 |---|---|---|---|---|
 | `LAF-43` | medium | `2.4.0` live acceptance | `deferred` | — cluster C5; `DESIGN-readable-receipt.md` §5 leaves it for its own stream |
 | `LAF-45` | medium | `2.4.0` live acceptance | `open` | — the rule it teaches is applied to the new commands; `audit --check-upstream` itself is untouched |
-| `LAF-47` | medium | `2.4.0` live acceptance | `open` | — see *Corrections* below |
+| `LAF-47` | medium | `2.4.0` live acceptance | `open` | — see *Corrections* below. Designed but not implemented: [DESIGN-uninstall-file-reclamation.md](../design/DESIGN-uninstall-file-reclamation.md) states the rule and shows the existing removal branch cannot fire, because it tests the whole document for emptiness while every profile merges under a `json_path` |
 | `LAF-49` | low | `2.4.0` live acceptance | `open` | — |
 | `LAF-52` | high | `2.5.0` live acceptance | `closed` | `RR-2A`; `tests/setup_render_test.py`, and `marketplace setup` at a terminal prints the failure detail, the artifact key and the manual route |
 | `LAF-53` | high | `2.5.0` live acceptance | `closed` | `RR-4`; `aart marketplace receipt undo <coordinate>` |
@@ -79,7 +79,7 @@ does not have to agree with the present; a current document does.
 | `RS-07` | medium | `2.2.0` prose | `open` | — |
 | `RS-08` | medium | `2.2.0` prose | `open` | — |
 | `RS-09` | medium | `2.2.0` prose | `open` | — the three receipt refusals all carry remediation, which is the rule rather than the fix; `registry`'s own refusals are untouched |
-| `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below |
+| `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below. Same design as `LAF-47`, which it generalises: both merge modes leave their file, `key` as an empty object and `list` as an empty array |
 | `RS-11` | low | `2.5.0` prose | `open` | — |
 | `RS-12` | medium | `2.5.0` prose | `open` | — |
 | `RS-13` | low | `2.5.0` prose | `open` | — |
