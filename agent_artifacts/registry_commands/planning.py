@@ -119,26 +119,160 @@ REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
 REGISTRY_AUDIT_NOTE = DiagnosticCode("registry-audit-note")
 
 
-def _error(message: str) -> Err:
-    return Err((Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message),))
+# `RS-09`: the next step a refused registry command hands over. These are shared lines rather than
+# one sentence per call site, which `SI-6` already learned once on the object store: the operator's
+# next step is the same wherever the same problem is stated, and a distinct sentence per site
+# invents distinctions they do not have. Every `aart …` written here is parsed by the shipped CLI in
+# `tests/source_remediation_test.py`, so a command that stops existing fails the suite.
+_REVIEW_AGAIN = (
+    "the workspace moved between the review and the finalize; run the command again to review the "
+    "current workspace, then repeat it with `--yes`",
+)
+_REVIEW_FIRST = (
+    "run the same command without `--yes` to produce the review, approve it, then repeat the "
+    "command with `--yes`",
+)
+_INITIALIZE = (
+    "point `--source` at a registry checkout, or create one with "
+    "`aart registry init --source-id SLUG --display-name NAME --yes`",
+)
+_CLEAR_PATH = (
+    "move or remove whatever occupies that path in the checkout, then run the command again",
+)
+_ALREADY_A_REGISTRY = (
+    "this checkout is already a registry: read it with `aart registry validate`, or "
+    "initialize a different directory by pointing `--source` at it",
+)
+_LIST_PACKAGES = ("`aart registry validate` reports every package and entry this registry holds",)
+_RELOCK = (
+    "resolve the authored entries again with `aart registry lock --yes`, then "
+    "`aart registry build --yes`",
+)
+_LOCK_FIRST = (
+    "`aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`",
+)
+_APPROVE_ENTRIES = (
+    "approve the review record of every authored entry under `entries/`, then "
+    "`aart registry lock --yes`",
+)
+_COPY_INTEGRITY = (
+    "the copy on disk no longer matches the record committed beside it: restore it from the last "
+    "commit that agreed with the record before re-vendoring",
+)
+_CANONICAL_ROOTS = (
+    "restore the canonical `artifacts/` and `collections/` roots in `aart-source.json`, then "
+    "`aart registry validate`",
+)
+_SETUP_RECIPE = (
+    "add the declared recipe and its `SETUP.md` to the package, or drop `--setup-recipe`, then run "
+    "the command again",
+)
+
+
+_RECORDED_ORIGIN = (
+    "run the command without `--yes` to read the origin and ref recorded with the copy, and take "
+    "the new bytes from that origin",
+)
+_IDENTITIES = (
+    "make `registry_id` in `aart-registry.json` and `source_id` in `aart-source.json` the same "
+    "value, then `aart registry validate`",
+)
+_ENTRY_FILES = (
+    "one file under `entries/` per identity, named for the identity it declares; correct the file, "
+    "then `aart registry validate`",
+)
+
+
+_UPSTREAM_UNREACHABLE = (
+    "the origin could not be read, so this is unknown rather than behind: restore access to it and "
+    "run `aart registry audit --check-upstream` again",
+)
+_COVERAGE_LIMIT = (
+    "nothing to correct: this records what the audit could not cover, because a registry with no "
+    "external references has no external provenance to check",
+)
+_PROVENANCE = (
+    "a package authored in this registry has no provenance and this stays a warning; a copy taken "
+    "from upstream gets its record from the vendoring that took it",
+)
+_DECLARE_LICENSE = (
+    "record the license in the package's `artifact.json`; for a copy, `--license` on the vendoring "
+    "states what this registry publishes",
+)
+_SECURITY_EVIDENCE = (
+    "supply the per-object evidence under `security/index.json`, or accept that the audit reports "
+    "installation risk as unassessed",
+)
+_SECURITY_REBUILD = (
+    "the evidence describes a different compiled registry: rebuild the index with "
+    "`aart registry build --yes`, regenerate the evidence for it, then `aart registry audit`",
+)
+_SECURITY_RISK = (
+    "read the attestation for that object and either correct the package or stop publishing it; "
+    "the audit reports the risk rather than deciding it for you",
+)
+
+
+def _revendor(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The next step for a copy that has moved, naming the copy it is about."""
+
+    return (
+        "take the copy again with "
+        f"`aart registry revendor {identity.kind} {identity.name} --artifact-version VERSION "
+        "--yes`, which replaces the bytes this registry ships",
+    )
+
+
+def _delivery(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The next step for a copy whose shipped shape is wrong, naming the copy it is about."""
+
+    return (
+        f"correct the package this registry ships for {identity}, or take the copy again with "
+        f"`aart registry revendor {identity.kind} {identity.name} --artifact-version VERSION "
+        "--yes`",
+    )
+
+
+def _not_vendored(identity: ArtifactIdentity) -> tuple[str, ...]:
+    """The one next step that names the package it is about, so it can be run as written."""
+
+    return (
+        "this package ships no vendoring record, so there is no copy to move: "
+        f"`aart registry refresh-native {identity.kind} {identity.name}` is what updates a "
+        "native reference",
+    )
+
+
+def _error(message: str, remediation: tuple[str, ...]) -> Err:
+    return Err(
+        (Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message, remediation=remediation),)
+    )
 
 
 def _note(message: str) -> Diagnostic:
     return Diagnostic(REGISTRY_AUDIT_NOTE, Severity.INFO, message)
 
 
-def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
+def _diagnostic(message: str, remediation: tuple[str, ...], *, warning: bool = False) -> Diagnostic:
+    """One line of a `validate` or `audit` report, with what to do about it.
+
+    `RS-09`: a report is where these two commands state a problem, so a finding that names no next
+    step is the same dead end as a refusal that names none. A warning gets one too — most of them
+    describe a limit rather than a defect, and saying which is exactly what the operator needs.
+    """
+
     return Diagnostic(
         REGISTRY_AUDIT_WARNING if warning else REGISTRY_COMMAND_INVALID,
         Severity.WARNING if warning else Severity.ERROR,
         message,
+        remediation=remediation,
     )
 
 
 def _files(snapshot: SourceSnapshot) -> Result[dict[str, SnapshotEntry]]:
     digest = source_snapshot_digest(snapshot)
     if isinstance(digest, Err):
-        return _error("registry command requires one safe inert workspace snapshot")
+        return _error("registry command requires one safe inert workspace snapshot", _CLEAR_PATH)
     return Ok({str(item.path): item for item in snapshot.entries})
 
 
@@ -196,10 +330,10 @@ def _project_changes(
         raw = str(change.path)
         before = output.get(raw)
         if before is not None and before.kind is not SnapshotEntryKind.FILE:
-            return _error(f"registry change target is not a regular file: {raw}")
+            return _error(f"registry change target is not a regular file: {raw}", _CLEAR_PATH)
         actual = None if before is None else sha256_bytes(before.content)
         if actual != change.before_digest:
-            return _error(f"registry change precondition changed: {raw}")
+            return _error(f"registry change precondition changed: {raw}", _REVIEW_AGAIN)
         if change.kind is WorkspaceChangeKind.REMOVED:
             # The directory entries stay: an emptied directory is still on disk after the file is
             # unlinked, and a projection that dropped it would disagree with the snapshot the
@@ -217,7 +351,7 @@ def _project_changes(
             parent = SafeRelativePath(change.path.parts[:length])
             existing = output.get(str(parent))
             if existing is not None and existing.kind is not SnapshotEntryKind.DIRECTORY:
-                return _error(f"registry change parent is not a directory: {parent}")
+                return _error(f"registry change parent is not a directory: {parent}", _CLEAR_PATH)
             output.setdefault(
                 str(parent),
                 SnapshotEntry(parent, SnapshotEntryKind.DIRECTORY),
@@ -289,13 +423,13 @@ def project_registry_workspace_plan(
     if isinstance(current, Err):
         return current
     if current.value != plan.expected_snapshot_digest:
-        return _error("registry workspace changed after plan review")
+        return _error("registry workspace changed after plan review", _REVIEW_AGAIN)
     projected = _project_changes(snapshot, plan.changes)
     if isinstance(projected, Err):
         return projected
     digest = source_snapshot_digest(projected.value)
     if isinstance(digest, Err) or digest.value != plan.next_snapshot_digest:
-        return _error("registry plan no longer produces its reviewed snapshot")
+        return _error("registry plan no longer produces its reviewed snapshot", _REVIEW_AGAIN)
     return projected
 
 
@@ -323,7 +457,7 @@ def plan_registry_init(
         "aart.index.json",
     } & files.value.keys()
     if occupied:
-        return _error("registry init refuses an existing registry workspace")
+        return _error("registry init refuses an existing registry workspace", _ALREADY_A_REGISTRY)
     templates = (
         (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
         *REPORTING_TEMPLATES,
@@ -335,7 +469,9 @@ def plan_registry_init(
             or existing.content != expected
             or existing.executable
         ):
-            return _error(f"registry init refuses to overwrite an existing template: {path}")
+            return _error(
+                f"registry init refuses to overwrite an existing template: {path}", _CLEAR_PATH
+            )
     bounds = VersionBounds(options.minimum_aart, options.maximum_aart_exclusive)
     registry = RegistryManifest(
         1,
@@ -385,7 +521,7 @@ def plan_registry_init(
 def _source_manifest(files: dict[str, SnapshotEntry]) -> Result[SourceManifest]:
     marker = files.get("aart-source.json")
     if marker is None or marker.kind is not SnapshotEntryKind.FILE:
-        return _error("registry workspace requires aart-source.json")
+        return _error("registry workspace requires aart-source.json", _INITIALIZE)
     parsed = parse_source_manifest(marker.content)
     if isinstance(parsed, Err):
         return parsed
@@ -396,7 +532,8 @@ def _source_manifest(files: dict[str, SnapshotEntry]) -> Result[SourceManifest]:
         (_path("collections"),),
     }:
         return _error(
-            "registry maintainer commands require canonical artifacts/ and collections/ roots"
+            "registry maintainer commands require canonical artifacts/ and collections/ roots",
+            _CANONICAL_ROOTS,
         )
     return parsed
 
@@ -498,7 +635,9 @@ def plan_artifact_scaffold(
     root = source.value.artifact_roots[0]
     base = f"{root}/{options.kind}/{options.name}"
     if any(path == base or path.startswith(f"{base}/") for path in files.value):
-        return _error(f"artifact package already exists: {options.kind}/{options.name}")
+        return _error(
+            f"artifact package already exists: {options.kind}/{options.name}", _LIST_PACKAGES
+        )
     kind = cast(CanonicalArtifactType, options.kind)
     manifest = ArtifactManifest(
         1,
@@ -567,7 +706,7 @@ def plan_artifact_vendor(
     """
 
     if review.status != "approved":
-        return _error("vendoring requires an approved review record")
+        return _error("vendoring requires an approved review record", _REVIEW_FIRST)
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
@@ -580,7 +719,9 @@ def plan_artifact_vendor(
     # An existing manifest is an existing package: adopting the maintainer's authored wrapper is the
     # point, so their `payload/` and `setup/` files must not read as one.
     if f"{base}/artifact.json" in files.value:
-        return _error(f"artifact package already exists: {identity.kind}/{identity.name}")
+        return _error(
+            f"artifact package already exists: {identity.kind}/{identity.name}", _LIST_PACKAGES
+        )
     taken = take_subtree(acquisition.snapshot, path)
     if isinstance(taken, Err):
         return taken
@@ -598,7 +739,8 @@ def plan_artifact_vendor(
         for required in (f"{base}/{options.setup_recipe}", f"{base}/SETUP.md"):
             if required not in written:
                 return _error(
-                    f"the declared setup recipe requires {required}, which is not present"
+                    f"the declared setup recipe requires {required}, which is not present",
+                    _SETUP_RECIPE,
                 )
     # The assessment runs over the projected object, so the review reports what the baseline found
     # in the exact bytes this vendoring writes — the maintainer's own wrapper as much as the copied
@@ -670,7 +812,9 @@ def read_vendored_artifact(
     base = f"{source.value.artifact_roots[0]}/{identity.kind}/{identity.name}"
     manifest_entry = files.value.get(f"{base}/artifact.json")
     if manifest_entry is None:
-        return _error(f"registry has no artifact package {identity.kind}/{identity.name}")
+        return _error(
+            f"registry has no artifact package {identity.kind}/{identity.name}", _LIST_PACKAGES
+        )
     manifest = parse_artifact_manifest(manifest_entry.content, path=f"{base}/artifact.json")
     if isinstance(manifest, Err):
         return manifest
@@ -692,7 +836,8 @@ def read_vendored_package(
     if provenance_entry is None:
         return _error(
             f"{manifest.identity} records no provenance, so it was not vendored; "
-            "refresh-native updates a native reference"
+            "refresh-native updates a native reference",
+            _not_vendored(manifest.identity),
         )
     provenance = parse_provenance(provenance_entry.content, path=f"{base}/provenance.json")
     if isinstance(provenance, Err):
@@ -772,9 +917,11 @@ def plan_artifact_revendor(
     """
 
     if review.status != "approved":
-        return _error("re-vendoring requires an approved review record")
+        return _error("re-vendoring requires an approved review record", _REVIEW_FIRST)
     if acquisition.url != vendored.url or acquisition.requested_ref != vendored.ref:
-        return _error("the acquisition does not resolve the recorded vendoring instruction")
+        return _error(
+            "the acquisition does not resolve the recorded vendoring instruction", _RECORDED_ORIGIN
+        )
     files = _files(snapshot)
     if isinstance(files, Err):
         return files
@@ -791,7 +938,9 @@ def plan_artifact_revendor(
     if isinstance(integrity, Err):
         return integrity
     if not integrity.value.matches:
-        return _error(copy_integrity_message(vendored.manifest.identity, integrity.value))
+        return _error(
+            copy_integrity_message(vendored.manifest.identity, integrity.value), _COPY_INTEGRITY
+        )
     taken = take_subtree(acquisition.snapshot, vendored.path)
     if isinstance(taken, Err):
         return taken
@@ -824,7 +973,9 @@ def plan_artifact_revendor(
     for relative in vendored.authored:
         entry = files.value.get(f"{vendored.base}/{relative}")
         if entry is None or entry.kind is not SnapshotEntryKind.FILE:
-            return _error(f"the authored file recorded with this copy is missing: {relative}")
+            return _error(
+                f"the authored file recorded with this copy is missing: {relative}", _COPY_INTEGRITY
+            )
         authored.append((relative, entry.content, entry.executable))
     options = VendorOptions(
         manifest.identity,
@@ -916,7 +1067,7 @@ def plan_registry_format(snapshot: SourceSnapshot) -> Result[RegistryWorkspacePl
             return parsed
         desired.append((path, canonical_json_bytes(parsed.value), item.executable))
     if not desired:
-        return _error("registry format found no JSON documents")
+        return _error("registry format found no JSON documents", _INITIALIZE)
     return _plan(RegistryOperation.FORMAT, snapshot, tuple(desired))
 
 
@@ -928,7 +1079,7 @@ def _registry_inputs(
         return files
     registry_file = files.value.get("aart-registry.json")
     if registry_file is None or registry_file.kind is not SnapshotEntryKind.FILE:
-        return _error("registry workspace requires aart-registry.json")
+        return _error("registry workspace requires aart-registry.json", _INITIALIZE)
     registry = parse_registry_manifest(registry_file.content)
     source = _source_manifest(files.value)
     if isinstance(registry, Err):
@@ -936,7 +1087,7 @@ def _registry_inputs(
     if isinstance(source, Err):
         return source
     if registry.value.registry_id != source.value.source_id:
-        return _error("registry and source identities differ")
+        return _error("registry and source identities differ", _IDENTITIES)
     entries = []
     for path, item in sorted(files.value.items()):
         if not path.startswith("entries/") or item.kind is not SnapshotEntryKind.FILE:
@@ -946,11 +1097,11 @@ def _registry_inputs(
             return parsed
         expected_path = f"entries/{parsed.value.identity.kind}/{parsed.value.identity.name}.json"
         if path != expected_path:
-            return _error(f"registry entry identity does not match its path: {path}")
+            return _error(f"registry entry identity does not match its path: {path}", _ENTRY_FILES)
         entries.append(parsed.value)
     identities = tuple(item.identity for item in entries)
     if len(set(identities)) != len(identities):
-        return _error("registry workspace contains duplicate entry identities")
+        return _error("registry workspace contains duplicate entry identities", _ENTRY_FILES)
     return Ok((registry.value, source.value, tuple(entries)))
 
 
@@ -962,7 +1113,7 @@ def _acquisitions_by_identity(
     available_capabilities: tuple[Capability, ...],
 ) -> Result[dict[ArtifactIdentity, tuple]]:
     if len(entries) != len(acquisitions):
-        return _error("registry lock/build requires one acquisition per entry")
+        return _error("registry lock/build requires one acquisition per entry", _RELOCK)
     available = list(acquisitions)
     resolved: dict[ArtifactIdentity, tuple] = {}
     for entry in entries:
@@ -977,7 +1128,9 @@ def _acquisitions_by_identity(
             if isinstance(result, Ok):
                 matches.append((acquisition, (*result.value, acquisition)))
         if len(matches) != 1:
-            return _error(f"registry acquisition is missing or ambiguous for {entry.identity}")
+            return _error(
+                f"registry acquisition is missing or ambiguous for {entry.identity}", _RELOCK
+            )
         available.remove(matches[0][0])
         resolved[entry.identity] = matches[0][1]
     return Ok(resolved)
@@ -995,7 +1148,9 @@ def plan_registry_lock(
         return parsed
     _registry, _source, entries = parsed.value
     if any(entry.review.status != "approved" for entry in entries):
-        return _error("registry lock requires every authored entry to be approved")
+        return _error(
+            "registry lock requires every authored entry to be approved", _APPROVE_ENTRIES
+        )
     resolved = _acquisitions_by_identity(
         entries,
         acquisitions,
@@ -1052,7 +1207,7 @@ def plan_registry_build(
     assert isinstance(files, Ok)
     lock_file = files.value.get("aart.lock.json")
     if lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE:
-        return _error("registry build requires a committed aart.lock.json")
+        return _error("registry build requires a committed aart.lock.json", _LOCK_FIRST)
     lock = parse_registry_lock(lock_file.content)
     inputs = registry_inputs_digest(snapshot)
     if isinstance(lock, Err):
@@ -1103,7 +1258,7 @@ def plan_registry_build(
             provenance_digest,
         )
         if locked_by_identity.get(entry.identity) != actual:
-            return _error(f"acquired package does not match lock for {entry.identity}")
+            return _error(f"acquired package does not match lock for {entry.identity}", _RELOCK)
         indexed.append(
             index_artifact_from_package(
                 package,
@@ -1160,11 +1315,11 @@ def validate_registry_workspace(
     valid_lock_file = lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE
     valid_index_file = index_file is not None and index_file.kind is SnapshotEntryKind.FILE
     if lock_file is not None and not valid_lock_file:
-        diagnostics.append(_diagnostic("aart.lock.json must be a regular file"))
+        diagnostics.append(_diagnostic("aart.lock.json must be a regular file", _RELOCK))
     if index_file is not None and not valid_index_file:
-        diagnostics.append(_diagnostic("aart.index.json must be a regular file"))
+        diagnostics.append(_diagnostic("aart.index.json must be a regular file", _RELOCK))
     if require_compiled and (not valid_lock_file or not valid_index_file):
-        diagnostics.append(_diagnostic("compiled registry requires lock and index"))
+        diagnostics.append(_diagnostic("compiled registry requires lock and index", _RELOCK))
     parsed_lock = None
     if lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE:
         lock = parse_registry_lock(lock_file.content)
@@ -1193,9 +1348,13 @@ def validate_registry_workspace(
                 or index.value.registry_inputs_digest != inputs.value
                 or index.value.services != registry.services
             ):
-                diagnostics.append(_diagnostic("compiled index does not match registry inputs"))
+                diagnostics.append(
+                    _diagnostic("compiled index does not match registry inputs", _RELOCK)
+                )
     if parsed_index is not None and parsed_lock is None:
-        diagnostics.append(_diagnostic("compiled index requires a valid committed lock"))
+        diagnostics.append(
+            _diagnostic("compiled index requires a valid committed lock", _LOCK_FIRST)
+        )
     if parsed_index is not None and parsed_lock is not None and isinstance(native, Ok):
         indexed_by_identity = {item.identity: item for item in parsed_index.artifacts}
         locked_by_identity = dict(parsed_lock.entries)
@@ -1218,19 +1377,23 @@ def validate_registry_workspace(
                 )
             ):
                 diagnostics.append(
-                    _diagnostic(f"compiled index disagrees with lock for {identity}")
+                    _diagnostic(f"compiled index disagrees with lock for {identity}", _RELOCK)
                 )
         owned_by_identity = {item.identity: item for item in native.value[0]}
         for identity, owned in sorted(owned_by_identity.items(), key=lambda item: str(item[0])):
             indexed = indexed_by_identity.get(identity)
             if indexed is None or replace(indexed, collections=()) != owned:
                 diagnostics.append(
-                    _diagnostic(f"compiled index disagrees with owned package {identity}")
+                    _diagnostic(f"compiled index disagrees with owned package {identity}", _RELOCK)
                 )
         if set(indexed_by_identity) != set(locked_by_identity) | set(owned_by_identity):
-            diagnostics.append(_diagnostic("compiled index artifact identities are incomplete"))
+            diagnostics.append(
+                _diagnostic("compiled index artifact identities are incomplete", _RELOCK)
+            )
         if parsed_index.collections != native.value[1]:
-            diagnostics.append(_diagnostic("compiled index collections differ from source"))
+            diagnostics.append(
+                _diagnostic("compiled index collections differ from source", _RELOCK)
+            )
     return Ok(RegistryQualityReport((RegistryQualityCheck("validate", tuple(diagnostics)),)))
 
 
@@ -1257,7 +1420,11 @@ def vendored_copy_diagnostics(
         return integrity.diagnostics
     if integrity.value.matches:
         return ()
-    return (_diagnostic(copy_integrity_message(vendored.manifest.identity, integrity.value)),)
+    return (
+        _diagnostic(
+            copy_integrity_message(vendored.manifest.identity, integrity.value), _COPY_INTEGRITY
+        ),
+    )
 
 
 def package_delivery_diagnostics(
@@ -1298,10 +1465,15 @@ def package_delivery_diagnostics(
     diagnostics: list[Diagnostic] = []
     if finding.referenced:
         diagnostics.append(
-            _diagnostic(delivery_reference_message(identity, finding, vendored=vendored))
+            _diagnostic(
+                delivery_reference_message(identity, finding, vendored=vendored),
+                _delivery(identity),
+            )
         )
     if finding.starts_nothing:
-        diagnostics.append(_diagnostic(mcp_descriptor_message(identity, vendored=vendored)))
+        diagnostics.append(
+            _diagnostic(mcp_descriptor_message(identity, vendored=vendored), _delivery(identity))
+        )
     return tuple(diagnostics)
 
 
@@ -1407,6 +1579,7 @@ def _vendored_upstream_findings(
             _diagnostic(
                 f"vendored artifact upstream could not be read, so drift is unknown: {identity} "
                 f"({vendored.url} at {vendored.ref})",
+                _UPSTREAM_UNREACHABLE,
                 warning=True,
             ),
         )
@@ -1416,6 +1589,7 @@ def _vendored_upstream_findings(
             _diagnostic(
                 f"vendored artifact is behind upstream: {identity} was taken from "
                 f"{vendored.path}, which {vendored.ref} no longer provides",
+                _revendor(identity),
                 warning=True,
             ),
         )
@@ -1426,6 +1600,7 @@ def _vendored_upstream_findings(
             f"vendored artifact is behind upstream: {identity} copies {vendored.path} at "
             f"{vendored.recorded_commit[:12]}, and {vendored.ref} now resolves to "
             f"{acquired.value.resolved_commit[:12]}",
+            _revendor(identity),
             warning=True,
         ),
     )
@@ -1490,15 +1665,22 @@ def audit_registry_workspace(
         diagnostics.append(
             _diagnostic(
                 "registry contains no external references; provenance coverage is partial",
+                _COVERAGE_LIMIT,
                 warning=True,
             )
         )
     for entry in entries:
         if entry.review.status != "approved":
-            diagnostics.append(_diagnostic(f"external reference is not approved: {entry.identity}"))
+            diagnostics.append(
+                _diagnostic(
+                    f"external reference is not approved: {entry.identity}", _APPROVE_ENTRIES
+                )
+            )
     lock_file = files.value.get("aart.lock.json")
     if entries and (lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE):
-        diagnostics.append(_diagnostic("external reference audit requires a valid committed lock"))
+        diagnostics.append(
+            _diagnostic("external reference audit requires a valid committed lock", _LOCK_FIRST)
+        )
     if lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE:
         lock = parse_registry_lock(lock_file.content)
         if isinstance(lock, Err):
@@ -1508,13 +1690,16 @@ def audit_registry_workspace(
                 entry.identity for entry in entries
             }:
                 diagnostics.append(
-                    _diagnostic("committed lock identities differ from authored references")
+                    _diagnostic(
+                        "committed lock identities differ from authored references", _RELOCK
+                    )
                 )
             for identity, locked in lock.value.entries:
                 if locked.provenance_digest is None:
                     diagnostics.append(
                         _diagnostic(
                             f"external reference has no provenance document: {identity}",
+                            _PROVENANCE,
                             warning=True,
                         )
                     )
@@ -1538,11 +1723,14 @@ def audit_registry_workspace(
             diagnostics.append(
                 _diagnostic(
                     f"owned package has no provenance document: {manifest.value.identity}",
+                    _PROVENANCE,
                     warning=True,
                 )
             )
         elif provenance.kind is not SnapshotEntryKind.FILE:
-            diagnostics.append(_diagnostic(f"provenance is not a file: {provenance_path}"))
+            diagnostics.append(
+                _diagnostic(f"provenance is not a file: {provenance_path}", _CLEAR_PATH)
+            )
         else:
             parsed_provenance = parse_provenance(provenance.content, path=provenance_path)
             if isinstance(parsed_provenance, Err):
@@ -1576,6 +1764,7 @@ def audit_registry_workspace(
                     f"{manifest.value.identity}"
                     if vendored is not None
                     else f"owned package has no declared license: {manifest.value.identity}",
+                    _DECLARE_LICENSE,
                     warning=True,
                 )
             )
@@ -1589,17 +1778,22 @@ def audit_registry_workspace(
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)
             if recipe_file is None or recipe_file.kind is not SnapshotEntryKind.FILE:
-                diagnostics.append(_diagnostic(f"declared setup recipe is missing: {recipe}"))
+                diagnostics.append(
+                    _diagnostic(f"declared setup recipe is missing: {recipe}", _SETUP_RECIPE)
+                )
     security_file = files.value.get("security/index.json")
     if security_file is None:
         diagnostics.append(
             _diagnostic(
                 "no per-object installation-risk evidence was supplied to registry audit",
+                _SECURITY_EVIDENCE,
                 warning=True,
             )
         )
     elif security_file.kind is not SnapshotEntryKind.FILE:
-        diagnostics.append(_diagnostic("registry security index is not a regular file"))
+        diagnostics.append(
+            _diagnostic("registry security index is not a regular file", _CLEAR_PATH)
+        )
     else:
         security_index = parse_security_index(security_file.content)
         if isinstance(security_index, Err):
@@ -1612,7 +1806,8 @@ def audit_registry_workspace(
                 if document is None or document.kind is not SnapshotEntryKind.FILE:
                     diagnostics.append(
                         _diagnostic(
-                            f"registry security index document is missing: {security_entry.path}"
+                            f"registry security index document is missing: {security_entry.path}",
+                            _SECURITY_EVIDENCE,
                         )
                     )
                     missing_document = True
@@ -1632,7 +1827,9 @@ def audit_registry_workspace(
                     )
                     if compiled is None or isinstance(compiled, Err):
                         diagnostics.append(
-                            _diagnostic("registry security index requires a valid compiled index")
+                            _diagnostic(
+                                "registry security index requires a valid compiled index", _RELOCK
+                            )
                         )
                     elif (
                         security_index.value.registry_id != registry.registry_id
@@ -1642,7 +1839,8 @@ def audit_registry_workspace(
                     ):
                         diagnostics.append(
                             _diagnostic(
-                                "registry security index identity differs from the compiled registry"
+                                "registry security index identity differs from the compiled registry",
+                                _SECURITY_REBUILD,
                             )
                         )
                     else:
@@ -1655,13 +1853,15 @@ def audit_registry_workspace(
                         if missing_objects:
                             diagnostics.append(
                                 _diagnostic(
-                                    "registry security index lacks evidence for one or more compiled objects"
+                                    "registry security index lacks evidence for one or more compiled objects",
+                                    _SECURITY_REBUILD,
                                 )
                             )
                         if extra_objects:
                             diagnostics.append(
                                 _diagnostic(
-                                    "registry security index contains evidence for unknown objects"
+                                    "registry security index contains evidence for unknown objects",
+                                    _SECURITY_REBUILD,
                                 )
                             )
                         for attestation in verified.value.attestations:
@@ -1670,7 +1870,8 @@ def audit_registry_workspace(
                                 diagnostics.append(
                                     _diagnostic(
                                         "registry security evidence reports critical installation risk "
-                                        f"for {attestation.cache_key.object_digest}"
+                                        f"for {attestation.cache_key.object_digest}",
+                                        _SECURITY_RISK,
                                     )
                                 )
                             elif risk in {InstallationRisk.HIGH, InstallationRisk.UNKNOWN}:
@@ -1678,6 +1879,7 @@ def audit_registry_workspace(
                                     _diagnostic(
                                         "registry security evidence requires review because installation "
                                         f"risk is {risk.value} for {attestation.cache_key.object_digest}",
+                                        _SECURITY_RISK,
                                         warning=True,
                                     )
                                 )

@@ -44,8 +44,30 @@ _CAPABILITIES = EXECUTABLE_CAPABILITIES
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 
 
-def _error(message: str) -> Err:
-    return Err((Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message),))
+# `RS-09`: what an operator does next after this module refuses. The planning module carries the
+# same idea for the refusals it raises; these are the ones raised before planning is reached, where
+# the problem is the invocation rather than the workspace.
+_READ_THE_ACTIONS = ("`aart registry --help` lists the actions this command accepts",)
+_NAME_THE_ARTIFACT = (
+    "name exactly one artifact kind and name, in the form the action's own `--help` shows",
+)
+_INITIALIZE = (
+    "point `--source` at a registry checkout, or create one with "
+    "`aart registry init --source-id SLUG --display-name NAME --yes`",
+)
+_STATE_THE_RELEASE = (
+    "state the release to test against: `aart registry test --latest-version VERSION`",
+)
+_MINIMUM_VERSION = (
+    "record a minimum AART version in `aart-registry.json` — `requires_aart.min_inclusive` — then "
+    "`aart registry test`",
+)
+
+
+def _error(message: str, remediation: tuple[str, ...]) -> Err:
+    return Err(
+        (Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message, remediation=remediation),)
+    )
 
 
 def _root(request: Request) -> str:
@@ -54,10 +76,10 @@ def _root(request: Request) -> str:
 
 def _version(raw: str | None, label: str) -> Result[SemVer]:
     if raw is None:
-        return _error(f"{label} is required")
+        return _error(f"{label} is required", _STATE_THE_RELEASE)
     parsed = parse_semver(raw)
     if isinstance(parsed, Err):
-        return _error(f"{label} must be canonical SemVer")
+        return _error(f"{label} must be canonical SemVer", _STATE_THE_RELEASE)
     return parsed
 
 
@@ -165,7 +187,9 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
         CurationAction.VENDOR,
         CurationAction.REVENDOR,
     } and (request.artifact_kind is None or len(request.names) != 1):
-        return _error(f"{action.value} requires an exact artifact kind and name")
+        return _error(
+            f"{action.value} requires an exact artifact kind and name", _NAME_THE_ARTIFACT
+        )
     try:
         return Ok(
             CurationRequest(
@@ -198,7 +222,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
             )
         )
     except ValueError as error:
-        return _error(str(error))
+        return _error(str(error), _READ_THE_ACTIONS)
 
 
 def _run_curation(request: Request, action: CurationAction) -> int:
@@ -258,6 +282,12 @@ def _emit_report(request: Request, action: str, report: RegistryQualityReport) -
         print(f"registry {check.name}: {'passed' if check.passed else 'failed'}")
         for diagnostic in check.diagnostics:
             print(f"  {diagnostic.severity.value}: {diagnostic.message}")
+            # `RS-09`: the JSON envelope carried remediation through `diagnostic_to_data` all along
+            # and this renderer dropped it, which is `LAF-52`'s shape one command family over. A
+            # report is where `validate` and `audit` state a refusal, so it renders the next step
+            # exactly as `_emit_error` does.
+            for remediation in diagnostic.remediation:
+                print(f"    remediation: {remediation}")
 
 
 def _snapshot(workspace: FilesystemRegistryWorkspace) -> Result[SourceSnapshot]:
@@ -302,7 +332,7 @@ def _registry_manifest(snapshot: SourceSnapshot) -> Result[RegistryManifest]:
     for item in snapshot.entries:
         if str(item.path) == "aart-registry.json" and item.kind is SnapshotEntryKind.FILE:
             return parse_registry_manifest(item.content)
-    return _error("registry workspace requires aart-registry.json")
+    return _error("registry workspace requires aart-registry.json", _INITIALIZE)
 
 
 def _run_test(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
@@ -320,7 +350,7 @@ def _run_test(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
         return _emit_error(
             request,
             "test",
-            _error("registry compatibility tests require a minimum AART version"),
+            _error("registry compatibility tests require a minimum AART version", _MINIMUM_VERSION),
         )
     checked = test_registry_compatibility(
         current.value,
@@ -366,4 +396,4 @@ def run(request: Request) -> int:
         return _run_test(request, workspace)
     if action == "diff":
         return _run_curation(request, CurationAction.DIFF)
-    return _emit_error(request, action, _error("unknown registry action"))
+    return _emit_error(request, action, _error("unknown registry action", _READ_THE_ACTIONS))

@@ -63,6 +63,8 @@ _BARE = re.compile(r"\baart\s+([a-z][a-z0-9-]*)(?![\w:/-])[^,;`\n]*")
 _REMOVED = re.compile(r"^\| `aart ([a-z][a-z0-9-]*)[^|]*\|", re.MULTILINE)
 _PACKAGE = Path(cli.__file__).resolve().parent
 _RELEASE_DOCS = _PACKAGE.parent / "docs" / "release"
+_REGISTRY_FIXTURE = Path(__file__).parent / "fixtures" / "protocol" / "registry-v1"
+_FINDING_LINE = re.compile(r"^\s+(error|warning): ")
 _PLACEHOLDER = "PLACEHOLDER"
 
 
@@ -398,6 +400,103 @@ class EveryVisibleCommandMentionTest(unittest.TestCase):
         self.assertEqual(tuple(_visible_strings(module)), ())
 
 
+class RegistryRefusalRemediationTest(unittest.TestCase):
+    """`RS-09`: a refused `registry` command must say what to do next.
+
+    The family emitted next-step lines after a *successful* action and nothing after a refusal, so
+    the operator who most needed one got none. A list of the refusals that carry remediation would
+    be true on the day it was written; this reads the shipped modules instead, so the refusal added
+    next month is covered by the same guard.
+
+    Both halves are covered: `_error`, which is every `Err` the family returns, and `_diagnostic`,
+    which is every finding `validate` and `audit` collect into a report. A report is where those
+    two commands state a problem, so a finding with no next step is the same dead end as a refusal
+    with none.
+    """
+
+    def refusals_without_remediation(self) -> tuple[str, ...]:
+        """Every registry refusal or finding built without a next step, as `module:line`."""
+
+        found: list[str] = []
+        for path in (
+            _PACKAGE / "commands" / "registry.py",
+            _PACKAGE / "registry_commands" / "planning.py",
+        ):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                    continue
+                if node.func.id not in ("_error", "_diagnostic"):
+                    continue
+                if len(node.args) < 2 and not any(
+                    keyword.arg == "remediation" for keyword in node.keywords
+                ):
+                    found.append(f"{path.name}:{node.lineno}")
+        return tuple(found)
+
+    def test_rs09_every_registry_refusal_hands_the_operator_a_next_step(self) -> None:
+        silent = self.refusals_without_remediation()
+
+        self.assertEqual(silent, (), f"refusals with no remediation: {', '.join(silent)}")
+
+    def test_rs09_the_guard_sees_a_refusal_that_carries_nothing(self) -> None:
+        """The guard is only worth having if it fails on the thing it claims to catch."""
+
+        planted = ast.parse('return _error("registry workspace requires aart-registry.json")\n')
+        calls = [
+            node
+            for node in ast.walk(planted)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        ]
+
+        self.assertEqual(len(calls[0].args), 1)
+
+    def test_rs09_an_audit_finding_prints_a_next_step_too(self) -> None:
+        """The other half: `audit` states its problems in a report, not in a refusal."""
+
+        with _environment() as env:
+            workspace = env.root / "registry-under-audit"
+            shutil.copytree(_REGISTRY_FIXTURE, workspace)
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env.xdg, clear=False),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                cli.main(["registry", "audit", "--source", str(workspace)])
+
+            printed = stdout.getvalue()
+            findings = [
+                line for line in printed.splitlines() if _FINDING_LINE.match(line) is not None
+            ]
+            self.assertTrue(findings, printed)
+            self.assertEqual(
+                len(findings),
+                len(_remediation_in_text(printed)),
+                f"every finding needs its own next step:\n{printed}",
+            )
+
+    def test_rs09_a_refused_registry_command_prints_a_next_step(self) -> None:
+        """Driven through the shipped CLI, because the renderer is where `LAF-52` went wrong."""
+
+        with _environment() as env:
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, env.xdg, clear=False),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                code = cli.main(["registry", "test", "--source", str(env.project)])
+
+            self.assertEqual(code, 1, stdout.getvalue())
+            remediation = _remediation_in_text(stdout.getvalue())
+            self.assertTrue(remediation, f"no remediation printed: {stdout.getvalue()}")
+            for line in remediation:
+                for command in _COMMAND.findall(line):
+                    failure = _parse_failure(command)
+                    self.assertIsNone(failure, f"`{command}` is not accepted: {failure}")
+
+
 class RendererParityTest(unittest.TestCase):
     """Parser parity proves a command exists; this proves the operator was shown it.
 
@@ -407,8 +506,10 @@ class RendererParityTest(unittest.TestCase):
 
     Two families are absent because they have nothing to compare. `upgrade` defines no `--json`, so
     it has one renderer; `security` and `reporting` report through plain messages rather than a
-    diagnostic envelope. `registry` is present and currently carries no remediation on either side
-    — see the residue recorded against this package.
+    diagnostic envelope. `registry` was present and vacuous — both renderers agreed on nothing,
+    because its refusals carried nothing. `RS-09` filled the field, and the same comparison then
+    found the second half of the defect: `_emit_report` printed the message and dropped the next
+    step, so the JSON envelope carried advice a person at a terminal never saw.
     """
 
     def _both_renderers(self, env, *argv: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -479,6 +580,7 @@ class RendererParityTest(unittest.TestCase):
                 env, "registry", "validate", "--source", str(env.project)
             )
 
+            self.assertTrue(text, "a refused registry validate must print a next step")
             self.assertEqual(sorted(text), sorted(envelope))
 
 
