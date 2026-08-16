@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -113,10 +114,17 @@ from .templates import REGISTRY_CI_WORKFLOW, REPORTING_TEMPLATES
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
+# `LAF-45`: a report of what the audit did, as opposed to what it found. It carries no remediation
+# because there is nothing to remedy — an operator reads it to know the check ran at all.
+REGISTRY_AUDIT_NOTE = DiagnosticCode("registry-audit-note")
 
 
 def _error(message: str) -> Err:
     return Err((Diagnostic(REGISTRY_COMMAND_INVALID, Severity.ERROR, message),))
+
+
+def _note(message: str) -> Diagnostic:
+    return Diagnostic(REGISTRY_AUDIT_NOTE, Severity.INFO, message)
 
 
 def _diagnostic(message: str, *, warning: bool = False) -> Diagnostic:
@@ -1363,20 +1371,24 @@ def _vendored_upstream_findings(
     acquirer: NativeAcquirer,
     files: dict[str, SnapshotEntry],
     vendored: VendoredArtifactOrigin,
-) -> tuple[Diagnostic, ...]:
+) -> tuple[NativeReferenceDisposition, tuple[Diagnostic, ...]]:
     """Report whether one vendored copy still matches upstream, and never guess when it cannot.
 
     Read-only by construction: it resolves and compares, and no caller can turn the answer into a
     write. An upstream that cannot be read is reported as unknown rather than as drift, because a
     maintainer who has lost access to an origin has a different problem from one who is behind it,
     and neither of them is told their copy is current (design §6).
+
+    The disposition comes back with the findings so the audit can say how many copies it compared
+    (`LAF-45`). It is the same vocabulary `revendor --check` prints, deliberately: one answer about
+    one copy should not have two names depending on which command asked.
     """
 
     identity = vendored.manifest.identity
     shipped = _shipped_digest(files, vendored)
     acquired = acquirer(vendored.url, vendored.ref)
     if isinstance(acquired, Err):
-        return (
+        return NativeReferenceDisposition.UNREACHABLE, (
             _diagnostic(
                 f"vendored artifact upstream could not be read, so drift is unknown: {identity} "
                 f"({vendored.url} at {vendored.ref})",
@@ -1385,7 +1397,7 @@ def _vendored_upstream_findings(
         )
     taken = take_subtree(acquired.value.snapshot, vendored.path)
     if isinstance(taken, Err):
-        return (
+        return NativeReferenceDisposition.CHANGED, (
             _diagnostic(
                 f"vendored artifact is behind upstream: {identity} was taken from "
                 f"{vendored.path}, which {vendored.ref} no longer provides",
@@ -1393,14 +1405,37 @@ def _vendored_upstream_findings(
             ),
         )
     if taken.value.input_digest == shipped:
-        return ()
-    return (
+        return NativeReferenceDisposition.UP_TO_DATE, ()
+    return NativeReferenceDisposition.CHANGED, (
         _diagnostic(
             f"vendored artifact is behind upstream: {identity} copies {vendored.path} at "
             f"{vendored.recorded_commit[:12]}, and {vendored.ref} now resolves to "
             f"{acquired.value.resolved_commit[:12]}",
             warning=True,
         ),
+    )
+
+
+def _upstream_check_note(dispositions: tuple[NativeReferenceDisposition, ...]) -> Diagnostic:
+    """`LAF-45`: state that the check ran, including when it had nothing to report.
+
+    Every other outcome of `--check-upstream` prints a line. A registry whose copies are all
+    current printed nothing, and so did a command run without the flag — so an operator reading a
+    CI log could not tell a clean result from a dropped argument. This is the line that separates
+    them, and it is `info` because it is not a finding: nothing here asks anyone to act.
+    """
+
+    if not dispositions:
+        return _note("no vendored artifacts to check against upstream")
+    counted = Counter(dispositions)
+    subject = "1 vendored artifact against its upstream"
+    if len(dispositions) > 1:
+        subject = f"{len(dispositions)} vendored artifacts against their upstreams"
+    return _note(
+        f"checked {subject}: "
+        f"{counted[NativeReferenceDisposition.UP_TO_DATE]} up-to-date, "
+        f"{counted[NativeReferenceDisposition.CHANGED]} changed, "
+        f"{counted[NativeReferenceDisposition.UNREACHABLE]} unreachable"
     )
 
 
@@ -1426,6 +1461,7 @@ def audit_registry_workspace(
     files = _files(snapshot)
     assert isinstance(files, Ok)
     diagnostics: list[Diagnostic] = []
+    upstream_dispositions: list[NativeReferenceDisposition] = []
     native = registry_native_content(
         snapshot,
         files.value,
@@ -1522,9 +1558,11 @@ def audit_registry_workspace(
                 )
             )
         if vendored is not None and upstream_acquirer is not None:
-            diagnostics.extend(
-                _vendored_upstream_findings(upstream_acquirer, files.value, vendored)
+            disposition, findings = _vendored_upstream_findings(
+                upstream_acquirer, files.value, vendored
             )
+            upstream_dispositions.append(disposition)
+            diagnostics.extend(findings)
         if manifest.value.setup is not None:
             recipe = f"{base}/{manifest.value.setup.recipe}"
             recipe_file = files.value.get(recipe)
@@ -1621,6 +1659,10 @@ def audit_registry_workspace(
                                         warning=True,
                                     )
                                 )
+    if upstream_acquirer is not None:
+        # Said once, at the end, and only when the caller asked for the check — its absence is what
+        # tells an operator the flag never reached the command (`LAF-45`).
+        diagnostics.append(_upstream_check_note(tuple(upstream_dispositions)))
     return Ok(RegistryQualityReport((RegistryQualityCheck("audit", tuple(diagnostics)),)))
 
 

@@ -56,7 +56,7 @@ does not have to agree with the present; a current document does.
 | ID | Severity | Found in | Disposition | Closed or made visible by |
 |---|---|---|---|---|
 | `LAF-43` | medium | `2.4.0` live acceptance | `deferred` | — cluster C5; `DESIGN-readable-receipt.md` §5 leaves it for its own stream |
-| `LAF-45` | medium | `2.4.0` live acceptance | `open` | — the rule it teaches is applied to the new commands; `audit --check-upstream` itself is untouched |
+| `LAF-45` | medium | `2.4.0` live acceptance | `closed` | `registry audit --check-upstream` ends with one `info` line — *checked 1 vendored artifact against its upstream: 1 up-to-date, 0 changed, 0 unreachable*, or *no vendored artifacts to check against upstream* — and prints nothing of the kind without the flag. `tests/registry_vendor_license_test.py::test_laf45_*` cover all four shapes through the real CLI; live `LA-R-31`/`LA-R-32` in [`PROGRESS-live-acceptance-v8.md`](PROGRESS-live-acceptance-v8.md), where the `main` wheel's output with and without the flag is byte-identical and the branch's differs by that line |
 | `LAF-47` | medium | `2.4.0` live acceptance | `open` | — see *Corrections* below |
 | `LAF-49` | low | `2.4.0` live acceptance | `open` | — |
 | `LAF-52` | high | `2.5.0` live acceptance | `closed` | `RR-2A`; `tests/setup_render_test.py`, and `marketplace setup` at a terminal prints the failure detail, the artifact key and the manual route |
@@ -95,6 +95,7 @@ does not have to agree with the present; a current document does.
 | `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
+| `LAF-87` | medium | fixing `LAF-45` | `open` | — the stressor namespace spans four documents and the scenarios file's register stops at `LAS-30`, so `LAS-31`, `LAS-32` and `LAS-33` were taken a second time by three unmerged branches of the overnight run. Recorded in [`PROGRESS-live-acceptance-v8.md`](PROGRESS-live-acceptance-v8.md); the branches need renumbering before they merge |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced

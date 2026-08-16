@@ -56,10 +56,18 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-57` | A check that found nothing, against a check that never ran | `LA-R-31`, `LA-R-32`, `LA-R-33` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
 way the system can be pushed.
+
+**The numbering continues across runs, not within this file.** `LAS-31`..`LAS-40` are defined in
+[PROGRESS-live-acceptance-v2.md](PROGRESS-live-acceptance-v2.md), `LAS-41`..`LAS-48` in
+[v3](PROGRESS-live-acceptance-v3.md), and `LAS-49`..`LAS-56` in
+[setup-build](PROGRESS-live-acceptance-setup-build.md). A new stressor therefore starts at `LAS-57`,
+not at the next number after the table above. That the table above stops at `LAS-30` while the
+namespace runs to `LAS-56` is what `LAF-87` records.
 
 ---
 
@@ -108,6 +116,9 @@ way the system can be pushed.
 | `LA-R-28` | Manifest vs heuristic import | flag | D | `upstream scan --mode auto` on the residuality repo (has `agent-artifacts.import.json`) and on a manifest-less collection | `auto` picks manifest for the first, heuristic for the second; the choice is explainable |
 | `LA-R-29` | **Legacy manifest is rejected, not absorbed** | flag | D | import the residuality repo if its manifest predates the current protocol floor | **typed migration error naming what to change.** Rejection is the pass condition, not a finding (design §8, one-way adaptation). The finding is silent absorption |
 | `LA-R-30` | Compatibility floor is stated | flag | D | `registry test --compatibility minimum`; per-artifact compatibility of the imported bundle | the floor and the offending artifact are both named in the failure |
+| `LA-R-31` | **A completed upstream check says so** | flag | D | `registry audit --check-upstream` on a registry that vendors nothing | one `info` line stating the check ran and found nothing to check |
+| `LA-R-32` | The same audit without the flag | flag | D | `registry audit` on the same registry | no such line — its absence is what tells an operator the check did not run |
+| `LA-R-33` | The counts on a real vendored copy | flag | D | `registry audit --check-upstream` on a registry holding a vendored package, upstream current | `n up-to-date, 0 changed, 0 unreachable`; needs an upstream the runner controls, which `LAF-43` denies |
 
 ## Phase S — sources
 
