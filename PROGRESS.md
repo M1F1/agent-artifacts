@@ -66,6 +66,8 @@
 - **Next task:** the overnight residue run continues with `RS-07`, then `LAF-45`. See *Overnight
 - **Next task:** the overnight residue run continues with the last of the cheap ones, `LAF-49` —
   git runs without `https_proxy` and nothing documents it. See *Overnight
+- **Next task:** the overnight residue run continues with `LAF-45`, then the validation cluster
+  (`RS-08`, `RS-01`). See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -538,6 +540,7 @@ state the arithmetic in the scenarios file so the next run does not repeat it.
 
 `LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5). Every one has
 a register row saying where it came from. **`LAF-85` is the one to read first:** something wrote to
+(from 8). Every one has a register row saying where it came from. **`LAF-85` is the one to read first:** something wrote to
 **Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
 and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
 untouched — it needs a live run against a second GHE host, which this run cannot make. Item 6 is the
@@ -2337,6 +2340,7 @@ Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
 - **Walked live, and the two wheels disagree by exactly one line.** `LA-S-11`..`LA-S-13` in
   `docs/testing/PROGRESS-live-acceptance-v7.md`, on branch
   `fix/status-names-the-missing-source-rs07`: the `main` wheel
+  [PROGRESS-live-acceptance-v7.md](docs/testing/PROGRESS-live-acceptance-v7.md): the `main` wheel
   refuses with exit `1`, the branch wheel reports `source-unavailable` with exit `0`, and the
   coordinate it prints is then handed to `uninstall` — with no source configured — which reviews,
   applies, and leaves the project empty. `install`, `update`, `list` and `setup` still refuse.

@@ -141,6 +141,29 @@ class IdentityChangeReconciliationTest(unittest.TestCase):
                 declared = {record["source"]["declared_id"] for record in manifest["installations"]}
                 self.assertEqual(declared, {_OLD_IDENTITY})
 
+    def test_rs07_status_reports_the_project_when_the_only_subscription_is_removed(self) -> None:
+        """`RS-07`: the project still has installations, and `status` is what reads them.
+
+        The removal here is the one `source remove` tells an operator to take. Before this, the
+        next `status` refused with `no-source-configured` — a message about the *configuration*
+        when the question was about the *project*, and one an operator can do nothing with while
+        their installed artifacts sit on disk.
+        """
+
+        with _environment() as staging:
+            source = self._writable_source(staging.root)
+            with _environment(source) as env:
+                env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
+                _source(env, "source", "remove", "--alias", "reference", "--yes")
+
+                code, status = env.run("marketplace", "status", "--profile", "claude")
+
+                self.assertEqual(code, 0, status)
+                self.assertEqual(
+                    [item["status"] for item in status["items"]], ["source-unavailable"]
+                )
+                self.assertTrue((env.project / _INSTALLED / "SKILL.md").is_file())
+
     def test_a_removed_subscription_is_still_source_unavailable(self) -> None:
         """The split must not turn a gone subscription into an identity question."""
 
@@ -148,9 +171,8 @@ class IdentityChangeReconciliationTest(unittest.TestCase):
             source = self._writable_source(staging.root)
             with _environment(source) as env:
                 env.run("marketplace", "install", _COORDINATE, "--profile", "claude", "--yes")
-                # A second subscription so one survives the removal: `status` is still a content
-                # operation, and refuses with `no-source-configured` when none is enabled at all.
-                # See the recorded residue under SI-4 in the plan.
+                # A second subscription, so this case stays what it is about: one subscription
+                # gone while another survives. `RS-07` covers the empty case separately.
                 mirror = self._writable_source(env.root)
                 identity = json.loads((mirror / "aart-source.json").read_text(encoding="utf-8"))
                 identity["source_id"] = "mirror-reference-source"

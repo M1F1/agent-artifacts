@@ -73,6 +73,7 @@ the code.
 | `LAS-59` | The same defect reached by authoring instead of by copying | `LA-R-34`, `LA-R-35`, `LA-R-36` |
 | `LAS-32` | A persisted record read by a later executable than wrote it | `LA-M-12`, `LA-M-13`, `LA-M-14`, `LA-M-15` |
 | `LAS-61` | A compatibility window declared by a release that is no longer the running one | `LA-R-37`..`LA-R-41` |
+| `LAS-33` | The last subscription removed while installed artifacts remain | `LA-S-11`, `LA-S-12`, `LA-S-13` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -172,6 +173,9 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-S-14` | **An unreadable registry marker is refused** | flag | D | `source add` a local source whose root `aart-registry.json` is missing a required field, is not JSON, and is a directory | each is refused, naming the file and what the parser could not read; nothing is configured |
 | `LA-S-15` | The same break upstream, at sync | flag | D | subscribe while healthy, break the marker, `source sync` | the sync fails and the working subscription survives — last-known-good snapshot, `status` still `current` |
 | `LA-S-16` | A source with no marker is unaffected | flag | D | `source add` the same source with no `aart-registry.json` | added and published; the refusal is about a marker that is there, not one that is absent |
+| `LA-S-11` | **The project is still readable after the last subscription goes** | flag | D | install, `source remove --alias … --yes`, then `marketplace status` | exits `0` and reports the installation as `source-unavailable`; the installed file is still on disk |
+| `LA-S-12` | Fetching still refuses without a source | flag | D | `marketplace install`, `update`, `list`, `setup` after the same removal | each refuses with `no-source-configured` and names how to configure one |
+| `LA-S-13` | The lifecycle closes without a source | flag | D | `marketplace uninstall <coordinate>` using the coordinate `LA-S-11` printed | review, then apply; the installed file is gone and the next `status` selects nothing |
 
 ## Phase U — user lifecycle
 
