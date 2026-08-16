@@ -439,7 +439,15 @@ None.
 The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
 another; they can be reviewed and merged in any order.
 
-**Merging them is not free, and an earlier version of this paragraph said something false about it.**
+**Merged into `main` on `2026-08-16`.** All fourteen `fix/` branches and the whole document chain
+are in, resolved one row per id, with `make quality` green after every merge that touched code. The
+register now holds 89 rows, no id twice, 27 `closed` — the 12 that were closed before tonight plus
+this run's 15 — and 58 `open`. The scenario map holds 180 rows and no id twice. Three rows had to be
+restored afterwards (`LAF-88`, `LAF-89`, `LAF-90`): both sides had changed them, the per-row rule
+kept the branch text, and the later widening and re-walks were dropped. That is exactly the case
+`LAF-119` predicted, which is why its instruction says to check the result rather than trust it.
+
+**The instruction that got the merge right, kept here for the next one.**
 It said to expect conflicts in `PROGRESS.md` and the register and to *take both sides*. Simulated in
 full on `2026-08-16` — all fourteen `fix/` branches merged into `main` in sequence with `git
 merge-tree`, no branch touched (row 49):
