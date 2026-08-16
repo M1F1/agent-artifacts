@@ -56,6 +56,7 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-33` | The last subscription removed while installed artifacts remain | `LA-S-11`, `LA-S-12`, `LA-S-13` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -123,6 +124,9 @@ way the system can be pushed.
 | `LA-S-08` | **Unqualified collision fails** | flag | D | resolve the colliding name unqualified | fails with an actionable message |
 | `LA-S-09` | **Qualified collision resolves** | flag | D | resolve the same name qualified by source | resolves to the intended artifact |
 | `LA-S-10` | Marketplace health | flag | D | `marketplace health --environment …` | reports per-source health |
+| `LA-S-11` | **The project is still readable after the last subscription goes** | flag | D | install, `source remove --alias … --yes`, then `marketplace status` | exits `0` and reports the installation as `source-unavailable`; the installed file is still on disk |
+| `LA-S-12` | Fetching still refuses without a source | flag | D | `marketplace install`, `update`, `list`, `setup` after the same removal | each refuses with `no-source-configured` and names how to configure one |
+| `LA-S-13` | The lifecycle closes without a source | flag | D | `marketplace uninstall <coordinate>` using the coordinate `LA-S-11` printed | review, then apply; the installed file is gone and the next `status` selects nothing |
 
 ## Phase U — user lifecycle
 

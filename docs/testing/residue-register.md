@@ -76,7 +76,7 @@ does not have to agree with the present; a current document does.
 | `RS-04` | low | `2.3.0` prose | `open` | — |
 | `RS-05` | low | `2.3.0` prose | `open` | — |
 | `RS-06` | low | `2.3.0` prose | `open` | — |
-| `RS-07` | medium | `2.2.0` prose | `open` | — |
+| `RS-07` | medium | `2.2.0` prose | `closed` | `tests/identity_change_reconciliation_test.py::test_rs07_status_reports_the_project_when_the_only_subscription_is_removed`; walked live in `LA-S-11`..`LA-S-13` in [`PROGRESS-live-acceptance-v7.md`](PROGRESS-live-acceptance-v7.md) on a locally built wheel — after `source remove` of the only subscription, `marketplace status` exits `0` and reports `source-unavailable` while the `main` wheel refuses with `no-source-configured`, and the coordinate it prints is the one `uninstall` then accepts. `DESIGN-source-subscription-lifecycle.md` §4 now states which commands stay answerable |
 | `RS-08` | medium | `2.2.0` prose | `open` | — |
 | `RS-09` | medium | `2.2.0` prose | `open` | — the three receipt refusals all carry remediation, which is the rule rather than the fix; `registry`'s own refusals are untouched |
 | `RS-10` | medium | `2.2.0` prose | `open` | — see *Corrections* below |
@@ -95,6 +95,7 @@ does not have to agree with the present; a current document does.
 | `LAF-75` | high | publishing `2.6.0` | `visible` | — `build_wheel.py` builds an unstamped wheel and `wheel-digest` prints the digest of a stamped one; the checklist named them on consecutive lines. Corrected in `release-checklist-v14.md` with the verification step; the real fix is `wheel-digest` emitting the artifact it hashes |
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
+| `LAF-86` | low | fixing `RS-07` | `open` | — `marketplace uninstall` with no coordinate advises `marketplace list`, which browses the sources rather than the project and refuses outright when none is configured; `status` is what answers there, and after `RS-07` it answers in exactly that situation |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
 
 ## Corrections this register forced

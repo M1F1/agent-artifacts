@@ -94,6 +94,15 @@ deliver from user-scope state alone, and the operation destroys no installed fil
 project left pointing at a removed alias reports an unconfigured source through the normal
 reconciliation path, which is a legible state with a named remedy.
 
+**Which commands stay answerable afterwards, including when the removed alias was the only one.**
+`uninstall` and `status` read what the project already has: one removes what the manifest records,
+the other reports it, and neither fetches anything. They therefore do not require an enabled source,
+and removing the last subscription leaves both working. Every other lifecycle action does require
+one and keeps refusing. `2.2.0` took this decision for `uninstall` and left `status` refusing with
+`no-source-configured` — a message about the configuration in answer to a question about the
+project, and the residue recorded as `RS-07`. The paragraph above already promised the opposite
+behaviour; this states plainly which commands deliver it.
+
 ## 5. `source resubscribe`
 
 Adopts a changed declared identity at an unchanged origin and ref, under the same alias.

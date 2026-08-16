@@ -95,6 +95,12 @@ _LIFECYCLE_ACTIONS: dict[str, ConsumerAction] = {
 }
 _REQUIRES_COORDINATES = frozenset({"install", "uninstall", "setup"})
 _MUTATING = frozenset({"install", "update", "uninstall", "setup"})
+# `RS-07`: the actions that read what the project already has. Neither fetches anything, so neither
+# needs an enabled source to be answerable — an installed artifact is on disk whether or not the
+# subscription that delivered it is still configured. `uninstall` was exempted in `2.2.0` because
+# design §3 names it; `status` is the same kind of question and was left refusing, which meant the
+# operator who followed `source remove` could no longer read their own project.
+_PROJECT_LOCAL = frozenset({"uninstall", "status"})
 
 
 def _emit_error(request: Request, result: Err, operation: str = _LIST_OPERATION) -> int:
@@ -484,9 +490,10 @@ def _lifecycle(request: Request, action: str) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
-        # Uninstall is not a content operation: it removes what the manifest records.  Requiring an
-        # enabled source here would refuse the exact exit `source remove` tells operators to take.
-        content_required=action != "uninstall",
+        # Neither of these is a content operation: one removes what the manifest records, the other
+        # reports it.  Requiring an enabled source here would refuse the exact exit `source remove`
+        # tells operators to take.
+        content_required=action not in _PROJECT_LOCAL,
     )
     if isinstance(service, Err):
         return _emit_error(request, service, operation)
