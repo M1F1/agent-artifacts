@@ -3720,3 +3720,30 @@ protocol covers. What is absent is any path from `cli.py`.
   finding rather than in a run-log entry.
 - **Nothing repaired.**
 | `RS-12` | `fix/setup-docker-credentials-rs12` | done — code, unit evidence, and a live walk against two executables one commit apart ([v4](docs/testing/PROGRESS-live-acceptance-v4.md)) |
+
+### 2026-08-16 — `LAF-90` closed: the wizard offers a window the running AART is inside
+
+Branch `fix/wizard-defaults-name-the-running-aart-laf90`, cut from `main` after tonight's merges.
+Design note first, then the failing test, then the fix, then the live walk — the order the brief
+asks for. `LAF-90` was the highest-priority defect on the morning list.
+
+- **The defect.** Pressing return at both `registry init` prompts authored a registry declaring
+  `>=1.0.0,<2.0.0`. `registry init` accepted it, exit `0`, and the first command it then advised —
+  `registry validate` — exited `1`: *registry workspace is incompatible with this AART version*.
+- **The fix is one source of truth, not a new rule.** `RS-02` already derives the window from the
+  running executable in `curation/model.py`; `cli.py` and `commands/registry.py` already use it. The
+  wizard now asks with the same two constants and shows the value in the prompt —
+  `Minimum AART version [2.6.0]: ` — so an operator sees what pressing return means. Four literal
+  sites in `tui.py` become none.
+- **Proved twice.** The unit test drives the wizard's own question loop with a reader that presses
+  return and asserts `VersionBounds(minimum, maximum).allows(__version__)`, which is `RS-02`'s
+  assertion applied to the front-end it missed. The live walk
+  (`PROGRESS-live-acceptance-v13.md`, `LA-0-11`, `LA-0-12`) puts a wheel from `main` and a wheel from
+  the branch side by side: `1.0.0..2.0.0` and `validate` exit `1`, against `2.6.0..3.0.0` and
+  `validate` exit `0`.
+- **The run header names a commit**, `dd90561`, with the wheel size and digest — `LAF-121` was filed
+  last night for run headers that name a branch, and this is the first record written after it.
+- **One methodology note is in the run document**: the first probe pass imported the working tree
+  instead of the installed wheel, because `python -c` puts the current directory on `sys.path`. Both
+  sides passed, which proved nothing. Re-run from outside the repository with
+  `agent_artifacts.__file__` printed, the sides separate. Caught, not shipped.
