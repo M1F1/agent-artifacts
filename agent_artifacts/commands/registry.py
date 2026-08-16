@@ -7,6 +7,8 @@ import os
 
 from agent_artifacts import command_outcome as _common
 from agent_artifacts.curation.model import (
+    DEFAULT_MAXIMUM_AART,
+    DEFAULT_MINIMUM_AART,
     CurationAction,
     CurationOutcome,
     CurationRequest,
@@ -217,8 +219,13 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 review_policy=request.review_policy or "manual-review-v1",
                 source_id=request.source_id,
                 display_name=request.display_name,
-                minimum_version=request.minimum_version or "1.0.0",
-                maximum_version=request.maximum_version or "2.0.0",
+                # `RS-02`: only `init` declares a compatibility window, and only `init` reads one
+                # back, so every other action arrives here with both unset.  The substitute has to
+                # be the window of the AART that is running -- literals bound a registry to the
+                # release they were typed in, and `1.0.0`/`2.0.0` had already stopped a major
+                # short of the executable stamping them.
+                minimum_version=request.minimum_version or DEFAULT_MINIMUM_AART,
+                maximum_version=request.maximum_version or DEFAULT_MAXIMUM_AART,
             )
         )
     except ValueError as error:

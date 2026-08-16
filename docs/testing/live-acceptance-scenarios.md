@@ -72,6 +72,7 @@ the code.
 | `LAS-58` | A reserved marker file is present and cannot be read | `LA-S-14`, `LA-S-15`, `LA-S-16` |
 | `LAS-59` | The same defect reached by authoring instead of by copying | `LA-R-34`, `LA-R-35`, `LA-R-36` |
 | `LAS-32` | A persisted record read by a later executable than wrote it | `LA-M-12`, `LA-M-13`, `LA-M-14`, `LA-M-15` |
+| `LAS-61` | A compatibility window declared by a release that is no longer the running one | `LA-R-37`..`LA-R-41` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -146,6 +147,11 @@ highest id in use anywhere, not at the next number after the table above. That t
 | `LA-R-34` | **An authored descriptor that starts nothing is named** | flag | D | scaffold `mcp`, replace `payload/mcp.json` with the harness shape `{"mcpServers": …}`, `registry audit` | the audit fails and names the package and the shape the descriptor needs; no vendoring anywhere in the registry |
 | `LA-R-35` | An authored descriptor launching a withheld file | flag | D | scaffold a second `mcp`, point `command`/`args` at `payload/index.js`, `registry audit` | the audit fails and names the file the consumer never receives |
 | `LA-R-36` | **The refusal stops at the maintainer's boundary** | flag | D | on the same registry: `registry validate --strict --frozen`, then `source add` + `marketplace install` of the faulty artifact from a consumer project | validate passes, the subscription and install still succeed, and the merged entry is the empty object the audit describes |
+| `LA-R-37` | The executable still starts | flag | A | `aart --version` from the installed wheel | the entry point imports and reports `2.6.0`; `RS-02` moves an import into `cli.py`, and an entry point that fails to import fails after every unit test has passed |
+| `LA-R-38` | The declared window is the running release's | flag | A | `aart registry init --help` | both defaults are derived, not typed: `2.6.0` and `3.0.0` on a `2.6.0` executable |
+| `LA-R-39` | The window reaches the manifest | flag | A | `registry init --yes`, then read `requires_aart` out of `aart-registry.json` | `min_inclusive` `2.6.0`, `max_exclusive` `3.0.0` — the registry admits the AART that wrote it |
+| `LA-R-40` | The removed values were inert | flag | A | `registry scaffold mcp atlassian --yes` under a `main` wheel and under the branch wheel, then `diff -r` the two workspaces | byte-identical trees. `RS-02` deletes values nothing read; a difference here would mean something did |
+| `LA-R-41` | The written registry is accepted | flag | A | `registry validate --source .` against the workspace the branch wheel authored | `passed` — the window it declared is one it satisfies |
 
 ## Phase S — sources
 

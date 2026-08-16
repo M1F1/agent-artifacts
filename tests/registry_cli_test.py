@@ -4,7 +4,25 @@ import unittest
 from unittest.mock import patch
 
 from agent_artifacts import __version__, cli
+from agent_artifacts.commands import registry as registry_command
+from agent_artifacts.curation.model import CurationAction
+from agent_artifacts.domain.result import Ok
 from agent_artifacts.model import Request
+from agent_artifacts.protocol.semver import VersionBounds, parse_semver
+
+_SCAFFOLD = (
+    "registry scaffold --source /tmp/registry skill demo --summary One. "
+    "--profile codex --platform darwin"
+)
+_VENDOR = (
+    "registry vendor --source /tmp/registry mcp atlassian --url https://example.com/up.git "
+    "--path artifacts/mcp/atlassian --artifact-version 1.2.0 --summary One. "
+    "--profile claude --platform darwin"
+)
+_PROMOTE = (
+    "registry promote-native --source /tmp/registry skill demo "
+    "--url https://example.com/up.git --path artifacts/skill/demo"
+)
 
 
 class RegistryCliTest(unittest.TestCase):
@@ -60,6 +78,48 @@ class RegistryCliTest(unittest.TestCase):
         request = cli._to_request(cli.build_parser().parse_args(["registry", "test"]))
 
         self.assertEqual(request.latest_version, __version__)
+
+    def test_rs02_no_registry_action_declares_a_window_that_excludes_the_running_aart(self) -> None:
+        # `--minimum-version` and `--maximum-version` exist on `registry init` alone, so every
+        # other action reaches the command boundary with both unset and takes whatever the
+        # boundary substitutes.  It substituted the literals `1.0.0` and `2.0.0`: a window that
+        # stops one whole major short of the AART doing the writing.  Only `init` reads the pair
+        # today, which is the sole reason nothing has broken -- a value that is wrong the moment
+        # anything reads it is not worth carrying.
+        running = parse_semver(__version__)
+        assert isinstance(running, Ok)
+
+        for command in (_SCAFFOLD, _VENDOR, _PROMOTE):
+            with self.subTest(command=command.split()[1]):
+                request = cli._to_request(cli.build_parser().parse_args(command.split()))
+                curation = registry_command._curation_request(
+                    request, CurationAction(request.registry_action)
+                )
+                assert isinstance(curation, Ok)
+                minimum = parse_semver(curation.value.minimum_version)
+                maximum = parse_semver(curation.value.maximum_version)
+                assert isinstance(minimum, Ok) and isinstance(maximum, Ok)
+
+                self.assertTrue(
+                    VersionBounds(minimum.value, maximum.value).allows(running.value),
+                    f"{curation.value.minimum_version}..{curation.value.maximum_version} "
+                    f"excludes the running {__version__}",
+                )
+
+    def test_rs02_init_still_carries_the_window_the_operator_asked_for(self) -> None:
+        # The substitution is a fallback, not a rewrite: an author who really supports a wider
+        # range says so on `init`, and that is what has to reach the manifest.
+        request = cli._to_request(
+            cli.build_parser().parse_args(
+                "registry init --source /tmp/registry --source-id company --display-name Company "
+                "--minimum-version 2.0.0 --maximum-version 4.0.0".split()
+            )
+        )
+        curation = registry_command._curation_request(request, CurationAction.INIT)
+
+        assert isinstance(curation, Ok)
+        self.assertEqual(curation.value.minimum_version, "2.0.0")
+        self.assertEqual(curation.value.maximum_version, "4.0.0")
 
     def test_native_promotion_maps_an_explicit_reference_and_finalize_consent(self) -> None:
         request = cli._to_request(

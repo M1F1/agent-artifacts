@@ -23,8 +23,8 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 # A registry initialised today is written in the current dialect, so its floor is the AART
 # that wrote it and its ceiling is the next major.  Literals here go stale on every release
 # and, once the floor reaches the old literal ceiling, make the pair unsatisfiable.
-_DEFAULT_MINIMUM_AART = str(EXECUTABLE_VERSION)
-_DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
+DEFAULT_MINIMUM_AART = str(EXECUTABLE_VERSION)
+DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 
 
 class CurationAction(str, Enum):
@@ -86,8 +86,8 @@ class CurationRequest:
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
-    minimum_version: str = _DEFAULT_MINIMUM_AART
-    maximum_version: str = _DEFAULT_MAXIMUM_AART
+    minimum_version: str = DEFAULT_MINIMUM_AART
+    maximum_version: str = DEFAULT_MAXIMUM_AART
 
     def __post_init__(self) -> None:
         if (

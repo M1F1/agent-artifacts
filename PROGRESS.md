@@ -64,6 +64,8 @@
 - **Next task:** the overnight residue run continues with the `RS-11`/`RS-13`/`RS-14`/`RS-15` options
   note; see *Overnight run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
 - **Next task:** the overnight residue run continues with `RS-07`, then `LAF-45`. See *Overnight
+- **Next task:** the overnight residue run continues with the last of the cheap ones, `LAF-49` —
+  git runs without `https_proxy` and nothing documents it. See *Overnight
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -2450,6 +2452,8 @@ Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
   reconciliation health, not runnability. It is the `VI-5` decision working as chosen, and it is also
   why this check has to live on the maintainer's side.
 ### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` design note
+
+
 Branch `fix/uninstall-removes-the-file-it-made`, cut from `main`, not pushed. **The note only.** The
 brief asks for it committed on its own before any code, and that is what this commit is. Both
 findings stay `open`.
