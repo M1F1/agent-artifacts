@@ -38,8 +38,8 @@ the code.
 | `LAS-10` | Mid-flow abandonment | `LA-R-22`, `LA-U-27` |
 | `LAS-11` | Unattended input on stdin | `LA-R-21`, `LA-R-23`, `LA-U-26` |
 | `LAS-12` | Degraded terminal — curses unavailable | every `TUI-text` scenario |
-| `LAS-13` | Relocated environment (`HOME` override) | `LA-0-03`, `LA-0-04`, `LA-U-08` |
-| `LAS-14` | Credential absent, then present | `LA-M-01`, `LA-M-03` |
+| `LAS-13` | Relocated environment (`HOME` override) | `LA-0-03`, `LA-0-04`, `LA-U-08`, `LA-M-08`, `LA-M-11` |
+| `LAS-14` | Credential absent, then present | `LA-M-01`, `LA-M-03`, `LA-M-09`, `LA-M-10` |
 | `LAS-15` | Partial failure inside an effect queue | `LA-M-04` |
 | `LAS-16` | Rollback after effects were applied | `LA-M-05` |
 | `LAS-17` | Duplicate registration | `LA-S-03` |
@@ -195,6 +195,10 @@ way the system can be pushed.
 | `LA-M-05` | Rollback restores | flag | H | `setup rollback` | prior state restored exactly |
 | `LA-M-06` | No credential leakage | flag | H | inspect all captured output | no secret in any recorded artefact |
 | `LA-M-07` | Skill-carried installer | flag | D review / H run | any residuality skill declaring setup effects | reviewed in `LA-M-01` with no effect; executed here only after explicit approval |
+| `LA-M-08` | Docker step sees the user's docker config | flag | D | run a `docker.pull@1` recipe for a **public** image with `HOME` set; read the receipt | pull succeeds and the run completes; `RS-12`'s widened environment breaks nothing that worked |
+| `LA-M-09` | A private image without credentials says why | flag | D | same recipe against an image in a namespace this machine cannot read, `DOCKER_CONFIG` pointed at an empty directory | the recorded detail carries docker's own words — `pull access denied` — not a bare `docker pull failed` |
+| `LA-M-10` | A private image with credentials | flag | H | credentials supplied by Michal; the company base image | the pull authenticates. **Human-gated**: the agent supplies no credentials |
+| `LA-M-11` | Rollback removes the tag from the daemon that built it | flag | H | `docker.build@1` under a non-default docker context, then rollback | the tag is removed from the context that holds it. **Human-gated**: needs a second daemon or context on the machine |
 
 ---
 
