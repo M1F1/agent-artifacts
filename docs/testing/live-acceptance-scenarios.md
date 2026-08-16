@@ -56,6 +56,18 @@ the code.
 | `LAS-28` | Artifact carrying a setup installer | `LA-M-07` |
 | `LAS-29` | Ambient working directory decides which role surface is offered | `LA-0-05` |
 | `LAS-30` | One maintainer family pointed at the other family's workspace shape | `LA-R-11`, `LA-R-12`, `LA-R-13` |
+| `LAS-62` | An operator accepts every default the tool itself offers | `LA-0-11`, `LA-0-12` |
+| `LAS-63` | A command surface advertises a capability no command can run | `LA-R-42` |
+| `LAS-64` | One runtime reaches two different layers for two neighbouring commands | `LA-R-43` |
+| `LAS-65` | Every command run before anything at all is configured | `LA-0-13` |
+| `LAS-66` | A consumer that reads only the machine channel and never the prose | `LA-0-14` |
+| `LAS-67` | A command that says it changes nothing, watched at the disk | `LA-U-36` |
+| `LAS-68` | The durable store watched across a whole install and uninstall | `LA-U-37` |
+| `LAS-69` | An origin withdrawn after its content has been seen | `LA-U-38` |
+| `LAS-70` | An instruction file the operator also writes in, by hand, after the install | `LA-U-39` |
+| `LAS-71` | A shared config file two artifacts and the operator all write into | `LA-U-40` |
+| `LAS-72` | A repository that can only be reached without a network | `LA-S-17` |
+| `LAS-73` | A source tree holding a file type the snapshot format cannot carry | `LA-S-18` |
 
 The register is **append-only during a run**. A stressor discovered mid-run is added as `LAS-25`+
 with the scenario that revealed it — that is a result in itself, since it means the design missed a
@@ -73,6 +85,10 @@ way the system can be pushed.
 | `LA-0-04` | Cache follows HOME | flag | D | inspect `$LA_HOME/.cache/agent-artifacts` after a sync | cache created in sandbox, not in real `~` |
 | `LA-0-05` | Maintainer menu switch | TUI-text | D | enter maintainer role from a registry checkout, then from a non-registry dir | the two menus differ; condition stateable in one sentence |
 | `LA-0-06` | Upgrade dry run | flag | D | `aart upgrade --dry-run --wheel <w>` | reports plan; mutates nothing |
+| `LA-0-11` | The wizard's own defaults, authored | flag | D | `registry init --minimum-version 1.0.0 --maximum-version 2.0.0 --yes`, then `registry validate` — the literals `_curation_request` offers at both `INIT` prompts | a registry this AART accepts, or a refusal at `init` rather than at the command `init` advises next |
+| `LA-0-12` | The flag defaults, authored | flag | D | `registry init` with neither version flag, then `registry validate` | `validate` passes; the control for `LA-0-11` |
+| `LA-0-13` | Every leaf invoked cold | flag | D | derive the leaves from `build_parser()`, run each with no arguments in an empty directory under a sandbox `HOME` | every leaf refuses or answers; no traceback reaches the operator, and the count of leaves is recorded |
+| `LA-0-14` | The machine channel, cold | flag | D | every leaf that accepts `--json`, run with it in the same empty state; parse stdout | valid JSON on stdout, carrying `schema_version`, the operation, and a typed code per diagnostic. A leaf with no `--json` is named, with what its consumer is |
 
 ## Phase R — registry authoring
 
@@ -108,6 +124,8 @@ way the system can be pushed.
 | `LA-R-28` | Manifest vs heuristic import | flag | D | `upstream scan --mode auto` on the residuality repo (has `agent-artifacts.import.json`) and on a manifest-less collection | `auto` picks manifest for the first, heuristic for the second; the choice is explainable |
 | `LA-R-29` | **Legacy manifest is rejected, not absorbed** | flag | D | import the residuality repo if its manifest predates the current protocol floor | **typed migration error naming what to change.** Rejection is the pass condition, not a finding (design §8, one-way adaptation). The finding is silent absorption |
 | `LA-R-30` | Compatibility floor is stated | flag | D | `registry test --compatibility minimum`; per-artifact compatibility of the imported bundle | the floor and the offending artifact are both named in the failure |
+| `LA-R-42` | The analyzer surface, taken at its word | flag | D | `security analyzers`, then `security suites`, then read `security scan --help` for any way to select a suite or a provider | either a flag that runs what the first two commands advertise, or the two listings say plainly that nothing runs them |
+| `LA-R-43` | A command that skips the layer that owns it | flag | D | `registry init` in a throwaway Git checkout, then `registry format`; separately, ask which function the command reached | `format` succeeds *and* the application-layer entry point for it has a caller — one runtime reaching one layer |
 
 ## Phase S — sources
 
@@ -123,6 +141,8 @@ way the system can be pushed.
 | `LA-S-08` | **Unqualified collision fails** | flag | D | resolve the colliding name unqualified | fails with an actionable message |
 | `LA-S-09` | **Qualified collision resolves** | flag | D | resolve the same name qualified by source | resolves to the intended artifact |
 | `LA-S-10` | Marketplace health | flag | D | `marketplace health --environment …` | reports per-source health |
+| `LA-S-17` | A local repository offered as an upstream | flag | D | `source add --kind source-git` and `--kind registry-git` with `file:///…` and with a plain absolute path to a real Git repository | refused, and the refusal says which part of the location is unacceptable |
+| `LA-S-18` | A source tree containing a symlink | flag | D | `source add --kind source-local` on a tree with one symlink under an artifact payload | refused, naming the path and the reason; nothing is added |
 
 ## Phase U — user lifecycle
 
@@ -158,6 +178,11 @@ way the system can be pushed.
 | `LA-U-28` | **Real `~` round trip** | flag | D→H | inventory `~/.claude`; install/status/uninstall `--scope user`; re-inventory | inventories identical |
 | `LA-U-29` | Whole bundle installs | flag | D | `install --bundle residuality` | all 10 skills + guideline land; `../using-residues/` resolves from each stage skill |
 | `LA-U-30` | **Partial bundle leaves a dangling reference** | flag | D | install `residual-03-stressors` **without** `using-residues` | record whether anything warns; a structurally valid artifact with a broken sibling path is the residue to look for |
+| `LA-U-36` | The review that says it changes nothing | flag | D | after `source add`, run `marketplace install <coordinate>` **without** `--yes`, then count files under the durable object store | the store holds what it held before, or the help text says what a review writes. `LA-U-31`..`LA-U-35` are taken by run documents — see `LAF-87` |
+| `LA-U-37` | The store watched across install and uninstall | flag | D | record object files, shard directory mtimes, object birth times, the reference index and `locks/` before a review, after `install --yes` and after `uninstall --yes` | every deposit has a reference, or something can remove the ones that do not |
+| `LA-U-38` | An origin withdrawn | flag | D | `source add`, one command that resolves an artifact, then `source remove --yes`; count what is left under the object store | the content of a removed source is gone, or a command can say it is still there and remove it |
+| `LA-U-39` | The managed block, four ways | flag | D | install and uninstall a `memory` artifact at project scope in four states: no instruction file; an unowned file present; an unowned file with `--force`; and a forced install whose file the operator then edits by hand | each uninstall removes the block and nothing else — the file AART made goes, the file it did not stays with the operator's bytes intact |
+| `LA-U-40` | The config merge, three ways | flag | D | install and uninstall `mcp` artifacts whose effect is `merge-json`: one alone; two, uninstalled in install order and in reverse; and one into a `.mcp.json` the operator wrote first | the file AART created does not outlive the last entry in it; the operator's own entries survive; the order of uninstall does not change the result |
 
 ## Phase M — setup and MCP · human-driven
 

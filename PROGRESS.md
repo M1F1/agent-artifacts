@@ -13,9 +13,36 @@
   `agent_artifacts/setup.py`, where the difference is a single rename. **Released** as tag `v2.6.0`
   and a GitHub release carrying the wheel, after a second live acceptance pass and the token
   containment work (`RR-10`) that pass made necessary
-- **Next task:** the human-gated passes — the curses front-end and the MCP credential run — plus the
-  four findings this stream left open (`LAF-61`, `LAF-69`, `LAF-73`, `LAF-75`)
-- **Last updated:** 2026-08-15
+- **Next task:** the overnight queue is empty and the run is on the brief's fallback — re-checking
+  this register's own `closed` rows against the evidence each one names, oldest first, repairing
+  nothing. All thirteen rows that were `closed` on `main` have now been re-checked once. Twelve
+  reproduce — `LAF-55` only in its offline half — and **`LAF-71` does not: it is `open` again** and
+  Registry B's CI is still on `v2.5.0`. That is the first thing to look at after `LAF-90`. The same
+  method has now been turned on this run's own fourteen closures: thirteen reproduce, and `RS-07`'s
+  row names a pytest selector that collects nothing, which is `LAF-93`. A second pass then read four
+  rows' claims against what their evidence proves: three hold, and the containment test's `--json`
+  channel is `LAF-94`. The same pass over the four live-walk rows found `LAF-95`: a long failing
+  Docker instruction reaches the operator as a mid-word fragment. `LAF-66` then held against a real
+  wheel, and the walk found `LAF-96`: `receipt verify`'s two record-wide claims print headlines that
+  contradict their own detail. `LAF-97` is the last of them: the register gate reads 60 listed files
+  and `CHANGELOG.md` is not one, so its `2.6.0` section still calls `LAF-63` shipped open. The second pass is now complete: every
+  `closed` row has been re-run once and re-read once, and the third pass has begun on the `open` ones
+  — where `LAF-57`'s explanation turns out to go stale the moment `RS-12` merges. That pass is now
+  finished too, and so are the `visible` and `deferred` rows: every row in the register has been
+  re-checked once. `LAF-62` is `deferred` with nothing recording that decision — `LAF-99`. **The
+  register itself omits three findings from one walk's table, all three the closed ones — `LAF-101`,
+  and two are `major`.** The audit then moved to the live-acceptance documents: the append-only rule
+  holds, the scenario map does not (`LAF-102`), and **the `2.6.0` receipt walk names no commit and no
+  digest for the wheel it says was unpatched — `LAF-103`.** Reading the register against the stream
+  then found this run's own gap: **the fifteen findings `LAF-76`..`LAF-90`, filed in the first half of
+  the night, are described in this file and have no register row** — including `LAF-90`, which the run
+  log calls the most serious thing found. They have rows now, and writing them found the gap's price:
+  **two findings were filed twice tonight** — `LAF-84` again as `LAF-91`, `LAF-82` again as
+  `LAF-100` — which is the re-discovery this register exists to stop. See
+  *Overnight
+  run 2026-08-15 → 16* below for what is done and on which branch. `LAF-61` and
+  the human-gated passes — the curses front-end and the MCP credential run — wait for the maintainer
+- **Last updated:** 2026-08-16
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -374,6 +401,111 @@ table would otherwise become unreadable. Failed attempts belong in the work log,
 ## Blockers
 
 None.
+
+## Overnight run 2026-08-15 → 16
+
+The morning summary. Every branch below is cut from `main`, none is pushed, and none depends on
+another; they can be reviewed and merged in any order.
+
+**Merging them is not free, and an earlier version of this paragraph said something false about it.**
+It said to expect conflicts in `PROGRESS.md` and the register and to *take both sides*. Simulated in
+full on `2026-08-16` — all fourteen `fix/` branches merged into `main` in sequence with `git
+merge-tree`, no branch touched (row 49):
+
+- **13 of the 14 conflict.** Only the first merge is clean, whichever one goes first.
+- **Taking both sides corrupts the register.** The finished file holds **eleven finding ids twice,
+  one row `open` and one row `closed`** — `LAF-45`, `LAF-47`, `LAF-49`, `LAF-64`, `LAF-73`, `RS-01`,
+  `RS-02`, `RS-07`, `RS-08`, `RS-09`, `RS-10`. Resolve the register **one row per id**: the branch
+  that changed a row wins that row, and rows it did not touch keep the side that has evidence in
+  them.
+- **It is not two files.** `docs/testing/live-acceptance-scenarios.md` conflicts 8 times, and
+  **code conflicts twice** — `agent_artifacts/registry_commands/planning.py`, where `RS-02`, `RS-09`
+  and `RS-04` all rewrite the same refusals.
+- `PROGRESS.md` conflicts in all 13, always as appends at the end plus the table: keep both, one
+  table.
+
+| # | Item | Branch | State |
+|---|---|---|---|
+| 1 | `RS-12` — setup steps ran without `HOME`, so docker could not read `config.json` | `fix/setup-docker-credentials-rs12` | done, walked live (v4) |
+| 2 | `LAF-64` — the scope selector returned two types | `fix/curses-install-scope-laf64` | done, headless part walked; curses skin human-gated |
+| 3 | `LAF-75` — `wheel-digest` printed the digest of a wheel it deleted | `fix/wheel-digest-emits-what-it-hashes-laf75` | done, walked live (v5) |
+| 4 | `LAF-69` — the register gate ran in one direction only | `fix/docs-check-both-directions-laf69` | done, replayed against the real documents |
+| 5 | `LAF-73` — an old record still says there is no undo | `fix/receipt-verify-stale-rollback-laf73` | done, walked live (v6) |
+| 6 | `RS-11`/`RS-13`/`RS-14`/`RS-15` — the recipe format is closed | `docs/recipe-format-options` | options note written, nothing implemented; all four stay `open` |
+| 7 | `RS-09` — a refused `registry` command said nothing about what to do next | `fix/registry-refusals-carry-remediation-rs09` | done in two commits on one branch: refusals, then the `validate`/`audit` report findings. `RS-09` closes |
+| 8 | `RS-07` — `status` refused to read the project once the last source was removed | `fix/status-names-the-missing-source-rs07` | done, walked live (v7). `RS-07` closes |
+| 9 | `LAF-45` — a completed `--check-upstream` printed nothing, so success looked like a dropped flag | `fix/audit-upstream-says-it-checked-laf45` | done, walked live (v8). `LAF-45` closes |
+| 10 | `RS-08` — a broken `aart-registry.json` skipped the identity check instead of failing it | `fix/broken-registry-descriptor-fails-rs08` | done, walked live (v9). `RS-08` closes |
+| 11 | `RS-01` — an `mcp` package written by hand was never checked, only a vendored one | `fix/owned-mcp-descriptor-is-checked-rs01` | done, walked live (v10). `RS-01` closes |
+| 12 | `LAF-47`/`RS-10` — uninstall leaves the merge file behind, emptied | `fix/uninstall-removes-the-file-it-made` | two commits: the design note alone, then the fix. Walked live (v11). Both close; the case the design names stays open as `LAF-89` |
+| 13 | `RS-04` — `vendor` refused without naming `revendor`, the command that would work | `fix/vendor-refusal-names-revendor-rs04` | done. `RS-04` closes. No live walk: a reworded refusal, which the brief excludes |
+| 14 | `RS-02` — every registry request carried a compatibility window from an AART that no longer runs | `fix/registry-requests-stop-stamping-dead-bounds-rs02` | done, walked live (v12). `RS-02` closes. The same literals in the curses wizard are a new finding, `LAF-90` |
+| 15 | `LAF-49` — Git runs without `https_proxy` and nothing said so | `fix/document-the-git-environment-laf49` | done. `LAF-49` closes as the documentation gap it always was; no behaviour changed. No live walk — the brief excludes a document |
+| 16 | Re-check of the register's own oldest `closed` rows — `LAF-52`, `LAF-53`, `LAF-54`, `LAF-55` | `docs/recheck-closed-register-rows` | three re-checked against a real wheel and all three still reproduce; `LAF-55`'s live half is human-gated. One new finding, `LAF-91` |
+| 17 | Re-check continued — `LAF-59`, `LAF-63`, `LAF-65`, `LAF-66`, `LAF-72` | `docs/recheck-closed-register-rows-2` | all five reproduce, `LAF-59` against a real failing Docker build. No new findings. Cut from `main` but carries row 16's `PROGRESS.md` and register, because the two are one record |
+| 18 | Re-check continued — `LAF-68`, `LAF-70`, `LAF-71`, `LAF-74` | `docs/recheck-closed-register-rows-3` | **`LAF-71` does not reproduce and is back to `open`.** The other three do. New finding `LAF-92`. Carries row 17's record forward for the same reason |
+| 19 | Re-check of this run's own fourteen closures, on their thirteen branches | `docs/recheck-tonights-closures` | thirteen reproduce. **`RS-07`'s row names a pytest selector that collects nothing** — the fix is sound, the record is not. New finding `LAF-93`. Carries row 18's record forward |
+| 20 | Second pass: do the closed rows' *claims* reach further than their evidence? `LAF-63`, `LAF-72`, `LAF-55`, `LAF-65` | `docs/recheck-closed-row-claims` | three hold. The containment test's channel-4 walk asserts against a payload it writes itself — new finding `LAF-94`, a coverage claim, not an exposure. Carries row 19's record forward |
+| 21 | Second pass continued, on the four rows closed by a live walk — `LAF-52`, `LAF-53`, `LAF-54`, `LAF-59` | `docs/recheck-live-walk-claims` | three hold. A long failing Docker instruction is reported as a mid-word fragment and the word *ERROR* is truncated away — new finding `LAF-95`, measured on two real builds. Carries row 20's record forward |
+| 22 | `LAF-66`'s claim taken to the CLI on a real wheel — does `verify` look where the engine writes? | `docs/recheck-remaining-closed-claims` | **it does**, measured with a planted working copy. But the command that proved it prints two claims whose headlines say the reverse of their own detail — new finding `LAF-96`. Carries row 21's record forward |
+| 23 | `LAF-74`'s claim: does the register gate hold the documents, or the listed ones? | `docs/recheck-doc-gate-reach` | the listed ones — 60 files. `CHANGELOG.md` is outside it and its `2.6.0` section still lists `LAF-63` as shipped open, which `2.6.0` fixed. New finding `LAF-97`. Carries row 22's record forward |
+| 24 | The last two `closed` rows read for width — `LAF-68`, `LAF-70` | `docs/recheck-acceptance-runner-claim` | both hold; the acceptance runner really did reconcile eleven installations this morning. It installs the published wheel without checking its digest — new finding `LAF-98`. **Second pass complete.** Carries row 23's record forward |
+| 25 | Third pass: are the `open` rows still true as written? `LAF-57`, `LAF-67`, `RS-05`, `RS-06` | `docs/recheck-open-rows` | all four still true; each row now carries the check. **`LAF-57`'s explanation goes stale when `RS-12` merges** — one of its four causes is the missing `HOME` that branch fixes. `RS-05`'s dead module ships in the wheel. Carries row 24's record forward |
+| 26 | Third pass finished — `LAF-58`, `RS-11`, `RS-13`, `RS-14`, `RS-15` | `docs/recheck-open-rows-2` | all five still true; each row now carries the check. `LAF-58`'s remedy is one flag on a call the code already makes. **All three passes complete.** Carries row 25's record forward |
+| 27 | The two dispositions no pass covered — `LAF-61` (`visible`) and `LAF-62` (`deferred`) | `docs/recheck-visible-deferred` | `LAF-61` warranted and now measured live. **`LAF-62` is `deferred` and nothing records the decision** — the commit that filed it says *left open*. New finding `LAF-99`; disposition left standing, the call is yours. Carries row 26's record forward |
+| 28 | The register audited against its own rules | `docs/audit-register-shape` | **it carries eight findings from one walk's table and omits three, all three of them the closed ones** — `LAF-101`, and two are `major`. Its opening also overstates what `docs_check` enforces — `LAF-100`. Carries row 27's record forward |
+| 29 | The scenario map and run documents audited against their own rules | `docs/audit-live-acceptance-docs` | append-only holds — the map's only later commit deletes nothing. But two run documents use no scenario id and a third invents a whole `LAB-*` namespace: `LAF-102`. Carries row 28's record forward |
+| 30 | The five run headers read by hand against the pinning rule | `docs/audit-run-headers` | two of five keep all four fields; `-v2.md`'s digest is 13 of 64 characters; **`-receipt.md` names no commit, no size, no digest and no version** while claiming an unpatched wheel built from the committed tree — `LAF-103`. Carries row 29's record forward |
+| 31 | The register read against the stream, in the direction `DOC008` does not check | `docs/audit-register-vs-stream` | every stream id has a row; the *Scope* count is stale and names two origins where there are three — `LAF-104`. And the measurement found this run's own gap: **`LAF-76`..`LAF-90` are in this file and in no register row.** Carries row 30's record forward |
+| 32 | The fifteen missing rows written | `docs/register-the-missing-fifteen` | `LAF-76`..`LAF-90` are in the register, `open`, each naming the branch it was found on. Writing them found **two findings filed twice** — `LAF-84`≡`LAF-91` and `LAF-82`≡`LAF-100` — which is the cost of the gap, measured. Carries row 31's record forward |
+| 33 | The five new rows that code can settle re-checked | `docs/recheck-the-fifteen` | `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79`, `LAF-86` all hold. **`LAF-79` is one worse** — three functions carry the shape, not two — and `LAF-76`/`LAF-77` describe a gap that only opens when `RS-12` merges. No new findings. Carries row 32's record forward |
+| 34 | The two rows that needed a build — `LAF-80`, `LAF-81` | `docs/recheck-the-build-rows` | both hold, measured in a detached worktree. **`wheel-digest` prints a different digest for a dirty tree at the same `HEAD`**, exit `0`, no warning. `make wheel` leaves `_commit.py` modified and the standing procedure does not say so. The documented verification reproduces `wheel-digest` exactly — a pass. Carries row 33's record forward |
+| 35 | `LAF-90` walked end to end against a locally built wheel | `docs/recheck-laf90-live` | **reproduces.** `registry init` with the wizard's own defaults exits `0` and the command it then advises, `registry validate`, exits `1` with no remediation. The control passes: the flag defaults are `2.6.0`/`3.0.0` and validate. `LA-0-11`, `LA-0-12`, `LAS-62`. Carries row 34's record forward |
+| 36 | `LAF-88` and `LAF-89` re-walked on a branch-built wheel | `docs/recheck-laf88-89` | both hold; `LA-U-31` and `LA-U-35` re-executed, not re-numbered. **`v11`'s recorded wheel digest reproduces byte for byte** — the first run header in this repository to be re-derived. `LAF-89`'s severity corrected to `low` to match the walk that filed it. Carries row 35's record forward |
+| 37 | `LAF-85` read from the real data root, read-only | `docs/recheck-laf85-data-root` | **the `23:34` episode removed objects rather than writing any** — 43 of 68 shards touched, no object born after `20:12` — then rewrote the reference index at `23:36`. Setup state and config untouched. **Nothing there has changed since; it has not recurred all night.** Writer still unidentified. Carries row 36's record forward |
+| 38 | Which code could have produced the `23:34` trace | `docs/laf85-which-code-sweeps` | **the sweep reading was too strong** — install-then-uninstall leaves the same trace, and it is corrected here. The collector it named, `collect_garbage`, **has no caller in the package at all**: `LAF-105`, and the store therefore only grows — 79 objects against 34 references on this machine. Carries row 37's record forward |
+| 39 | Is `LAF-105` alone? The whole application layer measured | `docs/unreachable-application-surface` | **eight of twenty-eight public functions in `application/` have no caller outside their own module and the tests** — including the entire compiler orchestration. Two are honest supersession, six are unwired. `LAF-106`. Carries row 38's record forward |
+| 40 | `io/` and `store/` measured the same way, by reachability | `docs/unreachable-io-store` | **`store/` is clean, `io/` has 11** — the analyzer process runner, four `fs.py` helpers, `RS-05`'s module and the compiler adapter: `LAF-107`. The method was rebuilt to count same-module callers first; all eight of `LAF-106` survive it. Carries row 39's record forward |
+| 41 | The whole package measured at once, by a script written from scratch | `docs/unreachable-whole-package` | **103 of 482 public functions are unreachable, a fifth of the surface.** The biggest cluster is `security/`, 15 of 39: the policy evaluator and the analyzer protocol have no path from any command — `LAF-15` generalised. Five root modules have no importer at all and all five ship. `LAF-108`, `LAF-109`; `LAF-03` gets the row the register's own rule owes it; **`LAF-107`'s count is corrected to 8**. `application/` re-derives `LAF-106`'s exact eight. Carries row 40's record forward |
+| 42 | The unreachable surface read against the commands the wheel actually ships | `docs/designs-vs-unreachable` | **AART lists analyzers it cannot run** — `security analyzers` and `suites` advertise providers, no flag selects one, and the whole execution half is unreachable: `LAF-110`. Two of `LAF-106`'s eight turn out to be **bypassed wrappers** — `registry format` works by skipping the application layer the file next door uses: `LAF-111`. Three are doors the SPEC designs and the CLI has not got, `store gc` implemented to §16 exactly. `LAF-15` gets the row the register owed it. Carries row 41's record forward |
+| 43 | Every leaf of the parser invoked cold, on the real wheel | `docs/cold-command-surface` | **38 of 38 refuse or answer cleanly, zero tracebacks** — 20 argparse, 13 typed refusals, 5 honest empty answers. `RS-09` reproduces on `main` from the other side, its fix being unmerged. The `registry` group refuses in two renderings: `LAF-112`. **`SPEC-aart-1.0.md` §20 misdescribes the shipped surface in both directions** — it understates the implemented slice and names four legacy commands that do not exist: `LAF-113`. `LAF-105`'s *38 subcommands* confirmed by enumeration. Carries row 42's record forward |
+| 44 | The `--json` contract walked cold, the same way | `docs/json-contract-cold` | **34 of 38 leaves accept `--json` and every one returns valid JSON** with `schema_version`, `operation` and typed codes — the machine channel is healthier than the prose. `RS-09` shows up structurally as `remediation: []`, and `LAF-112`'s two renderings carry distinct codes, so that one is a prose problem only. **The group written for machines has no machine channel**: all three `reporting` leaves and `upgrade` lack `--json`, and an invalid report is refused with one unqualified sentence — `LAF-115`. Three of the SPEC's sixteen stable codes are emitted nowhere — `LAF-114`. Carries row 43's record forward |
+| 45 | What the commands write, watched at the disk | `docs/who-writes-when-cold` | All 38 leaves cold write **nothing**, in `HOME` or the working directory. Then the store watched across a review, an install and an uninstall: **the review that says it changes nothing leaves two objects behind, unreferenced**, and so does a refused install — `LAF-116`, high. That is the measured cause of `LAF-105`'s 79-objects-against-34-references. **`LAF-85`'s mechanism is reproduced and its first reading refuted**: shard mtimes move with no new birth on an ordinary install, and uninstall deletes no object. Carries row 44's record forward |
+| 46 | How far `LAF-116` reaches, and what it costs | `docs/laf116-how-far` | **Two corrections to my own row, measured.** The deposit is content-addressed, so it grows once per distinct object and not per review; and **`marketplace status` — a query — deposits too**, earlier than the review does. `LAF-116` corrected `high` → `medium` with the reason in the row. New: **`source remove` leaves the removed source's content on disk**, 24 KB with no reference, no snapshot and no command that lists it — `LAF-117`. Carries row 45's record forward |
+| 47 | The managed-block round trip, four ways | `docs/round-trip-residue` | **No new finding, and that is the result.** On `main` a `memory` artifact installs and uninstalls cleanly in all four states: the file AART made is removed, an unowned file is refused, a forced install restores the operator's bytes exactly, and a hand edit made after the install survives. Not `RS-10`'s case — that is the config merge. **`LAF-88` widened**: the empty harness directory is left by any artifact under `.claude/`, on `main`, not just by a hook on its branch. Carries row 46's record forward |
+| 48 | The config merge round trip, three ways | `docs/mcp-merge-round-trip` | **`RS-10` reproduces on `main`, measured**: one `mcp` artifact installed and uninstalled leaves `.mcp.json` behind as `{"mcpServers":{}}`, exactly as written. **`LAF-89`'s order asymmetry is the branch's, not `main`'s** — on `main` both orders leave the same emptied file, so the fix takes nothing away. New: **the ownership gate depends on the effect** — `managed-block` refuses an unowned file until `--force`, `merge-json` merges into one first try without a word — `LAF-118`, low. The operator's own entries survive the round trip byte for byte. Carries row 47's record forward |
+| 49 | The morning's merge instruction, simulated | `docs/merge-simulation` | **The instruction at the top of this section was false and is corrected above.** All fourteen `fix/` branches merged into `main` in sequence with `git merge-tree`: **13 of 14 conflict**, and *taking both sides* leaves **eleven ids in the register twice with contradictory dispositions** — `LAF-119`. The conflict reaches further than the two files named: the scenario map 8 times and `registry_commands/planning.py` twice. **The pass:** every one of the fifteen rows the fix branches closed carries a flipped disposition *and* an evidence column on its own branch — `15/15`, the per-iteration rule kept. Carries row 48's record forward |
+| 50 | The two `deferred` rows no pass ever touched — `LAF-43`, `RS-03` | `docs/recheck-c5-deferred` | **both hold, measured live and in code.** A local repository is refused as an upstream in **two layers** — the config validator before the transport check — and `allow_local_transport` is **dead in the shipped package**: all three construction sites take the `False` default, only tests set it. A `source-local` tree with one symlink is refused whole, naming the path; the Git channel refuses the same shape without the word *symlink*, and `LAF-43` is why nobody can see that message. No new findings — cluster C5 is exactly the knot it says it is. Carries row 49's record forward |
+| 51 | The scenario map read across every branch | `docs/scenario-id-collision` | **Row 50 gave two scenarios ids that were already taken, and this package found and corrected it.** The map's ids are allocated from whichever copy a branch holds: `main` has 113 rows, the document chain 138, and **40 ids live on a branch and nowhere else**. `fix/status-names-the-missing-source-rs07` wrote `LA-S-11`/`LA-S-12` at `04:12`; row 50 reused both at `14:28`. Renumbered here to `LA-S-17`/`LA-S-18`, past the `LA-S-16` another branch holds. No id changed meaning. New finding `LAF-120`, medium: nothing computes the next free id across branches and no gate reads this file. Carries row 50's record forward |
+| 52 | The nine run headers written tonight, read against the pinning rule | `docs/audit-new-run-headers` | **Seven of nine pin the run to a branch name, not a commit** — only `v4` and `v5` name one — and `v6` and `v7` omit the wheel size as well: `LAF-121`. All nine carry a sha256, a version and a plain statement that the wheel is locally built. **Both size-less runs were re-derived and both digests reproduce byte for byte** — `543 422` bytes for `v6`, `542 418` for `v7`. The records are true today and only while their branches survive. Carries row 51's record forward |
+| 53 | What the two fixes to do first actually cost | `docs/cost-the-first-two-fixes` | **Both are smaller than their severities suggest.** `LAF-90` is four literals in `tui.py` (`:2793`, `:2796`, `:2806`, `:2807`) and the values they should carry already exist on `main` as `_DEFAULT_MINIMUM_AART`/`_DEFAULT_MAXIMUM_AART` in `curation/model.py:26`, under a comment that describes this exact defect. `LAF-105` is **a missing verb, not a missing collector**: `collect_garbage`, `GcRequest`, `GcPlan` and both filesystem adapters all ship, the store design specifies plan-or-execute, and `SPEC-aart-1.0.md` already names global garbage collection — only `cli.py` never reaches it. That one command is also the removal path `LAF-116` and `LAF-117` lack. Costed in both rows. Carries row 52's record forward |
+
+**New findings, recorded and not fixed:** `LAF-76`, `LAF-77`, `LAF-78`, `LAF-79` (from 1 and 2),
+`LAF-80`, `LAF-81` (from 3), `LAF-82`, `LAF-83` (from 4), `LAF-84`, `LAF-85` (from 5), `LAF-86`
+(from 8), `LAF-87` (from 9), `LAF-88` and `LAF-89` (from 12), `LAF-90` (from 14), `LAF-91`
+(from 16), `LAF-92` (from 18), `LAF-93` (from 19), `LAF-94` (from 20), `LAF-95` (from 21), `LAF-96` (from 22), `LAF-97` (from 23), `LAF-98` (from 24), `LAF-99` (from 27), `LAF-100` and `LAF-101` (from 28), `LAF-102` (from 29), `LAF-103` (from 30), `LAF-104` (from 31), `LAF-105` (from 38), `LAF-106` (from 39), `LAF-107` (from 40), `LAF-108` and `LAF-109` (from 41), `LAF-110` and `LAF-111` (from 42), `LAF-112` and `LAF-113` (from 43), `LAF-114` and `LAF-115` (from 44), `LAF-116` (from 45), `LAF-117` (from 46), `LAF-118` (from 48), `LAF-119` (from 49), `LAF-120` (from 51), `LAF-121` (from 52). Every one now has a register row
+saying where it came from — `LAF-76`..`LAF-90` only from iteration 32, which found them missing, and
+33, which wrote them. Until then this sentence was here and was not true.
+**`LAF-116` is the finding to read after `LAF-85`:** a plan-only review — the command that says it changes nothing — deposits objects in the durable store that no reference names and no command can remove. `marketplace status` does it too, and `source remove` leaves them behind (`LAF-117`).
+**`LAF-90` is the highest-severity thing found in the implementation queue:** an operator who accepts the curses
+wizard's own suggested defaults gets a registry that the AART which created it then refuses to read.
+It is reproducible without a terminal and the register row carries both halves.
+**`LAF-85` is the one to read first:** something wrote to
+your real data root during this run, and the quality gates have been measured clear of it.
+
+**Before you merge, read `LAF-87`.** The live-acceptance stressor ids continue across four separate
+documents, and the scenarios file's own table stops at `LAS-30` as if `LAS-31` were free. It is not —
+`LAS-31`..`LAS-56` are already taken by the v2, v3 and setup-build records. Branches 3, 5 and 8 each
+took one of `LAS-31`, `LAS-32`, `LAS-33` for a new meaning tonight and need renumbering above the
+highest id in use before they merge. Branches 9, 10 and 11 take `LAS-57`, `LAS-58` and `LAS-59` and
+state the arithmetic in the scenarios file so the next run does not repeat it; branch 12 takes
+`LAS-60` and branch 14 takes `LAS-61` on the same rule.
+
+**Waiting for you.** The human-gated passes: the curses front-end (`LA-U-27a` and the wizard walk)
+and the MCP credential run (`LA-M-10`, a private image with real credentials). `RS-11` is deliberately
+untouched — it needs a live run against a second GHE host, which this run cannot make. Item 6 is the
+note that says so in full: it measures all four refusals, recommends leaving them open for now, and
+names the two observations that would change that.
 
 ## Work log
 
@@ -2026,3 +2158,1725 @@ repository that did not know AART existed — which is precisely the case a comp
 - **No new findings.** Nine commands ran across two repositories and everything refused what it
   should and accepted what it should. That is worth recording precisely because the previous two live
   passes each produced five, and a run that finds nothing is only evidence when the run was real.
+
+### 2026-08-16 — overnight residue run, `LAF-73`
+
+Branch `fix/receipt-verify-stale-rollback-laf73`, cut from `main`, not pushed. One work package.
+
+- **The write path was fixed and the read path kept repeating the old records.** `RR-10E` corrected
+  `rollback_command` for records written from `2.6.0` on. A record written before it still says *no
+  command reverses a completed setup*, and the same executable that holds both facts said nothing.
+  An operator reading an old receipt does by hand what one command does.
+- **A claim in `verify`, which is the shape `RR-10F` set.** `receipt verify` now asks whether the
+  recorded rollback line is a command this executable accepts. When it is not, the report says so
+  and names the command that works today, composed from the record's own coordinates. The record is
+  not touched: a persisted record is evidence of what a run reported, and rewriting it would destroy
+  the thing receipts exist to be.
+- **One source for the command string.** `rollback_command_for` composes it, `rollback_command`
+  calls it, and `verify` calls it. Composing the sentence twice is precisely how `LAF-65` happened.
+- **Walked live** — `docs/testing/PROGRESS-live-acceptance-v6.md`, which lives on the
+  `fix/receipt-verify-stale-rollback-laf73` branch and is therefore not linked from here,
+  scenarios `LA-M-12`..`LA-M-15`, stressor `LAS-32`. A real registry, a real install, a real setup
+  writing a managed block into a sandbox home. With the record aged to the pre-`2.6.0` sentence, the
+  `main` wheel reports `true=3, false=0` and says nothing; the branch reports `true=3, false=1`,
+  names the undo command, exits `1`, and leaves the record file's sha256 unchanged. The command it
+  names was then run: the block and the file are gone.
+- **`LAF-73` closes; two findings recorded, not fixed.** `LAF-84`: a completed undo leaves the
+  record reading `skipped`, a word that in this vocabulary means the setup never ran. `LAF-85`:
+  something wrote to the real user data root at `23:34`–`23:36` during this unattended session while
+  every live scenario ran under a sandbox `HOME`; `make integration`, `unit`, `validate` and
+  `packaging-check` were each measured afterwards and touched nothing there, so the writer is
+  unidentified and now tracked rather than shrugged at a second time.
+
+### 2026-08-16 — overnight residue run, the recipe-format options note
+
+Branch `docs/recipe-format-options`, cut from `main`, not pushed. One work package, no code.
+
+- **Four findings, one decision.** `RS-11`, `RS-13`, `RS-14`, `RS-15` are what the triage brief says
+  they are: the same postponed decision seen from four sides. The note treats them as one and is
+  filed as `docs/design/OPTIONS-recipe-format-change.md`, on the `docs/recipe-format-options`
+  branch and therefore not linked from here. Nothing
+  is implemented, and all four rows stay `open` — `RS-11` was explicitly out of scope for this run.
+- **The refusals are measured, not remembered.** Each of the four was produced by handing a real
+  recipe to the shipped parser and to the canonical-tree check, and the note quotes the parser's own
+  words with the file and line that says them.
+- **Two claims were narrowed by the measurement.** `RS-13` blocks nothing: a `file.managed-block@1`
+  step on `~/.zshrc` parses and plans today, so the missing module is a convenience. `RS-15` is
+  about the package *root*: further files under `payload/` are already accepted for `skill`, `mcp`
+  and `hook`, and `SETUP.md` was refused by that same allowlist until `LAF-27` added it — which is
+  the fix shape, already walked once.
+- **What the change would actually cost.** Not the code. `schema_version` and `protocol_version`
+  must both be exactly `2`, and this project ships one revision of a protocol and refuses the rest.
+  So changing what a recipe may say means every published recipe rises in step, and a registry
+  rebuilt on the new revision stops being readable to consumers who have not upgraded — the
+  `LAF-60`/`LAF-62` rollout, seen twice. That bill is the same for one change or four, which is the
+  argument for doing them together or not at all.
+- **The recommendation is to wait, and the note says what for.** Two observations, neither of which
+  exists in any run: a second GHE host, which is what produces a per-operator value that is not a
+  secret; and an operator who completed a setup wrongly because the recipe could not ask for a
+  username, rather than merely reading a paragraph in `SETUP.md`. Without those, `RS-11` buys
+  comfort rather than correctness, and low-and-open is a complete answer.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-09` (first half)
+
+Branch `fix/registry-refusals-carry-remediation-rs09`, cut from `main`, not pushed. One work
+package, split: the refusals, with the report findings left for the next one.
+
+- **The family that says the most after a success said nothing after a refusal.** `registry` emits
+  follow-up commands when an action works. Its 37 refusals carried an empty `remediation` in both
+  renderers, so the operator who most needed a next step was the one who got none.
+- **The test reads the shipped modules, not a list.** `RegistryRefusalRemediationTest` walks the
+  syntax of `registry_commands/planning.py` and `commands/registry.py` and fails on any `_error`
+  built without a next step. A list of the refusals that carry one would be true the day it was
+  written; this covers the refusal added next month. It failed on 37 sites before the fix.
+- **Shared lines, not one sentence per site.** Fifteen constants cover thirty-seven refusals,
+  because the operator's next step is the same wherever the same problem is stated — the lesson
+  `SI-6` already paid for on the object store. The one exception interpolates the package it is
+  about, so the command it names can be run as written.
+- **The existing guard caught two mistakes while I wrote them.** `EveryVisibleCommandMentionTest`
+  parses every `aart …` the package prints: it rejected `aart registry refresh`, which does not
+  exist — the action is `refresh-native` — and every command ending in `--source .`, because a
+  trailing period is stripped as punctuation and leaves the flag without a value. Both were mine,
+  both were caught before they could reach an operator.
+- **The parity test then found the second half of the defect.** `_emit_report` — how `validate` and
+  `audit` state a refusal in text — printed the message and dropped the remediation, while the JSON
+  envelope carried it. That is `LAF-52`'s shape one command family over, and it is fixed here.
+- **`RS-09` stays `open`, on purpose.** The 34 findings `validate` and `audit` collect through
+  `_diagnostic` still carry nothing. That is the next package, and the register row says so rather
+  than claiming a closure the operator would not see.
+- **No new findings.** No live acceptance: a reworded refusal is exactly what the run rules exclude,
+  and every claim here is driven through the shipped CLI parser and the shipped renderers.
+
+### 2026-08-16 — overnight residue run, `RS-09` (second half, `RS-09` closes)
+
+Same branch as the first half, `fix/registry-refusals-carry-remediation-rs09`, because the two
+halves are one finding and a reviewer who merges the branch should get all of it. Cut from `main`,
+not pushed.
+
+- **A report is where `validate` and `audit` state a problem.** The first half gave every `Err` a
+  next step. These two commands do not refuse — they hand back a report, and its 33 findings named
+  no next step at all. The dead end was the same one, in the commands a maintainer runs most.
+- **The guard widened to `_diagnostic` and went red on 33 sites.** Same shape as before: it reads
+  the syntax of the shipped module rather than a list, so the finding added next month is covered.
+- **Warnings get a next step too, and some of them say *nothing to correct*.** A warning like
+  *registry contains no external references* describes the limit of what the audit could check, not
+  a defect. Saying which of the two it is, in the line itself, is the whole value: an operator
+  otherwise cannot tell a gap in the registry from a gap in the audit.
+- **The second CLI walk covers the report path.** `registry audit` on the `registry-v1` fixture
+  prints three warnings and now three remediation lines, one per finding, and the test asserts the
+  counts match rather than that *some* remediation appeared. Reproduction for the error path:
+  `aart registry validate --strict` on a registry whose `aart.lock.json` is missing prints
+  *compiled index requires a valid committed lock* with the lock-then-build sequence, and
+  *compiled registry requires lock and index* with the rebuild.
+- **`RS-09` closes.** Both renderers, both surfaces, guarded in the shipped modules.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-07`
+
+Branch `fix/status-names-the-missing-source-rs07`, cut from `main`, not pushed.
+
+- **The refusal answered the wrong question.** `source remove` is the exit the product offers, and
+  `DESIGN-source-subscription-lifecycle.md` §4 promises the project stays legible afterwards. Remove
+  the *last* subscription and the next `marketplace status` refused with *this content operation
+  requires at least one enabled source* — a statement about the configuration in answer to a
+  question about the project, while the installed skill sat on disk two directories away.
+- **`status` is not a content operation.** It reads the manifest and reports it; it fetches nothing.
+  `uninstall` was exempted in `2.2.0` because the design names it, and `status` — the same kind of
+  question — was left behind. The fix is one frozen set, `_PROJECT_LOCAL`, and `content_required`
+  reading it, so the two commands that answer from the project answer without a source and every
+  other lifecycle action keeps refusing.
+- **The design now takes the decision it was recorded as not taking.** §4 states which commands stay
+  answerable when the removed alias was the only one, and says plainly that `2.2.0` decided this for
+  `uninstall` alone.
+- **Walked live, and the two wheels disagree by exactly one line.** `LA-S-11`..`LA-S-13` in
+  `docs/testing/PROGRESS-live-acceptance-v7.md`, on branch
+  `fix/status-names-the-missing-source-rs07`: the `main` wheel
+  refuses with exit `1`, the branch wheel reports `source-unavailable` with exit `0`, and the
+  coordinate it prints is then handed to `uninstall` — with no source configured — which reviews,
+  applies, and leaves the project empty. `install`, `update`, `list` and `setup` still refuse.
+- **One new finding, `LAF-86`.** `uninstall` with no coordinate advises `marketplace list`. That
+  command browses the *sources*, not the project, and refuses outright when none is configured — so
+  the operator who just removed their last subscription is pointed at the one command that cannot
+  help. Recorded, not fixed: naming the right command there is a different package.
+
+### 2026-08-16 — overnight residue run, `LAF-45`
+
+Branch `fix/audit-upstream-says-it-checked-laf45`, cut from `main`, not pushed.
+
+- **The command that exists to report said nothing on success.** `registry audit --check-upstream`
+  printed a line per vendored artifact when one was behind or unreachable, and nothing at all when
+  every copy was current. An operator reading a CI log could not tell that from a command line the
+  flag had been dropped out of — and on the `main` wheel the two outputs are byte-identical, which
+  this run measured rather than assumed.
+- **One line, at the end, only when asked.** The audit now closes with an `info` note: *checked 1
+  vendored artifact against its upstream: 1 up-to-date, 0 changed, 0 unreachable*, or *no vendored
+  artifacts to check against upstream* when the registry vendors none. Without the flag there is no
+  note, so its absence still means something.
+- **It is a note, not a finding.** New code `registry-audit-note` at severity `info`: it carries no
+  remediation because nothing here asks anyone to act, and `passed` already ignores everything below
+  `error`, so an audit that was passing keeps passing.
+- **The dispositions come from `revendor`'s own vocabulary.** `_vendored_upstream_findings` now
+  returns `up-to-date` / `changed` / `unreachable` alongside its diagnostics, so one answer about one
+  copy does not get two names depending on which command asked.
+- **A test that asserted the defect was corrected.** `test_an_unmoved_upstream_raises_no_drift_finding`
+  asserted the word *upstream* appeared nowhere — which is silence-on-success written down as if it
+  were the requirement. It now asserts what it means: no *finding*, and the note is separate.
+- **Live: two passes and one honest blocked.** `LA-R-31`/`LA-R-32` in
+  `docs/testing/PROGRESS-live-acceptance-v8.md`, on branch
+  `fix/audit-upstream-says-it-checked-laf45`. `LA-R-33` — the
+  counts on a real vendored copy — is `blocked` by `LAF-43`: vendoring refuses a local repository,
+  so no sandbox registry can hold a real vendored package, and this run may not publish to a remote.
+  The three dispositions are covered hermetically through the real CLI instead, and the record says
+  so rather than implying live coverage it does not have.
+- **One new finding, `LAF-87`, and it affects tonight's other branches.** The live-acceptance
+  stressor ids run to `LAS-56` across four documents while the scenarios file's table stops at
+  `LAS-30`. Three branches from this run each re-used an id that already means something else.
+  Recorded, not fixed; this branch starts at `LAS-57` and writes the arithmetic down where the next
+  run will read it.
+
+### 2026-08-16 — overnight residue run, `RS-08`
+
+Branch `fix/broken-registry-descriptor-fails-rs08`, cut from `main`, not pushed.
+
+- **The decision the `2.2.0` plan asked for, taken.** `SI-5` said the identity agreement is checked
+  *whenever both documents are present*, and implemented it as *whenever both documents parse*. That
+  left a third state nobody chose: a source shaped like a registry whose `aart-registry.json` is
+  broken was admitted in silence. The plan recorded it as `RS-08` and said closing it needed a new
+  refusal — its own decision, not a side effect. It is now in
+  `DESIGN-subscription-identity-binding.md` §2.
+- **A marker that is there must be readable.** A root entry named `aart-registry.json` must be a
+  regular file that parses as a registry manifest. Absence is untouched: a source publishing only
+  `aart-source.json` is an ordinary native source and stays one. What is refused is a snapshot that
+  takes the marker's reserved name and does not honour it.
+- **The refusal says what the parser could not read.** *aart-registry.json is present and does not
+  parse, so the identity this source declares cannot be checked: missing required field
+  'default_channel'* — the parser's own first line, because *that* it failed is the refusal and
+  *why* is the only part a maintainer can act on. Two remediation lines: validate and republish, or
+  remove the file if this source is not a registry.
+- **Walked live, and the earlier wheel shows the cost.** `LA-S-14`..`LA-S-16` in
+  `docs/testing/PROGRESS-live-acceptance-v9.md`, on branch
+  `fix/broken-registry-descriptor-fails-rs08`. On `main` the same
+  source is added, an artifact installs from it, and the consumer's manifest records
+  `declared_id: la-rs08-source` — an identity read from one document while the document that exists
+  to corroborate it could not be read. Three broken shapes refuse on the branch (missing field, not
+  JSON, a directory under that name); a source with no marker is unaffected.
+- **The refusal withholds, it does not destroy.** A subscription made while healthy whose marker
+  breaks later fails its `sync` and keeps its last-known-good snapshot: `source list` still healthy,
+  `marketplace status` still `current`, the installed file still on disk.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-01`
+
+Branch `fix/owned-mcp-descriptor-is-checked-rs01`, cut from `main`, not pushed.
+
+- **The narrowing was an accident, not a decision.** `VI-5` refuses a `payload/mcp.json` that
+  declares no server, and `VI-4` refuses one that launches a file the consumer never receives. Both
+  were computed inside the branch of the audit that reads a *vendored* package's `provenance.json`,
+  so an `mcp` package authored in place — the ordinary way, and what `registry scaffold mcp` sets
+  you up to do — reached neither. Nothing in the consequence depends on where the bytes came from:
+  the install merges `descriptor["server"]` either way.
+- **`registry audit` now runs the delivery check for every package it walks.** One call moved out of
+  the vendored branch; the function takes the package base and its manifest instead of a vendoring
+  record, and a `vendored` flag decides one word in the message.
+- **It is `audit`, not `validate`, and that is the whole design decision.**
+  `validate_registry_workspace` is not only the publisher's gate — the consumer runs it over a
+  candidate source through `validate_registry_source_candidate`. A new hard failure there makes every
+  registry already carrying such a descriptor unloadable on upgrade, on the subscriber's side too:
+  the protocol break `VI-5` rejected, arrived at from the other direction. Recorded in
+  `DESIGN-vendored-copy-integrity.md` §7 as an amendment that leaves the `2.4.0` paragraph standing.
+- **An owned package is not called vendored.** Same fault, same remedy, but the message drops the
+  word rather than sending a maintainer looking for an upstream that does not exist.
+- **Walked live, three passes.** `LA-R-34`..`LA-R-36` in
+  `docs/testing/PROGRESS-live-acceptance-v10.md`, on branch
+  `fix/owned-mcp-descriptor-is-checked-rs01`. The registry — three `mcp`
+  packages, nothing vendored — was created, scaffolded, locked, built and committed by a wheel built
+  from `main`, so the finding cannot be an artefact of how the package was written. On `main`:
+  `registry audit: passed`, exit `0`. On the branch: two errors naming `mcp/atlassian` and
+  `mcp/jira`, exit `1`, and the third, healthy package named by neither.
+- **The harm was measured rather than asserted.** `LA-R-36` installs the refused artifact from a
+  consumer project on the *branch* wheel. `registry validate --strict --frozen` passes, the
+  subscription succeeds, the install succeeds, and the project's `.mcp.json` ends up holding
+  `"atlassian": {}` — a named server that starts no process. That empty object is why the audit error
+  exists and why it is not a load-time refusal.
+- **No new findings.** One thing worth a reader's eye is written into the v10 record rather than the
+  register: `marketplace list` labels the empty-server artifact `[healthy]`, because that word means
+  reconciliation health, not runnability. It is the `VI-5` decision working as chosen, and it is also
+  why this check has to live on the maintainer's side.
+
+### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` design note
+
+Branch `fix/uninstall-removes-the-file-it-made`, cut from `main`, not pushed. **The note only.** The
+brief asks for it committed on its own before any code, and that is what this commit is. Both
+findings stay `open`.
+
+- **Reproduced first, on a real wheel.** Install one `mcp` and one `hook` artifact into a clean git
+  repository, uninstall both: `.agent-artifacts/` and `.claude/hooks/guard/` are reclaimed, and
+  `.mcp.json` survives as `{"mcpServers":{}}` while `.claude/settings.json` survives as
+  `{"hooks":{"PreToolUse":[]}}`. `git status --porcelain` reports two untracked paths on a repository
+  that was clean. So `RS-10` is right that this is not an `mcp` quirk: `key` mode leaves an empty
+  object and `list` mode an empty array.
+- **The code for this exists and cannot fire.** `lifecycle/application.py:578` removes the
+  destination when the effect created it and the result is empty — but it tests the **whole
+  document**, and every merge target in every shipped profile writes under a `json_path`
+  (`mcpServers`, `hooks.PreToolUse`, `mcp`, `hooks.BeforeTool`). After the last removal the document
+  is `{"mcpServers": {}}`, which is not empty, so the branch is dead code for a merge at the
+  document root that no profile asks for.
+- **The evidence question is the real one, and it has a sharp answer.** `created_destination` is
+  recorded per *effect*. Install two `mcp` artifacts separately and the first records `true`, the
+  second `false` — correctly, the file was there. Uninstall in that order and the last effect out is
+  the one that says `false`, while the record that said `true` was deleted with the first uninstall.
+  The evidence for a file's origin can be destroyed before the file is last touched.
+- **The rule the note settles on.** Remove only when the effect being reversed created the file, the
+  merge was already proven reversible, and what remains is exactly the empty container chain on that
+  effect's own `json_path` and nothing else. The third condition is what makes the first safe to act
+  on: a file AART made is still a file an operator may have written into.
+- **What it leaves, on purpose.** The reverse-order case above. Closing it needs a durable
+  per-destination ownership fact in the install state, which is a state-schema change belonging to
+  the version-boundary stream (`LAF-62`, cluster C4). The note says so, and the acceptance criteria
+  require the register row to say so too rather than claim more than the fix delivers.
+- **No new findings.** The design note is `docs/design/DESIGN-uninstall-file-reclamation.md`; both
+  register rows point at it and stay `open`.
+
+### 2026-08-16 — overnight residue run, `LAF-47`/`RS-10` implemented
+
+Branch `fix/uninstall-removes-the-file-it-made`, second commit. The note is the commit before it.
+
+- **The fix is one predicate.** The emptiness test now walks the effect's own `json_path` instead of
+  testing the document root, so `{"mcpServers": {}}` after the last identity goes is recognised as an
+  empty file rather than a document with one key in it. The removal branch that shipped in `2.2.0`
+  and could never fire now fires.
+- **Walking the chain, not descending to the leaf.** One extra key at any level means the file holds
+  something this effect did not put there, and a file with anything in it is kept whoever wrote it.
+  That is the condition that makes acting on `created_destination` safe.
+- **Five scenarios, five passes.** `LA-U-31`..`LA-U-35` in
+  `docs/testing/PROGRESS-live-acceptance-v11.md`, on branch
+  `fix/uninstall-removes-the-file-it-made`. Same registry, authored and
+  committed by a wheel built from `main`. After install and uninstall of the same two artifacts in
+  the same clean repository, `main` leaves `?? .claude/` and `?? .mcp.json` and the branch leaves
+  nothing.
+- **The refusals were measured, not asserted.** A `.mcp.json` committed as `{"mcpServers":{}}`
+  *before* any install survives install and uninstall byte-identical. A file AART created that an
+  operator has since written into survives with their key intact and the container emptied.
+- **A test that asserted the residue was corrected.**
+  `test_key_merge_with_json_null_is_present_and_can_be_removed` ended by asserting the file was left
+  as `{"mcpServers": {}}`. Its subject is that a `null` value is found and taken out; what it was
+  pinning at the end was the defect. It now asserts the file is gone.
+- **Two new findings, recorded and not fixed.** `LAF-88`: the emptied directory outlives the file —
+  `.claude/settings.json` goes and `.claude/` stays, empty, invisible to `git status` because git
+  does not track empty directories. `LAF-89`: whether the file is reclaimed depends on uninstall
+  order, because `created_destination` is per effect and the record that carries `true` is deleted by
+  the first uninstall. `LA-U-35` walks the asymmetry both ways — install order leaves the file,
+  reverse order removes it. The design named this case before the walk found it, and the register row
+  says so rather than letting `closed` imply more than the fix delivers.
+
+### 2026-08-16 — overnight residue run, `RS-04`
+
+Branch `fix/vendor-refusal-names-revendor-rs04`, cut from `main`, not pushed.
+
+- **The refusal now says which command is not create-only.** Upstream moving is the ordinary reason
+  to run `vendor` a second time, and `revendor` is what adopts movement. *artifact package already
+  exists* was true and stopped there.
+- **Which remediation depends on what is actually there.** A package carrying vendor provenance is
+  sent to `aart registry revendor <kind> <name> --artifact-version <version>`, with the reason it
+  needs that flag — `revendor` re-resolves the recorded ref and plans nothing without the version
+  this registry will publish. A package authored in place is told it records no upstream, and offered
+  the two things that do work: a name this registry does not use, or removing the package first.
+- **Sending an authored package to `revendor` would have been a second wrong answer.** `revendor`
+  re-resolves a recorded upstream; there is none, so it would refuse in its turn. The test asserts
+  the word does not appear in that case.
+- **No live walk.** The brief excludes a reworded refusal, and this is one: no behaviour changes, the
+  same exit code, the same message, one remediation line added.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, `RS-02`
+
+Branch `fix/registry-requests-stop-stamping-dead-bounds-rs02`, cut from `main`, not pushed.
+
+- **A window is now derived, never typed.** The command boundary substituted the literals `1.0.0`
+  and `2.0.0` whenever a registry request arrived without a compatibility window — which is every
+  action except `init`, because `--minimum-version` and `--maximum-version` exist on `init` alone.
+  Both literals now come from the one place that derives them from the running executable, and the
+  flag skin imports the same pair instead of computing its own ceiling. Three definitions of the
+  same rule are how a fourth went stale.
+- **The values were dead, and the run says so rather than assuming it.** `LA-R-40` scaffolds the
+  same artifact under a `main` wheel and under the branch wheel and compares the trees: byte
+  identical. A difference there would have meant something did read them and the register row was
+  wrong.
+- **The walk was worth its minutes for one reason.** The fix moves an import into `cli.py`, the
+  entry point. An import that resolves under the test runner and not under an installed wheel is a
+  failure every unit test passes through, so `LA-R-37` starts the real executable first. Five
+  scenarios, five passes, `docs/testing/PROGRESS-live-acceptance-v12.md`.
+- **What proves it:** `tests/registry_cli_test.py::RegistryCliTest::test_rs02_no_registry_action_declares_a_window_that_excludes_the_running_aart`
+  asserts the invariant across `scaffold`, `vendor` and `promote-native` rather than pinning one
+  literal, so an action added later inherits it. The second test holds the other side: an author who
+  really supports a wider range still gets the range they asked for.
+- **One new finding, recorded and not fixed. `LAF-90`, and it is the serious one.** The curses
+  wizard offers the same two literals as its defaults for `registry init`. There they are not dead:
+  an operator who presses return at both prompts authors a registry declaring `>=1.0.0,<2.0.0`, and
+  `registry validate` on that registry answers *registry workspace is incompatible with this AART
+  version*. The tool writes a registry it then refuses to read. Both halves were reproduced without
+  a terminal — the wizard's question loop takes its reader as an argument — so only the screen
+  itself is human-gated. `RS-02` fixed the flag path; the wizard is a separate package and was left
+  alone.
+
+### 2026-08-16 — overnight residue run, `LAF-49`
+
+Branch `fix/document-the-git-environment-laf49`, cut from `main`, not pushed. The last item in the
+brief's queue.
+
+- **Nothing about the behaviour changed, and nothing should have.** AART runs system Git with an
+  allowlisted environment — `HOME`, `PATH`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`, `SYSTEMROOT` — so
+  `https_proxy` never reaches it. That is deliberate: a proxy URL is one of the ordinary places a
+  credential hides, and `https://user:token@proxy.example:3128` is a supported form. `LAF-49` was
+  never a request to pass it through. It was that nobody was told.
+- **The cost is specific, so the page names it.** On a network whose only egress is a proxy, every
+  command that touches a remote fails with Git's transport error and no mention of a proxy — and
+  the operator exported the variable themselves, so it looks like it is in effect.
+  `docs/configuration/git-environment-v1.md` states what is passed, what is dropped, why, and the
+  route that works: `git config --global http.proxy`, which works precisely because `HOME` is
+  passed. It covers the SSH case and the credentialed-proxy case too.
+- **A document nobody links is barely better than no document.** The README's *Maintaining a
+  registry* section now points at it with the symptom attached — clones at the prompt, fails under
+  AART.
+- **What proves it, and what keeps it true:** `tests/git_environment_docs_test.py` reads the three
+  tables on the page and checks them against the code — the allowlist against
+  `_ALLOWED_ENVIRONMENT`, every variable the page calls dropped against what `_safe_environment`
+  actually returns, and the forced values against the values Git really sees. Prose can be right
+  once and drift; this cannot drift without failing the suite.
+- **No live walk.** The brief excludes a document, and the proxy scenario needs an egress-restricted
+  network this run cannot build. The claims are driven against the real function instead.
+- **No new findings.**
+
+### 2026-08-16 — overnight residue run, re-checking closed rows (1)
+
+Branch `docs/recheck-closed-register-rows`, cut from `main`, not pushed. The brief's fallback: take
+`closed` rows oldest first, run the evidence the last column names, record the result, repair
+nothing. Nothing in the code changed on this branch — the wheel built here has the same digest as
+`main`, `fcdf95d94b8150c82570dccca154dda536ec3cac8e7c25b3e215dba124bcb174`, which is what makes the
+observations below observations about the shipped tool.
+
+The lab: a registry with one `mcp` artifact carrying a filesystem-only recipe
+(`directory.create@1`), subscribed as a local source into a throwaway project, with a sandbox `HOME`.
+Deliberately no Docker, no Keychain, no network — the three rows below are about what the operator is
+*told*, and a recipe that needs nothing outside itself keeps the reading clean.
+
+| Row | Evidence named | Result |
+|---|---|---|
+| `LAF-52` | `tests/setup_render_test.py`, and `marketplace setup` at a terminal prints the failure detail, the artifact key and the manual route | **reproduces.** 27 tests pass. `marketplace install --yes` on an unauthorized source prints `reason setup from local requires explicit source authorization`, the key `lab/mcp/labserver@1.0.0#claude/project`, and the manual route with `SETUP.md` and its absolute object-store path — and `Setup: planned=0, failures=1` comes *after* the content it used to replace |
+| `LAF-54` | `marketplace setup` without `--yes` prints the effect list, the capabilities and the manual alternative before asking for approval | **reproduces.** Purpose, source, recipe path, recipe hash, plan hash, `capabilities filesystem`, required tools, the manual alternative with its status line, then the numbered effect with target, capability, recovery and details, ending `Reviewed only; re-run with --yes to apply this exact plan.` |
+| `LAF-53` | `aart marketplace receipt undo <coordinate>` | **reproduces.** The command exists, reviews before acting (`reverses=1, keeps=0`, `Reviewed only…`), and on `--yes` the directory the run created is gone from the file system |
+| `LAF-55` | `receipt verify` asks the Keychain whether the item holds a non-empty value; `tests/setup_verify_test.py` | **half checked.** The tests pass. The live half is `blocked`: it needs a keychain recipe and a real Keychain item, and the brief excludes credential entry. **What the human has to show:** store a secret through `marketplace setup` on a TTY, then empty it with `security add-generic-password -U -w ''`, then run `receipt verify` — the claim is that it reports the item as not holding a value rather than merely present |
+
+- **No row was repaired, and no row moved.** All four rows stand as they are written.
+- **One new finding, recorded and not fixed. `LAF-91`: a completed undo reports itself as
+  `skipped`.** `marketplace receipt undo … --yes` removes what the run created, says `reverses=1,
+  keeps=0`, and then prints `Undo outcome: skipped — Setup rollback completed`; `--json` puts
+  `"status": "skipped"` beside `"ok": true`. The value is the artifact's post-undo *setup state*
+  (`setup_runtime.py:1369`), and as a state it is right — the artifact is no longer set up. As the
+  answer to *what did the undo do*, which is where the renderer puts it, it says the opposite of
+  what happened. Found by running `LAF-53`'s evidence, which is the point of the exercise: the row
+  is still true and the command still has a defect beside it.
+
+### 2026-08-16 — overnight residue run, re-checking closed rows (2)
+
+Branch `docs/recheck-closed-register-rows-2`, cut from `main`, not pushed. It carries the previous
+branch's `PROGRESS.md` and register rather than `main`'s, because the two branches are one record of
+one exercise; every other branch tonight is independent and this pair is not. Again no code changed:
+the wheel is `fcdf95d9…`, the same digest as `main`.
+
+| Row | Evidence named | Result |
+|---|---|---|
+| `LAF-59` | `RR-2B`; a build failing on its last instruction reports that instruction and its exit code | **reproduces**, against a real `docker build`. A recipe with one `docker.build@1` step, a Dockerfile with four verbose instructions and a failing fifth, run through `marketplace setup … --yes`. The reported detail keeps the head *and* the tail with the middle marked `… 1713 characters elided …`, and the tail is `6 | >>> RUN /bin/sh -c "echo about to fail; exit 3"` followed by `did not complete successfully: exit code: 3`. The original finding was that this end of the transcript was the part thrown away |
+| `LAF-63` | one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix, `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_redacted` | **reproduces.** The test passes and `def redact` still matches exactly one definition in the package |
+| `LAF-65` | `rollback_command` names `receipt undo`, and `tests/setup_custom_test.py::WrittenCommandFieldTests` hands the written field to the shipped CLI parser | **reproduces**, and the test still does what the column says: both fields are handed to `_parse_failure`, the shipped parser, rather than compared against a string |
+| `LAF-66` | the probe takes the run root the engine writes into, and `tests/setup_verify_test.py::test_laf66_…` drives the real writer and the real reader together | **reproduces.** The test calls `new_run_directory` and then `orphan_run_directories` — the real pair — and asserts the old search location finds nothing |
+| `LAF-72` | there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record | **reproduces.** One definition, and the walk is still structural (`os.walk`, every string in the payload) rather than a list of field names |
+
+- **No row was repaired and no row moved.** All five stand as written.
+- **No new findings this iteration.**
+- **Why `LAF-59` was worth the Docker run.** Its evidence is the one thing in this group that no
+  test in the repository can hold: the transcript is produced by BuildKit, and what AART keeps of it
+  is only observable by failing a real build. The re-check used a base image already on the machine,
+  created no image tag — the build fails before one exists — and left nothing behind but ordinary
+  build cache.
+- **What is left in this sweep.** `LAF-68`, `LAF-70`, `LAF-71` and `LAF-74` are next by age. Their
+  evidence is not in this repository: three name merged pull requests in the constellation's other
+  repositories, and re-checking them means reading GitHub. That is a different kind of check from
+  the ones above and is noted here rather than guessed at.
+
+### 2026-08-16 — overnight residue run, re-checking closed rows (3)
+
+Branch `docs/recheck-closed-register-rows-3`, cut from `main`, carrying the previous two branches'
+record. This finishes the sweep: every row that was `closed` on `main` has now been re-checked once.
+The evidence for these four is not in this repository — three name merged pull requests in the
+constellation's other repositories — so this pass read GitHub. Read-only: `gh pr view`, `gh pr diff`,
+and the contents API. Nothing was pushed, commented on, or opened.
+
+| Row | Evidence named | Result |
+|---|---|---|
+| `LAF-68` | the acceptance runner is on `2.6.0` and reconciles eleven installations against the published wheel | **reproduces.** `consumer-acceptance.yml` on `main` installs `agent_artifacts-2.6.0-py3-none-any.whl` from the release, asserts `aart --version` equals `agent-artifacts 2.6.0`, and fails on drift against `EXPECTED_INSTALLATIONS: "11"` |
+| `LAF-70` | the authoring machine runs `2.6.0`; Registry A's pin move is the remaining half | **reproduces**, both halves. `aart --version` on this machine is `agent-artifacts 2.6.0`, and Registry A's three workflows pin `v2.6.0` on `main` |
+| `LAF-71` | every pin in the constellation is `2.6.0` and merged | **does not reproduce.** Registry B's three workflows pin `v2.5.0`. The row is `open` again |
+| `LAF-74` | the release note was added to the checked list and `DOC009` then failed it | **reproduces.** A probe document under `docs/design/` claiming `LAF-63` is shipped open fails the gate with `DOC009 LAF-63 is listed as shipped open and is closed in the register`. The probe was removed |
+
+- **`LAF-71` is the row the sweep was for.** It said every pin in the constellation had moved to
+  `2.6.0` and named three merged pull requests. Two of them did what the row says. The third,
+  Registry B's [#5](https://github.com/M1F1/agent-artifacts-registry-2/pull/5), is titled *Move the
+  CI pin to 2.6.0*, was merged from a branch named `chore/move-pin-2.5.0`, and its diff moves all
+  three workflows from `v2.0.0` to `v2.5.0`. No later pull request touches them and no `AART_REF`
+  repository variable overrides the default, so Registry B's CI validates its registry with an AART
+  one release behind the tool — which is the exact shape of `LAF-70`, the finding this pair came
+  from. The row is `open` and nothing was repaired.
+- **The new finding is not the pin. `LAF-92` is that a closure was recorded from a title.** The pin
+  is a one-line change in another repository and someone will make it in a minute. What is worth
+  keeping is how it got into this register as `closed`: three pull request numbers were collected,
+  their titles read, and the diff of the third never opened. The register's own rule is that
+  `closed` carries *the reproduction that establishes it*; a merge status is not that, and this is
+  the first row in the sweep where the difference showed.
+- **The triage brief is left standing.** `triage-brief-2.6.0.md` says the three workflows all pin
+  `v2.6.0`. It is dated, it is what was believed on `2026-08-15`, and correcting it would destroy
+  the evidence it exists to be. The correction lives in the register row and here.
+
+### 2026-08-16 — overnight residue run, re-checking this run's own closures
+
+Branch `docs/recheck-tonights-closures`, cut from `main`, carrying the previous branch's record. The
+sweep of `main`'s `closed` rows finished in the entry above, so this pass turns the same method on
+tonight's work: fourteen rows this run marked `closed` on thirteen branches. Each branch was checked
+out and the evidence its own register row names was run there — not a re-run of the tests I wrote,
+but a run of the string a reader would copy out of the register.
+
+| Branch | Row | Result |
+|---|---|---|
+| `fix/setup-docker-credentials-rs12` | `RS-12` | 7 passed |
+| `fix/curses-install-scope-laf64` | `LAF-64` | 4 passed |
+| `fix/wheel-digest-emits-what-it-hashes-laf75` | `LAF-75` | 4 passed |
+| `fix/docs-check-both-directions-laf69` | `LAF-69` | 12 passed |
+| `fix/receipt-verify-stale-rollback-laf73` | `LAF-73` | 4 passed |
+| `fix/registry-refusals-carry-remediation-rs09` | `RS-09` | 4 passed |
+| `fix/status-names-the-missing-source-rs07` | `RS-07` | **no tests ran** |
+| `fix/audit-upstream-says-it-checked-laf45` | `LAF-45` | 5 passed |
+| `fix/broken-registry-descriptor-fails-rs08` | `RS-08` | 4 passed |
+| `fix/owned-mcp-descriptor-is-checked-rs01` | `RS-01` | 4 passed |
+| `fix/uninstall-removes-the-file-it-made` | `LAF-47`, `RS-10` | 5 passed |
+| `fix/vendor-refusal-names-revendor-rs04` | `RS-04` | 1 passed |
+| `fix/registry-requests-stop-stamping-dead-bounds-rs02` | `RS-02` | 1 passed, 3 subtests |
+| `fix/document-the-git-environment-laf49` | `LAF-49` | 4 passed |
+
+- **Thirteen of fourteen reproduce.** The fixes stand where the evidence runs.
+- **`RS-07`'s evidence runs nothing, and says so quietly.** The row names
+  `tests/identity_change_reconciliation_test.py::test_rs07_status_reports_the_project_when_the_only_subscription_is_removed`.
+  That test is a method of `IdentityChangeReconciliationTest`, and a node id that skips the class
+  matches nothing: pytest prints `no match in any of [<Module identity_change_reconciliation_test.py>]`,
+  then `no tests ran`, and exits `4`. Name the class and the same test passes, so the fix is fine.
+  What failed is the record — and it failed by printing a green-looking nothing rather than a red
+  test, which is the part worth keeping. That is `LAF-93`, `open`, and nothing was repaired.
+- **Three more rows name a glob.** `RS-08`, `LAF-45` and `LAF-73` each write `test_laf45_*`, which
+  pytest also refuses as a node id; it needs `-k`. They ran here because I expanded them. A reader
+  copying the row would not. Same finding, same row.
+- **Nothing checks any of this.** `scripts/docs_check.py` verifies that links resolve and that every
+  stream row reaches the register. It has never tried to run an evidence string, which is why a
+  selector that collects nothing survived being written, reviewed and committed.
+- **What is left.** Every `closed` row in the register — `main`'s and tonight's — has now been
+  re-checked once. The next pass has to be a second look at rows whose evidence *ran*, asking
+  whether what it proves is what the row claims, which is the shape `LAF-92` turned out to have.
+
+### 2026-08-16 — overnight residue run, re-reading closed rows' claims
+
+Branch `docs/recheck-closed-row-claims`, cut from `main`, carrying the previous branch's record.
+Every `closed` row has now been re-checked once by running the evidence it names. This pass asks the
+next question — the one `LAF-92` turned out to be — of four rows whose claims reach further than the
+artifact they name: does the evidence establish the *whole* claim, or one instance of it? Nothing
+was repaired and no code changed.
+
+| Row | The claim that reaches further | Result |
+|---|---|---|
+| `LAF-63` | "one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix" | **holds.** One `def redact_text` in the package. `setup.py`'s `_REDACTED_ASSIGNMENT` is a narrower post-step on top of it, not a second implementation |
+| `LAF-72` | "`tests/token_containment_test.py` walks every string of the persisted record" | **holds as written** — channel 2 walks `dump_setup_state` output. The test's own docstring says channels 2 *and 4*, and channel 4 does not. That is `LAF-94` |
+| `LAF-55` | "`receipt verify` asks the Keychain whether the item holds a non-empty value" | **holds.** The real `_keychain_value_present` is wired into `local_probes`, runs `security find-generic-password -w`, and returns `bool(stdout.strip())` — length only, value discarded. The live half stays human-gated |
+| `LAF-65` | the written command fields are handed to the shipped parser "so it cannot go stale again" | **holds, and wider than I expected.** The two composers in `setup.py` are covered by `WrittenCommandFieldTests`, and `tui.py`'s two — including a `retry_command=` the class never reaches — are covered by the package-wide mention scan in `EveryVisibleCommandMentionTest` |
+
+- **`LAF-94` is the one thing this pass found, and it is a claim, not a hole.** The containment
+  test's channel 4 asserts against a `payload` dict the test writes itself, with `planned` and
+  `planning_failures` empty. Its structural walk therefore visits 11 strings, all of them literals
+  from the same file, and never calls `_setup_payload`. One real `planned` row carries 25, every one
+  of them derived from a recipe, and a real run has one per queued artifact.
+- **The containment itself is real, and I measured it rather than assuming.** A recipe whose
+  `purpose` carried `COMPANY_GHE_TOKEN=<planted>` was planned and projected: `project_setup_review`
+  returned `Configure access using [redacted]` and the planted value appears nowhere in the
+  projection the `--json` payload is built from. So the `--json` channel is safe today by the
+  projection, which is exactly the thing the test does not observe.
+- **The design is left standing.** `DESIGN-token-containment.md` §4.3 says a new channel that
+  forgets redaction fails the test without anybody extending a list. That is the same claim one
+  level up and it is not literally true either — a new channel needs a new test. Per the brief the
+  design keeps saying what it said; the correction lives in the register row and here.
+- **What is left.** Three of the four claims survive a harder reading, which is the useful result:
+  the rows are mostly written to the width of their evidence. The rows not yet read this way are the
+  remaining `closed` ones — `LAF-52`, `LAF-53`, `LAF-54`, `LAF-59`, `LAF-66`, `LAF-68`, `LAF-70`,
+  `LAF-74` — and the ones worth reading next are those whose evidence is a live walk, because a
+  walk proves one path and the rows tend to state a property.
+
+### 2026-08-16 — overnight residue run, re-reading the live-walk rows' claims
+
+Branch `docs/recheck-live-walk-claims`, cut from `main`, carrying the previous branch's record. Same
+question as the entry above, asked of the four rows closed by a live walk: a walk proves one path,
+and these rows state a property. Two real Docker builds were run for this; both failed before a tag
+existed, and `docker image ls` confirms nothing was left behind. No code changed.
+
+| Row | The claim that reaches further | Result |
+|---|---|---|
+| `LAF-52` | "`marketplace setup` prints the failure detail, the artifact key and the manual route" | **holds.** `_failure_lines` renders key, reason and manual for every planning failure; `_planned_lines` renders the manual and all six effect fields; `_item_lines` renders every key the item payload carries. Nothing the JSON holds is dropped by the text |
+| `LAF-53` | "`aart marketplace receipt undo <coordinate>`" | **holds in substance, thinly written.** The row names a command and no expected output. What it has to prove is that a successful setup is reversed, and that was measured in a real lab two iterations ago — `reverses=1, keeps=0` — not by this string |
+| `LAF-54` | "prints the effect list, the capabilities and the manual alternative before asking for approval" | **holds, and consent is a flag, not a prompt.** `finalize_setup_queue(consent=lambda _effect: approved)` reads `--approve-setup-effects`. The review path prints the list; the design states that shape at `DESIGN-readable-receipt.md` §3.4 and it is what the row describes |
+| `LAF-59` | "a build failing on its last instruction reports that instruction and its exit code" | **holds for a short instruction, degrades for a long one.** That is `LAF-95` |
+
+- **`LAF-95`, measured on real BuildKit output rather than argued.** A build whose failing `RUN` is
+  708 characters emits 5 907 characters; `failure_detail` keeps 512. `exit code: 4` and `did not
+  complete successfully` survive, because they are last. What does not survive: `ERROR: failed to
+  build: failed to solve: process`, the `>>>` marker naming the Dockerfile line, and the start of
+  the instruction itself — the operator's detail begins mid-word at
+  `gument-list-that-real-recipes-do-carry;`. The word *ERROR* does not appear anywhere in it.
+- **The head is the sharper half of it.** 128 of the 512 characters go to
+  `#0 building with "desktop-linux" instance using docker driver … #1 transferri`, cut mid-word, and
+  it was byte-identical in both builds. `LAF-59` was raised *because* a consumer was shown
+  `transferring dockerfile: 117B done` and never the failure. The fix keeps the tail and still
+  spends a quarter of the budget on the same boilerplate.
+- **The design is left standing.** `DESIGN-readable-receipt.md` §3.5 says both ends can carry
+  meaning, so it keeps both. For `docker build` the head measurably does not, twice. The correction
+  lives in the register row and here, per the brief.
+- **A shorter failing instruction was checked first and reports well.** A chatty step producing
+  10 647 characters still ends with the full `ERROR: … process "…" did not complete successfully:
+  exit code: 3` — the instruction survives there because the ERROR line embeds the whole command,
+  not because the `>>>` context block does; that block was elided in both runs.
+- **What is left.** `LAF-66`, `LAF-68`, `LAF-70` and `LAF-74` are the `closed` rows not yet read
+  this way. `LAF-53`'s row is worth widening when someone touches it: it names a command and not
+  what the command has to print, which is the same weakness `LAF-93` found in a different form.
+
+### 2026-08-16 — overnight residue run, `LAF-66`'s claim taken to the CLI
+
+Branch `docs/recheck-remaining-closed-claims`, cut from `main`, carrying the previous branch's
+record. `LAF-66` is the row where a passing test drove a fake and the probe looked nowhere real, so
+its claim is the one that most deserves to be checked against a real executable rather than read.
+The test proves the writer and the reader agree *given the same root*. Whether the CLI hands them
+the same root is a separate claim, and it is the one `LAF-66` was.
+
+**Run header.** Pre-release run against a **locally built** wheel, not a published asset.
+
+| | |
+|---|---|
+| commit | `e3894fe` (`main`) |
+| wheel | `agent_artifacts-2.6.0-py3-none-any.whl`, 542 151 bytes |
+| wheel sha256 | `fcdf95d94b8150c82570dccca154dda536ec3cac8e7c25b3e215dba124bcb174` |
+| `aart --version` | `agent-artifacts 2.6.0` |
+| stressor | sandboxed `HOME`, `source-local` registry, filesystem-only recipe; no Docker, no Keychain, no network |
+
+- **`LAF-66`'s claim holds end to end.** A real `marketplace setup` was applied, its `plan_hash`
+  read back from `receipt show --json` (`b233f1dff6080db4…`), and a working copy planted at
+  `<data_root>/.agent-artifacts/setup-runs/b233f1dff6080db4-plantedprobe`. `receipt verify` found it
+  and printed the full path. The CLI resolves `run_root` from `runtime.paths.data_root` at
+  `commands/marketplace.py:701` and the engine plans with `run_root=location.data_root` at
+  `setup_engine/application.py:457` — the same root, and now measured to be the same root rather
+  than traced to be.
+- **`LAF-96` is what the walk found instead, and it is in the output of that very command.**
+  `receipt verify` renders each claim as `f"{status}: {subject}"`. The two record-wide claims name
+  the bad condition in the subject and are negative in the kind, so the headline inverts:
+  `true: credential-shaped text in the persisted record` above `detail  no credential-shaped text in
+  the record`, and `false: working copies left by plan b233f1dff6080db4` above `detail  1 working
+  copy left by an interrupted run, not removed`. An operator who reads the headline and not the
+  detail gets the opposite answer to the one the probe returned. Recorded, not fixed.
+- **It is confined, which is why it survived.** Every step claim's subject is a bare noun — an image
+  reference, a tag, a written path — so `true: aart/mcp/x:1.0.0` reads correctly. Only the two
+  claims added later, whose subjects are sentences, compose wrongly.
+- **`LAF-52` was watched holding in the same run.** A setup refused for want of source authorization
+  printed the key, the reason, and the manual route with its resolved `SETUP.md` path, which is the
+  rule `DESIGN-readable-receipt.md` §3.4 states.
+- **Nothing touched the real data root.** Every command ran with `HOME` inside the lab; the data
+  root exercised is under the lab's `home/Library/Application Support/agent-artifacts`.
+- **What is left.** `LAF-68`, `LAF-70` and `LAF-74` are the `closed` rows still unread this way.
+  `LAF-70`'s claim is already half-corrected by `LAF-71`/`LAF-92`; the other two need GitHub and a
+  `DOC009` probe respectively, both of which this run has done once before.
+
+### 2026-08-16 — overnight residue run, how far the register gate reaches
+
+Branch `docs/recheck-doc-gate-reach`, cut from `main`, carrying the previous branch's record.
+`LAF-74`'s row says a release note was added to the checked list and `DOC009` then failed it for a
+stale claim. That reproduces, and it was checked with a probe two iterations ago. The claim that
+reaches further is the one underneath it: that the gate holds the documents in agreement with the
+register. It holds the documents somebody listed.
+
+- **The list is four patterns and 60 files:** `docs/plan/*.md`, `docs/design/*.md`,
+  `docs/release/compatibility-v14.md`, `docs/release/release-checklist-v14.md`. Everything else in
+  the repository — `README.md`, `CHANGELOG.md`, `docs/testing/*`, `docs/configuration/*`, every
+  other release document — is never read for a stale *shipped open* claim.
+- **Measured rather than argued.** `DOC009`'s own three regexes were run over every markdown file
+  outside the list. Three files would fail it:
+
+| File | Would fail for | Verdict |
+|---|---|---|
+| `CHANGELOG.md:60` | `LAF-63` | **a current document with a stale claim, ungated** |
+| `docs/release/release-checklist-v13.md:217` | `LAF-52`, `LAF-53`, `LAF-54`, `LAF-55`, `LAF-59` | dated record of `2.5.0`; correctly outside |
+| `docs/testing/residue-stream-2026-08-15.md:36` | the same five | the heading says *From `2.5.0`*; correctly outside |
+
+- **`LAF-97` is the first row.** `CHANGELOG.md`'s `## 2.6.0 — 2026-08-15` section lists `LAF-63`
+  under *Known defects shipped open*. The register has `LAF-63` `closed` by `RR-10A`, and `RR-10`
+  is work that shipped **in** `2.6.0` — the release the section describes. So the changelog tells a
+  reader that the release they are installing ships a credential-redaction defect that the same
+  release fixed. It is the identical stale claim `LAF-74` caught in `github-release-v2.6.0.md`,
+  sitting in the document beside it, in a file the gate cannot see.
+- **Nothing was edited.** The changelog section is a released version's record and the brief keeps
+  dated documents standing; the fallback forbids repairing anything found this way in any case. The
+  correction lives in the register row and here.
+- **`LAF-74` stays `closed`.** Its evidence reproduces and its claim is about one file being added
+  to the list, which is what happened. The reach of the list is a different finding, which is why it
+  has a different id.
+- **What is left.** `LAF-68` and `LAF-70` are the last two `closed` rows unread this way; both need
+  GitHub and both were re-run against it two iterations ago, so what remains for them is only the
+  width question. After that the second pass is complete and a third would be reading the `open`
+  rows for the same defect.
+
+### 2026-08-16 — overnight residue run, the last two closed rows read for width
+
+Branch `docs/recheck-acceptance-runner-claim`, cut from `main`, carrying the previous branch's
+record. `LAF-68` and `LAF-70` were the two `closed` rows not yet read this way. Read-only GitHub:
+`gh run list`, `gh run view --log`, and the contents API. Nothing was pushed, commented on, or
+opened. This completes the second pass over every `closed` row.
+
+| Row | The claim that reaches further | Result |
+|---|---|---|
+| `LAF-68` | the acceptance runner *is on* `2.6.0` and *reconciles* eleven installations | **holds, and now as behaviour rather than as a file.** The scheduled run at `2026-08-16T05:49:33Z` on `main` succeeded in 13s: it downloaded `agent_artifacts-2.6.0-py3-none-any.whl` (542 kB) from the release, printed all eleven coordinates as `current`, and ended `11 installations current`. The job exits non-zero on a count other than `EXPECTED_INSTALLATIONS: 11` or on any status that is not `current` |
+| `LAF-70` | the authoring machine runs `2.6.0`, installed after verifying its digest | **holds on this machine.** `/Users/mifi/.local/bin/aart` answers `agent-artifacts 2.6.0`. The Registry A half was re-checked two iterations ago; the Registry B half is `LAF-71`/`LAF-92` and stays `open` |
+
+- **`LAF-98` is what reading `LAF-68` widely found.** The runner installs the published wheel by URL
+  with `--no-deps` and never checks what it got. There is no `sha256`, no `shasum`, no digest step
+  anywhere in `consumer-acceptance.yml`. `LAF-70`'s own row records that the *authoring machine*
+  installed that same asset after verifying its digest against `wheel-digest` — so the careful
+  procedure is the one a person did by hand, and the unattended job that runs every morning is the
+  one that skips it. `release.py wheel-digest` exists to make the check possible and no CI in the
+  constellation calls it. Recorded, not fixed.
+- **The naming shape from `LAF-92` recurs, and here it is harmless.** The pull request that moved
+  the runner to `2.6.0` is titled *Move the acceptance runner to AART 2.6.0* and was merged from a
+  branch named `chore/aart-2.5.0` — the same title/branch disagreement that made `LAF-71`'s closure
+  wrong in Registry B. This one's diff was read two iterations ago and does what the title says.
+  Worth knowing that the pattern is in two repositories, not one.
+- **The second pass is complete.** Every `closed` row has now been re-run once and then re-read once
+  for whether its claim is wider than its evidence. Four rows were wider: `LAF-94`, `LAF-95`,
+  `LAF-96`, `LAF-97`, plus `LAF-98` from this entry. A third pass would be the same two questions
+  asked of the `open` rows — whether each is still true as written — and `LAF-86`, `LAF-89` and the
+  four recipe-format rows are the ones whose wording has aged most since they were filed.
+
+### 2026-08-16 — overnight residue run, the third pass begins: are the open rows still true?
+
+Branch `docs/recheck-open-rows`, cut from `main`, carrying the previous branch's record. The second
+pass finished with the last two `closed` rows. This starts the third: the same question asked of the
+`open` ones — is each still true *as written*? Four rows were taken, chosen because nothing this run
+has touched them and each had an empty evidence column: `LAF-57`, `LAF-67`, `RS-05`, `RS-06`. All
+four stay `open`. Their rows now carry what the check found.
+
+| Row | Says | Result |
+|---|---|---|
+| `LAF-57` | the two install routes agree on content and disagree on image identity | **true, and its explanation is about to go stale.** See below |
+| `LAF-67` | no published artifact uses `docker.build@1`, so two acceptance criteria cannot be walked | **true, re-measured against the live registries.** Registry A publishes three setup recipes and all three use `docker.pull@1`; Registry B publishes none |
+| `RS-05` | `io/cache.py` is unreferenced by shipping code | **true, and worse than it reads.** Nothing imports it, and it is in the published wheel |
+| `RS-06` | `DESIGN-upstream.md` carries no superseded banner | **true.** No *superseded*, *obsolete* or *replaced by* anywhere in the file |
+
+- **`LAF-57` is the one worth reading.** It gives four causes for the two routes producing different
+  image ids: AART's working copy is mode `0600` where a shell redirect writes `0644`, each build
+  stamps its own mtime, the hand build inherits the user's buildx defaults, and **AART's build runs
+  without `HOME`**. That last one is fixed on `fix/setup-docker-credentials-rs12`, which this run
+  produced: `_docker_env` now hands docker steps `HOME` and `DOCKER_CONFIG` so a private base image
+  can authenticate. The moment that branch merges, a quarter of `LAF-57`'s explanation is false, and
+  the attestation-manifest difference it produced — the hand build exporting one because it read the
+  user's docker config, AART's not — may go with it. The other three causes are untouched, so the
+  finding stands and its wording does not.
+- **This is the register describing a world that one of tonight's own branches changes.** Worth
+  saying plainly because nothing would have caught it: `LAF-57` is `open`, so no gate reads it, and
+  the `RS-12` branch had no reason to look at a low-severity row about image digests.
+- **`RS-05` ships.** `agent_artifacts/io/cache.py` is 94 lines, describes itself as *Immutable
+  snapshot cache — shell (WP-7)*, is imported by nothing, and is present in
+  `agent_artifacts-2.6.0-py3-none-any.whl`. The row says "unreferenced by shipping code", which is
+  true; what it does not say is that it is itself shipped.
+- **What is left.** The `open` rows still unread this way are `LAF-58` and the recipe-format cluster
+  `RS-11`, `RS-13`, `RS-14`, `RS-15`, which the options note already treats as one change. Every
+  other `open` row on `main` is a finding this run closed on a branch.
+
+### 2026-08-16 — overnight residue run, the third pass finished
+
+Branch `docs/recheck-open-rows-2`, cut from `main`, carrying the previous branch's record. The five
+`open` rows nothing this run has touched: `LAF-58` and the recipe-format cluster `RS-11`, `RS-13`,
+`RS-14`, `RS-15`. All five are still true as written, and every row now carries the check. That
+completes the third pass — every row in the register has now been re-run, re-read for width, or
+re-read for whether it is still true.
+
+| Row | Says | Still true because |
+|---|---|---|
+| `LAF-58` | `preexisting` protects a tag's name, not its meaning; rollback restores neither | the receipt keeps only `returncode == 0`, never the id the tag pointed at |
+| `RS-11` | `inputs` accepts only `type: "secret"` | `setup.py:584` raises *inputs[N].type must be 'secret'* |
+| `RS-13` | no `shell.zshrc-managed-block@1` | the module table holds `shell.env-from-keychain@1` and `file.managed-block@1` and no third |
+| `RS-14` | the format has no comment convention and every `_comment` was refused | `setup.py:389` allows a step exactly `{id, use, with}` |
+| `RS-15` | a package cannot carry an auxiliary script at its root | `native_tree.py:451` fixes the root to six names |
+
+- **`LAF-58`'s remedy is nearer than its row implies.** The row says closing it needs `RR-4A` at the
+  capture site. The capture site already asks the question: `setup_runtime.py:451` runs
+  `docker image inspect <tag>` *before* the build and throws away everything but the exit code, and
+  `:463` runs `docker image inspect --format {{.Id}}` *after* it. Recording the earlier binding is
+  one flag on a call the code already makes. Written down and not done — the fallback repairs
+  nothing.
+- **`RS-15` has a route the row does not mention.** The package root is fixed to six names, so an
+  auxiliary script is refused there; it is accepted under `payload/` or `setup/`. That does not make
+  the row false — it says *at its root* — but a reader deciding whether this matters should know the
+  workaround exists.
+- **`RS-14` is true because of a rule worth keeping.** A step must be exactly `{id, use, with}`.
+  That strictness is what refuses `_comment`, and it is also what makes an unknown field a loud
+  error rather than a silent no-op. The options note for the recipe-format cluster is the place that
+  weighs the trade; nothing here changes it.
+- **All three passes are done.** Every `closed` row: re-run once, re-read once for width. Every
+  `open` row: re-read once for whether it is still true. Nine findings came out of it — `LAF-91`
+  through `LAF-98`, plus `LAF-71` returning to `open`. The next iteration has no unread rows to
+  take, so it should start on what the register does not cover at all: the `visible` and `deferred`
+  rows, `LAF-61` and `LAF-62`, which are dispositions this run has never checked.
+
+### 2026-08-16 — overnight residue run, the two dispositions nobody checks
+
+Branch `docs/recheck-visible-deferred`, cut from `main`, carrying the previous branch's record. All
+three passes covered `open` and `closed`. The register has two other dispositions and one row each:
+`LAF-61` is `visible`, `LAF-62` is `deferred`. Neither has been checked this run. Both are checked
+here against the register's own definitions.
+
+| Row | Disposition means | Result |
+|---|---|---|
+| `LAF-61` | still true, and now observable — reported by a command rather than repaired | **warranted, and now measured.** Both halves |
+| `LAF-62` | out of scope by an explicit decision recorded in a design, not by neglect | **the decision is not recorded anywhere.** That is `LAF-99` |
+
+- **`LAF-61` holds on live evidence.** The working copy planted under the data root two iterations
+  ago is still there, contents intact, after `receipt verify` reported it by full path. Named and
+  not removed is exactly what `visible` claims, and it is now a measurement rather than a reading of
+  the code.
+- **`LAF-62`'s disposition has no support.** The commit that measured the finding —
+  `6589778`, *The consumer is on a side of the index boundary too* — ends with *Recorded as `LAF-62`
+  and left open*, and says the design question is deliberately unanswered because "a cleanup pass is
+  the wrong place to answer it". The register was already carrying `deferred`, from `3ff834e`, the
+  commit that created the table. The one design that names the finding,
+  `DESIGN-readable-receipt.md` §5, says *it does not touch the index-version boundary … those need
+  their own stream* — which records that design's scope, not a decision about the boundary.
+- **I left it `deferred` and did not flip it.** `LAF-71` was flipped because its evidence factually
+  did not reproduce. This is a judgement about whether a scope exclusion in another design counts as
+  a recorded decision, and that judgement is the maintainer's. The row now says so and the
+  disagreement is `LAF-99`.
+- **Nothing could have caught it.** `DOC006`..`DOC009` check documents against the register. No rule
+  checks the register against its own definitions — that a `closed` row carries a reproduction, that
+  a `deferred` row names the design that deferred it. `LAF-93` found the same gap from the other
+  side, where a `closed` row's reproduction could not be run.
+- **`LAF-62` is also still true.** Registry A's committed index still carries three setup-bearing
+  packages, so the condition that refuses a `≤2.4.0` consumer at `source add` has not gone away. The
+  consumer project's nightly stopped failing on `2026-08-15` because the consumer moved to `2.6.0`,
+  not because the boundary was addressed — the failed run at `05:46Z` and the green one the next
+  morning are both in the acceptance repository's run list.
+- **What is left.** Every row in the register has now been checked once, in whichever way its
+  disposition allows. What has never been checked is the register's *shape*: whether each row obeys
+  the rules the table's own header states. `LAF-93` and `LAF-99` are both instances of that, found
+  by accident rather than by looking, and looking is the obvious next package.
+
+### 2026-08-16 — overnight residue run, the register audited against its own rules
+
+Branch `docs/audit-register-shape`, cut from `main`, carrying the previous branch's record. Every
+row has been checked. This checks the table itself: does the register obey the rules its own header
+states? Two do not, and both were invisible because every gate points outward — `DOC006`..`DOC009`
+hold *documents* to the register and nothing holds the register to itself.
+
+- **`LAF-101`: the register carries eight findings from one walk and omits three.**
+  `PROGRESS-live-acceptance-setup-build.md` records `LAF-51`..`LAF-61` in a single findings table.
+  The register has rows for `LAF-52`, `LAF-53`, `LAF-54`, `LAF-55`, `LAF-57`, `LAF-58`, `LAF-59`
+  and `LAF-61`. It has no row for `LAF-51`, `LAF-56` or `LAF-60`. Those three are precisely the ones
+  that were resolved: that document says *`LAF-51` is closed* and *`LAF-56` and `LAF-60` are
+  documentation fixes that landed with `SBC-9`*. `LAF-56` and `LAF-60` are both `major` —
+  the documented manual build could not be run as documented, and a `requires_aart` floor cannot
+  protect an older consumer because the recipe is validated at source level.
+- **The seeding took what was open and dropped what was closed.** The *Scope* rule cannot explain
+  the split: all eleven ids come from the same pre-stream walk, so if three are outside the register
+  then so are the other eight. What the omission does is leave three closures recorded as a sentence
+  in a run log — which is cluster `C6`, the exact defect this register was written to end.
+- **`LAF-100`: the register's opening paragraph overstates its own gate.** It says `docs_check`
+  *fails when a document names a finding this file does not carry*. `DOC008` reads table rows in
+  files matching `docs/testing/residue-stream-*.md` and nothing else. Measured: 28 finding ids are
+  named across the 60 checked documents with no register row, and `make docs-check` passes on all of
+  them. Most are pre-stream ids the *Scope* section legitimately places outside — the untrue part is
+  the sentence, not the state.
+- **The glob is why the walk documents are unreachable.** `_STREAM_GLOB` is
+  `docs/testing/residue-stream-*.md`. Every `PROGRESS-live-acceptance-*.md` holds a findings table in
+  the same shape and none of them matches, which is how three ids from one such table went
+  unregistered without a diagnostic.
+- **Nothing repaired.** Both are recorded `open` with where they were found. Adding the missing rows
+  would be repairing the thing the fallback exists to measure, and two of them need a closure
+  reproduction that only whoever landed `SBC-9` can write.
+- **What is left.** The register's shape has one more untested rule: `DOC007` requires a
+  reproduction for `closed` and `visible` and asks nothing of `deferred` — which is `LAF-99` from
+  the previous package, now with a second instance behind it. Beyond that, the natural next package
+  is the same audit applied to the live-acceptance documents: they are append-only by rule, and
+  nothing enforces that either.
+
+### 2026-08-16 — overnight residue run, the live-acceptance documents audited against their own rules
+
+Branch `docs/audit-live-acceptance-docs`, cut from `main`, carrying the previous branch's record.
+The register was audited against itself last package; this does the same for the scenario map and
+the run documents. Read-only: git history and the documents themselves. No code changed.
+
+- **The append-only rule holds, and that is worth recording as a pass.** The scenario map's whole
+  history is two commits. The second, `eb82f5c`, appends `LAS-29` and `LAS-30` and deletes nothing —
+  the diff has no removed lines at all. A rule that is only ever asserted is worth checking once;
+  this one has been kept.
+- **`LAF-102`: the map is not the register of scenarios it says it is.** It says *every scenario has
+  a stable ID* and *a future run re-executes these IDs and compares against the recorded result*.
+  Measured across the five run documents on `main`:
+
+| Document | Scenario ids used | Declared in the map |
+|---|---|---|
+| `PROGRESS-live-acceptance.md` | 75 | all 75 |
+| `PROGRESS-live-acceptance-v2.md` | none | — |
+| `PROGRESS-live-acceptance-v3.md` | none | — |
+| `PROGRESS-live-acceptance-receipt.md` | none — it walks a design's numbered criteria | — |
+| `PROGRESS-live-acceptance-setup-build.md` | 25, all `LAB-*` | none; the map declares only `LA-0`, `LA-M`, `LA-R`, `LA-S`, `LA-U` |
+
+- **The cause is in the title.** The file is *Live acceptance **v1** — scenario map*. It was written
+  for one run, the discipline of appending to it was not carried forward, and each later walk grew
+  its own record instead. Tonight's own walks append `LA-*` ids to it, so the practice is back — but
+  the three documents that skipped it are still the record of what was walked.
+- **This is `LAF-87` one level up.** That finding is about stressor ids continuing across four
+  documents with no single place that knows the highest in use. This is the same shape for the
+  scenarios themselves, and it is why a walk can report a pass against an id no future run can find.
+- **What is left.** The run-header rule — tag or commit, wheel name and size, wheel sha256,
+  `aart --version` — was checked only coarsely here and `-receipt.md` appears to carry no version
+  line. Checking that properly means reading five headers by hand rather than counting matches, and
+  it is the right size for the next package.
+
+### 2026-08-16 — overnight residue run, the five run headers read against the pinning rule
+
+Branch `docs/audit-run-headers`, cut from `main`, carrying the previous branch's record. The
+previous package left this open with a guess; this reads all five headers by hand. Read-only, no
+code changed. The rule is `DESIGN-live-acceptance-v1.md` §3 — the executable is *pinned to one commit
+for the whole run* — plus the four fields the later runs converged on.
+
+| Document | Tag or commit | Wheel name and size | Wheel sha256 | `aart --version` |
+|---|---|---|---|---|
+| `PROGRESS-live-acceptance.md` | commit | yes, 636 399 bytes | **absent** | yes |
+| `PROGRESS-live-acceptance-v2.md` | tag and commit | yes, 473 423 bytes | **`a2edb0dc…4f47e`** | yes |
+| `PROGRESS-live-acceptance-v3.md` | tag and commit | yes, 502 919 bytes | full 64 characters | yes |
+| `PROGRESS-live-acceptance-setup-build.md` | commit | yes, 514 997 bytes | full 64 characters | yes |
+| `PROGRESS-live-acceptance-receipt.md` | **none** | name only, **no size** | **none** | **none** |
+
+- **`LAF-103`: the document that claims the most about its executable records the least.**
+  `-receipt.md` opens *No patched executable … Everything below runs the wheel built from the
+  committed tree* — a criterion the readable-receipt design raised to a requirement after `LAF-51`
+  forced a patch in the previous run. Its header is titled `## Run root`, its executable row is the
+  bare filename `agent_artifacts-2.6.0-py3-none-any.whl`, and `commit`, `sha256` and `aart --version`
+  appear nowhere in it. `2.6.0` on `main` builds reproducibly — `fcdf95d9…`, 542 151 bytes, measured
+  twice tonight — so the claim is almost certainly true. It is simply not checkable from the record,
+  which is the only thing a run document exists to make possible.
+- **`-v2.md`'s digest is present and useless.** `a2edb0dc…4f47e` is 13 of 64 characters. Elision is
+  right in prose, where a digest is an identifier the reader recognises; in the row that pins the
+  executable it is the whole value, and 13 characters match no file.
+- **`-v1.md` predates the field, which is a different thing from dropping it.** It names a commit and
+  a wheel built locally from it, so the executable is pinned by construction; the digest column only
+  became meaningful once runs started downloading release assets, which is `-v2.md` onward.
+- **Same cause as `LAF-102`.** The receipt walk was written as a check of one design's numbered
+  acceptance criteria, cites `DESIGN-readable-receipt.md`, and never claims to be governed by
+  `DESIGN-live-acceptance-v1.md` — so it inherited neither the scenario ids nor the run header. Two
+  findings, one root: the fourth and fifth runs are live-acceptance runs by practice and not by
+  document.
+- **Nothing repaired**, per the brief: the headers are the record of runs that happened, and adding a
+  digest to `-receipt.md` now would be writing down a number that was never observed.
+- **What is left.** Every register row, the register's own shape, the scenario map, the append-only
+  rule and now the run headers have each been checked once. The remaining unchecked claim of the same
+  kind is the stream: `residue-stream-2026-08-15.md` says where each finding came from, `DOC008`
+  checks its rows reach the register, and nothing checks the reverse — that a register row sourced
+  from a stream is actually in one. That is the next package.
+
+### 2026-08-16 — overnight residue run, the register read against the stream
+
+Branch `docs/audit-register-vs-stream`, cut from `main`, carrying the previous branch's record.
+`DOC008` checks that every stream row reaches the register; this reads the other direction. Nothing
+changed but the register row and this file.
+
+- **The direction `DOC008` enforces holds.** All 30 ids in the stream's tables have a row here. 54
+  rows, 30 of them from the stream, 24 not.
+- **`LAF-104`: the *Scope* paragraph is two sizes and one origin out of date.** It says the register
+  was seeded from *the twenty-eight items* of the stream, and the stream carries 30. The stream's own
+  *Twenty-eight deferred items* was written in `2e32975`, `LAF-63` was appended in `70a737a` and
+  `LAF-64` in `3b04d5f`, and the register was created in `3ff834e` — one commit after both — copying
+  a count that was already wrong. Nothing is misplaced by it: membership defines the boundary, not
+  the number. The origins matter more. *Seeded from the stream, plus what implementing the response
+  found* names two; of the 24 non-stream rows, 11 are the `2.6.0` work and **13 are from auditing the
+  response rather than implementing it** — every `re-checking`, `re-reading` and `auditing` source
+  filed tonight.
+- **And the same measurement found this run's own gap.** Fifteen finding ids — `LAF-76` through
+  `LAF-90` — appear in this file and in no row of the register. They were filed in the first half of
+  the night, described in their iterations' entries, and listed together in the *New findings*
+  paragraph above; the register never received them. `LAF-91` onward all have rows, so the
+  discipline started midway. This is `LAF-101`'s shape — findings living in a run-log sentence
+  instead of the table whose first line is *the single place that says what is open* — with the
+  difference that this run wrote it, tonight, against a brief that says new problems go into the
+  register as new rows.
+- **Not fixed here, deliberately.** The brief says not to widen the package you are on, and fifteen
+  rows written carelessly at the end of an iteration would be worse than fifteen rows written as
+  their own. Each has an entry above to source them from.
+- **What is left.** Write those fifteen rows, `open`, each with where it was found — that is the next
+  package, and it is the one that makes the register true for the morning. `LAF-90` and `LAF-85` are
+  the two the run log flags as worth reading first.
+
+### 2026-08-16 — overnight residue run, the fifteen missing rows written
+
+Branch `docs/register-the-missing-fifteen`, cut from `main`, carrying the previous branch's record.
+The previous package found `LAF-76`..`LAF-90` living only in prose. This writes them into the
+register, `open`, each naming the branch it was found on. Nothing was re-measured and nothing was
+repaired: each row says what the iteration that filed it recorded, and where.
+
+- **Where they were.** Eight of the fifteen — `LAF-76`..`LAF-83` — were named nowhere in this file
+  except the *New findings* list. Their descriptions existed only in the commit messages of the
+  branches that filed them (`87b7fbb`, `5f58aa6`, `6fcc14b`, `e598c58`, `e5af3f8`), which are
+  unmerged, so on `main` those eight findings were an id and nothing else. The other seven had a
+  sentence each in a run-log entry.
+- **Two of the fifteen had already been filed a second time.** This is the cost of the gap, and it
+  is measured rather than asserted:
+
+| Filed as | From | Filed again as | From | One defect |
+|---|---|---|---|---|
+| `LAF-84` | iteration 5, the `LAF-73` walk | `LAF-91` | iteration 16, re-checking `LAF-53` | a completed undo reports itself `skipped` |
+| `LAF-82` | iteration 4, implementing `LAF-69` | `LAF-100` | iteration 28, auditing the register | the register's claim that an unknown finding fails the gate is unimplemented |
+
+- **Both pairs are left standing, both `open`, cross-linked.** The later row carries the fuller
+  evidence in each case; which id retires is a maintainer's call, not a measurement, and the same
+  reasoning that left `LAF-62`'s disposition alone applies here.
+- **The run log's own claim was false and now says so.** The *New findings* paragraph ended *Every
+  one has a register row saying where it came from*. That was true of `LAF-91` onward and untrue of
+  the fifteen above it for the whole night. The sentence is corrected in place rather than deleted,
+  because the point is that a summary line asserted a property nothing checked.
+- **What is left.** Nothing in `docs_check` would have caught this: `DOC008` reads stream tables, and
+  `PROGRESS.md` is not a checked document. A rule that fails when `PROGRESS.md` names a finding with
+  no register row is the obvious answer and is a code change, so it belongs to a maintainer's
+  package, not to a re-check iteration. The severities assigned tonight are first readings from the
+  filing iteration's own words; `LAF-85` and `LAF-90` are the two that deserve a second opinion.
+
+### 2026-08-16 — overnight residue run, the new rows re-checked against the code
+
+Branch `docs/recheck-the-fifteen`, cut from `main`, carrying the previous branch's record. The
+fifteen rows written last package were transcribed from other iterations' words, not measured. Five
+of them are readable in the code on `main`; this reads them. All five hold, two are sharper than the
+row said, and two are contingent in a way the row did not state.
+
+| Row | Verdict on `main` |
+|---|---|
+| `LAF-76` | holds — `_custom_phase` takes `_minimal_env` at `setup_runtime.py:803`. **Contingent:** on `main` every adapter is equally narrow, so the gap opens only when `RS-12` merges |
+| `LAF-77` | holds — `_probe_env` allows `HOME`, `_minimal_env` does not, under a docstring saying they are the same. Today's difference is `HOME`; `DOCKER_CONFIG` is the one `RS-12` adds |
+| `LAF-78` | holds — `plan_artifact_scaffold` writes `artifact.json` and one payload file, and `ArtifactScaffoldOptions` has no setup field |
+| `LAF-79` | holds, **one worse**: three functions carry the two-type shape on `main`, not two |
+| `LAF-86` | holds — the remediation is shared by `install`, `uninstall` and `setup`, right for two of the three |
+
+- **`LAF-79` was written from a branch, and read as if from `main`.** `_curses_singleselect`,
+  `_curses_install_scope` and `_curses_install_mode` all take `wizard: bool = False` and all branch
+  their return type on it. The row says two because the iteration that filed it was standing on the
+  branch where the third is already fixed. Corrected in the row, with the counts for both states.
+- **Two rows describe a gap that does not exist yet.** `LAF-76` and `LAF-77` are both differences
+  between the docker adapters and everything else, and on `main` there is no difference to have —
+  `_docker_env` does not exist here. They are real findings about the state after `RS-12` merges, and
+  the rows now say so. This is `LAF-57`'s shape a second time: a finding whose truth depends on which
+  branch you are standing on, filed without naming the branch.
+- **No new findings.** Nothing was repaired; five rows gained the measurement they were written
+  without.
+- **What is left.** Ten of the fifteen are not readable from code alone: `LAF-80`, `LAF-81` need a
+  build, `LAF-84`, `LAF-88`, `LAF-89`, `LAF-90` need a walk, `LAF-82`, `LAF-83`, `LAF-87` are
+  document claims already measured under their duplicate ids, and `LAF-85` — the unidentified write
+  to the real data root — is the one that cannot be re-checked at all without catching it happening
+  again.
+
+### 2026-08-16 — overnight residue run, the two rows that needed a build
+
+Branch `docs/recheck-the-build-rows`, cut from `main`, carrying the previous branch's record.
+`LAF-80` and `LAF-81` are claims about what building does, so they were built rather than read. A
+detached worktree at `e3894fe`, removed afterwards; the repository itself was never dirtied.
+
+- **`LAF-81` holds, and the command's own help is what it breaks.** On the clean worktree
+  `wheel-digest` printed `sha256:8ed1226d…`. One comment line appended to
+  `agent_artifacts/redaction.py`, `HEAD` unmoved at `e3894fe`, and the same command printed
+  `sha256:19ca00a9…` — same wheel filename, exit `0`, no warning that anything was uncommitted.
+  `packaging._copy_project` copies the working tree from disk and `_commit.py` is then written from
+  `git rev-parse HEAD`, so the wheel carries the tag's stamp over the desk's bytes. `wheel-digest`'s
+  help reads *print the digest of the wheel this commit publishes*.
+- **`LAF-80` holds, with the document that omits it named.** `make wheel` leaves
+  ` M agent_artifacts/_commit.py`: the committed value is `COMMIT = "unknown"`, the build writes the
+  real sha and epoch. `wheel-reproducibility-v1.md` §*Verifying a published wheel* tells a verifier
+  to `git checkout v<version>` and `make wheel` and never mentions that their checkout is dirty
+  afterwards.
+- **The two do not compound, and that is worth knowing.** `_commit.py` is the one file `make wheel`
+  dirties, and `wheel-digest` overwrites it in its copy with identical content. So the dangerous
+  sequence is not *build then hash* — it is any other uncommitted edit, including one made by a tool.
+- **A pass, measured rather than assumed.** The documented verification — `make wheel` then
+  `shasum -a 256 dist/…whl` — produced
+  `8ed1226d5c2a8f3a5dd271903d95231abe2b82cca3521c5c208eac65171b72b5`, byte for byte what
+  `wheel-digest` printed on the same clean tree. The two routes agree, which is the half of `LAF-75`
+  that had not been checked since it was made `visible`.
+- **No new findings, nothing repaired.**
+- **What is left.** Of the fifteen, `LAF-84`, `LAF-88`, `LAF-89` and `LAF-90` need a walk against a
+  built wheel rather than a build; `LAF-90` reproduces without a terminal by its own filing note and
+  is the one worth walking first.
+
+### 2026-08-16 — overnight residue run, `LAF-90` walked against a real wheel
+
+Branch `docs/recheck-laf90-live`, cut from `main`, carrying the previous branch's record. The most
+serious finding of the night was filed from a headless reproduction of the wizard's question loop.
+This walks the whole path on a real executable instead.
+
+**Run header.** Pre-release, **locally built** wheel — no release asset, no patched executable.
+
+| Field | Value |
+|---|---|
+| AART commit | `e3894fe` (`main`, detached worktree, removed afterwards) |
+| Wheel | `agent_artifacts-2.6.0-py3-none-any.whl` (542 151 bytes), built by `scripts/build_wheel.py` |
+| Wheel sha256 | `fcdf95d94b8150c82570dccca154dda536ec3cac8e7c25b3e215dba124bcb174` |
+| `aart --version` | `agent-artifacts 2.6.0` |
+| Test venv | `$LAB90/venv` — `--no-deps`, only `agent-artifacts`, `pip`, `setuptools` |
+| Sandbox `HOME` | `$LAB90/home`; the real `~` was neither read nor written |
+| Scenarios | `LA-0-11`, `LA-0-12`, stressor `LAS-62` — appended to the map, nothing edited |
+
+- **`LA-0-11` fails, which means `LAF-90` reproduces.** `registry init --minimum-version 1.0.0
+  --maximum-version 2.0.0 --yes` — the two literals `tui.py:2793` and `:2796` offer at the `INIT`
+  prompts — exits `0`, writes `requires_aart {min_inclusive: 1.0.0, max_exclusive: 2.0.0}`, and ends
+  by advising four next commands. The first one it advises, `registry validate`, exits `1`:
+  `registry-maintenance-invalid`, *registry workspace is incompatible with this AART version*, with
+  `"remediation": []`. The tool writes a registry, tells the operator to validate it, and refuses.
+- **`LA-0-12` passes, and it is what makes this a defect rather than a policy.** `registry init`
+  with no version flags takes the **flag** defaults — `2.6.0` and `3.0.0`, printed in `init --help` —
+  and `registry validate` on that registry exits `0`. Two default sets ship in one product; the one
+  an operator reaches by pressing return is the stale one.
+- **Severity confirmed as `high`, and the reachability is the reason.** Nothing here needs a rare
+  state: a first-time maintainer accepting the tool's own suggestions gets a workspace the tool
+  cannot read, and the refusal carries no remediation to get out of it.
+- **The empty `remediation` is `RS-09`'s shape landing on a state the tool itself created.** `RS-09`
+  is `open` on `main` and its fix is on its own branch; this walk is one more argument for it, not a
+  new finding.
+- **No new findings, nothing repaired.** The lab was removed and the repository was never dirtied.
+- **What is left.** `LAF-88` and `LAF-89` — the emptied directory and the order-dependent
+  reclamation — are the next walk, and they need an install and two uninstalls rather than a
+  registry.
+
+### 2026-08-16 — overnight residue run, `LAF-88` and `LAF-89` re-walked
+
+Branch `docs/recheck-laf88-89`, cut from `main`, carrying the previous branch's record. Both
+findings are about what `uninstall` leaves behind **after** the `LAF-47` fix, so neither is
+measurable on `main` — the fix is unmerged. The walk therefore runs a wheel built from
+`fix/uninstall-removes-the-file-it-made`, and says so.
+
+| Field | Value |
+|---|---|
+| AART commit | `76a7f21` (`fix/uninstall-removes-the-file-it-made`, detached worktree, removed afterwards) |
+| Wheel | `agent_artifacts-2.6.0-py3-none-any.whl` (542 648 bytes), **built from the branch** — no release carries this fix |
+| Wheel sha256 | `73426b33ecce6d1e094d39f2689419afbfc90b5516d9c7942d5da14d5a146fd7` |
+| `aart --version` | `agent-artifacts 2.6.0` |
+| Sandbox `HOME` | `$LAB88/home`; the real `~` neither read nor written |
+| Registry | `$LAB88/reg`, source id `lab`, a real git checkout, `hook/guard`, `mcp/atlassian`, `mcp/jira` scaffolded and built by the same wheel |
+| Scenarios | `LA-U-31` and `LA-U-35` **re-executed**, not re-numbered |
+
+- **The recorded run header reproduces byte for byte.** `PROGRESS-live-acceptance-v11.md` records
+  542 648 bytes and `73426b33…` for this branch; building it again today produced exactly that. It
+  is the first time a run header in this repository has been re-derived rather than trusted, and it
+  is the other half of the `LAF-103` audit: the discipline is worth keeping because when the fields
+  are there, they work.
+- **`LAF-88` holds, with one detail the row did not have.** Install `hook/guard`, uninstall it:
+  `git status --porcelain` prints nothing, and `ls -la .claude` shows a directory holding only `.`
+  and `..`. `.claude/hooks/` and `settings.json` are both gone — the deeper directory *is*
+  reclaimed. What survives is the one level the artifact did not itself fill.
+- **`LAF-89` holds exactly as written.** Two `mcp` artifacts installed in separate commands.
+  Uninstalled in install order, `.mcp.json` survives as `{"mcpServers":{}}` and `git status` reports
+  `?? .mcp.json`. The same walk in a fresh repository, uninstalled in reverse order, removes the file
+  and leaves the tree clean.
+- **A severity was corrected, not invented.** This register carried `LAF-89` as `medium`; the walk
+  that filed it records `low`. The row was transcribed from a run-log sentence rather than from the
+  findings table, and now matches its source.
+- **The scenario ids were re-executed, not re-numbered** — `LA-U-31` and `LA-U-35`, exactly what the
+  scenario map says a later run should do. That rule works whenever the ids exist, which is the
+  narrow half of `LAF-102` that is not broken.
+- **One note for the next lab.** The object store under the sandbox `HOME` is written read-only, so
+  a plain `rm -rf` on a lab directory fails with *Permission denied*; `chmod -R u+w` first. Expected
+  for a content-addressed store, not a finding, and worth knowing before a cleanup looks like a leak.
+- **No new findings, nothing repaired. The lab was removed and the repository was never dirtied.**
+
+### 2026-08-16 — overnight residue run, `LAF-85` read from the disk it names
+
+Branch `docs/recheck-laf85-data-root`, cut from `main`, carrying the previous branch's record.
+`LAF-85` is the finding the run log flags as the one to read first: something wrote to the
+operator's **real** data root at `23:34`–`23:36` while every scenario ran under a sandbox `HOME`.
+It cannot be re-checked by catching it again, but the disk it happened on can be read.
+
+**Read-only, and stated plainly:** `ls`, `find`, `stat` and one `json.load`. Nothing under
+`~/Library/Application Support/agent-artifacts` was written, moved or removed by this package.
+
+- **The episode removed content; it did not deposit any.** 43 of the 68 object shard directories
+  carry mtime `2026-08-15 23:34`. A directory's mtime moves when an entry is created *or* removed —
+  and **no object entry in the store has a birth time later than `20:12`**. Nothing was created at
+  `23:34`, so what happened there was a removal.
+- **One file changed, and it is the reference index.** `state/object-references.json`, born `23:36`,
+  now carrying 34 references. AART writes atomically, so a rewrite produces a new birth time; that
+  timestamp does not distinguish a first write from a later one, and it is not read as evidence of
+  one.
+- **A lock was taken and released.** `locks/` carries `23:36` and is empty. `state/setup/` is
+  untouched since `2026-08-11 19:35`, so nothing wrote a setup record.
+- **It has not recurred.** Zero entries anywhere under the root are newer than `2026-08-16 00:00` —
+  across a night of continuous work, every command of it under a sandbox `HOME`. Whatever ran, ran
+  once.
+- **What this changes about the finding.** *Something wrote to your real data root* becomes: one
+  episode, two minutes long, that swept objects out of 43 shards and rewrote the reference index,
+  did not touch setup state or configuration, and has not happened again in the twelve hours since.
+  The shape is a garbage collection or reference reconcile, not an install. **The writer is still
+  unidentified**, which is the part of the row that stands unchanged.
+- **No new findings, nothing repaired.**
+- **What is left.** Of the fifteen, only `LAF-84` remains un-re-checked, and it is the duplicate of
+  `LAF-91`, whose row already carries a live measurement. That closes the re-check of the fifteen.
+
+### 2026-08-16 — overnight residue run, which code could have written at `23:34`
+
+Branch `docs/laf85-which-code-sweeps`, cut from `main`, carrying the previous branch's record. The
+previous package read the disk; this reads the code that could have produced what is on it.
+Read-only, no code changed.
+
+- **The previous entry's reading was too strong, and this corrects it.** It ended *the shape is a
+  garbage collection or reference reconcile, not an install*. An install followed by an uninstall
+  produces the identical trace: entries created and then removed move a shard's mtime and leave no
+  surviving birth, and `write_references` is wired into `lifecycle/io.py`, `installation/io.py` and
+  `setup_engine/io.py`, so an ordinary uninstall rewrites the index under exactly the lock that was
+  taken. What stands is the measurement — 43 shards touched, nothing new survives, one file written,
+  no setup record, no recurrence. What does not stand is calling it a sweep.
+- **And the mechanism it named turns out to be the one nobody can run — `LAF-105`.**
+  `application/store.py:110` implements `collect_garbage` properly: take the store lease, read the
+  references, inventory the objects, delete every digest no reference names. **Nothing in the package
+  calls it.** It is exported from `agent_artifacts.application`, `GcRequest` from
+  `agent_artifacts.store`, and the only callers anywhere are two tests, both on temporary roots. None
+  of the CLI's 38 subcommands reaches it.
+- **So the durable store only grows.** On this machine's real data root, read-only: 79 object entries
+  against 34 reference entries. Nothing an operator can type reclaims the difference.
+- **That makes install-then-uninstall the likelier reading of `23:34`** — a walk that forgot its
+  sandbox `HOME` and then cleaned up after itself — rather than a collector that has no door.
+  Likelier, not established: the writer is still unidentified, and that half of `LAF-85` is
+  unchanged.
+- **`LAF-105` is not `RS-05`.** That row is about a module nothing imports. This one is finished,
+  tested and correct code with no way in — the door is missing, not the room.
+- **What is left.** The natural next question is whether anything else in `application/` is
+  unreachable the same way. That is one grep against the CLI's dispatch table and the right size for
+  a package.
+
+### 2026-08-16 — overnight residue run, the rest of the application layer measured
+
+Branch `docs/unreachable-application-surface`, cut from `main`, carrying the previous branch's
+record. `LAF-105` found one unreachable entry point; this asks whether it is alone. Every public
+function in `agent_artifacts/application/` was counted for callers outside its own module,
+`application/__init__.py` and `tests/`. Read-only, no code changed.
+
+**Twenty have a caller. Eight have none.**
+
+| Function | Module | Reading |
+|---|---|---|
+| `collect_garbage` | `store.py` | `LAF-105` — the store cannot be reclaimed |
+| `object_status` | `store.py` | the projection of verified / absent / corrupt, unwired |
+| `compile_sources` | `compiler.py` | with it `CompilerPorts`, `CompilerSteps`, and every `CompilerRequest` — built nowhere outside the compiler package |
+| `prepare_registry_format` | `registry_commands.py` | its `finalize_` counterpart *is* called |
+| `prepare_native_promotion` | `registry_maintenance.py` | same shape — the finalize half is wired, the prepare half is not |
+| `save_user_configuration` | `configuration.py` | the unchecked write beside a checked one that is used |
+| `save_user_configuration_for_source_management` | `configuration.py` | superseded, and its replacement's docstring says so — *the CFG02 replacement for* |
+| `recover_user_configuration` | `configuration.py` | the recovery path, unwired |
+
+- **Two of the eight are honest supersession.** `save_user_configuration_checked` names what it
+  replaced. Left standing is a defensible choice; it is the other six that are simply unwired.
+- **`compile_sources` is the one to look at.** It is the functional compiler orchestration, and it
+  is called from fifteen places in `tests/compiler_pipeline_test.py` and from nowhere else in the
+  repository.
+- **The cost is what green means.** All eight are covered by tests, so the suite reports these paths
+  as working. It cannot report that nothing runs them. A coverage number counts lines executed by
+  the suite, not lines an operator can reach, and eight entry points is where that difference stops
+  being theoretical.
+- **Recorded as `LAF-106`, `open`.** Nothing repaired: deleting or wiring any of these is a design
+  decision, and two of them are deliberate.
+- **What is left.** The same measurement one layer out — `agent_artifacts/io/` and
+  `agent_artifacts/store/` — would say whether this is an `application/` habit or a package-wide
+  one. `RS-05` is already one instance in `io/`.
+
+### 2026-08-16 — overnight residue run, the same measurement one layer out
+
+Branch `docs/unreachable-io-store`, cut from `main`, carrying the previous branch's record.
+Read-only, no code changed.
+
+- **The method needed fixing first, and it changed nothing.** The previous package counted callers
+  *outside the defining module*, which marks a function dead when its only caller sits beside it —
+  `io/config_cas.py`'s `write_configuration_checked` is exactly that, called by
+  `checked_config_writer` two functions below. This package rebuilt the measurement as call-graph
+  reachability: reached if a reachable function calls it, or any module refers to it outside an
+  import. **All eight of `LAF-106`'s survive the stricter rule**, and the note in that row now says
+  so.
+- **`agent_artifacts/store/` is clean** — 5 of 5 reachable. Worth recording as a pass.
+- **`agent_artifacts/io/` has 11, and they cluster**, which is `LAF-107`:
+
+| Cluster | Functions | Reading |
+|---|---|---|
+| `io/security_analyzers.py` | `run_analyzer_process`, `write_input`, `read_stream`, `stop_process` | only `resolve_executable` is imported from this module, by `commands/security.py`. The process runner beside it is unwired — the mechanism half of `LAF-15`, which is that no command feeds `security scan` its input |
+| `io/fs.py` | `copy_tree`, `read_json`, `remove_path`, `symlink_tree` | utilities with tests and no caller. **`symlink_tree` is not a missing feature** — `--install-mode symlink` is implemented in `installation/application.py` with its own handling, so this is a superseded helper |
+| `io/cache.py` | `cache_dir`, `ensure_snapshot` | `RS-05`'s dead module, counted here for completeness |
+| `io/object_store.py` | `materialize_compiler_object` | the adapter side of the compiler orchestration `LAF-106` records as unreachable — the same hole from the other end |
+
+- **Severity `low`,** against `LAF-106`'s `medium`: helpers and adapters, not entry points a design
+  promised. The one that carries weight is the analyzer cluster, because it is a second view of a
+  finding that already exists.
+- **Nothing repaired, nothing new beyond the row.**
+- **What is left.** Three packages measured, one clean. `agent_artifacts/protocol/`,
+  `security/` and `registry_commands/` are the remaining large ones, and the same script covers them
+  — but the interesting question has been answered: the habit is real, it is concentrated in
+  adapters and orchestration, and `store/` shows it is not universal.
+
+### 2026-08-16 — overnight residue run, the whole package measured at once
+
+Branch `docs/unreachable-whole-package`, cut from `main`, carrying the previous branch's record.
+Read-only, no code changed. The script was rewritten from scratch rather than extended, so the
+overlap with the last two packages is a replication rather than a repeat.
+
+**The rule, stated so it can be argued with.** A public top-level function is *reached* when its
+bare name is reachable from a seed. Seeds are every name a module refers to at module scope —
+dispatch tables, class bodies, decorators, argument defaults — plus `main`, for the console script
+`agent_artifacts.cli:main`. A reachable function makes every name in its body reachable. The rule is
+name-based, so it over-approximates: any same-named function anywhere in the package rescues a dead
+one. Every number below is therefore a floor.
+
+**103 of 482 public top-level functions are unreachable.** A fifth of the surface.
+
+| Package | Unreachable | Reading |
+|---|---|---|
+| `security/` | 15 of 39 | `evaluate_security_policy` has no caller and `summarize_bundle_security` is called only from inside it, so the policy chain is dead top to bottom, and the analyzer protocol goes with it. `commands/security.py` imports attestations, baseline, cache, projections — none of these |
+| `domain/` + `fp.py` | 13 of 19, 10 of 11 | two functional cores, both dead: `LAF-109` |
+| `compiler/` | 9 of 12 | the far side of `LAF-106`'s `compile_sources` |
+| `application/` | 8 of 27 | **the identical eight names `LAF-106` lists**, from a script written independently |
+| `io/` | 8 of 38 | `LAF-107`, corrected — see below |
+| `commands/`, `configuration/`, `consumer/`, `installation/`, `reporting/`, `sources/`, `store/` | 0 | the wiring is real where operators reach it |
+
+- **The security cluster is the one to read.** It is `LAF-15`'s mechanism generalised. Last
+  iteration found the adapter unwired; this one finds the policy evaluator and the analyzer protocol
+  unwired as well. The half of the security package that would *run* an analyzer and *judge* its
+  output has no path from any command.
+- **Five root modules have no importer anywhere in the package**: `compatibility.py`, `fp.py`,
+  `hashing.py`, `policy.py`, `registry_publication.py`. All five ship — read out of the wheel built
+  at this commit, `agent_artifacts-2.6.0-py3-none-any.whl`, 542 151 bytes, sha256 `fcdf95d9…`. Four
+  have a test file and no caller. `hashing.py` has neither, and is a 22-line duplicate of
+  `protocol/hashing.py`.
+- **`registry_publication.py` is not a new observation.** `LAF-03` recorded it on `2026-08-13`: the
+  module holding the SPDX allowlist enforces nothing, because nothing imports it. It is outside the
+  register's stated scope, so the register's own rule applies — an older id gets a row the first
+  time it is referred to again — and `LAF-03` now has one, `open`, re-measured today.
+- **`LAF-107` is corrected: `io/` is 8, not 11.** `write_input`, `read_stream` and `stop_process`
+  are nested helpers *inside* `run_analyzer_process`, and the previous script did not tell a nested
+  `def` from a top-level one. The reading is unchanged — that module still has exactly one unwired
+  public entry point — but the arithmetic was wrong and the row says so.
+- **New findings: `LAF-108`** (medium, the whole-package measurement) and **`LAF-109`** (low, the
+  duplicated cores). Nothing repaired.
+- **What deletion would cost.** `LAF-106` found two of its eight were honest supersession, correctly
+  left in place. So 103 is a list to read, not a list to delete, and no line of it should be removed
+  on this measurement alone.
+
+### 2026-08-16 — overnight residue run, the dead surface read against the shipped commands
+
+Branch `docs/designs-vs-unreachable`, cut from `main`, carrying the previous branch's record. No code
+changed. The measurement of the last three packages says a fifth of the package cannot be reached;
+this one asks the question that follows — **what does the shipped CLI say about the parts that
+cannot be reached?** Walked on the wheel built at this commit, `agent_artifacts-2.6.0-py3-none-any.whl`,
+542 151 bytes, sha256 `fcdf95d9…`, installed with `--no-deps` into a throwaway venv, sandbox `HOME`.
+
+- **AART lists analyzers it cannot run.** `aart security analyzers` prints `ruff: available` and
+  four *not installed*. `aart security suites` describes three suites, two of which promise to add
+  discovered providers. `security scan --help` has no flag that selects either. The whole execution
+  half — `run_analyzer_process`, `run_tool_adapter`, `run_protocol_analyzer`, the handshake and scan
+  encoders, `evaluate_security_policy` — is unreachable, while the discovery half is wired, which is
+  exactly why the listing works. **`LAF-110`**, medium, `LA-R-42`, `LAS-63`. It is not `LAF-15`:
+  that one is that no command emits the envelope `scan` reads; this one is that no command runs a
+  provider even when the envelope is in hand.
+- **Two of `LAF-106`'s eight are bypassed wrappers, not missing doors.** `aart registry format`
+  works — walked live in a throwaway Git checkout, plan printed, `unchanged` for both files, exit
+  `0`. It reaches `plan_registry_format` **directly** from `curation/runtime.py:856`, past the
+  application wrapper. `promote-native` does the same at `:894`. The same file uses the application
+  wrapper `prepare_registry_init` at `:417`. One runtime, two layers, three neighbouring commands:
+  **`LAF-111`**, low, `LA-R-43`, `LAS-64`.
+- **So the eight now read: three missing doors, two bypassed wrappers, three superseded writers.**
+  The three missing ones are the interesting ones, and the design already describes them —
+  `SPEC-aart-1.0.md` §20 lists `aart store status|verify|gc` and `aart compile` as design targets,
+  and §16 specifies `store gc` as *dry-run by default, under a global lock*. `application/store.py`
+  implements precisely that, `GcRequest.execute` defaulting to `False`. **The room is built to
+  specification and the door was never cut.** That is a better description of `LAF-105` than *dead
+  code*, and it argues against deletion as firmly as anything found tonight.
+- **`LAF-15` gets its register row**, on the same rule that gave `LAF-03` one last iteration: my own
+  two rows referred to it, so the register owed it a row. Re-measured on the shipped surface — the
+  word *envelope* occurs twice in the CLI, in the help that consumes one and the error that rejects
+  one, and no command writes one. Still true.
+- **Four ids are still named in this register with no row: `LAF-28`, `LAF-51`, `LAF-56`, `LAF-60`.**
+  `LAF-28` is quoted as an example of prose closure, not referred to as a finding. The other three
+  are `LAF-101`'s own subject — the register omits exactly the three rows that were resolved — so
+  writing them would be repairing `LAF-101` from inside a package that is not `LAF-101`'s. Left,
+  deliberately, and recorded here so the morning knows it was a decision.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, every command run cold
+
+Branch `docs/cold-command-surface`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel as the last package — `agent_artifacts-2.6.0-py3-none-any.whl`, 542 151 bytes,
+sha256 `fcdf95d9…`, installed `--no-deps` into a throwaway venv. Every leaf of `build_parser()` run
+with **no arguments**, in an empty directory, under a sandbox `HOME` (`LA-0-13`, `LAS-65`).
+
+**The pass first, because it is the headline. 38 of 38 leaves refuse or answer cleanly. Zero
+tracebacks.** The distribution:
+
+| Exit | Count | What they are |
+|---|---|---|
+| `2` | 20 | argparse rejecting missing required arguments, before any product code runs |
+| `1` | 13 | typed refusals: six `marketplace` (all with `remediation:`), seven `registry` (none with it) |
+| `0` | 5 | `source list`, `source sync`, `source health`, `security analyzers`, `security suites` — queries that answer honestly with nothing configured |
+
+- **`RS-09` reproduces on `main` from the other side.** Its fix is on a branch and not merged, so
+  this walk sees the old shape: seven `registry` refusals with no remediation, beside six
+  `marketplace` refusals that all carry one. Nothing new — a second, independent confirmation that
+  the finding was stated correctly.
+- **The `registry` group refuses in two renderings** — `validate`/`audit`/`test` with a
+  `registry <verb>: failed` header and an indented error, `format`/`lock`/`build`/`diff` with a bare
+  `error:` line that never names the command. **`LAF-112`**, low.
+- **`SPEC-aart-1.0.md` §20 is wrong in both directions.** It calls the implemented slice
+  `source add|list` and `marketplace list`, when 38 leaves under 6 groups ship; and it speaks of the
+  *retained legacy `list/install/update/setup` compatibility commands*, none of which exists — each
+  prints the top-level usage and refuses. **`LAF-113`**, medium. It is a checked current document,
+  so this is not a dated record disagreeing with today; it is a specification describing a product
+  that is not the one in the wheel.
+- **Two counts other rows rest on are now exact.** `LAF-105` says *38 subcommands*: confirmed by
+  enumeration. `LA-0-02` recorded *15 top-level / 49 leaves* at v1; today it is `6 / 38`, which is
+  consolidation into groups rather than lost function — every v1 leaf found so far has an address
+  under one of the six.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, the machine channel walked cold
+
+Branch `docs/json-contract-cold`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel, same sandbox: every leaf that accepts `--json` run with it, in an empty
+directory, under a sandbox `HOME` (`LA-0-14`, `LAS-66`). Yesterday's walk read what an operator
+sees; this one reads what a script sees.
+
+**The machine channel is in better shape than the prose. 34 of the 38 leaves accept `--json`, and
+every one of them returns valid JSON on stdout** — `schema_version`, `ok`, `operation`, and typed
+diagnostics carrying a code, a severity, a message and a remediation list. Two examples from the
+walk, both refusals:
+
+| Command | Code | Remediation |
+|---|---|---|
+| `marketplace list --json` | `no-source-configured` | *run `aart source add --help` …* |
+| `registry format --json` | `registry-workspace-invalid` | `[]` |
+
+- **`RS-09` is visible structurally.** The registry diagnostics carry `remediation: []` — the field
+  is there and empty, which is exactly how the finding was written, seen now from the JSON side.
+- **`LAF-112` is a prose problem only.** The two registry renderings carry *different* codes —
+  `registry-command-invalid` for the workspace refusals, `registry-workspace-invalid` for the
+  checkout ones — so a machine consumer can distinguish what a human cannot grep. That note is now
+  in the row.
+- **The group written for machines is the one with no machine channel.** `reporting
+  validate-event`, `validate-issue` and `aggregate` have no `--json`, and neither does `upgrade`.
+  `aart reporting validate-event <invalid file>` prints one line — `usage report is invalid` — and
+  exits `1`. No code, no field, no pointer, no remediation. Its consumer is registry CI.
+  **`LAF-115`**, medium.
+- **Three of the SPEC's sixteen stable error codes are emitted nowhere.** `import-lossy`,
+  `import-stale` and `lock-stale` exist only inside `INITIAL_ERROR_CODES`; `no-source-configured`
+  has one emission site. That tuple has a single reference in the repository, in a test, so nothing
+  requires an emitted code to belong to it — and 124 distinct codes are constructed. Where the SPEC
+  offers `lock-stale`, the store emits `store-unavailable`. **`LAF-114`**, low.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, watching the disk while the commands run
+
+Branch `docs/who-writes-when-cold`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel and venv; a fresh sandbox `HOME` per run, and for the second half a
+`source-local` source built from the `RS-08` lab's two-artifact collection.
+
+**Part one, the cold pass. All 38 leaves run with no arguments write nothing at all** — zero files
+created under `HOME` and zero in the working directory, for every leaf, including the five that
+exit `0`. A refused command does not create the data root.
+
+**Part two is the one that matters.** Watching the object store across a review, an install and an
+uninstall (`LA-U-36`, `LA-U-37`):
+
+| Step | Objects | References | Shard mtimes | Birth times |
+|---|---|---|---|---|
+| after `source add` | 0 | absent | — | — |
+| `install` **without** `--yes` | **6 files, 2 objects** | absent | `13:04:05` | `13:04:05` |
+| `install --yes` | 6 | 1 | `13:04:26` | **still `13:04:05`** |
+| `uninstall --yes` | **6** | **0** | `13:04:28` | still `13:04:05` |
+
+- **The review that says it changes nothing writes to the durable store.** Its own help says
+  *Without `--yes` the command prints the reviewed plan and exits without changing anything*. It
+  exits `0` saying *Reviewed only*, and leaves two materialised objects behind with no reference
+  index. A refused install — `--profile nosuch --yes` — leaves the same deposit, so materialisation
+  happens before the profile is even validated. **`LAF-116`**, high, and it is the first `high` of
+  the night that is not about the security surface.
+- **`LAF-105`'s ratio now has a cause.** 79 objects against 34 references on the real root is what
+  reviews and refused installs leave behind, and `collect_garbage` — the sweep that would remove
+  them — has no command.
+- **`LAF-85`'s mechanism is reproduced, and its first reading is refuted by measurement.** An
+  install of already-present objects moved both shard directory mtimes *without giving any object a
+  new birth*, and the uninstall moved them again, rewrote the reference index with a new birth time
+  and zero references, and left `locks/` empty with a fresh mtime. That is the `23:34`–`23:36`
+  signature item for item. A moved shard mtime with no new birth does **not** mean something was
+  removed. The writer is still unnamed; the shape is no longer evidence of a sweep.
+- **Nothing repaired.** `LAF-116` is a code change with a design question inside it — whether a
+  review may fill the cache at all — and that is a decision, not a fix to make at 13:00 unattended.
+
+### 2026-08-16 — overnight residue run, how far `LAF-116` reaches
+
+Branch `docs/laf116-how-far`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel, fresh sandbox `HOME`, the same `source-local` collection.
+
+**Two things in last iteration's row were wrong, and the measurement says so.**
+
+| Command | Objects after |
+|---|---|
+| `source add` | 0 |
+| `marketplace list` | 0 |
+| **`marketplace status --profile claude`** | **2** |
+| `source sync` | 2 |
+| `install` without `--yes`, run three times | 2, 2, 2 |
+| `install` without `--yes`, a different coordinate from the same collection | 2 |
+
+- **The growth is not per invocation.** The store is content-addressed, so the same review three
+  times leaves the same two objects. It grows once per distinct object ever resolved and never
+  shrinks. The row said *grows by every review*; that is corrected.
+- **The review is not the earliest depositing path.** `marketplace status` — a query — deposits the
+  same two objects. `marketplace list` and `source sync` deposit nothing. The rule is: the first
+  command that resolves an artifact to its content materialises it, whatever it is called.
+- **Severity corrected `high` → `medium`** on that basis, and the reason is written into the row.
+  The false sentence in the help text stands, the unremovability stands, the unbounded part does
+  not.
+- **`source remove` does not remove the content: `LAF-117`, medium.** `source remove --alias lab
+  --yes` exits `0` saying *source removed; snapshot discarded*, and it is — `sources/` is empty,
+  `config.json` lists none, `marketplace list` refuses with *no source configured*. The two objects
+  and their six files remain, 24 KB, with no reference index, no snapshot naming them and no
+  command that can list them: `object_status` is one of `LAF-106`'s unreachable eight. *Removed*
+  means removed from the configuration, not from the disk, and nothing in the CLI shows the
+  difference.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, the managed block round trip
+
+Branch `docs/round-trip-residue`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel, fresh sandbox `HOME` per case, the `RS-08` lab's `memory/house` artifact, whose
+install effect is `managed-block` (`LA-U-39`, `LAS-70`).
+
+**This package found nothing new, and that is the result.** Four cases, all correct on `main`:
+
+| Case | Install | Uninstall |
+|---|---|---|
+| No instruction file | writes `CLAUDE.md`, 147 bytes | **removes the file and `.agent-artifacts/` entirely** |
+| An unowned `CLAUDE.md` present | **refuses**, `unowned or drifted content; use force`, nothing touched | — |
+| The same, with `--force` | prepends a delimited block, 45 → 193 bytes | **restores the operator's 45 bytes exactly**, file kept |
+| Forced, then the operator edits the file by hand | — | removes the block only; the original *and* the later hand-written section both survive |
+
+- **That is the behaviour the `LAF-47`/`RS-10` design note argued for**, and for this artifact kind
+  it is already true on `main`: remove the file AART made, never the file it did not.
+- **It is not `RS-10`'s case.** That one is the config merge — `.mcp.json` and
+  `.claude/settings.json` — which this fixture has no artifact for. Nothing here says anything about
+  whether `RS-10` reproduces; a different path was measured and it passed.
+- **`LAF-88` is wider than hooks and older than the branch it was found on.** Measured on a wheel
+  built from `main`: install a *skill*, uninstall it, and `~/.claude/` (user scope) or `.claude/`
+  (project scope) stays behind, empty, with the skill directory and payload gone. The row said
+  `settings.json` and a hook; the truth is every artifact whose destination sits under the harness
+  directory. Noted in the row, no new id — this register has already paid once for filing the same
+  defect twice.
+- **`.agent-artifacts/manifest.json` and `state.lock` are removed cleanly** when the last artifact
+  in a project goes.
+- **Nothing repaired, nothing new filed.**
+
+### 2026-08-16 — overnight residue run, the config merge round trip
+
+Branch `docs/mcp-merge-round-trip`, cut from `main`, carrying the previous branch's record. No code
+changed. Same wheel built from `main`, fresh sandbox `HOME` and a fresh repository per case, two
+`mcp` artifacts authored into the `RS-08` lab source — effect `merge-json`, destination `.mcp.json`
+(`LA-U-40`, `LAS-71`). This is the case row 47 said it had not measured.
+
+| Case | After install | After uninstall |
+|---|---|---|
+| One artifact, project scope | `.mcp.json` holds the `alpha` server; `.agent-artifacts/{manifest.json,state.lock}` | **`.mcp.json` stays as `{"mcpServers":{}}`**; everything else removed |
+| Two artifacts, uninstalled in install order | both servers in one file | `{"mcpServers":{}}`, nothing else |
+| Two artifacts, uninstalled in reverse order | both servers in one file | `{"mcpServers":{}}`, nothing else — **the same** |
+| The operator wrote `.mcp.json` first | install **succeeds first try, exit `0`**; file holds `alpha` *and* `mine` | `{"mcpServers":{"mine":{"command":"my-server"}}}` — the operator's server intact |
+
+- **`RS-10` reproduces on `main` exactly as the row states.** The emptied file is left behind. Its
+  fix lives on `fix/uninstall-removes-the-file-it-made` and is unmerged, which is the expected shape
+  for this run, not a regression.
+- **`LAF-89` is narrower than it reads.** On `main` neither uninstall order reclaims the file, so
+  the asymmetry that row describes is introduced *by the fix*: the branch removes the file in one
+  order and leaves `main`'s behaviour in the other. The remainder of an improvement, not a defect in
+  it. Written into the row.
+- **New: the ownership gate is not the same for both effects — `LAF-118`, low.** The same command
+  refuses a `memory` artifact when `CLAUDE.md` already exists and is not AART's (*unowned or drifted
+  content; use force*), and installs an `mcp` artifact into an operator-written `.mcp.json` without
+  asking. Both round trips are safe, and the difference is arguable — a merge owns a key, a managed
+  block owns a file. What is not arguable is that no document says which effects gate and which do
+  not, so an operator learns it by being warned once and not the next time.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, the morning's merge simulated
+
+Branch `docs/merge-simulation`, cut from `main`, carrying the previous branch's record. No code
+changed, and **no branch was touched**: every merge below was computed with `git merge-tree
+--write-tree` and chained with `git commit-tree`, which writes objects and no references.
+
+The register's `closed` rows are exhausted and its `visible`/`deferred` rows were re-checked in rows
+27 and 44, so this package re-checks a claim of my own instead — the merge instruction at the top of
+the overnight section, which is the sentence Michal acts on first.
+
+**The pass, and it is the larger half.** Every fix branch keeps the per-iteration rule. For all
+fifteen rows the run closed — `RS-01`, `RS-02`, `RS-04`, `RS-07`, `RS-08`, `RS-09`, `RS-10`,
+`RS-12`, `LAF-45`, `LAF-47`, `LAF-49`, `LAF-64`, `LAF-69`, `LAF-73`, `LAF-75` — the row on that
+branch reads `closed` *and* carries an evidence column of 273 to 735 characters, against 1 to 277 on
+`main`. No branch flipped a disposition without writing what proves it.
+
+**The failure is mine, in this file.** *Take both sides* is wrong for the register:
+
+| Measured | Result |
+|---|---|
+| Fourteen fix branches merged into `main` in sequence | **13 conflict**; only the first is clean |
+| The register after resolving every conflict by taking both sides | **11 ids appear twice**, one row `open` and one `closed` |
+| Files that conflict | `PROGRESS.md` 13×, register 8×, scenario map 8×, `registry_commands/planning.py` **2×** |
+
+- **Eight of the fourteen merge the register with no conflict at all, and four of those eight still
+  duplicate a row** — `LAF-87`, `LAF-79`, `LAF-82`/`LAF-83`, `LAF-84`/`LAF-85`. A branch filed its
+  own new finding as a row; `docs/register-the-missing-fifteen` later wrote the same id from
+  `PROGRESS.md`; the two rows sit far apart, so Git merges them cleanly into a file that names the
+  same finding twice. **Nothing warns you** — `docs_check.py` does not read the register, which is
+  `LAF-100`'s subject, and duplicate ids are `LAF-101`'s, measured here from the merge direction.
+- **`LAF-119`, medium**, is the finding: resolving this run's branches the way this file told you to
+  produces a register that answers *is it fixed?* with both answers for eleven findings.
+- The paragraph is corrected in place with the per-row rule that does work. It is a current
+  document and its purpose is to be right in the morning; the dated documents are untouched.
+- **Nothing repaired** — no branch, no code, no resolution committed. The simulation left objects in
+  `.git` and no reference.
+
+### 2026-08-16 — overnight residue run, the two rows nothing had ever checked
+
+Branch `docs/recheck-c5-deferred`, cut from `main`, carrying the previous branch's record. No code
+changed. Live half against the same locally built `2.6.0` wheel in the throwaway venv, sandbox
+`HOME`, a real `git init` repository and a hand-built source tree (`LA-S-17`, `LA-S-18`, `LAS-72`,
+`LAS-73`).
+
+Every register row now carries a check except two: `LAF-43` and `RS-03`, the cluster-C5 pair, whose
+evidence column was a pointer to a design rather than a reproduction. Row 27 covered the other two
+non-`open` dispositions. These are the last.
+
+| Attempt | Result |
+|---|---|
+| `source add --kind source-git --location file:///…/repo` | exit `1`, *source URL must be a safe credential-free Git location* |
+| the same with a plain absolute path | exit `1`, same message |
+| `--kind registry-git` with `file://` | exit `1`, same message |
+| `source add --kind source-local` on a tree with one symlink | exit `1`, *local source symlinks are forbidden: artifacts/skill/demo/payload/alias.md* |
+
+- **`LAF-43` holds, and it is stricter than the row says.** The refusal lands in
+  `configuration/schema.py:201` — the config validator — *before* the transport check at
+  `sources/git.py:198` runs. And the switch that would allow it is dead: `allow_local_transport`
+  defaults `False`, all three `GitSnapshotRequest` construction sites in the package leave the
+  default, and `curation/runtime.py:241` passes `False` by hand. Only two test modules ever set it
+  `True`. Rehearsing a vendoring locally would take two changes, not one.
+- **`RS-03` holds.** One symlink anywhere aborts the whole acquisition; no flag relaxes it. The two
+  channels refuse it differently — the local reader names the path and the word *symlink*, the Git
+  reader accepts only file modes `100644`/`100755` and calls everything else *an unsafe entry*.
+  Because `LAF-43` blocks the Git channel locally, the vaguer of the two messages is the one no
+  operator can reach.
+- **No new findings.** C5's claim — *the tool's own refusals block rehearsing the tool* — is exactly
+  what the measurement shows, from both ends.
+- **Nothing repaired.**
+
+### 2026-08-16 — overnight residue run, the scenario map read across every branch
+
+Branch `docs/scenario-id-collision`, cut from `main`, carrying the previous branch's record. No code
+changed. Nothing was walked: this is a reading of `docs/testing/live-acceptance-scenarios.md` on all
+fifty branches at once, prompted by a simpler question — *do tonight's scenario ids appear in any run
+document?* On the chain they appear in none, because `PROGRESS-live-acceptance-v4`..`v12` live on the
+fix branches. That answer was a distraction. The real one was next to it.
+
+**Row 50 gave two scenarios ids that were already taken.**
+
+| | |
+|---|---|
+| `fix/status-names-the-missing-source-rs07`, `04:12` | `LA-S-11` *the project is still readable after the last subscription goes*, `LA-S-12` *fetching still refuses without a source* |
+| `docs/recheck-c5-deferred`, `14:28` | `LA-S-11` *a local repository offered as an upstream*, `LA-S-12` *a source tree containing a symlink* |
+
+The cause is mechanical and it will happen again: every branch is cut from `main`, so the next free
+id is read from a copy of the map that does not contain the other branches' ids. `main` holds 113
+rows, this chain 138, and **40 ids exist on one branch and nowhere else** — `LA-0-07`..`LA-0-10`,
+`LA-R-31`..`LA-R-41`, `LA-S-13`..`LA-S-16`, `LA-U-31`..`LA-U-35`, `LA-M-08`..`LA-M-15`,
+`LAS-31`..`LAS-33`, `LAS-57`..`LAS-61`.
+
+- **Corrected here, not hidden.** The newer pair is renumbered to `LA-S-17` and `LA-S-18`, past the
+  `LA-S-16` that `fix/broken-registry-descriptor-fails-rs08` holds. The `04:12` rows keep their ids.
+  No id changed meaning, which is what the append-only rule protects; the register rows for `LAF-43`
+  and `RS-03` and row 50's entry now cite the new pair.
+- **`LAF-120`, medium.** Nothing computes the next free id across branches, and no gate reads this
+  file: `docs_check.py` covers `docs/plan`, `docs/design`, two released documents and the stream, and
+  the map is in none of them. A repeated id makes a walk unciteable, which is the one thing a stable
+  id is for.
+- **The other four ranges this run appended are clean** — `LA-0-13`/`14`, `LA-R-42`/`43`,
+  `LA-U-36`..`40`, `LAS-63`..`73` all sit above every branch's highest. `LA-S-*` was the one phase
+  where a fix branch had gone further than the chain could see.
+- **Nothing else repaired.**
+
+### 2026-08-16 — overnight residue run, the nine new run headers
+
+Branch `docs/audit-new-run-headers`, cut from `main`, carrying the previous branch's record. No code
+changed and no run document was edited — `v4`..`v12` are run records on their own branches and stay
+as written. Row 30 read the five run headers that existed this morning; these nine did not exist
+then.
+
+| Field the rule asks for | How many of the nine carry it |
+|---|---|
+| A tag or commit under test | **2** — `v4` (`87b7fbb`), `v5` (`1c659a3`) |
+| Wheel name | 9 |
+| Wheel size | 7 — `v6` and `v7` omit it |
+| Wheel sha256 | 9 |
+| `aart --version` | 9 |
+| Said plainly to be a locally built, unreleased wheel | 8 — `v5` says it by describing the two wheels it builds rather than in a sentence |
+
+- **`LAF-121`, medium.** Seven headers write *AART commit under test* as a branch name. A branch is
+  not a pin: it moves, and it can be deleted after a merge, at which point the run cannot be
+  re-derived from its own record. `LAF-103` is the same defect one degree worse — a header with no
+  commit, size, digest or version at all.
+- **The two thinnest records were re-derived, and both hold.** A wheel built in a detached worktree
+  from `eedc4a0` is **543 422 bytes, `3674e1c9…`**; from `ac12a6a`, **542 418 bytes, `941fae3d…`**.
+  Both digests are exactly what `v6` and `v7` recorded. That is the second and third run header in
+  this repository to be re-derived from scratch, after `v11` in row 36.
+- **What that pair of facts means together:** the records are accurate, and their accuracy is
+  currently provable only because nothing has been merged or pruned yet. The fix is a commit sha in
+  the header, which costs one `git rev-parse` at write time.
+- **Nothing repaired**, and the worktrees used for the rebuild were removed.
+
+### 2026-08-16 — overnight residue run, costing the two fixes to do first
+
+Branch `docs/cost-the-first-two-fixes`, cut from `main`, carrying the previous branch's record. No
+code changed. Reading only, and deliberately narrow: I recommended two fixes to start with, and a
+recommendation is worth more when the cost is measured rather than guessed.
+
+**`LAF-90` — four literals, and their replacements already exist.**
+
+| Where | What |
+|---|---|
+| `tui.py:2793`, `:2796` | the prompt defaults, *Minimum AART version [1.0.0]* and *Maximum AART version (exclusive) [2.0.0]* |
+| `tui.py:2806`, `:2807` | the same two again, as the fallback when an operator presses return |
+| `curation/model.py:26`, `:27` | `_DEFAULT_MINIMUM_AART = str(EXECUTABLE_VERSION)` and the next major — **on `main`, today** |
+
+Above those two constants sits a comment that describes this defect in advance: literals go stale
+every release and eventually make the pair unsatisfiable. The package already knows the rule; the
+wizard is the one place that did not get it. Exporting the constants and using them is the fix.
+
+**`LAF-105` — the collector is not missing, only its verb.** Present on `main`:
+`collect_garbage` (`application/store.py:110`); `GcRequest` with `execute: bool = False`, which is
+the dry-run-by-default the SPEC asks for; `GcPlan`; and both adapters the ports need,
+`inventory_objects` (`io/object_store.py:469`) and `delete_object` (`:510`).
+`docs/store/content-addressed-store-v1.md` specifies plan-or-execute through injected ports under
+the global lease, and `SPEC-aart-1.0.md` lists *global garbage collection* among the operations that
+protocol covers. What is absent is any path from `cli.py`.
+
+- **That makes the sequencing clear.** One command surface closes `LAF-105`, and it is also the only
+  thing `LAF-116` and `LAF-117` need — today an operator can see unreferenced objects accumulate and
+  has no way to remove them, because the code that removes them cannot be called.
+- Both costings are written into their register rows, so the morning reader gets them next to the
+  finding rather than in a run-log entry.
+- **Nothing repaired.**
