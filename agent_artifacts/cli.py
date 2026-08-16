@@ -22,14 +22,9 @@ from typing import Callable, Optional, Sequence, Tuple
 from . import __version__
 from .command_outcome import OK
 from .commands import upgrade
+from .curation.model import DEFAULT_MAXIMUM_AART, DEFAULT_MINIMUM_AART
 from .model import Request
 from .outcomes import CommandOutcome
-from .runtime_contract import EXECUTABLE_VERSION
-
-# The conventional ceiling one major above the running release.  Registries and artifacts
-# declare their window against a real executable, so a literal here goes stale on every
-# major and silently produces an unsatisfiable pair.
-_DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 
 
 def _run_registry(request: Request) -> int:
@@ -615,18 +610,19 @@ def build_parser() -> argparse.ArgumentParser:
         # scaffolded markers, manifests, and setup recipes are the current dialect.  The floor is
         # therefore the AART that wrote them, and an author who really supports more says so.
         "--minimum-version",
-        default=__version__,
+        default=DEFAULT_MINIMUM_AART,
         metavar="VERSION",
-        help=f"minimum supported AART version (default: {__version__})",
+        help=f"minimum supported AART version (default: {DEFAULT_MINIMUM_AART})",
     )
     p_init.add_argument(
         # The ceiling is the next major after the running release, not a literal.  A default of
         # "2.0.0" was correct only while AART was 1.x; on 2.0.0 it collides with the floor above
-        # and every `registry init` is refused as an invalid window.
+        # and every `registry init` is refused as an invalid window.  Both bounds come from the
+        # one place that derives them (`RS-02`), so a skin cannot drift from the boundary.
         "--maximum-version",
-        default=_DEFAULT_MAXIMUM_AART,
+        default=DEFAULT_MAXIMUM_AART,
         metavar="VERSION",
-        help=f"exclusive maximum AART version (default: {_DEFAULT_MAXIMUM_AART})",
+        help=f"exclusive maximum AART version (default: {DEFAULT_MAXIMUM_AART})",
     )
     _add_registry_finalize(p_init)
     _add_json(p_init)

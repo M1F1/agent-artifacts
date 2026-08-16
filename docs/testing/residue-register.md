@@ -71,7 +71,7 @@ does not have to agree with the present; a current document does.
 | `LAF-63` | high | implementing `RR-2A` | `closed` | `RR-10A`; one redactor in `agent_artifacts/redaction.py`, matching a credential name with any prefix, `tests/setup_render_test.py::test_laf63_a_prefixed_credential_name_is_redacted` |
 | `LAF-64` | medium | implementing `RR-5` | `open` | — |
 | `RS-01` | medium | `2.3.0` prose | `open` | — |
-| `RS-02` | low | `2.3.0` prose | `open` | — |
+| `RS-02` | low | `2.3.0` prose | `closed` | the window a request carries is derived from the running executable, defined once in `curation/model.py` and used by both the boundary and the flag skin. `tests/registry_cli_test.py::RegistryCliTest::test_rs02_no_registry_action_declares_a_window_that_excludes_the_running_aart` and `::test_rs02_init_still_carries_the_window_the_operator_asked_for`; `LA-R-37`..`LA-R-41` in `PROGRESS-live-acceptance-v12.md` walk it against a built wheel, and `LA-R-40` measures that the deleted values reached no file |
 | `RS-03` | medium | `2.3.0` prose | `deferred` | — cluster C5, with `LAF-43` |
 | `RS-04` | low | `2.3.0` prose | `open` | — |
 | `RS-05` | low | `2.3.0` prose | `open` | — |
@@ -96,6 +96,7 @@ does not have to agree with the present; a current document does.
 | `LAF-74` | high | publishing `2.6.0` | `closed` | `docs/release/github-release-v2.6.0.md` added to the checked list while it is unpublished; `DOC009` then failed it for `LAF-63`, which is how the stale claim was found |
 | `LAF-73` | medium | `2.6.0` live acceptance, second pass | `open` | — `receipt show` prints the pre-`RR-10E` rollback sentence from an older record while the same executable writes the correct command; `RR-10F` is the pattern for the answer, a claim in `verify` rather than a rewrite |
 | `LAF-72` | high | measuring `LAF-63` | `closed` | `RR-10A`, `RR-10C`; there is one `redact_text` and `tests/token_containment_test.py` walks every string of the persisted record, so a field added later is covered without being named |
+| `LAF-90` | high | fixing `RS-02` | `open` | — the curses wizard offers `1.0.0` and `2.0.0` as the defaults for `registry init` (`agent_artifacts/tui.py`, the `CurationAction.INIT` branch of `_prompt_curation_request`), so an operator who accepts what they are offered gets a registry declaring `>=1.0.0,<2.0.0`. Reproduced headlessly, both halves: driving that function with a scripted reader that presses return at both prompts returns `1.0.0`/`2.0.0` on a `2.6.0` executable, and writing that window into a real registry makes `registry validate` answer *registry workspace is incompatible with this AART version*. The wizard therefore authors a registry the AART that authored it refuses. `RS-02` fixed the flag path only; the curses screen is human-gated and was not driven |
 
 ## Corrections this register forced
 
