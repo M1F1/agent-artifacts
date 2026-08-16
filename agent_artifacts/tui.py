@@ -51,6 +51,8 @@ from .consumer import (
 )
 from .consumer.application import CONSUMER_REVIEW_MISMATCH
 from .curation.model import (
+    DEFAULT_MAXIMUM_AART,
+    DEFAULT_MINIMUM_AART,
     CurationAction,
     CurationRequest,
     render_curation_outcome,
@@ -2790,11 +2792,21 @@ def _prompt_curation_request(
         display_name = value("Registry display name: ", "display_name")
         if isinstance(display_name, WizardInput):
             return display_name
-        minimum = value("Minimum AART version [1.0.0]: ", "minimum_version", default="1.0.0")
+        # `LAF-90`: the suggestion an operator accepts by pressing return has to name a window the
+        # running executable is inside, or `init` writes a registry the same AART then refuses to
+        # read.  `RS-02` derived that window once, in `curation/model.py`; this asks with it rather
+        # than deriving it a second time.
+        minimum = value(
+            f"Minimum AART version [{DEFAULT_MINIMUM_AART}]: ",
+            "minimum_version",
+            default=DEFAULT_MINIMUM_AART,
+        )
         if isinstance(minimum, WizardInput):
             return minimum
         maximum = value(
-            "Maximum AART version (exclusive) [2.0.0]: ", "maximum_version", default="2.0.0"
+            f"Maximum AART version (exclusive) [{DEFAULT_MAXIMUM_AART}]: ",
+            "maximum_version",
+            default=DEFAULT_MAXIMUM_AART,
         )
         if isinstance(maximum, WizardInput):
             return maximum
@@ -2803,8 +2815,8 @@ def _prompt_curation_request(
             workspace,
             source_id=source_id,
             display_name=display_name,
-            minimum_version=minimum or "1.0.0",
-            maximum_version=maximum or "2.0.0",
+            minimum_version=minimum or DEFAULT_MINIMUM_AART,
+            maximum_version=maximum or DEFAULT_MAXIMUM_AART,
         )
 
     if action is CurationAction.SCAFFOLD:
