@@ -461,24 +461,28 @@ aart registry lock --source .          # review
 aart registry lock --source . --yes    # writes aart.lock.json
 ```
 
-**Now commit the lock.** `build` refuses to run against an uncommitted one:
+Then build:
+
+```sh
+aart registry build --source . --yes   # writes aart.index.json
+```
+
+**Without a lock at all, `build` refuses**, and its wording is worth reading carefully:
 
 ```text
 error: registry build requires a committed aart.lock.json
   remediation: `aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`
 ```
 
-```sh
-git add -A
-git commit -m "Vendor release-evidence and branch-conventions; lock"
+It says *committed*, and it does not mean it. Measured `2026-08-17` in a fresh registry: with
+`aart.lock.json` present but **untracked** — `git status` reporting `?? aart.lock.json` — `build`
+compiles the index and exits `0`. The precondition is that the file exists
+(`registry_commands/planning.py:1244`), not that it is in history. That is `AD-15`, and it means one
+commit is enough for the whole cycle rather than the two this guide used to tell you to make.
 
-aart registry build --source . --yes   # writes aart.index.json
-git add -A && git commit -m "Build the index"
-```
-
-The lock resolves what you authored; the index is what consumers read. The commit between them is
-what makes the index describe a state that exists in history rather than one that only existed in
-your working tree.
+The lock resolves what you authored; the index is what consumers read. Commit both together once the
+checks in the next section pass — `validate --strict` is the one that requires committed generated
+outputs, so that is where history starts to matter.
 
 ## 6. Check it before anyone else sees it
 
@@ -503,6 +507,41 @@ if the committed lock and index do not match the authored content, which is exac
 reviewer cannot catch by reading a diff.
 
 Push, open a pull request, get it reviewed like any other repository.
+
+### The whole cycle in one command
+
+Sections 5 and 6 are four `aart` commands in a fixed order plus a commit, and typing them from
+memory every time is how the order gets wrong.
+[`scripts/registry_publish.py`](../../scripts/registry_publish.py) runs them:
+
+```sh
+scripts/registry_publish.py --source .          # shows what would happen, writes nothing
+scripts/registry_publish.py --source . --yes    # runs them and commits
+```
+
+`lock` → `build` → `validate` → `audit` → `git add -A` → `git commit`. Any step failing stops it
+before the commit. Before committing it prints **every file**, one per line, not a collapsed
+`artifacts/`:
+
+```text
+=== committing 10 paths
+  ??  .github/workflows/aart-registry.yml
+  ??  aart-registry.json
+  ??  aart-source.json
+  ??  aart.index.json
+  ??  aart.lock.json
+  ??  artifacts/guideline/probe/artifact.json
+  …
+committed f56e56f: Publish registry: 1 artifact
+Not pushed — that step is yours.
+```
+
+`-m` sets the subject; without it one is derived from the compiled index. If the tree was already
+dirty when you started, it says so first and lists what it found — those files land in the same
+commit, so stash anything unrelated. `--allow-audit-failure` commits despite an audit finding;
+`validate` failing always stops it. It never pushes.
+
+This is `AD-14`'s stopgap: the cycle should be a maintainer verb in the CLI and a flow in the TUI.
 
 ## 7. Keeping a vendored copy current
 

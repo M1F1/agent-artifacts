@@ -32,6 +32,8 @@ Rules for this stream, same as every other:
 | `AD-11` | high | `2026-08-17`, raised against the `AD-08` stopgap | `registry vendor` cannot take a single file, and a harness memory document is always a single file at a repository root. `--path DIR` is documented as a directory and refuses anything else — `error: the requested subtree path is not a directory` — while the `memory` payload rule demands *exactly one Markdown document*. Those two are only satisfiable by a directory that holds nothing but that document, which is not how any upstream stores it. Measured `2026-08-17`: `upstream-superpowers-v6.2.0` carries `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` at its root beside 20 other entries; `upstream-matt-skills-v1.2.3` carries `CLAUDE.md`, `AGENTS.md` and `CONTEXT.md`. Under the `tabnine` profile a `memory` artifact installs as project-root `TABNINE.md` (`profiles/builtin.py:179`), so this is the artifact the raiser called indispensable, and it is the one kind the tool cannot import. The only route today is `registry scaffold memory` plus a paste, which produces a copy with no `provenance.json` and no `revendor --check`. The same wall stands in front of every loose `.md` guideline. |
 | `AD-12` | high | `2026-08-17`, walking `AD-11`'s adoption | A project can hold only one `memory` artifact, and the design says it should hold several. `DESIGN-memory.md` §3.3 scopes the sentinel by name — `<!-- >>> agent-artifacts memory:<name> >>> -->` — *"so an `memory` block and a same-named guideline block can coexist in one file … without either clobbering the other"*, and two differently-named memory artifacts therefore carry two different markers. Installation refuses anyway. Measured `2026-08-17`: with `memory/superpowers-house-rules` installed into a Tabnine project, installing `memory/test-first-rules` fails with `error: install destinations contain unowned or drifted content; use force: TABNINE.md`, and adding `--force` fails differently with `error: installation state ownership conflict: installation effect ownership must be unique across the manifest`. The cause is that `installation/application.py:847` looks up prior ownership of a destination **by artifact coordinate**, so the second artifact sees a file it does not own and stops; `install_state/model.py:337` then forbids two artifacts owning one destination outright. The block machinery supports coexistence and the ownership model forbids it. |
 | `AD-13` | medium | `2026-08-17` | `registry init` writes no `.gitignore`, and the one that exists cannot be reached. Measured `2026-08-17`: `registry init` creates exactly six files — `aart-registry.json`, `aart-source.json` and four under `.github/` — and nothing else. No `.gitignore`, no `README.md`, no `LICENSE`, no `SECURITY.md`. All four *are* written, as byte templates, by `PublicRegistryPolicy.repository_files` at `registry_publication.py:169-179` — a module with **zero importers in the package**, referenced only by `tests/public_registry_publication_test.py`. So the code exists and no command runs it, which is `AD-06`'s pattern in a second place. And the template's ignore list is Python-toolchain only — `.coverage`, `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `__pycache__/`, `build/`, `dist/`, `htmlcov/`, `usage-dashboard/` — with not one harness directory in it, though AART's own built-in profiles write `.claude/`, `.tabnine/`, `.opencode/`, `.vibe/` and `.mcp.json` into a project root, and installation writes `.agent-artifacts/` and `.agent-artifacts-bak/`. A maintainer who tests one install inside their registry checkout has all of that staged by the next `git add -A`. |
+| `AD-14` | medium | `2026-08-17` | Publishing a registry is four commands in a fixed order plus a commit, and nothing in the product runs the sequence. `lock`, `build`, `validate`, `audit`, then `git add -A && git commit` — six things typed by hand every time anything changes, with an order that produces confusing errors when got wrong: `build` before `lock` refuses, `validate` before `build` reports the index as stale. The raiser's words: remembering these commands and typing them out is a nightmare and slows the work down. Asked for: one command that takes the registry source, runs the sequence, and **lists every file it is about to commit**. |
+| `AD-15` | low | `2026-08-17`, building `AD-14`'s stopgap | `registry build` says its precondition is a *committed* lock, and the precondition is a lock that exists. The message is `error: registry build requires a committed aart.lock.json`, and its remediation reads *"`aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`"*. The check at `registry_commands/planning.py:1244` is `files.value.get("aart.lock.json")` — presence in the snapshot, nothing about history. Measured `2026-08-17` in a fresh registry: with `aart.lock.json` untracked (`git status` → `?? aart.lock.json`), `build` compiled the index and exited `0`. The cost is one unnecessary commit per publishing cycle for anyone who believes the diagnostic, and this stream's own walkthrough believed it and documented it as a required step until this finding corrected it. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -276,6 +278,64 @@ So the *outcome* the raiser described is reachable today. What is still missing,
 origin goes in the commit message because `artifact.json` rejects an unknown field — verified
 `2026-08-17`, `error: unknown field 'x-adopted-from'` — and inventing a provenance record for bytes
 that were never vendored would be a lie every later audit would repeat.
+
+## Notes on `AD-14`
+
+The third finding in this stream with the same shape — `AD-07` for collections, `AD-08` for
+discovery, this one for publishing. A capability the product has, in pieces, with nothing that runs
+the pieces in the order they require.
+
+The order is the part that costs. `build` before `lock` refuses outright; `validate` before `build`
+reports the compiled index as stale, which reads like a broken registry rather than a step not yet
+taken. So a maintainer who mistypes the sequence spends time debugging a state that is merely
+incomplete. Four commands is not many, but four commands *whose order produces plausible-looking
+errors* is a memory test run several times a day.
+
+**A stopgap exists and the finding stays `open`.** `scripts/registry_publish.py`, `2026-08-17`,
+`git` and `aart` its only dependencies. Preview by default: `lock` and `build` run in their own
+review mode, `validate` and `audit` are read-only anyway, and the files that would be committed are
+listed. `--yes` runs the four for real and commits.
+
+Two decisions in it worth naming. It lists **every file** rather than the directories Git collapses
+by default — `git status --porcelain` alone would print `artifacts/` on a first publish, and the
+raiser asked to see what is being committed, so `--untracked-files=all` is the point rather than a
+detail. And it **commits but never pushes**: AART deliberately does neither, ending every maintainer
+command by telling you to review the diff, so a script that commits is already taking something the
+tool withholds. Printing the full file list before doing it is what keeps that honest. Pushing is
+the step that makes a change other people's problem, and it stays a human's.
+
+Walked `2026-08-17` against a registry initialised from scratch: preview listing ten paths and
+writing nothing; `--yes` running the four and committing exactly those ten; an unchanged re-run
+reporting nothing to commit; and a deliberately malformed collection stopping it at `build` with
+`HEAD` unmoved.
+
+Left for a design: whether the real verb commits at all. It might reasonably stop at the audit and
+print the `git` commands, which keeps AART's no-commit line intact — but that is most of the typing
+the raiser objected to, so the honest options are a verb that commits behind an explicit flag, or an
+admission that the line has moved.
+
+## Notes on `AD-15`
+
+A one-word defect, found because the `AD-14` stopgap had to decide whether to commit between `lock`
+and `build`. The walkthrough written earlier in this stream said it must, and quoted AART's own
+error message as the reason. Both were wrong.
+
+`registry_commands/planning.py:1244` reads:
+
+    lock_file = files.value.get("aart.lock.json")
+    if lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE:
+        return _error("registry build requires a committed aart.lock.json", _LOCK_FIRST)
+
+The condition is presence in the workspace snapshot. Nothing consults Git. Measured `2026-08-17` in
+a registry initialised from scratch: `build` with no lock at all fails as documented; `lock --yes`
+then leaves `aart.lock.json` untracked, `git status` reporting `?? aart.lock.json`; `build --yes`
+compiles the index and exits `0`.
+
+Why it matters more than a wording slip: the remediation string is an instruction, and following it
+costs a commit per publishing cycle that records a half-published state — lock without index — in
+history forever. The word *committed* does belong somewhere near here, which is probably where it
+came from: `validate --strict` genuinely does require committed generated outputs
+(`cli.py:861`). Moving the claim to the command that makes it would fix both halves.
 
 ## Notes on `AD-13`
 
