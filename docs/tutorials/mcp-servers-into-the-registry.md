@@ -1,0 +1,451 @@
+# Porting an MCP server into the company registry
+
+This is the procedure for turning one MCP server from `agent-mcp-servers` into an AART artifact that
+a colleague installs and sets up in two commands. It was written by porting `company-atlassian`
+first, against the `2.6.1` wheel, and every command and error message below was run rather than
+recalled.
+
+The shape it assumes is the one you described: **each server keeps its own `server.py` upstream, and
+everything else is authored inside the registry.** The upstream repository stays a plain Python
+repository that knows nothing about AART; the registry owns the packaging.
+
+Read [`../protocol/setup-recipe-v2.md`](../protocol/setup-recipe-v2.md) alongside this. That document
+is the authority on the recipe format; this one is the procedure for using it on a real server.
+
+## 1. What one package looks like
+
+```
+artifacts/mcp/<name>/
+  artifact.json          identity, compatibility, install effects, setup reference
+  SETUP.md               the by-hand route; required whenever setup/ exists
+  provenance.json        written by vendoring, never by hand
+  payload/
+    mcp.json             the descriptor; the only file a consumer receives anything from
+    server.py            vendored from agent-mcp-servers
+    requirements.txt     vendored
+    Dockerfile           authored here
+  setup/
+    installer.json       the declarative recipe
+```
+
+**Only those root entries are allowed.** `artifact.json`, `README.md`, `SETUP.md`,
+`provenance.json`, `payload/`, `setup/`. Anything else stops the compiler:
+
+```
+error: unexpected canonical package path: install.sh
+```
+
+So a POC's `install.sh` and `TESTING.md` do not travel with the package. The installer becomes
+`setup/installer.json`; the testing notes belong in `README.md` or `SETUP.md`.
+
+## 2. What a consumer actually receives
+
+This governs everything else, so it goes before the procedure.
+
+Installing an `mcp` artifact **merges the `server` object out of `payload/mcp.json` into the
+profile's MCP file and copies nothing.** `server.py`, `Dockerfile` and `requirements.txt` never
+appear on the consumer's disk as files. They are stored in AART's object store, and the setup recipe
+builds an image out of them there.
+
+Two consequences worth stating plainly:
+
+- A `command` in `mcp.json` that names a payload file — `python3 payload/server.py` — names a file
+  the consumer does not have. The audit says so. Name something the consumer's machine can resolve:
+  a container image, or an absolute interpreter path.
+- The image tag is the interface between the recipe and the descriptor. Get it wrong and the artifact
+  installs cleanly, reports success, and the server never starts.
+
+## 3. The tag is derived, not chosen
+
+AART tags a locally built image `aart/<type>/<name>:<version>`, from
+[`setup.py:256`](../../agent_artifacts/setup.py). There is no `tag` field. A recipe that tries is
+refused:
+
+```
+error: step 'build' has unknown field(s): tag
+```
+
+For `company-atlassian@1.0.0` the tag is:
+
+```
+aart/mcp/company-atlassian:1.0.0
+```
+
+and `payload/mcp.json` must name that exact string. The reason for deriving it is rollback: a build
+has no digest to pin before it runs, so the tag is the only thing that can identify what this run
+created and is allowed to remove.
+
+**This means bumping `version` in `artifact.json` changes the image tag.** Bump the version and the
+descriptor in the same commit, always.
+
+## 4. The recipe vocabulary
+
+Nine modules, listed with their fields in
+[`setup-recipe-v2.md`](../protocol/setup-recipe-v2.md). The four that carry a containerised server:
+
+| Module | What it does |
+|---|---|
+| `command.verify@1` | runs a command and fails the setup if it exits non-zero |
+| `trust-store.export-certificates@1` | exports matching certificates into the build context |
+| `docker.build@1` | builds one image from a copy of the package |
+| `macos-keychain.store@1` | stores one secret, prompted by `security` itself |
+| `shell.env-from-keychain@1` | writes a managed block that reads the Keychain at shell start |
+| `restart.notice@1` | prints a sentence and writes nothing |
+
+Two ordering rules the parser enforces: a certificate export requires a build to write into and must
+come **before** it, and a recipe may declare **at most one** build.
+
+### There is no `shell.run@1`
+
+A POC that shells out — `python3 extract_company_ca.py`, an inline `sed` on `~/.zshrc` — has nothing
+to translate to:
+
+```
+error: unknown or unsupported setup module 'shell.run@1'
+```
+
+This is the point of the format rather than a gap in it. Every step in a recipe is reviewable before
+it runs, and a shell string is not. The two things a POC usually shells out for both have modules:
+certificate extraction is `trust-store.export-certificates@1`, and the `~/.zshrc` block is
+`shell.env-from-keychain@1`, which composes the export lines itself.
+
+If a server genuinely needs something no module covers, the escape hatch is `custom_entrypoint` — a
+script below `setup/`, hash-bound into the recipe, requiring the `custom-code` capability and a
+`# AART manual setup: see ../SETUP.md` header. Reach for it last. It is the one step a reviewer
+cannot read as a plan.
+
+### Every input is a secret
+
+`inputs[].type` accepts `"secret"` and nothing else:
+
+```
+error: inputs[0].type must be 'secret'
+```
+
+There is no `text`. A per-user value that is not secret — an e-mail address, a board key, a space
+name — has three homes, in order of preference:
+
+1. **Author it into the recipe or the descriptor** if it is the same for everyone. The Jira and
+   Confluence URLs are in `mcp.json` as literal arguments, because they are company-wide.
+2. **Keep it in the Keychain with the secrets** if it is per-user. This is what `company-atlassian`
+   does with the account e-mail. It works, and the prompt is hidden, so the person types their own
+   e-mail address into an unechoed field. Say so in `SETUP.md`; do not let them discover it.
+3. **Read it from the environment** in `server.py`, if the company already exports it.
+
+Recorded as `AD-17` in [the adoption register](../testing/residue-register.md).
+
+### Secrets never pass through AART
+
+`macos-keychain.store@1` plans this argv:
+
+```
+/usr/bin/security add-generic-password -U -a <account> -s <service> -w
+```
+
+`-w` with no value. **`security` prompts, the value goes from the keyboard into the Keychain, and
+AART never holds it.** The `input` reference exists so the review can say what will be asked for.
+Interpolating a secret anywhere else is refused outright.
+
+`replace_existing: true` adds the `-U` and makes the step non-reversible — the old value is gone.
+Take it anyway for API tokens: rotating an expired token should be a re-run, not a manual delete.
+Without it a second setup fails because the entry already exists.
+
+## 5. The procedure, one server at a time
+
+### 5.1 Vendor the upstream files
+
+Vendor the **directory**, not the file:
+
+```bash
+aart registry vendor mcp <name> --source . --url https://github.example.com/your-org/agent-mcp-servers.git --ref main --path servers/<name> --yes
+```
+
+The copied bytes become `payload/`, and `provenance.json` records the resolved commit and a digest of
+what was taken. That record is what makes `aart registry revendor mcp <name> --check` able to tell
+you later that upstream moved.
+
+Two constraints on the upstream layout, both worth fixing upstream rather than working around:
+
+- **`--path` must be a directory.** A server that is one loose `server.py` at the repository root
+  cannot be vendored at all — `error: the requested subtree path is not a directory`. Give each
+  server its own directory. This is `AD-11`.
+- **Do not edit the copy afterwards.** `registry audit` recomputes the payload digest against
+  `provenance.json` and reports a copy that no longer matches its origin. Fixes go upstream and come
+  back through `revendor`.
+
+`Dockerfile` is the exception worth thinking about. Vendoring it keeps the build definition with the
+code, which is right if upstream maintains it. Authoring it in the registry is right if the
+Dockerfile exists only to satisfy the company proxy. `company-atlassian` authors it, because the CA
+line is a company fact and not an upstream one.
+
+### 5.2 Write `artifact.json`
+
+```json
+{
+  "schema_version": 1,
+  "type": "mcp",
+  "name": "company-atlassian",
+  "version": "1.0.0",
+  "summary": "Jira and Confluence access for the company Atlassian instance, over a locally built MCP server.",
+  "authors": ["Platform Team"],
+  "homepage": "https://github.example.com/your-org/agent-mcp-servers",
+  "license": "LicenseRef-company-internal",
+  "compatibility": {
+    "platforms": ["darwin"],
+    "profiles": ["claude", "tabnine"]
+  },
+  "install": {
+    "effects": ["merge-json"],
+    "modes": ["copy"],
+    "scopes": ["user", "project"]
+  },
+  "payload": {
+    "format": "aart-mcp-v1",
+    "root": "payload"
+  },
+  "setup": {
+    "recipe": "setup/installer.json",
+    "platforms": ["darwin"]
+  },
+  "com.m1f1.runtime-requirements": {
+    "schema_version": 1,
+    "requirements": [
+      {
+        "id": "command.docker",
+        "reason": "The MCP server runs in a container built on this machine."
+      }
+    ]
+  }
+}
+```
+
+Five things that are not free choices:
+
+- `install.effects` for `mcp` is exactly `["merge-json"]`. The compiler holds the map.
+- `setup` takes `recipe` and `platforms` and no other field. A POC's `poc_script` is rejected.
+- `setup.platforms` must be a subset of `compatibility.platforms`. A Keychain recipe means both are
+  `["darwin"]`, and the artifact then does not offer itself on Linux, which is correct.
+- `com.m1f1.runtime-requirements` is a real extension and is advisory: it feeds
+  `aart marketplace health` and never blocks an install. Extension keys must be dotted and
+  lowercase; `x-anything` is refused as an unknown field.
+- `scopes` decides which file the descriptor is merged into. Under the `tabnine` profile, `user`
+  means `~/.tabnine/mcp_servers.json` and `project` means `.tabnine/agent/settings.json`. Those are
+  the two candidates in `AD-04`, which is still unverified — **user scope targets the file Tabnine's
+  published documentation names**, so prefer it until someone checks on a machine running Tabnine.
+
+### 5.3 Write `payload/mcp.json`
+
+```json
+{
+  "name": "company-atlassian",
+  "server": {
+    "command": "docker",
+    "args": [
+      "run", "-i", "--rm",
+      "-e", "ATLASSIAN_USERNAME",
+      "-e", "ATLASSIAN_API_TOKEN",
+      "aart/mcp/company-atlassian:1.0.0",
+      "--jira-url", "https://company.atlassian.net",
+      "--confluence-url", "https://company.atlassian.net/wiki"
+    ]
+  }
+}
+```
+
+`name` becomes the key under `mcpServers` and `server` becomes its value. Everything else in the file
+is ignored by the merge, so a `description` is free.
+
+Note the bare `-e NAME` form. It passes the variable through from whatever process launches `docker`,
+which is the MCP host, which inherits from the shell. The alternative — `"env": {"X": "${Y}"}` in the
+descriptor — depends on the host expanding `${…}`, and whether Tabnine does is one more thing nobody
+has checked. Bare pass-through needs no host cooperation at all.
+
+### 5.4 Write `setup/installer.json`
+
+The `company-atlassian` recipe, complete. This is the pattern to copy.
+
+```json
+{
+  "schema_version": 2,
+  "protocol_version": 2,
+  "artifact": "mcp/company-atlassian",
+  "purpose": "Export the company root CA, build the Atlassian MCP server image locally from it, store the Atlassian credentials in the login Keychain, and export them into new shells.",
+  "platforms": ["darwin"],
+  "capabilities": ["keychain", "filesystem", "docker", "network", "process", "trust-store"],
+  "required_tools": ["/usr/bin/security", "docker"],
+  "help_urls": [
+    {
+      "label": "Create an Atlassian API token",
+      "url": "https://id.atlassian.com/manage-profile/security/api-tokens"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "atlassian_username",
+      "type": "secret",
+      "prompt": "Your Atlassian account e-mail (name@company.com)"
+    },
+    {
+      "id": "atlassian_api_token",
+      "type": "secret",
+      "prompt": "Atlassian API token",
+      "help_url": "https://id.atlassian.com/manage-profile/security/api-tokens"
+    }
+  ],
+  "steps": [
+    {
+      "id": "docker_running",
+      "use": "command.verify@1",
+      "with": { "argv": ["docker", "info"], "timeout": 60 }
+    },
+    {
+      "id": "company_ca",
+      "use": "trust-store.export-certificates@1",
+      "with": { "subject_contains": "Company", "output": "company-ca.pem" }
+    },
+    {
+      "id": "image",
+      "use": "docker.build@1",
+      "with": { "context": "payload", "dockerfile": "Dockerfile" }
+    },
+    {
+      "id": "store_username",
+      "use": "macos-keychain.store@1",
+      "with": {
+        "input": "atlassian_username",
+        "service": "aart/mcp/company-atlassian/username",
+        "account": "atlassian",
+        "replace_existing": true
+      }
+    },
+    {
+      "id": "store_token",
+      "use": "macos-keychain.store@1",
+      "with": {
+        "input": "atlassian_api_token",
+        "service": "aart/mcp/company-atlassian/api-token",
+        "account": "atlassian",
+        "replace_existing": true
+      }
+    },
+    {
+      "id": "shell_env",
+      "use": "shell.env-from-keychain@1",
+      "with": {
+        "file": "~/.zshrc",
+        "variables": {
+          "ATLASSIAN_USERNAME": {
+            "service": "aart/mcp/company-atlassian/username",
+            "account": "atlassian"
+          },
+          "ATLASSIAN_API_TOKEN": {
+            "service": "aart/mcp/company-atlassian/api-token",
+            "account": "atlassian"
+          }
+        }
+      }
+    },
+    {
+      "id": "restart",
+      "use": "restart.notice@1",
+      "with": {
+        "message": "Open a new shell and start your MCP host from it, so the host process inherits ATLASSIAN_USERNAME and ATLASSIAN_API_TOKEN."
+      }
+    }
+  ]
+}
+```
+
+Rules the parser applies to this file, each of which produced an error the first time:
+
+- **Every top-level field except `custom_entrypoint` is required**, including `help_urls` and
+  `required_tools` even when empty lists would do.
+- **No comments.** JSON has none, and `_comment` is an unknown field:
+  `error: unknown field(s): _comment`. It is rejected inside `steps` and `inputs` too. Explanation
+  goes in `purpose`, in the step `id`, and in `SETUP.md`.
+- `schema_version` and `protocol_version` are both `2`. Nothing older is accepted.
+- `artifact` must equal `<type>/<name>` of the containing package.
+- `platforms` must be exactly `["darwin"]`.
+- Capabilities are declared by the author and checked against the modules used. `docker.build@1`
+  additionally requires `network` and `process` to be declared, and `docker` to be in
+  `required_tools`; `trust-store.export-certificates@1` requires `/usr/bin/security` there.
+- `help_urls` entries are exactly `{label, url}` and the URL must be `https`.
+
+### 5.5 Write `SETUP.md`
+
+Required whenever `setup/` exists — the compiler refuses the package without it. Write the same steps
+as shell commands anyone can run by hand.
+
+It is not a formality. It is the only thing a colleague has when the recipe fails halfway, and it is
+what makes the recipe reviewable: a plan you can perform yourself is a plan you can judge.
+
+The `company-atlassian` one has a table of what lands where, the seven commands, and a closing
+section naming what the artifact does **not** fix — `server.py` disables TLS verification for its own
+Atlassian calls, which is upstream's decision to change, not the registry's.
+
+### 5.6 Publish
+
+```bash
+scripts/registry_publish.py --source /path/to/registry --yes
+```
+
+`lock`, `build`, `validate`, `audit`, then one commit listing every file. See `AD-14`.
+
+## 6. Check it before anyone installs it
+
+`registry validate` proves the package compiles. It does not prove the recipe does what you meant.
+Two checks worth running on every port:
+
+**Does the recipe parse, and what does the review say?**
+
+```bash
+python3 -c "
+from agent_artifacts.setup import parse_installer, plan_setup, render_setup_review
+from agent_artifacts.model import SetupQueueItem
+pkg='artifacts/mcp/company-atlassian'
+raw=open(pkg+'/setup/installer.json','rb').read()
+inst=parse_installer(raw, artifact_key='mcp/company-atlassian', descriptor_path='setup/installer.json').value
+item=SetupQueueItem(artifact_type='mcp', artifact_name='company-atlassian', profile='tabnine',
+                    scope='user', source_label='company', source_root=pkg,
+                    installer=inst, artifact_version='1.0.0')
+print('\n'.join(render_setup_review(plan_setup(item, target_root='/tmp/p', platform='darwin', home_root='/tmp/h'))))
+"
+```
+
+This prints exactly what a colleague will be asked to approve, without touching anything. Read it as
+they will. For `company-atlassian` it names seven effects, the derived tag
+`aart/mcp/company-atlassian:1.0.0`, the two Keychain services, and `~/.zshrc`.
+
+**Does the tag in the review match the tag in the descriptor?** Compare the `docker.build@1` target
+line against the image argument in `mcp.json`. This is the one mismatch that produces a working
+install and a dead server.
+
+## 7. Per-server checklist
+
+For each new server in `agent-mcp-servers`:
+
+| | What changes |
+|---|---|
+| 1 | `--path servers/<name>` on the vendor command |
+| 2 | `name` and `summary` in `artifact.json`; `version` starts at `1.0.0` |
+| 3 | The image tag in `payload/mcp.json`: `aart/mcp/<name>:<version>` |
+| 4 | The server's own arguments in `payload/mcp.json` |
+| 5 | `artifact` and `purpose` in `installer.json` |
+| 6 | Keychain services: `aart/mcp/<name>/<what>` — namespaced per server so two servers never collide |
+| 7 | The environment variable names the server reads, in `shell_env` and in the `-e` flags |
+| 8 | `SETUP.md`, rewritten for those names |
+
+What does **not** change between servers, as long as they all run in company-built containers: the
+step list, its order, the capabilities, the required tools, and the Dockerfile's CA lines. That is
+the part this port was for.
+
+## 8. Where this was proven
+
+A registry initialised from scratch, the package built as above, then `lock`, `build`, `validate`,
+`audit` — validate passed, audit passed with the three warnings a registry with no security evidence
+and no external references always reports. The recipe was parsed and planned through AART's own
+functions, and the review rendered seven effects.
+
+Nothing was applied. Applying it needs Docker, a company-managed Mac, and someone at the keyboard to
+type two secrets into `security`'s own prompt — which is the whole point of how the Keychain module
+is built.

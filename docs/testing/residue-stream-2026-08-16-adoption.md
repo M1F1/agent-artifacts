@@ -37,6 +37,8 @@ Rules for this stream, same as every other:
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 | `AD-16` | high | `2026-08-17` | A source that has fallen behind its origin says `current`. Health never contacts the origin: it is `now - published_at` against `sync.max_age_seconds`, so `healthy` means *the snapshot is recent* and not *the snapshot matches the origin*. Measured `2026-08-17`: a source synchronized at one artifact, its registry then advanced by a commit adding a second, reported `healthy; 8s` from `source health`, `[healthy]` from `marketplace list` and `current` from the TUI projection, with the new artifact absent from the listing and nothing said about why. The inverse holds too — a snapshot identical to its origin reports `stale` once the clock passes. There is no state at all for *the check could not run*: `OFFLINE` exists in the enum and no code path attempts the network at read time. The raiser has been caught by this repeatedly while testing an artifact just added to a registry. Asked for: a visible not-synchronized state on entering `aart`, and a distinct failed-to-check state when the comparison itself cannot be made. |
 
+| `AD-17` | medium | `2026-08-17`, porting an MCP server | A setup recipe prompts for secrets and for nothing else. `inputs[].type` accepts `"secret"` and refuses everything else, so a per-user value that is not a secret — an account e-mail, a board key — has nowhere to go. Found porting `company-atlassian`, whose POC declared the Atlassian e-mail as `type: "text"`. The working route is to keep it in the Keychain with the API token, which means the colleague types their own e-mail address into a prompt with no echo and approves a Keychain access for it. The restriction is deliberate and it is what lets the parser refuse secret interpolation everywhere else, so the ask is a second non-secret input type, not a loosening of this one. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -623,3 +625,54 @@ content, is told the source is `current`, and has no reason to doubt it — and 
 at the same `current`, has no way to tell them otherwise. In a rollout the whole value of a shared
 registry is that everyone has the same thing, and this is the one check that would say whether they
 do.
+
+## Notes on `AD-17`
+
+Found doing the work rather than reading the code: porting the `company-atlassian` MCP POC to the
+current recipe format. The POC declared two inputs, an API token and an account e-mail. The token
+went through unchanged. The e-mail did not:
+
+```
+error: inputs[0].type must be 'secret'
+```
+
+`setup.py:584` allows one value and no other. There is no `text`, no `choice`, no default, no
+optional flag.
+
+### Why the restriction exists
+
+It is not an oversight, and the protocol document says so. Secrets-only is what makes the rest of the
+model hold. A declared input can be interpolated by exactly one module — `macos-keychain.store@1` —
+and `_contains_secret_interpolation` (`setup.py:366`) walks every other step's configuration to
+refuse a recipe that mentions one anywhere else. The value itself never passes through AART at all:
+the planned argv ends `-w` with nothing after it, so `security` does the prompting and the value goes
+from the keyboard into the Keychain. That is a good design and this finding is not asking for it to
+be relaxed.
+
+### What it costs
+
+Three homes exist for a non-secret per-user value, and each is wrong in its own way.
+
+**Author it into the recipe.** Right for the Jira and Confluence URLs, which are the same for
+everyone in the company and now sit in `payload/mcp.json` as literal arguments. Wrong for anything
+that differs per person.
+
+**Read it from the environment.** Only works if the company already exports it, which is a fact about
+the fleet, not about the artifact.
+
+**Put it in the Keychain with the secrets.** What the port does, because it is the only one that
+works everywhere. The colleague is then asked for their own e-mail address at a prompt with no echo,
+grants macOS a Keychain access for it, and sees the step reported as not automatically reversible.
+Nothing breaks. It just describes an e-mail address as a credential, and the person doing it can tell.
+
+### The ask
+
+A second input type with the same review and the same refusal to interpolate into arbitrary places —
+prompted, echoed, and usable by the modules that write managed files. `shell.env-from-keychain@1`
+would then have a sibling that exports an authored value, and the Keychain would hold only the things
+that belong in it.
+
+Until then the pattern to copy is the one in
+[`../tutorials/mcp-servers-into-the-registry.md`](../tutorials/mcp-servers-into-the-registry.md) §5.4:
+put it in the Keychain, and say plainly in `SETUP.md` that the prompt is hidden. The friction is
+small. Discovering it alone, mid-install, is what makes it a finding.
