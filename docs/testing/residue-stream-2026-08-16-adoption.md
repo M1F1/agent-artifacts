@@ -27,6 +27,7 @@ Rules for this stream, same as every other:
 | `AD-06` | low | `2026-08-16`, answering *what is a package of artifacts called* | `bundle` is dead vocabulary that still ships. The shipped name is **collection** — `collections/<name>.json`, `collection_roots` in `aart-source.json`, `<source>/collection/<name>` as an install coordinate, `[collection]` in `marketplace list`. But `model.py:243` still defines `Bundle` and `Catalog` with **zero importers anywhere in the package**, `wizard.py:64` still types a row as `Literal["artifact", "bundle", "reference"]`, `tui.py:328` types it `Literal["artifact", "bundle", "profile"]` and builds collection rows with the literal string `"bundle"`, and one operator-visible sentence at `tui.py:290` says *artifacts selected through bundles use copy semantics*. Two names for one thing, one of which the protocol has never heard of. |
 | `AD-07` | low | `2026-08-16`, walking `AD-05` | A collection has no authoring command. `registry scaffold` accepts `skill`, `guideline`, `mcp`, `hook`, `memory` and refuses `collection`; the only way to publish one is to write `collections/<name>.json` by hand against a schema documented in `native-source-v1.md` §*Provenance and collections* and nowhere else. Walked `2026-08-16`: hand-written, it validates, locks, builds and installs both members in one consumer command — so the feature works and only the on-ramp is missing. |
 | `AD-08` | high | `2026-08-16`, raised as a proposal | Nothing helps a maintainer find what is worth vendoring in a foreign repository. Asked for: a scan that walks an external checkout, recognises the conventional shapes for the five kinds — `skills/`, `SKILL.md`, `guidelines/`, `hooks/`, `mcp`-ish files — and returns a list of candidate paths a maintainer then accepts or rejects one at a time, feeding the existing `vendor` command. Measured `2026-08-16` against three repositories on the raiser's disk: **69 candidate artifacts** — 14 `SKILL.md` in `upstream-superpowers-v6.2.0`, 20 in `residues-architecture-framework` (plus a `guidelines/` directory), 35 in `upstream-matt-skills-v1.2.3`. At six required arguments per `vendor` invocation that is the manual work the proposal is about. |
+| `AD-09` | high | `2026-08-17` | Usage reporting never offers to create an issue, and never says why. Raised after installing a skill; the raiser then confirmed the same silence in the TUI. Measured `2026-08-17`: `registry init` scaffolds the whole registry side — `.github/ISSUE_TEMPLATE/usage-report.yml`, the `aart-usage-dashboard` and `aart-usage-validate` workflows — and writes `"services": {}`. `reporting/destination.py:61` demands exactly one advertised `usage_reporting` service, so `reporting/runtime.py:157-160` skips every source with a bare `continue`. Nothing under `registry_commands/` ever writes that block; the string `usage_reporting` does not occur there. Separately, the consumer-side offer has one caller — `tui.py:821`, in the setup flow only — with `interface="tui"` hardcoded, so `marketplace install` from the CLI has no reporting path at all. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -206,6 +207,48 @@ Measured on the three repositories in the row above: **73 candidates** — 69 sk
 row's count exactly, and 4 guidelines the row's manual count had missed — and 1 hint. Walked end to
 end against a real `2.6.1` wheel on `2026-08-16`, into a throwaway registry: scan → review → vendor
 → lock → commit → build → `validate` passed, `audit` warning only about a missing upstream license.
+
+## Notes on `AD-09`
+
+Raised as *analytics does not fire after installing a skill*, and then sharpened by the raiser the
+same hour: **the TUI does not offer it either**. That second observation is what makes this a `high`
+rather than a missing CLI path, because it rules out the obvious explanation and points at the
+registry side.
+
+**The decisive field is one the maintainer is never told about.** `registry init` writes the whole
+apparatus — the issue template a consumer would file into, the workflow that validates a filed
+report, the workflow that builds the dashboard — and then writes `"services": {}` into
+`aart-registry.json`. `reporting/destination.py:61-63` requires *exactly one* advertised
+`usage_reporting` service before a destination can be bound at all, so the routing loop at
+`reporting/runtime.py:157-160` reaches `continue` for every configured source and returns an empty
+tuple of routes. `tui.py:797` then prints its header only `if prepared.value:`, so an empty routing
+produces no line of output whatsoever. Nothing is broken; nothing is said either.
+
+**And nothing can write that field.** `usage_reporting` does not occur anywhere under
+`registry_commands/`. The only way to advertise the service is to hand-edit `aart-registry.json`,
+which means knowing the key, the `github-issues` kind and the `repository` value — a shape
+`destination.py:65-66` enforces and no command scaffolds. This is `AD-07`'s pattern again: the
+feature works, the on-ramp does not exist. Here it is worse, because a collection you failed to
+author is a file that is missing, while reporting you failed to advertise looks exactly like
+reporting that ran and found nothing to say.
+
+**The CLI has no reporting path at all**, which is a real second defect and not a symptom of the
+first. `usage_report_from_consumer` has exactly one caller outside `reporting/`: `tui.py:821`,
+inside `_complete_canonical_consumer_action`, which is reached only from the text wizard
+(`tui.py:2177`) and the curses setup (`tui.py:5295`). `aart marketplace install` finishes without
+ever constructing a usage report. That the projection already takes an `interface` parameter — and
+that both call sites pass the literal `"tui"` — says the CLI interface was anticipated and never
+wired.
+
+Not investigated, and worth checking before anything is designed: `runtime.py:147` also skips any
+destination on `github.com`, `gitlab.com` or `bitbucket.org` when `deny_public_destinations` is set.
+It defaults to `False` (`configuration/model.py:128`), so it is not the cause here, but it is a
+third silent `continue` on the same path and a company registry on a public host would hit it.
+
+The shape of a fix is not decided here. What the evidence does settle is that at least two things
+have to change together — something must write the service advertisement, and something must say
+out loud when reporting was skipped and which gate skipped it — or a maintainer will keep seeing an
+apparatus that scaffolds cleanly, validates cleanly, and reports nothing.
 
 ## Notes on `AD-04`
 
