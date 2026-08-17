@@ -31,6 +31,7 @@ Rules for this stream, same as every other:
 | `AD-09` | high | `2026-08-17` | Usage reporting never offers to create an issue, and never says why. Raised after installing a skill; the raiser then confirmed the same silence in the TUI. Measured `2026-08-17`: `registry init` scaffolds the whole registry side — `.github/ISSUE_TEMPLATE/usage-report.yml`, the `aart-usage-dashboard` and `aart-usage-validate` workflows — and writes `"services": {}`. `reporting/destination.py:61` demands exactly one advertised `usage_reporting` service, so `reporting/runtime.py:157-160` skips every source with a bare `continue`. Nothing under `registry_commands/` ever writes that block; the string `usage_reporting` does not occur there. Separately, the consumer-side offer has one caller — `tui.py:821`, in the setup flow only — with `interface="tui"` hardcoded, so `marketplace install` from the CLI has no reporting path at all. |
 | `AD-11` | high | `2026-08-17`, raised against the `AD-08` stopgap | `registry vendor` cannot take a single file, and a harness memory document is always a single file at a repository root. `--path DIR` is documented as a directory and refuses anything else — `error: the requested subtree path is not a directory` — while the `memory` payload rule demands *exactly one Markdown document*. Those two are only satisfiable by a directory that holds nothing but that document, which is not how any upstream stores it. Measured `2026-08-17`: `upstream-superpowers-v6.2.0` carries `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` at its root beside 20 other entries; `upstream-matt-skills-v1.2.3` carries `CLAUDE.md`, `AGENTS.md` and `CONTEXT.md`. Under the `tabnine` profile a `memory` artifact installs as project-root `TABNINE.md` (`profiles/builtin.py:179`), so this is the artifact the raiser called indispensable, and it is the one kind the tool cannot import. The only route today is `registry scaffold memory` plus a paste, which produces a copy with no `provenance.json` and no `revendor --check`. The same wall stands in front of every loose `.md` guideline. |
 | `AD-12` | high | `2026-08-17`, walking `AD-11`'s adoption | A project can hold only one `memory` artifact, and the design says it should hold several. `DESIGN-memory.md` §3.3 scopes the sentinel by name — `<!-- >>> agent-artifacts memory:<name> >>> -->` — *"so an `memory` block and a same-named guideline block can coexist in one file … without either clobbering the other"*, and two differently-named memory artifacts therefore carry two different markers. Installation refuses anyway. Measured `2026-08-17`: with `memory/superpowers-house-rules` installed into a Tabnine project, installing `memory/test-first-rules` fails with `error: install destinations contain unowned or drifted content; use force: TABNINE.md`, and adding `--force` fails differently with `error: installation state ownership conflict: installation effect ownership must be unique across the manifest`. The cause is that `installation/application.py:847` looks up prior ownership of a destination **by artifact coordinate**, so the second artifact sees a file it does not own and stops; `install_state/model.py:337` then forbids two artifacts owning one destination outright. The block machinery supports coexistence and the ownership model forbids it. |
+| `AD-13` | medium | `2026-08-17` | `registry init` writes no `.gitignore`, and the one that exists cannot be reached. Measured `2026-08-17`: `registry init` creates exactly six files — `aart-registry.json`, `aart-source.json` and four under `.github/` — and nothing else. No `.gitignore`, no `README.md`, no `LICENSE`, no `SECURITY.md`. All four *are* written, as byte templates, by `PublicRegistryPolicy.repository_files` at `registry_publication.py:169-179` — a module with **zero importers in the package**, referenced only by `tests/public_registry_publication_test.py`. So the code exists and no command runs it, which is `AD-06`'s pattern in a second place. And the template's ignore list is Python-toolchain only — `.coverage`, `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `__pycache__/`, `build/`, `dist/`, `htmlcov/`, `usage-dashboard/` — with not one harness directory in it, though AART's own built-in profiles write `.claude/`, `.tabnine/`, `.opencode/`, `.vibe/` and `.mcp.json` into a project root, and installation writes `.agent-artifacts/` and `.agent-artifacts-bak/`. A maintainer who tests one install inside their registry checkout has all of that staged by the next `git add -A`. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -275,6 +276,38 @@ So the *outcome* the raiser described is reachable today. What is still missing,
 origin goes in the commit message because `artifact.json` rejects an unknown field — verified
 `2026-08-17`, `error: unknown field 'x-adopted-from'` — and inventing a provenance record for bytes
 that were never vendored would be a lie every later audit would repeat.
+
+## Notes on `AD-13`
+
+Raised as *a registry created by `aart` should come with a `.gitignore` listing the harness
+directories*. Checking it turned up something more specific than a missing default.
+
+**The file is written; nothing writes it.** `PublicRegistryPolicy.repository_files`
+(`registry_publication.py:169-179`) returns `.gitignore`, `LICENSE`, `README.md`, `SECURITY.md`, the
+registry CI workflow and the reporting templates, as byte literals ready to drop into a checkout.
+`registry init` emits the workflow and the templates and none of the other four. Searching the
+package for an importer of `registry_publication` returns nothing; the only reference anywhere is
+`tests/public_registry_publication_test.py`. This is exactly `AD-06`'s shape — `Bundle` and
+`Catalog` shipped with zero importers — and exactly `AD-09`'s: an apparatus fully built and
+unreachable from any command.
+
+**And the ignore list is for the wrong repository.** It reads as a Python project's ignore file:
+`.coverage`, `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `__pycache__/`, `build/`, `dist/`,
+`htmlcov/`, `usage-dashboard/`. Only the last of those can appear in a registry a maintainer runs
+`aart` in. What actually appears is what AART itself writes: `.agent-artifacts/` and
+`.agent-artifacts-bak/` from installation, and the project-scope roots the built-in profiles target
+— `.claude/`, `.tabnine/`, `.opencode/`, `.vibe/`, `.mcp.json`. A maintainer who tests a single
+install inside their own registry checkout, which is the obvious thing to do before publishing, has
+all of that in front of the next `git add -A`.
+
+Two judgements a fix has to make, neither obvious. Whether a harness directory belongs in a default
+ignore list at all is a real question for a *consumer* project — some teams commit `.claude/`
+deliberately, and `.mcp.json` is often checked in on purpose. In a *registry* checkout the answer is
+easier, because those paths can only be test residue. So the default probably differs by repository
+role, which is a thing `init` knows and the current template does not express. And `.agent-artifacts/`
+holds both a `manifest.json` recording what is installed and a `state.lock`; the second is never
+committable, the first is arguably worth committing in a consumer repo. Ignoring the directory
+wholesale settles that question by accident rather than on purpose.
 
 ## Notes on `AD-12`
 
