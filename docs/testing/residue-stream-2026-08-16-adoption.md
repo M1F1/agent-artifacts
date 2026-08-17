@@ -49,6 +49,8 @@ Rules for this stream, same as every other:
 
 | `AD-22` | medium | `2026-08-17`, setup declined on an installed MCP server | Setup refused on trust and offered the manual route instead. The URL it printed drops the package path and 404s: the web root is the repository at a commit, the path appended is package-relative `SETUP.md`, and nothing supplies `artifacts/mcp/<name>/` in between. The local path in the same message is right, because there the relative path is joined onto the package root. The link fails exactly when it is the only thing the reader has left. |
 
+| `AD-23` | high | `2026-08-17`, installing an MCP server from a script | `marketplace install` prints `Install outcome: succeeded`, writes the payload, and exits `1`. The setup queue is folded into the exit code, and for any source the trust gate blocks it is all failures — while the two flags that would authorize it exist only on `marketplace setup`, never on `install`. Measured: exit `1` with `.mcp.json` correctly written. Under `set -e` a correct install aborts the adoption script, and `\|\| true` would swallow every real failure with it. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -1076,3 +1078,85 @@ remediation line on the trust refusal naming `--authorize-untrusted-source`, tog
 durable alternative: an approved review record on the registry entry raises trust to
 `registry-reviewed`, which the gate at `setup_engine/application.py:272-278` lets through without any
 flag at all.
+
+## Notes on `AD-23`
+
+### What was measured
+
+`2026-08-17`, isolated `HOME`, a registry configured as a local source holding the ported MCP server:
+
+```
+$ aart marketplace install company/mcp/company-atlassian --profile claude --scope project --yes
+Install outcome: succeeded
+  Selected: 1; changed=1
+  - company/mcp/company-atlassian@1.0.0#claude/project: changed · setup pending
+Setup not planned: company/mcp/company-atlassian@1.0.0#claude/project
+  reason  setup from local requires explicit source authorization
+Setup: planned=0, failures=1
+$ echo $?
+1
+```
+
+`.mcp.json` and `.agent-artifacts/` were both written. The install is real and correct. The exit code
+says it failed.
+
+### Where the exit code comes from
+
+`commands/marketplace.py`, lines 616-626:
+
+```python
+setup_ok = True
+if action == "setup" or any(item.setup_status == "pending" for item in outcome.items):
+    setup_payload, setup_ok = _run_setup_queue(request, service.value, review, outcome)
+    ...
+if outcome.session_status in {"failed", "partial"} or not setup_ok:
+    return _common.ERROR
+```
+
+So any installed artifact with a pending setup drags the setup queue's verdict into the install's
+exit code. `_run_setup_queue` (lines 436-437) returns `not queue.failures`, and the trust gate at
+`setup_engine/application.py`, lines 272-278, refuses `unverified`, `local` and `direct-source`
+outright unless `authorize_untrusted_source` is set.
+
+### The part that makes it unavoidable
+
+`marketplace setup` accepts `--authorize-untrusted-source`, `--authorize-custom-entrypoint` and
+`--approve-setup-effects`. `marketplace install` accepts none of them — checked against
+`install --help`, whose only match for *authorize* is `--force`, which is about overwrites.
+
+`_run_setup_queue` reads `request.authorize_untrusted_source` regardless, and from `install` that
+value can only ever be false. So the command runs a queue it is not equipped to authorize, and
+returns its failure.
+
+Three trust classes hit this, and they are the three a company registry passes through on its way to
+being trusted: a local checkout while the maintainer tests, a direct Git source, and a registry whose
+entry has no approved review record yet. Only `registry-reviewed` and `company-reviewed` avoid it.
+
+### Why `high`
+
+This stream exists to produce adoption scripts whose only dependencies are `aart` and `git`. Such a
+script runs under `set -e`, and a correct install now aborts it at the first artifact that declares
+setup — which is every artifact worth scripting, since the ones with no setup need no script.
+
+The obvious repair is worse than the defect. `aart marketplace install … || true` restores the flow
+and simultaneously discards every genuine install failure: a missing coordinate, an incompatible
+platform, a digest mismatch. The alternative, matching on stdout text, makes the script depend on
+message wording.
+
+There is a correct workaround and it is not obvious: install and set up as two commands, and let only
+the second one's exit code mean anything.
+
+```
+aart marketplace install <coord> --profile <p> --scope <s> --yes
+aart marketplace setup   <coord> --profile <p> --scope <s> \
+     --authorize-untrusted-source --approve-setup-effects --yes
+```
+
+The first still exits `1`. The script has to tolerate it and check the second — which is exactly the
+reasoning a colleague should never have to reconstruct.
+
+### Asked for
+
+An install's exit code should report the install. A setup queue this command has no flags to
+authorize is a **pending** state, already printed as `setup pending` in the very same output, and
+reporting it twice — once as a status and once as a failure — is what makes the two disagree.
