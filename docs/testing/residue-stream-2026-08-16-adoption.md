@@ -1484,3 +1484,24 @@ a managed block, a Keychain item — stays on disk with nothing claiming it.
 Move the `setup` reference with the object, the way the `installed` one already moves. Failing that,
 treat a `setup` reference pointing at a superseded digest as replaceable rather than as evidence of
 tampering — the digest it points at is one the same run is about to stop using.
+
+### `AD-23`, addendum: `update` is affected the same way
+
+The finding was recorded against `marketplace install`. `marketplace update` shares `_action` and so
+shares the defect. Measured `2026-08-17` on the probe artifact with its setup pending:
+
+```
+$ aart marketplace update lab/mcp/probe --profile claude --scope project --force --yes
+Update outcome: no-op
+  Selected: 1; current=1
+  - lab/mcp/probe@1.0.1#claude/project: current · setup pending
+Setup not planned: lab/mcp/probe@1.0.1#claude/project
+Setup: planned=0, failures=1
+$ echo $?
+1
+```
+
+An update that correctly determined there was nothing to do returns a failure code. Neither `install`
+nor `update` declares `--authorize-untrusted-source`, so on any source below `registry-reviewed`
+every one of these commands exits non-zero for the whole time an artifact's setup is pending — which
+is from installation until setup is authorized, the exact window an adoption script runs in.
