@@ -365,6 +365,38 @@ This is the piece worth building first if you want adoption. *Run one command an
 team's baseline* is a much easier thing to put in an onboarding document than a list of seven
 coordinates.
 
+### Writing the collection without writing the JSON
+
+[`scripts/collection_new.py`](../../scripts/collection_new.py) composes one out of what the registry
+already holds. `aart` is its only dependency, and it only runs it to check what it wrote.
+
+```sh
+scripts/collection_new.py platform-baseline --source . --summary "What every repo here starts with."
+```
+
+With no `--include` it lists every artifact in the registry — type, name, version, summary, and
+whether it was vendored or written here — and asks about each one. With `--include skill/foo
+--include guideline/bar` it takes your list and asks nothing. `--pin` bounds each member to its
+current version up to the next major, which is what you want for a baseline and not what you want
+for a topic, so it is never the default. `--nest other-collection` includes another collection whole.
+
+Re-running with a name that already exists **edits** it: current members come back pre-selected, so
+adding one artifact is a run through with one answer changed, and existing version bounds are kept
+even if you leave `--pin` off. Unpinning a baseline should take a decision, not a re-run.
+
+It reads `artifact_roots` and `collection_roots` out of your `aart-source.json` rather than assuming
+the layout, and refuses a member that is not in the registry rather than writing a collection that
+will fail to build. Afterwards it runs `aart registry validate` and separates the three complaints
+that just mean *you authored something and have not built yet* from anything that is actually wrong.
+
+Then publish it the normal way — lock, commit, build, commit — exactly as above.
+
+Two caveats worth knowing. This is a stopgap for `AD-07`; the real thing is a maintainer-mode
+command in the CLI and a flow in the TUI, and it does not exist yet. And `registry lock` does not
+check collections at all (`AD-10`) — a malformed one passes `lock --yes` silently and is only caught
+by `build`, which runs after the commit. If you hand-write a collection, run `validate` before you
+commit the lock.
+
 ## 4. Write an artifact of your own
 
 For material that has no upstream, scaffold a package and fill it in:

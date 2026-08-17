@@ -25,7 +25,8 @@ Rules for this stream, same as every other:
 | `AD-03` | medium | `2026-08-16` | The README links to no tutorial at all. The word *tutorial* does not occur in it, and `docs/tutorials/` holds four documents including the new [company registry walkthrough for Tabnine](../tutorials/company-registry-tabnine-v1.md). So the one document that answers *how do I actually stand this up* is reachable only by browsing the tree. Asked for: the walkthrough either in the README or linked from it — **linked**, so the README does not grow to the length of a manual. |
 | `AD-05` | medium | `2026-08-16` | Vendoring a repository's worth of artifacts is one command per artifact, written by hand. `registry vendor` takes one `KIND NAME` and one `--path`; `VendorOptions.identity` is a single `ArtifactIdentity` and there is no `--all`, no manifest input, and no way to name two subtrees. Onboarding a monorepo of twenty prompts means twenty invocations, each re-cloning the same upstream — walked `2026-08-16`, two artifacts in 3 s, so a shell loop is bearable but the re-clone is per artifact, not per repository. |
 | `AD-06` | low | `2026-08-16`, answering *what is a package of artifacts called* | `bundle` is dead vocabulary that still ships. The shipped name is **collection** — `collections/<name>.json`, `collection_roots` in `aart-source.json`, `<source>/collection/<name>` as an install coordinate, `[collection]` in `marketplace list`. But `model.py:243` still defines `Bundle` and `Catalog` with **zero importers anywhere in the package**, `wizard.py:64` still types a row as `Literal["artifact", "bundle", "reference"]`, `tui.py:328` types it `Literal["artifact", "bundle", "profile"]` and builds collection rows with the literal string `"bundle"`, and one operator-visible sentence at `tui.py:290` says *artifacts selected through bundles use copy semantics*. Two names for one thing, one of which the protocol has never heard of. |
-| `AD-07` | low | `2026-08-16`, walking `AD-05` | A collection has no authoring command. `registry scaffold` accepts `skill`, `guideline`, `mcp`, `hook`, `memory` and refuses `collection`; the only way to publish one is to write `collections/<name>.json` by hand against a schema documented in `native-source-v1.md` §*Provenance and collections* and nowhere else. Walked `2026-08-16`: hand-written, it validates, locks, builds and installs both members in one consumer command — so the feature works and only the on-ramp is missing. |
+| `AD-07` | medium | `2026-08-16`, walking `AD-05`; widened `2026-08-17` | A collection has no authoring command. `registry scaffold` accepts `skill`, `guideline`, `mcp`, `hook`, `memory` and refuses `collection`; the only way to publish one is to write `collections/<name>.json` by hand against a schema documented in `native-source-v1.md` §*Provenance and collections* and nowhere else. Walked `2026-08-16`: hand-written, it validates, locks, builds and installs both members in one consumer command — so the feature works and only the on-ramp is missing. **Widened by the raiser `2026-08-17`**: the ask is not a scaffold template but a maintainer-mode command that builds a collection *out of the artifacts the registry already holds* — available **in the CLI and as a flow in the TUI**, the same way every other maintainer action is. Raised to `medium`: an on-ramp missing in one interface is an inconvenience; a maintainer capability that exists in neither is a feature nobody can reach without a text editor and the protocol document. |
+| `AD-10` | low | `2026-08-17`, walking `AD-07`'s stopgap | `registry lock` accepts a collection that `registry build` rejects. Measured `2026-08-17`: a `collections/broken.json` whose selector reads `{"type": "nonsense", "name": "x"}` passes `lock` in review **and** with `--yes`, both exit `0` and neither says anything; `build --yes` then refuses it with `error: selector identity is invalid` and writes no index, and `validate` reports the same. So the malformed collection survives the one step a maintainer performs *before* committing — the documented order is lock, commit the lock, build — and the error arrives after the commit that was supposed to record a good state. Nothing ships broken, because the compiler holds; the cost is the ordering. |
 | `AD-08` | high | `2026-08-16`, raised as a proposal | Nothing helps a maintainer find what is worth vendoring in a foreign repository. Asked for: a scan that walks an external checkout, recognises the conventional shapes for the five kinds — `skills/`, `SKILL.md`, `guidelines/`, `hooks/`, `mcp`-ish files — and returns a list of candidate paths a maintainer then accepts or rejects one at a time, feeding the existing `vendor` command. Measured `2026-08-16` against three repositories on the raiser's disk: **69 candidate artifacts** — 14 `SKILL.md` in `upstream-superpowers-v6.2.0`, 20 in `residues-architecture-framework` (plus a `guidelines/` directory), 35 in `upstream-matt-skills-v1.2.3`. At six required arguments per `vendor` invocation that is the manual work the proposal is about. |
 | `AD-09` | high | `2026-08-17` | Usage reporting never offers to create an issue, and never says why. Raised after installing a skill; the raiser then confirmed the same silence in the TUI. Measured `2026-08-17`: `registry init` scaffolds the whole registry side — `.github/ISSUE_TEMPLATE/usage-report.yml`, the `aart-usage-dashboard` and `aart-usage-validate` workflows — and writes `"services": {}`. `reporting/destination.py:61` demands exactly one advertised `usage_reporting` service, so `reporting/runtime.py:157-160` skips every source with a bare `continue`. Nothing under `registry_commands/` ever writes that block; the string `usage_reporting` does not occur there. Separately, the consumer-side offer has one caller — `tui.py:821`, in the setup flow only — with `interface="tui"` hardcoded, so `marketplace install` from the CLI has no reporting path at all. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
@@ -207,6 +208,58 @@ Measured on the three repositories in the row above: **73 candidates** — 69 sk
 row's count exactly, and 4 guidelines the row's manual count had missed — and 1 hint. Walked end to
 end against a real `2.6.1` wheel on `2026-08-16`, into a throwaway registry: scan → review → vendor
 → lock → commit → build → `validate` passed, `audit` warning only about a missing upstream license.
+
+## Notes on `AD-07`
+
+Raised `low` on `2026-08-16` as a missing scaffold template, and widened by the raiser on
+`2026-08-17` into something larger: **a maintainer-mode command that composes a collection out of
+the artifacts the registry already holds, in the CLI and as a flow in the TUI.** The distinction
+matters. A `scaffold collection` verb would hand a maintainer an empty file and the same schema
+problem they had before. What is actually wanted is the operation a maintainer performs: *show me
+what is in this registry, let me pick, write the collection.* Every input that command needs is
+already on disk — `artifact.json` carries the type, name, version and summary of each package.
+
+Raised to `medium` on the widening. `low` was defensible while the gap was one missing template; a
+maintainer capability absent from **both** interfaces is not an on-ramp problem, it is a feature
+that requires a text editor and `native-source-v1.md` to use at all. Compare `AD-09`: the same
+shape, where an apparatus that scaffolds and validates cleanly cannot be switched on by any command.
+
+**A stopgap exists and the finding stays `open`.** `scripts/collection_new.py`, written
+`2026-08-17`, outside the wheel, `aart` its only dependency and only to check what it wrote. It
+reads the registry's own `artifact_roots` and `collection_roots` rather than assuming the layout,
+lists every artifact from its manifest, and asks one at a time; `--include` skips the asking.
+Re-running on an existing name edits it, with current members pre-selected and **their version
+bounds preserved** — unpinning a company baseline is a decision, and a re-run is not one. Walked end
+to end into a throwaway registry on `2026-08-17`: authored, locked, committed, built, committed,
+`registry validate: passed`, and the collection is in `aart.index.json`.
+
+What the stopgap cannot answer, and a design must: whether the TUI flow reuses the review-then-
+finalize contract every other maintainer action has (it should), and whether editing an existing
+collection is the same verb or a different one.
+
+## Notes on `AD-10`
+
+Found while deciding what the `AD-07` stopgap should run to check its own output. The obvious
+choice was `registry lock` without `--yes`, which reviews and mutates nothing. It turned out to
+accept anything.
+
+Measured `2026-08-17`. A `collections/broken.json` containing the selector
+`{"type": "nonsense", "name": "x"}` — a type that does not exist — passes `registry lock --source .`
+with exit `0` and no diagnostic, and passes `registry lock --source . --yes` the same way, writing
+`aart.lock.json`. `registry build --source . --yes` then refuses it: `error: selector identity is
+invalid`, and `aart.index.json` keeps `"collections": []`. `registry validate` reports the same
+error.
+
+Why it is `low` and not higher: nothing broken can ship, because the compiler holds and the build
+is what produces the index a consumer reads. Why it is not nothing: the publishing order this
+stream's own walkthrough documents is *lock, commit the lock, build* — `build` requires a committed
+lock — so the only command that runs before the commit is the one command that does not look at
+collections. A maintainer commits a lock recording a state that will not build. And `lock` reporting
+success on input it never examined is the weaker half of the defect: silence about something checked
+and silence about something skipped are indistinguishable to the person reading the output.
+
+The stopgap therefore runs `registry validate` instead, and separates the three complaints that mean
+*the index is stale because you just authored something* from anything else validate says.
 
 ## Notes on `AD-09`
 
