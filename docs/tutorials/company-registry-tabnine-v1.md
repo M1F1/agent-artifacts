@@ -263,12 +263,46 @@ A collection is one file under `collections/` — `registry init` already declar
 }
 ```
 
-`name` must be a lowercase slug and match the filename. A selector may pin a range with an optional
-`"version"`; a collection may also list other collections under `"collections"`, and the compiler
-rejects duplicate selectors, self-reference, and cycles. A collection with no members at all is
-refused.
+Four fields are required — `schema_version`, `name`, `summary`, `artifacts` — and `name` must be a
+lowercase slug. A member selector needs only `type` and `name`.
 
-Then lock, commit, build, commit, as in section 5 — a new collection changes the index.
+**Then lock, commit, build, commit.** A collection is compiled into the index like everything else,
+so until you do, `validate` says:
+
+```text
+error: compiled index does not match registry inputs
+  remediation: resolve the authored entries again with `aart registry lock --yes`, then `aart registry build --yes`
+```
+
+```sh
+aart registry lock --source . --yes
+git add -A && git commit -m "Add the platform-baseline collection"
+aart registry build --source . --yes
+git add -A && git commit -m "Rebuild the index"
+aart registry validate --source . --strict --frozen
+```
+
+### Pinning a member, and building on another collection
+
+A selector may carry half-open version bounds, and a collection may include other collections.
+Walked — this one validates, builds, and installs all three members it resolves to:
+
+```json
+{
+  "schema_version": 1,
+  "name": "platform-pinned",
+  "summary": "The baseline, pinned to the 1.x line.",
+  "artifacts": [
+    {"type": "skill", "name": "release-evidence",
+     "version": {"min_inclusive": "1.0.0", "max_exclusive": "2.0.0"}}
+  ],
+  "collections": ["platform-baseline"]
+}
+```
+
+The compiler rejects duplicate selectors, direct self-reference, dangling members, and cycles, and
+refuses a collection with no members at all. Those are compile-time failures, so a broken collection
+never reaches a consumer.
 
 Your colleague now installs the whole set with one coordinate:
 
