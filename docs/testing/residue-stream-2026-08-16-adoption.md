@@ -47,6 +47,8 @@ Rules for this stream, same as every other:
 
 | `AD-21` | high | `2026-08-17`, installing an MCP server from the TUI | No artifact with a real setup recipe can be selected in the TUI, by anyone. The row refuses with `setup capabilities are unavailable: …` listing everything the recipe needs. The TUI builds its compatibility target without setup capabilities at all — the argument is simply not passed and defaults to empty — then evaluates against it with `require_setup=True` hard-coded. The organization field that would have filled it is read as *everything permitted* by the setup engine and as *nothing permitted* here. The CLI is unaffected. |
 
+| `AD-22` | medium | `2026-08-17`, setup declined on an installed MCP server | Setup refused on trust and offered the manual route instead. The URL it printed drops the package path and 404s: the web root is the repository at a commit, the path appended is package-relative `SETUP.md`, and nothing supplies `artifacts/mcp/<name>/` in between. The local path in the same message is right, because there the relative path is joined onto the package root. The link fails exactly when it is the only thing the reader has left. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -994,3 +996,83 @@ Pass the effective policy's `allowed_setup_capabilities` into the target, with `
 *everything*, exactly as `setup_engine/application.py` reads it. And when the gate does fire, say
 which side is empty — a message naming seven capabilities the recipe needs, without a word about
 what the target offers, sends the reader to audit their own package.
+
+## Notes on `AD-22`
+
+### What was seen
+
+`marketplace install … --yes` succeeded from the CLI, as `AD-21` predicted it would, and setup then
+declined:
+
+```
+Setup not planned: registry/mcp/atlassian@1.0.0#tabnine/project
+  reason  setup from unverified requires explicit source authorization
+  manual instructions  SETUP.md
+  manual source        https://github.dev.…/agent-artifacts-registry/
+                       blob/fd491ca5033d806d4d9f456694d81392479ef5f8/SETUP.md
+```
+
+The refusal itself is correct behaviour and not the finding. The link is.
+
+### Two roots, one relative path
+
+`_manual_source_url` (`setup_engine/application.py`, lines 247-256) builds a web root from
+installation provenance:
+
+```python
+return f"https://{host}/{repository}/blob/{source.resolved_commit}"
+```
+
+That is the **repository** at a commit. `manual_reference` (`setup.py`, lines 1042-1055) then appends
+`item.installer.manual_path`, and `_manual_path` (lines 322-327) derives that as exactly `"SETUP.md"`
+for the canonical `setup/installer.json`. It is **package-relative**. Nothing between the two
+contributes `artifacts/<kind>/<name>/`.
+
+Reproduced `2026-08-17` against the raiser's own output:
+
+| | |
+|---|---|
+| `_manual_path("setup/installer.json")` | `SETUP.md` |
+| origin matches `_PINNED_SOURCE_URL` | yes |
+| composed | `…/blob/fd491ca…/SETUP.md` |
+| the file is at | `…/blob/fd491ca…/artifacts/mcp/atlassian/SETUP.md` |
+
+The composed line is character-for-character what the command printed.
+
+The local branch of the same function is right. `_contained_manual_path` joins the same relative path
+onto `item.source_root`, and that root *is* the package root, so the on-disk route resolves. One
+relative path, two different roots, one of them wrong — and the wrong one is the branch that fires
+for a real Git-backed registry, which is every company installation.
+
+### Why it matters more than a broken link usually does
+
+This message appears only when the automated route has just refused. The reader has nothing else at
+that point. Handing them a 404 at the exact moment their fallback is the only route left is worse
+than printing no URL at all, because a missing URL sends them to the repository to look, and a
+present one sends them to a page that says the file does not exist.
+
+### The third remediation-free module
+
+```python
+def _error(code: DiagnosticCode, message: str) -> Err:
+    return Err((Diagnostic(code, Severity.ERROR, _redact(message)),))
+```
+
+`setup_engine/application.py`, lines 104-105. No remediation parameter, no call site naming a flag.
+So `setup from unverified requires explicit source authorization` never says
+`--authorize-untrusted-source`, which is the flag that resolves it — and it is not a flag anyone
+guesses, because it reads as a security override rather than the ordinary answer to *this registry
+has no approved review record yet*.
+
+`AD-19` found this in `io/registry_workspace.py`, `AD-20` in `registry_maintenance/vendoring.py`, and
+this is the third. All three sit on the path from authoring a package to running it. It is worth
+treating as one repair rather than three.
+
+### Asked for
+
+Compose the manual URL from the package root, not the repository root — the installation record
+already knows where the package sits, because the local branch of the same function uses it. And a
+remediation line on the trust refusal naming `--authorize-untrusted-source`, together with the
+durable alternative: an approved review record on the registry entry raises trust to
+`registry-reviewed`, which the gate at `setup_engine/application.py:272-278` lets through without any
+flag at all.
