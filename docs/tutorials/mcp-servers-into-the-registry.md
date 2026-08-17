@@ -152,33 +152,68 @@ Without it a second setup fails because the entry already exists.
 
 ## 5. The procedure, one server at a time
 
-### 5.1 Vendor the upstream files
+**Order matters, and not in the obvious direction.** The files you author inside the registry go in
+**before** the vendoring, not after. `registry vendor` adopts whatever is already sitting at the
+target package path, records it as authored, and copies the upstream bytes in beside it. Section 5.1
+explains why; the rest of the section is in the order to do it.
 
-Vendor the **directory**, not the file:
+### 5.1 Authored first, then vendored
+
+There is **no way to select individual files** out of `--path`. It takes a directory and copies it
+whole: no `--include`, no `--exclude`, no file list. `VendorOptions` carries an identity, a URL, a ref
+and one path, and nothing else. Two consequences:
+
+- **The upstream directory is the unit.** Give each server its own directory holding what you want
+  copied and nothing else. A loose `server.py` at a repository root cannot be vendored at all —
+  `error: the requested subtree path is not a directory`, which is `AD-11`.
+- **You cannot trim the copy afterwards.** `provenance.json` records a digest of what was taken, and
+  `registry audit` recomputes it from the package on disk.
+
+What you *can* do is add your own files, and this is the mechanism your registry is built on.
+`_adopted_authored` at [`registry_commands/planning.py`](../../agent_artifacts/registry_commands/planning.py) line 705
+takes every file already present at `artifacts/mcp/<name>/`, records it in `provenance.json` as
+authored, and `verify_vendored_copy` then subtracts exactly those before recomputing the origin
+digest. An authored path that collides with a taken one is refused, so the copy can never be
+silently overwritten.
+
+Measured `2026-08-17` on the integrity function directly, with one taken `payload/server.py`:
+
+| Package on disk | Files counted | Matches the origin digest |
+|---|---|---|
+| taken subtree alone | 1 | yes |
+| `payload/mcp.json` present and recorded as authored | 1 | **yes** |
+| `payload/mcp.json` added after the vendoring | 2 | **no** |
+
+So the rule is precise:
+
+- **Anything you author under `payload/` must exist before you vendor.** For an MCP server that is
+  `payload/mcp.json` and, if you author it rather than vendor it, `payload/Dockerfile`.
+- **Anything outside `payload/` can come later.** `SETUP.md` and `setup/installer.json` are not in the
+  integrity computation at all — it only walks `<package>/payload/`.
+- **`artifact.json` and `provenance.json` are derived by the vendoring**, from the command's flags.
+  Placing either yourself is refused: `error: the vendoring writes artifact.json; it is not authored
+  alongside the payload`. Extending `artifact.json` afterwards — the runtime-requirements block, for
+  instance — is an ordinary edit, because the integrity check does not look outside `payload/`.
+
+So the sequence is: write `payload/mcp.json`, write `payload/Dockerfile`, then
 
 ```bash
-aart registry vendor mcp <name> --source . --url https://github.example.com/your-org/agent-mcp-servers.git --ref main --path servers/<name> --yes
+aart registry vendor mcp <name> --source . --url https://github.example.com/your-org/agent-mcp-servers.git --ref main --path servers/<name> --artifact-version 1.0.0 --summary "…" --profile claude,tabnine --platform darwin --install-scope user --install-scope project --setup-recipe setup/installer.json --yes
 ```
 
-The copied bytes become `payload/`, and `provenance.json` records the resolved commit and a digest of
-what was taken. That record is what makes `aart registry revendor mcp <name> --check` able to tell
-you later that upstream moved.
+Pass `--setup-recipe` only once `setup/installer.json` and `SETUP.md` are both there — it checks for
+both and refuses otherwise. Leaving it off and adding the recipe later works too; you then declare the
+`setup` block in `artifact.json` by hand.
 
-Two constraints on the upstream layout, both worth fixing upstream rather than working around:
+`Dockerfile` is the one file worth deciding case by case. Vendoring it keeps the build definition with
+the code, which is right if upstream maintains it. Authoring it in the registry is right if it exists
+only to satisfy the company proxy. `company-atlassian` authors it, because the CA line is a company
+fact and not an upstream one.
 
-- **`--path` must be a directory.** A server that is one loose `server.py` at the repository root
-  cannot be vendored at all — `error: the requested subtree path is not a directory`. Give each
-  server its own directory. This is `AD-11`.
-- **Do not edit the copy afterwards.** `registry audit` recomputes the payload digest against
-  `provenance.json` and reports a copy that no longer matches its origin. Fixes go upstream and come
-  back through `revendor`.
+### 5.2 What `artifact.json` ends up as
 
-`Dockerfile` is the exception worth thinking about. Vendoring it keeps the build definition with the
-code, which is right if upstream maintains it. Authoring it in the registry is right if the
-Dockerfile exists only to satisfy the company proxy. `company-atlassian` authors it, because the CA
-line is a company fact and not an upstream one.
-
-### 5.2 Write `artifact.json`
+Most of this comes from the vendor flags rather than your editor. It is here so you know what to check
+afterwards, and what to add. Write it by hand only for a package with no upstream at all.
 
 ```json
 {
@@ -424,16 +459,20 @@ install and a dead server.
 
 For each new server in `agent-mcp-servers`:
 
-| | What changes |
-|---|---|
-| 1 | `--path servers/<name>` on the vendor command |
-| 2 | `name` and `summary` in `artifact.json`; `version` starts at `1.0.0` |
-| 3 | The image tag in `payload/mcp.json`: `aart/mcp/<name>:<version>` |
-| 4 | The server's own arguments in `payload/mcp.json` |
-| 5 | `artifact` and `purpose` in `installer.json` |
-| 6 | Keychain services: `aart/mcp/<name>/<what>` — namespaced per server so two servers never collide |
-| 7 | The environment variable names the server reads, in `shell_env` and in the `-e` flags |
-| 8 | `SETUP.md`, rewritten for those names |
+| | In order | What changes |
+|---|---|---|
+| 1 | author `payload/mcp.json` | the image tag `aart/mcp/<name>:<version>`, and the server's own arguments |
+| 2 | author `payload/Dockerfile` | usually nothing, if the servers build the same way |
+| 3 | author `setup/installer.json` | `artifact`, `purpose`, Keychain services `aart/mcp/<name>/<what>`, and the variable names the server reads |
+| 4 | author `SETUP.md` | rewritten for those names |
+| 5 | `aart registry vendor` | `--path servers/<name>`, `--summary`, `--artifact-version 1.0.0` |
+| 6 | check `artifact.json` | add the runtime-requirements block if the server needs one |
+
+Steps 1 and 2 are before step 5 and not after it: a `payload/` file that arrives after the vendoring
+is counted as part of the copy and breaks the origin digest. Steps 3, 4 and 6 may come either side.
+
+The Keychain services are namespaced per server on purpose. Two servers sharing
+`aart/mcp/…/api-token` would overwrite each other's credential with no error anywhere.
 
 What does **not** change between servers, as long as they all run in company-built containers: the
 step list, its order, the capabilities, the required tools, and the Dockerfile's CA lines. That is
