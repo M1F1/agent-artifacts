@@ -194,6 +194,106 @@ reference and pins the commit without copying bytes, so upstream keeps ownership
 stays small. `promote-native` refuses any repository that does not meet that precondition, which is
 why almost everything in a normal company gets vendored.
 
+## 3a. Vendoring a whole repository's worth of artifacts
+
+There is no bulk vendor. `registry vendor` takes one kind, one name and one `--path`, so a monorepo
+of twenty prompts is twenty invocations. Write the list down and loop over it — that keeps the list
+reviewable in Git, which hand-typed commands never are.
+
+`vendor.tsv`, tab-separated, one artifact per line:
+
+```text
+skill	release-evidence	packages/release-evidence	1.0.0	Evidence checklist for a release.
+guideline	branch-conventions	packages/branch-conventions	1.0.0	How we name and merge branches.
+```
+
+`vendor-all.sh`:
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+URL="$1"; REF="${2:-main}"
+
+while IFS=$'\t' read -r kind name path version summary; do
+  [ -z "${kind:-}" ] && continue
+  case "$kind" in \#*) continue ;; esac
+  echo "== vendoring $kind/$name from $path"
+  aart registry vendor "$kind" "$name" --source . \
+    --url "$URL" --ref "$REF" --path "$path" \
+    --artifact-version "$version" --summary "$summary" \
+    --profile tabnine --platform darwin \
+    --review-policy manual-review-v1 --yes >/dev/null
+done < vendor.tsv
+
+aart registry lock --source . --yes >/dev/null
+echo "now commit the lock, then: aart registry build --source . --yes"
+```
+
+```sh
+./vendor-all.sh https://ghe.company.example/platform/shared-tools.git main
+```
+
+Two artifacts took three seconds, and `validate --strict --frozen` passed afterwards. **Each
+invocation clones the upstream again** — the clone is per artifact, not per repository — so budget
+roughly a clone per line on a large repository.
+
+`--yes` inside a loop skips the review step, which is the whole point of a loop and also its risk.
+Run the script once without `--yes` first if the upstream is one you have not vendored before.
+
+## 3b. Grouping artifacts so a colleague installs them in one command
+
+The word for a group of artifacts is a **collection**. (If you have used AART before under a
+different name: `bundle` still appears in some internal type names, but nothing in the protocol,
+the registry format, or the CLI uses it. `collection` is the shipped word.)
+
+A collection is one file under `collections/` — `registry init` already declared that root in
+`aart-source.json`. There is **no `registry scaffold collection`**; write the file:
+
+`collections/platform-baseline.json`
+
+```json
+{
+  "schema_version": 1,
+  "name": "platform-baseline",
+  "summary": "What every platform-team repository starts with.",
+  "artifacts": [
+    {"type": "skill", "name": "release-evidence"},
+    {"type": "guideline", "name": "branch-conventions"}
+  ]
+}
+```
+
+`name` must be a lowercase slug and match the filename. A selector may pin a range with an optional
+`"version"`; a collection may also list other collections under `"collections"`, and the compiler
+rejects duplicate selectors, self-reference, and cycles. A collection with no members at all is
+refused.
+
+Then lock, commit, build, commit, as in section 5 — a new collection changes the index.
+
+Your colleague now installs the whole set with one coordinate:
+
+```sh
+aart marketplace install company/collection/platform-baseline --profile tabnine --yes
+```
+
+```text
+Install outcome: succeeded
+  Selected: 2; changed=2
+  - company/guideline/branch-conventions@1.0.0#tabnine/project: changed
+  - company/skill/release-evidence@1.0.0#tabnine/project: changed
+```
+
+Collections show up in `marketplace list` with their members spelled out, so nobody has to install
+one to find out what is in it:
+
+```text
+company/collection/platform-baseline [collection] What every platform-team repository starts with. members=company/guideline/branch-conventions@1.0.0,company/skill/release-evidence@1.0.0
+```
+
+This is the piece worth building first if you want adoption. *Run one command and you have the
+team's baseline* is a much easier thing to put in an onboarding document than a list of seven
+coordinates.
+
 ## 4. Write an artifact of your own
 
 For material that has no upstream, scaffold a package and fill it in:
