@@ -43,6 +43,8 @@ Rules for this stream, same as every other:
 
 | `AD-19` | medium | `2026-08-17`, vendoring an MCP server | `error: registry mutation requires a writable local Git checkout` arrives with no remediation line, and the precondition it names is not the one it enforces. The check needs `.git` at the `--source` path itself, so a registry sitting one level inside a Git repository is refused while `git rev-parse --is-inside-work-tree` prints `true` from that same directory. Read commands never touch the check, so it appears at the first publish, after the package is finished. |
 
+| `AD-20` | medium | `2026-08-17`, vendoring an MCP server | `a vendored mcp needs payload/mcp.json; the taken subtree does not contain it, so the maintainer supplies it` says what is missing and who supplies it, never where. It goes at `artifacts/mcp/<NAME>/payload/mcp.json`, authored before the command runs, in a directory the command is about to create. And if upstream happens to ship a file of that name, authoring your own is refused instead as a collision — the right move inverts on upstream content, and the message hints at neither branch. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -815,3 +817,75 @@ to be split out — there is no flag for it.
 One remediation line that separates the two causes: *initialise a repository here with `git init`*,
 versus *the registry must be the repository root; `<path>` is inside a checkout rooted at `<root>`*.
 The second half is cheap — the code already knows, because `rev-parse` would tell it.
+
+## Notes on `AD-20`
+
+### What was being done
+
+Vendoring the ported MCP server. `AD-19` was cleared by putting the registry in its own Git
+checkout, the same command was re-run, and it stopped again:
+
+```
+error: a vendored mcp needs payload/mcp.json; the taken subtree does not contain it,
+so the maintainer supplies it
+```
+
+The sentence is correct and complete about the problem. It says nothing about the remedy beyond
+naming the person responsible for it.
+
+### Why *where* is the hard part
+
+Three things make the location non-obvious, and the message addresses none of them.
+
+The path is **package-relative, not registry-relative**. `payload/mcp.json` as printed is relative to
+`artifacts/mcp/<NAME>/`, so the file goes at `artifacts/mcp/<NAME>/payload/mcp.json`. Read as a path
+from the registry root — the directory the command is being run in — it is wrong.
+
+The directory **does not exist yet**. A first vendoring creates the package, so the natural reading
+is that the file should end up in the upstream subtree, or be passed by a flag. Neither is true:
+`plan_artifact_vendor` adopts whatever the maintainer has already placed at the target path
+(`registry_commands/planning.py`, lines 705-725) and no flag can carry file bytes.
+
+The ordering is **author first, then vendor**, which is the reverse of what building a package feels
+like. This stream's own tutorial had it backwards until testing corrected it.
+
+### Five projections
+
+Measured `2026-08-17` by calling `project_vendored_package` directly over one synthetic upstream
+subtree holding `launcher.sh`, `README.md` and `server.py`.
+
+| Authored at the package path | Upstream subtree | Result |
+|---|---|---|
+| nothing | three files | `a vendored mcp needs payload/mcp.json …` |
+| `payload/mcp.json` | three files | accepted; six files written |
+| `mcp.json` at the package root | three files | `authored file is not canonical package content: mcp.json` |
+| `payload/mcp.json` | three files **plus** its own `mcp.json` | `authored file collides with the taken subtree: payload/mcp.json` |
+| nothing | three files **plus** its own `mcp.json` | accepted; upstream's copy is shipped |
+
+The last two rows are the trap. Whether authoring `payload/mcp.json` is the fix or the error depends
+on whether upstream happens to ship a file of that name — something the maintainer has no reason to
+have checked, because the wrapper is the part they expect to write themselves. The refusal that
+sends them to author it does not mention that the opposite case exists.
+
+The collision rule itself is right: overwriting a taken byte would mean reviewing upstream content
+that is not the content the registry ships. It is stated in the code and nowhere the maintainer
+reads.
+
+### Same omission as `AD-19`, one module over
+
+```python
+def _error(message: str, path: str | None = None) -> Err:
+    return Err((Diagnostic(ARTIFACT_INVALID, Severity.ERROR, message, SourceLocation(path=path)),))
+```
+
+No remediation parameter, and the `path` that is available is passed by no call site in the file.
+Every refusal `registry_maintenance/vendoring.py` can raise — and there are around thirty — arrives
+bare. `AD-19` found the same thing in `io/registry_workspace.py`. Two modules on the publishing path
+lost their remediation lines while their neighbours in `registry_commands/planning.py` kept theirs.
+
+### Asked for
+
+The package-relative path in the message, so it reads *author it at
+`artifacts/mcp/<name>/payload/mcp.json` before vendoring*. And a second clause on the collision
+refusal saying that upstream already provides this file and the authored copy should be dropped —
+which turns two dead ends into two instructions.
