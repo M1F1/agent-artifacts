@@ -26,6 +26,7 @@ Rules for this stream, same as every other:
 | `AD-05` | medium | `2026-08-16` | Vendoring a repository's worth of artifacts is one command per artifact, written by hand. `registry vendor` takes one `KIND NAME` and one `--path`; `VendorOptions.identity` is a single `ArtifactIdentity` and there is no `--all`, no manifest input, and no way to name two subtrees. Onboarding a monorepo of twenty prompts means twenty invocations, each re-cloning the same upstream — walked `2026-08-16`, two artifacts in 3 s, so a shell loop is bearable but the re-clone is per artifact, not per repository. |
 | `AD-06` | low | `2026-08-16`, answering *what is a package of artifacts called* | `bundle` is dead vocabulary that still ships. The shipped name is **collection** — `collections/<name>.json`, `collection_roots` in `aart-source.json`, `<source>/collection/<name>` as an install coordinate, `[collection]` in `marketplace list`. But `model.py:243` still defines `Bundle` and `Catalog` with **zero importers anywhere in the package**, `wizard.py:64` still types a row as `Literal["artifact", "bundle", "reference"]`, `tui.py:328` types it `Literal["artifact", "bundle", "profile"]` and builds collection rows with the literal string `"bundle"`, and one operator-visible sentence at `tui.py:290` says *artifacts selected through bundles use copy semantics*. Two names for one thing, one of which the protocol has never heard of. |
 | `AD-07` | low | `2026-08-16`, walking `AD-05` | A collection has no authoring command. `registry scaffold` accepts `skill`, `guideline`, `mcp`, `hook`, `memory` and refuses `collection`; the only way to publish one is to write `collections/<name>.json` by hand against a schema documented in `native-source-v1.md` §*Provenance and collections* and nowhere else. Walked `2026-08-16`: hand-written, it validates, locks, builds and installs both members in one consumer command — so the feature works and only the on-ramp is missing. |
+| `AD-08` | high | `2026-08-16`, raised as a proposal | Nothing helps a maintainer find what is worth vendoring in a foreign repository. Asked for: a scan that walks an external checkout, recognises the conventional shapes for the five kinds — `skills/`, `SKILL.md`, `guidelines/`, `hooks/`, `mcp`-ish files — and returns a list of candidate paths a maintainer then accepts or rejects one at a time, feeding the existing `vendor` command. Measured `2026-08-16` against three repositories on the raiser's disk: **69 candidate artifacts** — 14 `SKILL.md` in `upstream-superpowers-v6.2.0`, 20 in `residues-architecture-framework` (plus a `guidelines/` directory), 35 in `upstream-matt-skills-v1.2.3`. At six required arguments per `vendor` invocation that is the manual work the proposal is about. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -133,6 +134,52 @@ Two things to settle when it is fixed, not now:
 2. **Where the link goes.** *Quick start* gets a reader to their first command; the walkthrough is
    what a platform team follows for half a day. Those are different moments and probably different
    places in the README.
+
+## Notes on `AD-08`
+
+The largest item in this stream, and the only one that asks for something the product does not have
+at all. Everything else is a document, a default, or a name.
+
+**The design already sanctioned this shape, and named the condition.**
+[`DESIGN-registry-vendoring.md`](../design/DESIGN-registry-vendoring.md) §10 lists batch discovery
+as a deliberate non-goal, and then says exactly how it may come back: *"If it returns, it returns as
+an orchestration layer over this primitive, never as a replacement for it."* §9 records why the old
+`aart upstream import` was removed — GitHub REST, `GITHUB_API_URL`, a `GITHUB_TOKEN` in the
+environment — and the reason it produced *"results a maintainer had to audit line by line"*. So the
+proposal is not fighting the design; it is the re-entry the design described. What must not come
+back with it is the credential handling and the idea that discovery decides anything.
+
+**Prior art sits in one of the raiser's own repositories.** `residues-architecture-framework` carries
+`agent-artifacts.import.json`: 14 entries, each with `type`, `name`, `path`, `description` — and
+`bundle`, the dead word from `AD-06`. It is read by **nothing** in AART; it is a leftover of the
+removed importer. It is also, near enough, the manifest a crawler would emit and `vendor-all.sh`
+would consume. Whatever gets built should be able to produce that file, and reading a hand-written
+one is most of the value on its own.
+
+Six things to settle in a design, none of them settled here:
+
+1. **Where the scan runs.** On a local checkout the maintainer already cloned, or on a URL AART
+   acquires the way `vendor` does? The second is friendlier and keeps one acquisition path; the
+   first makes the whole feature a read-only local walk with no network story at all.
+2. **What a rule is, and whether a maintainer can add one.** `SKILL.md` at a directory root is
+   nearly unambiguous. `guidelines/*.md` is a guess. `mcp` is the hardest — there is no file whose
+   presence means *this is an MCP server*. A fixed rule set is honest and small; a configurable one
+   is a second format to specify.
+3. **What the output is.** A JSON manifest (feeding a loop, reviewable in Git, diffable when
+   upstream moves) or an interactive one-by-one prompt. The raiser asked for the second; the first
+   composes with `AD-05`'s loop and survives being re-run six months later. They are not exclusive
+   — the prompt can write the manifest.
+4. **What it fills in and what it refuses to.** `--summary` could be read from a `SKILL.md` front
+   matter `description`; `--artifact-version` **must not** be guessed — §10 already forbids parsing
+   `package.json` or tags for a version, and the vendor command deliberately makes the maintainer
+   state it.
+5. **How a candidate becomes a decision.** *Accept* has to end in the same reviewed
+   `registry vendor` invocation an operator would have typed, with the same three checks. If the
+   crawler can vendor something the primitive would have refused, the feature is a hole.
+6. **Whether it reports what is already vendored.** Run against a repository half of which is
+   already in the registry, the useful answer is *these five are new, these nine you already have,
+   two of them have moved since*. `provenance.json` and `revendor --check` hold everything needed
+   to say that.
 
 ## Notes on `AD-04`
 
