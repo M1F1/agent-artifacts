@@ -41,6 +41,8 @@ Rules for this stream, same as every other:
 
 | `AD-18` | low | `2026-08-17` | The only artifact-manifest extension AART ships is namespaced to a personal account: `com.m1f1.runtime-requirements`, reverse-DNS of the repository owner `github.com/M1F1`. A namespace exists to say who defines a key, and this key is defined and read by AART itself, so it names the wrong party. Every company `artifact.json` that declares a runtime requirement carries it. Seven files mention it. Renaming a published protocol key is the cost, not the edit. |
 
+| `AD-19` | medium | `2026-08-17`, vendoring an MCP server | `error: registry mutation requires a writable local Git checkout` arrives with no remediation line, and the precondition it names is not the one it enforces. The check needs `.git` at the `--source` path itself, so a registry sitting one level inside a Git repository is refused while `git rev-parse --is-inside-work-tree` prints `true` from that same directory. Read commands never touch the check, so it appears at the first publish, after the package is finished. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -731,3 +733,85 @@ because the data was never load-bearing.
 Suggested replacement: **`aart.runtime-requirements`**. It satisfies the extension pattern
 (`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`), it names the party that actually defines the field, and
 it does not encode where the repository happens to be hosted this year.
+
+## Notes on `AD-19`
+
+### What was being done
+
+Publishing the ported `company-atlassian` package: authoring the payload, then running
+`aart registry vendor mcp company-atlassian --source . …`. The command stopped with one line:
+
+```
+error: registry mutation requires a writable local Git checkout
+```
+
+No remediation, no path, no second line.
+
+### The two ways to earn it
+
+Both were measured on `2026-08-17`, each on a copy of the working lab registry.
+
+**A registry that is not a Git checkout.** Copy the registry, delete `.git`. Read commands still
+work — `registry validate` runs and reports on the lock and index as usual. `registry vendor … --yes`
+prints the line above and stops.
+
+**A registry inside a Git checkout, one level down.** Put the registry at `<repo>/registry/` and
+`git init` at `<repo>/`. From inside `registry/`, `git rev-parse --is-inside-work-tree` prints
+`true`. The same mutation is refused with the same line.
+
+The second one is the interesting one, because the message is then simply false as read: it *is* a
+writable local Git checkout, and the tool says it is not.
+
+### What the check actually requires
+
+`_writable_checkout` (`agent_artifacts/io/registry_workspace.py`, lines 200-232) has three parts, in
+order:
+
+1. `--source` resolves to a real directory that is not a symlink;
+2. `os.stat(self.root / ".git")` succeeds and yields a directory or a regular file that is not a
+   symlink;
+3. only then, `git -C <root> rev-parse --is-inside-work-tree` prints `true`.
+
+Step 2 is the one nobody guesses. It requires `.git` **at the `--source` path itself**, so the
+registry has to be the repository root. Step 3, the part that would accept a subdirectory, is never
+reached in that case.
+
+The rule is defensible — a registry that owns its own history is easier to review, and it keeps a
+mutation from writing into a repository whose root is somewhere unexpected. It is not the rule the
+message states.
+
+### Why there is no remediation line
+
+`_error` in that module is:
+
+```python
+def _error(code: DiagnosticCode, message: str) -> Err:
+    return Err((Diagnostic(code, Severity.ERROR, message),))
+```
+
+It takes no remediation and no call site in the file supplies one, so **every** diagnostic raised by
+the registry workspace is bare. Its neighbours in `registry_commands/planning.py` all carry
+remediation, which is why the absence reads as an omission rather than a style.
+
+### When it is met
+
+At the first publish, and not before. `registry init`, authoring the payload, writing
+`setup/installer.json`, `registry validate` — none of them touch the check. The wall appears after
+the package is finished, which is the worst moment to discover that the directory layout was wrong.
+
+### The workaround, for now
+
+If the registry is meant to be its own repository:
+
+```
+git init
+```
+
+in the registry root, then re-run the vendor command. If it lives inside a larger repository, it has
+to be split out — there is no flag for it.
+
+### Asked for
+
+One remediation line that separates the two causes: *initialise a repository here with `git init`*,
+versus *the registry must be the repository root; `<path>` is inside a checkout rooted at `<root>`*.
+The second half is cheap — the code already knows, because `rev-parse` would tell it.

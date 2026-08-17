@@ -484,6 +484,31 @@ records it in `provenance.json` as authored, copies the three upstream files in 
 **writes `artifact.json` and `provenance.json` itself** from the flags. Those two are not yours to
 place — doing so is refused.
 
+It is a long line because most of `artifact.json` arrives through it. Flag by flag:
+
+| Flag | What it decides | If omitted |
+|---|---|---|
+| `mcp company-atlassian` | the artifact's kind and name — the package path `artifacts/mcp/company-atlassian/` | required |
+| `--source .` | which registry checkout is being written | defaults to the current directory |
+| `--url` | where the bytes come from; HTTPS or SSH, and **credential-free** — a URL carrying a password is refused | required |
+| `--ref main` | the ref to resolve; the *resolved commit* is what provenance pins, not the ref | `main` |
+| `--path servers/atlassian` | the subtree to copy, whole; must be a directory | required |
+| `--artifact-version 1.0.0` | the version **this registry** publishes the copy under — not upstream's | required |
+| `--summary` | the one line a colleague reads in `marketplace list` | required |
+| `--profile claude,tabnine` | which harnesses may install it | required |
+| `--platform darwin` | repeatable; `darwin` alone because the recipe uses the Keychain | required |
+| `--install-scope user --install-scope project` | repeatable; whether the server may be merged into the machine-wide MCP file, the per-repository one, or both | `project` only |
+| `--setup-recipe setup/installer.json` | declares the `setup` block; **checks that both the recipe and `SETUP.md` exist** and refuses otherwise | no setup block, which you then add to `artifact.json` by hand |
+| `--yes` | finalizes; without it the command reviews and writes nothing | review only |
+
+Two flags are not in the line and are worth knowing. `--license SPDX` states what this registry
+publishes the copy under; left off, it is read from the taken subtree, and a subtree with no licence
+file leaves it unset and reported by `registry audit`. `--install-mode` defaults to `copy`, which is
+what an MCP artifact wants.
+
+Run it once without `--yes` first. The review names every file the vendoring would write, and it is
+cheaper to read that than to unpick a package that landed under the wrong name.
+
 **6. Extend `artifact.json`** with the `com.m1f1.runtime-requirements` block if the server needs one.
 No flag carries it. It is an ordinary edit, because the integrity check looks only inside `payload/`.
 
