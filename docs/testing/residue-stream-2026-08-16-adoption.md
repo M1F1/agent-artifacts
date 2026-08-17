@@ -45,6 +45,8 @@ Rules for this stream, same as every other:
 
 | `AD-20` | medium | `2026-08-17`, vendoring an MCP server | `a vendored mcp needs payload/mcp.json; the taken subtree does not contain it, so the maintainer supplies it` says what is missing and who supplies it, never where. It goes at `artifacts/mcp/<NAME>/payload/mcp.json`, authored before the command runs, in a directory the command is about to create. And if upstream happens to ship a file of that name, authoring your own is refused instead as a collision — the right move inverts on upstream content, and the message hints at neither branch. |
 
+| `AD-21` | high | `2026-08-17`, installing an MCP server from the TUI | No artifact with a real setup recipe can be selected in the TUI, by anyone. The row refuses with `setup capabilities are unavailable: …` listing everything the recipe needs. The TUI builds its compatibility target without setup capabilities at all — the argument is simply not passed and defaults to empty — then evaluates against it with `require_setup=True` hard-coded. The organization field that would have filled it is read as *everything permitted* by the setup engine and as *nothing permitted* here. The CLI is unaffected. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -889,3 +891,106 @@ The package-relative path in the message, so it reads *author it at
 `artifacts/mcp/<name>/payload/mcp.json` before vendoring*. And a second clause on the collision
 refusal saying that upstream already provides this file and the authored copy should be dropped —
 which turns two dead ends into two instructions.
+
+## Notes on `AD-21`
+
+### What was being done
+
+Installing the finished `mcp/company-atlassian` from the TUI — the interface the walkthrough tells a
+colleague to start with. The row would not select:
+
+```
+cannot select this row: setup capabilities are unavailable:
+docker-build, keychain, managed-file, network, process, trust-store, verify-command
+```
+
+The first reading is that the package asks for too much, or that the machine lacks something. Both
+are wrong. The machine is never consulted.
+
+### The list is proof the package is correct
+
+Those seven names are not what the recipe declares. An author writes `keychain`, `filesystem`,
+`docker`, `network`, `process`, `trust-store` — the author's vocabulary. Policy speaks a different
+one, and `_PLANNED_CAPABILITIES` (`agent_artifacts/setup.py`, lines 115-128) translates module by
+module:
+
+| Step in `installer.json` | Module | Planned capabilities |
+|---|---|---|
+| `docker_running` | `command.verify@1` | `verify-command` |
+| `company_ca` | `trust-store.export-certificates@1` | `trust-store` |
+| `image` | `docker.build@1` | `docker-build`, `network`, `process` |
+| `store_username`, `store_token` | `macos-keychain.store@1` | `keychain` |
+| `shell_env` | `shell.env-from-keychain@1` | `managed-file` |
+| `restart` | `restart.notice@1` | none |
+
+Sorted, that set is `docker-build, keychain, managed-file, network, process, trust-store,
+verify-command` — character for character what the TUI printed. Computed `2026-08-17` from the table
+itself. The package is well-formed and the recipe compiles; what the message reports is the whole of
+what the recipe needs, because the side it is compared against is empty.
+
+### The empty side
+
+`tui.py`, lines 1775-1780, is the only place in the codebase that builds a `MarketplaceTarget`:
+
+```python
+MarketplaceTarget(
+    tuple(sorted(session.profiles)),
+    "darwin" if sys.platform == "darwin" else "linux",
+    scope,
+    session.install_mode,
+)
+```
+
+Four positional arguments. The fifth field, `setup_capabilities`, is not passed, and its dataclass
+default is `()` (`tui_marketplace.py`, line 59).
+
+`_compatibility` (`tui_marketplace.py`, lines 228-239) hands that empty tuple straight into
+`evaluate_compatibility` together with `require_setup=True`, hard-coded. `compiler/graph.py`, lines
+837-849, then lists every declared capability as missing, and `compatible` is
+
+```python
+self.payload_compatible and (self.setup_compatible or not self.setup_required)
+```
+
+so with `setup_required` forced true, the row is unselectable. **Any recipe using any module except
+`restart.notice@1` — the one module that needs nothing — fails this.** It is not specific to this
+package or this machine.
+
+### One unset field read two opposite ways
+
+The field that should have filled the target exists: `allowed_setup_capabilities`
+(`configuration/model.py`, line 177), an organization-policy list, default `None`.
+
+The setup engine reads it correctly (`setup_engine/application.py`, lines 279-287):
+
+```python
+allowed = effective.policy.allowed_setup_capabilities
+if allowed is not None:
+    ...
+```
+
+`None` means *no organization restriction*, so everything is permitted. That is the right reading of
+an unset policy.
+
+The TUI never reads it at all, and its own default — an empty tuple — means *nothing is permitted*.
+So the same absence of an organization policy means everything on the half that actually performs
+setup, and nothing on the half that lets you choose it. The gate does not enforce a policy; it
+enforces the absence of one.
+
+### The CLI is unaffected
+
+`installation/application.py`, lines 1012-1020, builds its target with `require_setup=False`, so the
+setup capabilities never enter the install decision there. `marketplace install --yes` installs the
+same artifact, and `setup run` then applies real policy through the engine above.
+
+That is the workaround and it is also what makes the finding `high` rather than `blocking`: the
+capability is reachable, just not from the interface a newcomer is pointed at. Under `AD-09` the TUI
+is already the only place usage reporting is offered, so *use the CLI instead* costs more than it
+sounds.
+
+### Asked for
+
+Pass the effective policy's `allowed_setup_capabilities` into the target, with `None` meaning
+*everything*, exactly as `setup_engine/application.py` reads it. And when the gate does fire, say
+which side is empty — a message naming seven capabilities the recipe needs, without a word about
+what the target offers, sends the reader to audit their own package.
