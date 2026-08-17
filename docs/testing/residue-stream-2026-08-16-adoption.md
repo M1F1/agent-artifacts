@@ -39,6 +39,8 @@ Rules for this stream, same as every other:
 
 | `AD-17` | medium | `2026-08-17`, porting an MCP server | A setup recipe prompts for secrets and for nothing else. `inputs[].type` accepts `"secret"` and refuses everything else, so a per-user value that is not a secret — an account e-mail, a board key — has nowhere to go. Found porting `company-atlassian`, whose POC declared the Atlassian e-mail as `type: "text"`. The working route is to keep it in the Keychain with the API token, which means the colleague types their own e-mail address into a prompt with no echo and approves a Keychain access for it. The restriction is deliberate and it is what lets the parser refuse secret interpolation everywhere else, so the ask is a second non-secret input type, not a loosening of this one. |
 
+| `AD-18` | low | `2026-08-17` | The only artifact-manifest extension AART ships is namespaced to a personal account: `com.m1f1.runtime-requirements`, reverse-DNS of the repository owner `github.com/M1F1`. A namespace exists to say who defines a key, and this key is defined and read by AART itself, so it names the wrong party. Every company `artifact.json` that declares a runtime requirement carries it. Seven files mention it. Renaming a published protocol key is the cost, not the edit. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -676,3 +678,56 @@ Until then the pattern to copy is the one in
 [`../tutorials/mcp-servers-into-the-registry.md`](../tutorials/mcp-servers-into-the-registry.md) §5.4:
 put it in the Keychain, and say plainly in `SETUP.md` that the prompt is hidden. The friction is
 small. Discovering it alone, mid-install, is what makes it a finding.
+
+## Notes on `AD-18`
+
+Raised by the raiser reading the `artifact.json` this stream had just written for their own company
+MCP server: they did not like seeing `m1f1` in it.
+
+The name comes from the repository owner. `pyproject.toml` gives
+`Homepage = "https://github.com/M1F1/agent-artifacts"`, and `com.m1f1.` is that owner in reverse-DNS
+form. So it is consistent rather than arbitrary. It is also personal, and it is in a published
+protocol key.
+
+### Why the namespace is the wrong one
+
+A namespaced extension key exists to answer one question: **who defines this field, so that two
+parties can add fields to the same document without colliding.** `com.example.thing` means
+*example.com owns the meaning of `thing`*.
+
+This key is not a third party's. `RUNTIME_REQUIREMENTS_EXTENSION` is a constant in AART
+(`consumer/runtime_requirements.py:31`); AART parses it, AART evaluates it, `aart marketplace health`
+is the only thing that reads it. It is a first-party field wearing a third-party namespace, and the
+party it names is a person rather than the project.
+
+`docs/marketplace/runtime-requirements-v1.md` explains at length why the data lives in an *extension*
+rather than a core field — older readers preserve namespaced extensions, so the addition breaks no
+protocol-v1 consumer. That reasoning is sound and unaffected. It simply never says anything about the
+`m1f1` half.
+
+### Where it shows
+
+Seven files in the repository mention the string, of which one is the constant, one a test, one a
+fixture and the rest documentation. That is not the cost.
+
+The cost is that it appears in **every `artifact.json` that declares a runtime requirement**, which
+means every company package that needs Docker or a particular Python. The raiser met it while
+reading their own registry's manifest, and *company package declaring a personal namespace* is a
+reasonable thing to object to when the point of the exercise is to publish AART inside a company.
+
+It is also the field most likely to outlive the choice: if the repository ever moves to an
+organization, the key stays behind as the one place the old account name is frozen into other
+people's files.
+
+### What renaming costs
+
+Not the edit. Renaming a published protocol key is the cost, and this project's standing rule is that
+there is one live revision of any protocol — a superseded one is rejected with a migration error, not
+read alongside the new one. So the change is: rename the constant, reject the old key with a
+diagnostic naming the new one, update the fixture, the test, the two protocol documents, the
+changelog and the tutorial. A registry that carries the old key rebuilds; nothing installed breaks,
+because the data was never load-bearing.
+
+Suggested replacement: **`aart.runtime-requirements`**. It satisfies the extension pattern
+(`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`), it names the party that actually defines the field, and
+it does not encode where the repository happens to be hosted this year.
