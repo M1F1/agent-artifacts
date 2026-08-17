@@ -55,6 +55,8 @@ Rules for this stream, same as every other:
 
 | `AD-25` | medium | `2026-08-17`, the same setup run | `setup state persistence failed; applied effects were compensated` replaces five distinct causes with one sentence. `persist_setup` returns a specific diagnostic; `finalize_setup` checks only whether it is an error and never reads it. Re-run it, re-review it, check the disk, or investigate a partial rollback — the message supports none of those, and it arrives after every effect has been compensated and the credentials already typed. |
 
+| `AD-26` | high | `2026-08-17`, running setup on an MCP server | A symlinked `~/.zshrc` — the normal result of keeping dotfiles in a repository — makes the managed-block step impossible. The refusal is correct; the timing is not. Planning is a pure function with no filesystem access, by design, so the review lists `~/.zshrc` as the target of a write that cannot succeed, and nothing stats it before the first effect. The reader pays for the image build and types two credentials blind before reaching a step one `lstat` would have ruled out. There is no follow option and no alternative target. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -1299,3 +1301,79 @@ receipt — close at the same moment, for the same reason.
 Confirmed `2026-08-17` while trying to answer *did it fail on the `~/.zshrc` write?* from the
 outside. It cannot be answered from AART's own records; it has to be answered by looking at
 `~/.zshrc` itself.
+
+## Notes on `AD-26`
+
+### How it was found
+
+Raised as a hunch — *I think it fails on the `~/.zshrc` write* — while trying to interpret `AD-25`'s
+featureless message. The hunch was right and the confirmation was one command on the raiser's own
+machine: `ls -l ~/.zshrc` shows an arrow.
+
+That is worth recording on its own. The person running the setup diagnosed it faster from a suspicion
+about their own dotfiles than either the diagnostic or the receipt could (`AD-25`), because neither
+was able to say anything.
+
+### The refusal is right
+
+```python
+def _read_regular_text(path: str) -> tuple[str, bool, Optional[int]]:
+    if os.path.islink(path):
+        raise RuntimeError(f"refusing to edit symlink: {path}")
+```
+
+`setup_runtime.py`, lines 194-196. Writing through a symlink writes to a file the review never named,
+possibly outside the home directory entirely. Refusing is the only defensible behaviour and this
+finding does not ask for it to change.
+
+Verified `2026-08-17` against the function directly:
+
+| Target | Result |
+|---|---|
+| symlink | `refusing to edit symlink: …` |
+| regular file | accepted, mode preserved |
+| missing | accepted, treated as empty |
+
+So the single unsupported shape is the one a dotfiles repository produces — which is how most of the
+developers this stream is aimed at keep their shell configuration.
+
+### The timing is not
+
+`plan_setup` (`setup.py`, lines 887-895) is documented as resolving *exact non-secret effects and
+binding them to a deterministic plan hash*, and it reads nothing from the filesystem. That is
+deliberate and correct: a plan hash that varied with local state could not be compared against a
+review, and `--expect` would be meaningless.
+
+The consequence is that the review prints `~/.zshrc` as the target of a write that cannot succeed,
+with no qualification. And nothing between the review and the first effect stats it either — the
+first contact with the path is the step itself, sixth of seven.
+
+By then the reader has run `docker info`, exported certificates, waited out an image build through a
+corporate proxy, and typed two credentials into unlabelled prompts (`AD-24`). All of it is then
+compensated. One `lstat` before the first step would have cost nothing and saved all of it.
+
+### There is no way through
+
+The module takes `file` and `variables` and nothing else — no follow-symlink option, no fallback
+target, no *write beside it instead*. And the recipe author cannot choose correctly on the reader's
+behalf, because whether `~/.zshrc` is a symlink is a property of the person's machine, not of the
+artifact.
+
+The shape that works is a file the artifact owns, which the reader sources from their dotfiles
+repository once, by hand:
+
+```json
+{ "id": "shell_env", "use": "shell.env-from-keychain@1",
+  "with": { "file": "~/.aart-atlassian.zsh", "variables": { … } } }
+```
+
+`_resolve_target` (`setup.py`, lines 702-709) accepts any `~/…` path, so this needs no code change —
+only a recipe that stops assuming it may edit the reader's shell configuration directly. That is
+probably the better default for a company registry regardless: an artifact that owns its own file can
+be removed cleanly, and it never contends with whatever else manages the dotfiles.
+
+### Asked for
+
+A preflight between the reviewed plan and the first effect that stats every managed-file target and
+refuses before anything runs. It sits outside the plan hash, so determinism is untouched, and it
+turns a late compensated failure into an immediate one that names the file.
