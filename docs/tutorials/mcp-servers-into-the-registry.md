@@ -426,7 +426,98 @@ scripts/registry_publish.py --source /path/to/registry --yes
 
 `lock`, `build`, `validate`, `audit`, then one commit listing every file. See `AD-14`.
 
-## 6. Check it before anyone installs it
+## 6. A worked run: three files upstream, one you want
+
+The common case, and the one that makes people look for a flag that does not exist. Upstream
+`servers/atlassian/` holds:
+
+```
+launcher.sh          not wanted
+README.md            not wanted
+server.py            wanted
+```
+
+**You cannot select. You also do not need to.** `launcher.sh` and `README.md` land in `payload/` and
+sit there without effect: installing an `mcp` artifact merges the `server` object out of
+`payload/mcp.json` and copies **no file at all** onto a colleague's machine, and the Dockerfile copies
+into the image only what you name. Measured `2026-08-17` — a package carrying both extra files in its
+payload passes `registry validate` and `registry audit` without a single remark.
+
+Note what upstream does *not* have: `requirements.txt`. That is normal. Anything the package needs and
+the repository does not carry is yours to author, which is the same mechanism as the wrapper.
+
+### The run
+
+**1. Make the package directory in your registry.**
+
+```bash
+mkdir -p artifacts/mcp/company-atlassian/payload artifacts/mcp/company-atlassian/setup
+```
+
+**2. Write `payload/mcp.json`.** Required *before* the vendoring. Upstream does not have it and never
+will — `vendoring.py:92` says so in as many words, calling it the maintainer's wrapper. Without it,
+`vendor` refuses.
+
+**3. Write `payload/Dockerfile` and `payload/requirements.txt`.**
+
+In the Dockerfile you copy only what you want:
+
+```dockerfile
+COPY requirements.txt ./
+COPY server.py ./
+```
+
+`launcher.sh` and `README.md` are in the build context and never reach the image, because nothing
+copies them.
+
+**4. Write `setup/installer.json` and `SETUP.md`.** These two may come later — they are outside
+`payload/` — but writing them now means one command finishes the job.
+
+**5. Vendor.**
+
+```bash
+aart registry vendor mcp company-atlassian --source . --url https://github.example.com/your-org/agent-mcp-servers.git --ref main --path servers/atlassian --artifact-version 1.0.0 --summary "Jira and Confluence access for the company Atlassian instance." --profile claude,tabnine --platform darwin --install-scope user --install-scope project --setup-recipe setup/installer.json --yes
+```
+
+What happens: `vendor` adopts everything already sitting at `artifacts/mcp/company-atlassian/`,
+records it in `provenance.json` as authored, copies the three upstream files in beside it, and
+**writes `artifact.json` and `provenance.json` itself** from the flags. Those two are not yours to
+place — doing so is refused.
+
+**6. Extend `artifact.json`** with the `com.m1f1.runtime-requirements` block if the server needs one.
+No flag carries it. It is an ordinary edit, because the integrity check looks only inside `payload/`.
+
+**7. Publish.**
+
+```bash
+scripts/registry_publish.py --source . --yes
+```
+
+### The one thing that will catch you
+
+**After step 5, add nothing further to `payload/`.** A file that arrives there after the vendoring is
+counted as part of the copy and the digest stops matching the origin — measured in §5.1: `mcp.json`
+present beforehand digests identically to the taken subtree alone, the same `mcp.json` added
+afterwards does not. Outside `payload/` — `SETUP.md`, `setup/`, `artifact.json` — add whenever you
+like.
+
+### If the extra files genuinely bother you
+
+The only way to not take them today is a layout change in `agent-mcp-servers`: a subdirectory holding
+what should be copied.
+
+```
+servers/atlassian/
+  launcher.sh          stays outside
+  README.md            stays outside
+  src/server.py        --path servers/atlassian/src
+```
+
+Then `--path servers/atlassian/src` takes `server.py` and nothing else. But that is a change in the
+other repository, and the surplus in the payload costs nothing — so do it when you are in there
+anyway, not for the vendoring's sake.
+
+## 7. Check it before anyone installs it
 
 `registry validate` proves the package compiles. It does not prove the recipe does what you meant.
 Two checks worth running on every port:
@@ -455,7 +546,7 @@ they will. For `company-atlassian` it names seven effects, the derived tag
 line against the image argument in `mcp.json`. This is the one mismatch that produces a working
 install and a dead server.
 
-## 7. Per-server checklist
+## 8. Per-server checklist
 
 For each new server in `agent-mcp-servers`:
 
@@ -478,7 +569,7 @@ What does **not** change between servers, as long as they all run in company-bui
 step list, its order, the capabilities, the required tools, and the Dockerfile's CA lines. That is
 the part this port was for.
 
-## 8. Where this was proven
+## 9. Where this was proven
 
 A registry initialised from scratch, the package built as above, then `lock`, `build`, `validate`,
 `audit` — validate passed, audit passed with the three warnings a registry with no security evidence
