@@ -22,6 +22,8 @@ Rules for this stream, same as every other:
 |---|---|---|---|
 | `AD-01` | low | `2026-08-16` | The Quick start offers exactly one way to install AART, and it is a developer's way: `python -m pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts`. A colleague who wants to *use* the tool has to clone the repository first, and then holds an editable install pointing at a checkout they will forget they are on. `pipx` and `uv` are how a Python CLI is installed today, and neither appears. Asked for: `pipx` and `uv` beside the `pip` line, **and the sources an installer can actually name** — a wheel already on disk, a wheel fetched from a GitHub release, and the repository URL directly — not only a path to a clone. Widened by the raiser the same day. |
 | `AD-02` | medium | `2026-08-16` | The README never says what vendoring is. The word *vendor* does not occur in it — zero times in 219 lines — while `registry vendor` and `registry revendor` are shipped commands, `provenance.json` is a shipped document, and two designs exist for the mechanism. *Maintaining a registry* teaches `promote-native` instead, and `promote-native` is the one that requires the upstream repository to already declare `aart-source.json` — the precondition most repositories cannot meet, and the exact barrier vendoring was built to remove. A maintainer reading only the README concludes AART cannot take content from a repository that knows nothing about AART. Asked for: an explanation of vendoring in the README. |
+| `AD-03` | medium | `2026-08-16` | The README links to no tutorial at all. The word *tutorial* does not occur in it, and `docs/tutorials/` holds four documents including the new [company registry walkthrough for Tabnine](../tutorials/company-registry-tabnine-v1.md). So the one document that answers *how do I actually stand this up* is reachable only by browsing the tree. Asked for: the walkthrough either in the README or linked from it — **linked**, so the README does not grow to the length of a manual. |
+| `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
 
@@ -106,3 +108,45 @@ Three things to settle when it is fixed, not now:
    vendoring from copy-and-paste.
 3. **Whether the `promote-native` sentence is corrected at the same time.** It is currently the only
    thing the README says about foreign content, and it overstates its reach.
+
+## Notes on `AD-03`
+
+The walkthrough now exists — [`company-registry-tabnine-v1.md`](../tutorials/company-registry-tabnine-v1.md)
+— and every command in it was executed against a `2.6.1` wheel in a throwaway venv before it was
+written. The finding is about reaching it, not writing it.
+
+The raiser's constraint is explicit and shapes the fix: **link, do not inline.** The README is 219
+lines and covers a product with three command families; a full standing-up guide inside it would
+bury the parts a reader needs in the first minute.
+
+Two things to settle when it is fixed, not now:
+
+1. **Whether the other three tutorials get linked too.** `company-registry-v1.md`,
+   `direct-source-v1.md` and `vendoring-v1.md` are equally unreachable. Note that the first two are
+   `1.0.0`-era: `company-registry-v1.md` opens *Tutorial: AART 1.0.0* and tells the reader to
+   *open `aart`*. Linking them from the README without reading them first would advertise stale
+   instructions to exactly the audience this stream is for. That is its own finding if it turns out
+   to be true of more than one.
+2. **Where the link goes.** *Quick start* gets a reader to their first command; the walkthrough is
+   what a platform team follows for half a day. Those are different moments and probably different
+   places in the README.
+
+## Notes on `AD-04`
+
+Filed `high`, and it is the only finding in this stream that is not about documents. It surfaced
+while writing the destination table for `AD-03`'s walkthrough: the table needed a row for `mcp`,
+the source had a comment saying the row might be wrong, and there was no evidence either way.
+
+**Why `high`.** The failure is silent. An MCP artifact installs, `marketplace install` reports
+success, `marketplace status` reports `current`, and the file it wrote is one Tabnine may never
+read. Nothing in AART can detect this, because AART's job ends at writing the file the profile
+names. The first person to notice is a colleague whose MCP server does not appear, at which point
+the tool they were told to adopt looks broken.
+
+What would settle it, and it is cheap: install one `mcp` artifact into a scratch project with
+`--profile tabnine`, open Tabnine, and see whether the server is there. If it is not, move the
+`MergeSpec` to `.tabnine/mcp_servers.json` — the comment already says this is a one-line record
+change. **Requires a machine with Tabnine on it**, which is the raiser's, not the agent's.
+
+Until it is settled the walkthrough carries the caveat in the open, in the section a reader meets
+before rolling MCP artifacts out to a team.
