@@ -240,6 +240,43 @@ roughly a clone per line on a large repository.
 `--yes` inside a loop skips the review step, which is the whole point of a loop and also its risk.
 Run the script once without `--yes` first if the upstream is one you have not vendored before.
 
+### Filling that list without reading the repository yourself
+
+Writing `vendor.tsv` by hand is the slow part: on three repositories on a maintainer's disk it is
+73 lines and six fields each. [`scripts/vendor_scan.py`](../../scripts/vendor_scan.py) writes it for
+you. It depends on nothing but `git` and `aart`, it decides nothing, and it vendors through the real
+`registry vendor` — with its review step and its three checks — one artifact at a time.
+
+```sh
+scripts/vendor_scan.py scan https://ghe.company.example/platform/shared-tools.git --out cand.json
+scripts/vendor_scan.py review cand.json
+scripts/vendor_scan.py vendor cand.json --source . --yes
+```
+
+`scan` clones read-only and reports directories `vendor` can take today: a directory holding
+`SKILL.md` is a skill, a directory holding exactly one Markdown file is a guideline, `mcp.json` and
+`hook.json` are an MCP server and a hook. It reads the summary out of the document — front-matter
+`description` first — instead of inventing one, and names a lone guideline after the document rather
+than the directory it happens to sit in.
+
+Anything else it recognises it reports as a **hint** rather than a candidate: a `.mcp.json` in the
+upstream's own layout, a `hooks/` directory of scripts, guidance split across several Markdown files
+in one directory. These are real artifacts that `vendor` cannot take as they stand, because a
+payload must be a directory in exactly the shape AART compiles. A hint says what the obstacle is and
+what you would have to author. It never becomes a command that would fail.
+
+`review` shows one candidate at a time and takes `y`/`n`, `r` to rename, `e` to rewrite the summary,
+`v` to set the version. Your answers are written back into the manifest, so the review is resumable
+and lands in Git as a reviewable list — the same property the hand-written `vendor.tsv` has.
+
+`vendor` runs `aart registry vendor` per keeper, skips what is already in the registry, and reviews
+without finalizing until you add `--yes`. Scanning a checkout you already have on disk works too; it
+reads the working tree but pins the vendoring to your `--ref` on `origin`, and it says so.
+
+This is a stopgap for `AD-08`, and it lives in `scripts/` rather than in `aart` on purpose: batch
+discovery that guesses on your behalf is exactly what `DESIGN-registry-vendoring.md` §10 leaves
+open, and a script you can read in one sitting is the honest form of it until that is settled.
+
 ## 3b. Grouping artifacts so a colleague installs them in one command
 
 The word for a group of artifacts is a **collection**. (If you have used AART before under a

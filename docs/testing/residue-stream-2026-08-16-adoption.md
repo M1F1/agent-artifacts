@@ -181,6 +181,32 @@ Six things to settle in a design, none of them settled here:
    two of them have moved since*. `provenance.json` and `revendor --check` hold everything needed
    to say that.
 
+**A stopgap exists, and the finding stays `open`.**
+[`scripts/vendor_scan.py`](../../scripts/vendor_scan.py), written `2026-08-16` at the raiser's
+request, so a company registry can ship before the design is settled. It is not the feature: it is a
+script in `scripts/`, outside the wheel, outside the schema, with `git` and `aart` as its only
+dependencies. It answers four of the six questions above provisionally — local checkout *or* URL
+(1); a fixed rule set, no configuration (2); a JSON manifest that the interactive review writes back
+into (3); summary read from the document, version never guessed (4) — and it answers (5) by not
+being able to violate it: every acceptance ends in a real `aart registry vendor` invocation, and
+`--yes` is required before anything is finalized. It does not answer (6) beyond skipping artifacts
+already present by path.
+
+The one thing the stopgap taught that the proposal did not anticipate: **in a repository that does
+not speak AART, the `mcp` and `hook` rules find nothing.** `mcp.json` and `hook.json` are AART's own
+payload filenames. Foreign repositories carry `.mcp.json`, `mcp_servers.json`, servers declared
+inside `package.json`, and `hooks/` directories full of scripts — none of which `vendor` can take,
+because a payload must be a directory in the shape the compiler enforces. So the script reports
+those as *hints* naming the wrapper a maintainer would have to author, never as candidates. Question
+2 above is therefore sharper than it was written: for `mcp` and `hook` the problem is not
+recognition, it is that recognition alone does not produce something vendorable. Whatever is
+eventually designed has to say what it does about the gap between the two.
+
+Measured on the three repositories in the row above: **73 candidates** — 69 skills, matching the
+row's count exactly, and 4 guidelines the row's manual count had missed — and 1 hint. Walked end to
+end against a real `2.6.1` wheel on `2026-08-16`, into a throwaway registry: scan → review → vendor
+→ lock → commit → build → `validate` passed, `audit` warning only about a missing upstream license.
+
 ## Notes on `AD-04`
 
 Filed `high`, and it is the only finding in this stream that is not about documents. It surfaced
