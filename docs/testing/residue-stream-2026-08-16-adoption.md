@@ -1284,3 +1284,18 @@ a diagnostic it already holds.
 
 Propagate the diagnostic. It is constructed, it is redacted, and it is thrown away one frame above
 where it was made.
+
+### `AD-25`, addendum: the receipt is lost too
+
+`marketplace receipt show` exists precisely for this question — its help reads *print the persisted
+setup record … plan hash, timings, exit status, and each step with its module, target and
+disposition*. It cannot answer here.
+
+The persistence-failure path returns `state_written=False` (`setup_engine/application.py`, line 705),
+so no record is written. The single run whose per-step disposition the reader most needs is the only
+run that leaves nothing behind. Both routes to the cause — the discarded diagnostic and the unwritten
+receipt — close at the same moment, for the same reason.
+
+Confirmed `2026-08-17` while trying to answer *did it fail on the `~/.zshrc` write?* from the
+outside. It cannot be answered from AART's own records; it has to be answered by looking at
+`~/.zshrc` itself.
