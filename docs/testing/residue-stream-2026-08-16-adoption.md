@@ -35,6 +35,7 @@ Rules for this stream, same as every other:
 | `AD-14` | medium | `2026-08-17` | Publishing a registry is four commands in a fixed order plus a commit, and nothing in the product runs the sequence. `lock`, `build`, `validate`, `audit`, then `git add -A && git commit` — six things typed by hand every time anything changes, with an order that produces confusing errors when got wrong: `build` before `lock` refuses, `validate` before `build` reports the index as stale. The raiser's words: remembering these commands and typing them out is a nightmare and slows the work down. Asked for: one command that takes the registry source, runs the sequence, and **lists every file it is about to commit**. |
 | `AD-15` | low | `2026-08-17`, building `AD-14`'s stopgap | `registry build` says its precondition is a *committed* lock, and the precondition is a lock that exists. The message is `error: registry build requires a committed aart.lock.json`, and its remediation reads *"`aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`"*. The check at `registry_commands/planning.py:1244` is `files.value.get("aart.lock.json")` — presence in the snapshot, nothing about history. Measured `2026-08-17` in a fresh registry: with `aart.lock.json` untracked (`git status` → `?? aart.lock.json`), `build` compiled the index and exited `0`. The cost is one unnecessary commit per publishing cycle for anyone who believes the diagnostic, and this stream's own walkthrough believed it and documented it as a required step until this finding corrected it. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
+| `AD-16` | high | `2026-08-17` | A source that has fallen behind its origin says `current`. Health never contacts the origin: it is `now - published_at` against `sync.max_age_seconds`, so `healthy` means *the snapshot is recent* and not *the snapshot matches the origin*. Measured `2026-08-17`: a source synchronized at one artifact, its registry then advanced by a commit adding a second, reported `healthy; 8s` from `source health`, `[healthy]` from `marketplace list` and `current` from the TUI projection, with the new artifact absent from the listing and nothing said about why. The inverse holds too — a snapshot identical to its origin reports `stale` once the clock passes. There is no state at all for *the check could not run*: `OFFLINE` exists in the enum and no code path attempts the network at read time. The raiser has been caught by this repeatedly while testing an artifact just added to a registry. Asked for: a visible not-synchronized state on entering `aart`, and a distinct failed-to-check state when the comparison itself cannot be made. |
 
 ## Notes on `AD-01`
 
@@ -518,3 +519,107 @@ change. **Requires a machine with Tabnine on it**, which is the raiser's, not th
 
 Until it is settled the walkthrough carries the caveat in the open, in the section a reader meets
 before rolling MCP artifacts out to a team.
+
+## Notes on `AD-16`
+
+Raised by the raiser from their own habit: add an artifact to the registry, switch to a project,
+install it to see whether it works — and forget the `aart source sync` in between. It has happened
+several times. What makes it cost time rather than a second is that nothing on the screen is wrong.
+The source is listed. It says `current`. The artifact is simply not there, and the obvious reading of
+that is *the artifact is broken*, not *you are looking at yesterday's copy*.
+
+### What health actually measures
+
+`assess_source_health` (`sources/model.py:254-281`) is four lines of arithmetic:
+
+```
+age = max(0, now - current.published_at_epoch_seconds)
+STALE if age > max_age_seconds else HEALTHY
+```
+
+`max_age_seconds` defaults to `900`. So `healthy` means **the snapshot on this disk was published
+less than fifteen minutes ago**. It does not mean the snapshot matches the origin, and nothing in the
+codebase claims it does — the reading is entirely the operator's, and the interface invites it by
+printing the word `current`.
+
+The origin is never contacted. `source_status` (`application/sources.py:516-534`) calls
+`read_current_source` and returns; on failure it passes that read's own diagnostics through. Every
+consumer path uses it: `consumer/runtime.py:779` and `:876` for the marketplace,
+`commands/source.py:673` for `source health`, `tui.py:954` for the TUI's source stage. One clock
+reading, four surfaces.
+
+### Measured, both directions
+
+In an isolated `HOME`, a local registry with one guideline, synchronized:
+
+```
+company [source-local@local] healthy; 0s
+company/guideline/first@1.0.0 [local] [healthy]
+```
+
+A second guideline scaffolded into that registry and committed — the origin has moved, the snapshot
+has not:
+
+```
+company [source-local@local] healthy; 8s
+source company [healthy] source-local …/synclab/registry
+company/guideline/first@1.0.0 [local] [healthy]
+```
+
+Still `healthy`. `guideline/second` does not appear and nothing accounts for its absence. The TUI
+agrees, asked directly through its own projection:
+
+```
+TUI row: company -> current age 40
+```
+
+Then the inverse. Synchronized again, so the snapshot is byte-identical to the origin, with
+`sync.max_age_seconds` set to `1`:
+
+```
+company [source-local@local] stale; 15s        exit=1
+source company [stale] source-local …/synclab/registry
+```
+
+`stale`, and `source health` exits non-zero, for a source that is exactly correct.
+
+So the two words the interface has do not mean what they say. `current` does not mean up to date and
+`stale` does not mean behind. Both are the same clock reading with a threshold between them.
+
+### The state that does not exist
+
+The raiser asked for a second thing: when the check cannot be made — no network, a dead origin — say
+that, rather than saying nothing.
+
+`SourceDisplayHealth.OFFLINE` is already in the enum (`tui_sources.py:48`). It is unreachable for
+this purpose. `_display_health` (`tui_sources.py:345-362`) selects it from `source-unavailable` or
+`source-auth-failed` in `health.diagnostics`, and those diagnostics can only come from
+`read_current_source` failing — a local file, a store lease. No code path attempts the network while
+building any of these four views, so *the origin could not be reached* has no way to be true. The
+state to add is not `OFFLINE`; it is the one that follows from actually trying.
+
+### A third piece of dead configuration
+
+`sync.mode` defaults to `SyncMode.AUTO`, is validated by `configuration/schema.py:329`, written back
+by `:442`, and carried through `configuration/policy.py:132` into the effective configuration. **No
+code reads it to decide anything.** There is no automatic synchronization; `auto` is a word in a file.
+
+`refresh_sources=True` — the parameter that would make a command re-fetch before reading — has one
+caller in the entire package: `commands/marketplace.py:284`, inside `marketplace health`, which is
+about runtime requirements and not about freshness at all. `marketplace list` and `marketplace
+install` never pass it.
+
+This is the third instance of the pattern in this stream. `AD-06`: `Bundle` and `Catalog`, defined,
+imported by nothing. `AD-13`: `PublicRegistryPolicy.repository_files`, written, run by no command.
+Now `sync.mode`, configured, obeyed by nothing. Each one alone is a loose end. Three of them is a
+habit of building the mechanism and not wiring the switch — the same habit `AD-09` describes for
+usage reporting.
+
+### Why `high`
+
+The failure is silent and it points the operator at the wrong thing. A maintainer testing their own
+new artifact loses minutes. A colleague installing from the company registry gets last week's
+content, is told the source is `current`, and has no reason to doubt it — and the maintainer, looking
+at the same `current`, has no way to tell them otherwise. In a rollout the whole value of a shared
+registry is that everyone has the same thing, and this is the one check that would say whether they
+do.
