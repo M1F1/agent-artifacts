@@ -284,8 +284,14 @@ commit, build, commit as usual, and it installs like anything else:
 aart marketplace install company/memory/superpowers-house-rules --profile tabnine --yes
 ```
 
-which lands it in project-root `TABNINE.md` inside a managed block, so several memory artifacts can
-share the one file. Under a different profile it goes wherever that profile says.
+which lands it in project-root `TABNINE.md` inside a managed block. Under a different profile it
+goes wherever that profile says — that is the point of the `memory` kind: upstream's filename is
+irrelevant, the installing profile decides the destination.
+
+**One memory artifact per project, though.** Installing a second one fails with `install
+destinations contain unowned or drifted content: TABNINE.md`, and `--force` fails too with
+`installation effect ownership must be unique across the manifest`. That is `AD-12`. So if you want
+the upstream's house rules *and* your own, merge them into one document before you adopt it.
 
 **What adoption costs is the provenance.** The package has no `provenance.json`, so `revendor
 --check` will never tell you upstream moved and the audit's drift pass cannot see it. There is

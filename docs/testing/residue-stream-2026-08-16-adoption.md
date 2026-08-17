@@ -30,6 +30,7 @@ Rules for this stream, same as every other:
 | `AD-08` | high | `2026-08-16`, raised as a proposal | Nothing helps a maintainer find what is worth vendoring in a foreign repository. Asked for: a scan that walks an external checkout, recognises the conventional shapes for the five kinds — `skills/`, `SKILL.md`, `guidelines/`, `hooks/`, `mcp`-ish files — and returns a list of candidate paths a maintainer then accepts or rejects one at a time, feeding the existing `vendor` command. Measured `2026-08-16` against three repositories on the raiser's disk: **69 candidate artifacts** — 14 `SKILL.md` in `upstream-superpowers-v6.2.0`, 20 in `residues-architecture-framework` (plus a `guidelines/` directory), 35 in `upstream-matt-skills-v1.2.3`. At six required arguments per `vendor` invocation that is the manual work the proposal is about. |
 | `AD-09` | high | `2026-08-17` | Usage reporting never offers to create an issue, and never says why. Raised after installing a skill; the raiser then confirmed the same silence in the TUI. Measured `2026-08-17`: `registry init` scaffolds the whole registry side — `.github/ISSUE_TEMPLATE/usage-report.yml`, the `aart-usage-dashboard` and `aart-usage-validate` workflows — and writes `"services": {}`. `reporting/destination.py:61` demands exactly one advertised `usage_reporting` service, so `reporting/runtime.py:157-160` skips every source with a bare `continue`. Nothing under `registry_commands/` ever writes that block; the string `usage_reporting` does not occur there. Separately, the consumer-side offer has one caller — `tui.py:821`, in the setup flow only — with `interface="tui"` hardcoded, so `marketplace install` from the CLI has no reporting path at all. |
 | `AD-11` | high | `2026-08-17`, raised against the `AD-08` stopgap | `registry vendor` cannot take a single file, and a harness memory document is always a single file at a repository root. `--path DIR` is documented as a directory and refuses anything else — `error: the requested subtree path is not a directory` — while the `memory` payload rule demands *exactly one Markdown document*. Those two are only satisfiable by a directory that holds nothing but that document, which is not how any upstream stores it. Measured `2026-08-17`: `upstream-superpowers-v6.2.0` carries `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` at its root beside 20 other entries; `upstream-matt-skills-v1.2.3` carries `CLAUDE.md`, `AGENTS.md` and `CONTEXT.md`. Under the `tabnine` profile a `memory` artifact installs as project-root `TABNINE.md` (`profiles/builtin.py:179`), so this is the artifact the raiser called indispensable, and it is the one kind the tool cannot import. The only route today is `registry scaffold memory` plus a paste, which produces a copy with no `provenance.json` and no `revendor --check`. The same wall stands in front of every loose `.md` guideline. |
+| `AD-12` | high | `2026-08-17`, walking `AD-11`'s adoption | A project can hold only one `memory` artifact, and the design says it should hold several. `DESIGN-memory.md` §3.3 scopes the sentinel by name — `<!-- >>> agent-artifacts memory:<name> >>> -->` — *"so an `memory` block and a same-named guideline block can coexist in one file … without either clobbering the other"*, and two differently-named memory artifacts therefore carry two different markers. Installation refuses anyway. Measured `2026-08-17`: with `memory/superpowers-house-rules` installed into a Tabnine project, installing `memory/test-first-rules` fails with `error: install destinations contain unowned or drifted content; use force: TABNINE.md`, and adding `--force` fails differently with `error: installation state ownership conflict: installation effect ownership must be unique across the manifest`. The cause is that `installation/application.py:847` looks up prior ownership of a destination **by artifact coordinate**, so the second artifact sees a file it does not own and stops; `install_state/model.py:337` then forbids two artifacts owning one destination outright. The block machinery supports coexistence and the ownership model forbids it. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -261,7 +262,12 @@ Walked end to end `2026-08-17` against the real `2.6.1` wheel. `CLAUDE.md` from
 `github.com/obra/superpowers.git` adopted as `memory/superpowers-house-rules`, 115 lines carried
 across intact; locked, committed, built, committed; `registry validate: passed`; installed into a
 throwaway consumer with `--profile tabnine` and it landed as project-root `TABNINE.md`, 117 lines —
-the two extra being the managed-block markers, which is how several memory artifacts share one file.
+the two extra being the managed-block markers. Cursor's `.cursorrules` adopts the same way, into a
+Markdown payload, which is the whole point: the upstream filename is a harness's business, the
+destination is the installing profile's, and the name in between is the maintainer's.
+
+Installing a *second* memory artifact into the same project turned out to be refused. That is
+`AD-12`, found here.
 
 So the *outcome* the raiser described is reachable today. What is still missing, and what keeps
 `AD-11` `high` and `open`, is the provenance: the adopted package has no `provenance.json`, so
@@ -269,6 +275,42 @@ So the *outcome* the raiser described is reachable today. What is still missing,
 origin goes in the commit message because `artifact.json` rejects an unknown field — verified
 `2026-08-17`, `error: unknown field 'x-adopted-from'` — and inventing a provenance record for bytes
 that were never vendored would be a lie every later audit would repeat.
+
+## Notes on `AD-12`
+
+Found by installing a second adopted memory artifact into the same project, which is the first thing
+a company will do: upstream's house rules, plus its own.
+
+The design intended this. `DESIGN-memory.md` §3.3 chose HTML-comment sentinels over `#` headings so
+the markers stay invisible in the document a model reads every turn, and made the marker
+**type-scoped and name-scoped** — `memory:<name>` — with the stated reason that blocks must coexist
+in one file *"without either clobbering the other on install/uninstall"*. §7.1 repeats it for Mistral
+Vibe, where `memory` and `guideline` both target `AGENTS.md`. Two memory artifacts, two names, two
+markers: nothing about the file format stops them.
+
+The ownership model does. `installation/application.py:847` asks `_previous_effect(state, request,
+coordinate, destination)` — prior ownership is resolved **by artifact coordinate** — so the second
+artifact looks at `TABNINE.md`, finds content no effect of *its own* produced, and reports a
+conflict. That is the guard working as designed for the case it was designed for: a file a human
+edited. It cannot tell that apart from a file another AART artifact owns a different block of.
+`--force` does not get past it either, because `install_state/model.py:337` raises outright when two
+artifacts claim one destination.
+
+Measured `2026-08-17` in a project already holding `memory/superpowers-house-rules`:
+
+    install memory/test-first-rules        → install destinations contain unowned or drifted
+                                             content; use force: TABNINE.md
+    install memory/test-first-rules --force → installation state ownership conflict: installation
+                                             effect ownership must be unique across the manifest
+
+Two things a fix has to keep, and they are why this is not a one-line change. The uniqueness rule
+protects uninstall: `setup_undo` has to know whose bytes to remove. And the drift guard protects a
+human's own edits to `TABNINE.md`. Making ownership per-block rather than per-destination satisfies
+both in principle, since the sentinels already delimit exactly the bytes each artifact owns — but it
+moves the unit of ownership through the install state, the undo path and the verify path together.
+
+Until then a company that wants upstream's memory *and* its own merges the two documents by hand
+before adopting, and the walkthrough says so.
 
 ## Notes on `AD-07`
 

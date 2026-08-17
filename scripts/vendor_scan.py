@@ -71,20 +71,27 @@ GUIDANCE_DIRS = frozenset({"guideline", "guidelines", "rules", "conventions", "p
 MCP_FILES = frozenset({".mcp.json", "mcp_servers.json", "mcp-servers.json", "mcp.config.json"})
 HOOK_SUFFIXES = frozenset({".sh", ".py", ".js", ".ts", ".cmd", ".ps1"})
 HOOK_FILES = frozenset({"hooks.json", "hooks-cursor.json", "settings.json"})
-# The document a harness reads as project memory, under each harness's own name. AART calls the kind
-# `memory`; the tabnine profile installs one as `TABNINE.md` in the project root
-# (`profiles/builtin.py`), which is exactly what these files are to their own harness.
-MEMORY_FILES = frozenset(
-    {
-        "claude.md",
-        "agents.md",
-        "gemini.md",
-        "tabnine.md",
-        "context.md",
-        "copilot-instructions.md",
-        ".cursorrules",
-    }
-)
+# The document a harness reads as project memory, under each harness's own name, mapped to the
+# harness so the prompt can say whose file this is. The upstream name carries no meaning for you:
+# AART's kind is `memory`, and where it lands is the *installing* profile's decision — the tabnine
+# profile writes project-root `TABNINE.md` (`profiles/builtin.py`), another profile writes its own.
+# So a `CLAUDE.md` taken from upstream is a `TABNINE.md` on a Tabnine machine, and you name the
+# artifact after what it says rather than after the harness it happened to be written for.
+MEMORY_FILES = {
+    "claude.md": "Claude Code",
+    "agents.md": "the AGENTS.md convention",
+    "gemini.md": "Gemini",
+    "tabnine.md": "Tabnine",
+    "context.md": "a context document",
+    "copilot-instructions.md": "GitHub Copilot",
+    "kimi.md": "Kimi",
+    "qwen.md": "Qwen",
+    "codex.md": "Codex",
+    "opencode.md": "opencode",
+    ".cursorrules": "Cursor",
+    ".windsurfrules": "Windsurf",
+    ".clinerules": "Cline",
+}
 # File stems that name a document's place rather than its subject, so they make poor artifact names.
 GENERIC_STEMS = frozenset({"readme", "index", "guide", "notes", "overview", "contributing"})
 DEFAULT_VERSION = "1.0.0"
@@ -259,6 +266,7 @@ def memory_hint(path: Path, root: Path) -> Hint:
     """
 
     where = "the repository root" if path.parent == root else f"{path.parent.name}/"
+    harness = MEMORY_FILES.get(path.name.lower(), "a harness")
     return Hint(
         path=path.relative_to(root).as_posix(),
         looks_like="memory",
@@ -267,9 +275,9 @@ def memory_hint(path: Path, root: Path) -> Hint:
             "`memory` payload must be a directory holding exactly one Markdown document"
         ),
         what_to_do=(
-            "author it in your registry — `aart registry scaffold memory <name>`, then paste the "
-            "content into the payload — which costs the provenance link to upstream. Under the "
-            "tabnine profile a `memory` artifact installs as `TABNINE.md` in the project root"
+            f"upstream wrote it for {harness}; `adopt` takes it in under a name you choose, and "
+            "the installing profile decides the destination — tabnine writes project-root "
+            "`TABNINE.md`. What it costs is the provenance link, so upstream drift goes unnoticed"
         ),
     )
 
@@ -423,6 +431,12 @@ def command_scan(args: argparse.Namespace) -> int:
 
     print(f"\nwrote {args.out}")
     print(f"next: {sys.argv[0]} review {args.out}")
+    loose = sum(1 for hint in hints if hint.looks_like in {"memory", "guideline"})
+    if loose:
+        # These never reach `review`, because `review` only offers what `vendor` can take. Without
+        # this line a maintainer reads a hint, agrees it matters, and has nowhere to go with it.
+        print(f"  and: {sys.argv[0]} adopt {args.out} --source /path/to/registry")
+        print(f"       for the {loose} loose documents above — you name each one")
     return 0
 
 
@@ -539,6 +553,10 @@ def command_adopt(args: argparse.Namespace) -> int:
                 continue
             print(f"({position}/{len(adoptable)}) {hint['path']} — a {hint['looks_like']}")
             print(f"    {summarize(document, '(no readable summary)')}")
+            if hint["looks_like"] == "memory":
+                harness = MEMORY_FILES.get(document.name.lower(), "a harness")
+                print(f"    upstream wrote it for {harness}; the profile you install with")
+                print("    decides where it lands, so name it for what it says")
             if input("    adopt it? ").strip().lower() not in {"y", "yes"}:
                 if input("    stop here? [y/N] ").strip().lower() in {"y", "yes"}:
                     break
