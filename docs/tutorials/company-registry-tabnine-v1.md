@@ -270,16 +270,29 @@ their kin are the `memory` kind — under the tabnine profile a `memory` artifac
 project-root `TABNINE.md` — and they live at a repository root beside twenty other files. `vendor
 --path` takes a directory, and a `memory` payload must be exactly one Markdown document, so a
 root-level memory file satisfies neither. `upstream-superpowers-v6.2.0` carries three of them and
-not one can be vendored. Until `AD-11` is settled the only route is:
+not one can be vendored. The scan has a command for exactly this case:
 
 ```sh
-aart registry scaffold memory house-rules --source . --yes
+scripts/vendor_scan.py adopt candidates.json --source . --yes
 ```
 
-and then pasting the content into the payload — which gives you the artifact but no
-`provenance.json`, so `revendor --check` and the audit's upstream-drift pass will never see it. If
-the document *is* alone in its own directory upstream, the scan picks it up as a real `memory`
-candidate and vendoring works normally.
+It walks the loose documents the scan found, asks what you want to call each one, runs `aart
+registry scaffold memory <name>`, and writes the upstream document in as the payload. Then lock,
+commit, build, commit as usual, and it installs like anything else:
+
+```sh
+aart marketplace install company/memory/superpowers-house-rules --profile tabnine --yes
+```
+
+which lands it in project-root `TABNINE.md` inside a managed block, so several memory artifacts can
+share the one file. Under a different profile it goes wherever that profile says.
+
+**What adoption costs is the provenance.** The package has no `provenance.json`, so `revendor
+--check` will never tell you upstream moved and the audit's drift pass cannot see it. There is
+nowhere to record the origin — `artifact.json` rejects an unknown field — so `adopt` prints an
+origin line for your commit message, and that is the only place it lives until `AD-11` is settled.
+If the document *is* alone in its own directory upstream, the scan picks it up as a real `memory`
+candidate instead and ordinary vendoring works, provenance and all.
 
 `review` shows one candidate at a time and takes `y`/`n`, `r` to rename, `e` to rewrite the summary,
 `v` to set the version. Your answers are written back into the manifest, so the review is resumable

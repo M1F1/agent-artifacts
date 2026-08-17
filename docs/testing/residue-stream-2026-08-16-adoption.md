@@ -252,6 +252,24 @@ provenance it costs — a maintainer who never learns the file is there cannot d
 it. And when a memory document *is* alone in a directory, the scan now classifies it as a `memory`
 candidate rather than a `guideline`, which is what it was doing before.
 
+**The stopgap now performs the adoption**, on the raiser's instruction: *detect these files, let the
+maintainer name one at vendoring time, put it into the registry as a `memory` artifact, and let it
+install into whichever file the harness reads.* `vendor_scan.py adopt` asks for a name per document,
+runs `aart registry scaffold memory <name>`, and writes the upstream document in as the payload.
+
+Walked end to end `2026-08-17` against the real `2.6.1` wheel. `CLAUDE.md` from
+`github.com/obra/superpowers.git` adopted as `memory/superpowers-house-rules`, 115 lines carried
+across intact; locked, committed, built, committed; `registry validate: passed`; installed into a
+throwaway consumer with `--profile tabnine` and it landed as project-root `TABNINE.md`, 117 lines —
+the two extra being the managed-block markers, which is how several memory artifacts share one file.
+
+So the *outcome* the raiser described is reachable today. What is still missing, and what keeps
+`AD-11` `high` and `open`, is the provenance: the adopted package has no `provenance.json`, so
+`revendor --check` will never notice upstream moving and the audit's drift pass cannot see it. The
+origin goes in the commit message because `artifact.json` rejects an unknown field — verified
+`2026-08-17`, `error: unknown field 'x-adopted-from'` — and inventing a provenance record for bytes
+that were never vendored would be a lie every later audit would repeat.
+
 ## Notes on `AD-07`
 
 Raised `low` on `2026-08-16` as a missing scaffold template, and widened by the raiser on

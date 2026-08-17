@@ -35,8 +35,17 @@ AART's own payload names, and nobody outside AART writes them.
 
 Project memory lands there too, and that one hurts. `CLAUDE.md`, `AGENTS.md` and `TABNINE.md` live
 at a repository root beside twenty other files, so the single most important document in a skills
-repository is the one shape `vendor` cannot take. That is `AD-11`. The scan reports each one it
-finds rather than passing over it in silence.
+repository is the one shape `vendor` cannot take. That is `AD-11`. So there is a fourth command for
+exactly those:
+
+    scripts/vendor_scan.py adopt candidates.json --source /path/to/registry --yes
+
+`adopt` asks what to call each loose document, scaffolds a `memory` package under that name with
+`aart registry scaffold`, and puts the upstream document in as the payload. From there it is an
+ordinary artifact: under the tabnine profile it installs as project-root `TABNINE.md`, under another
+profile wherever that profile says. What it cannot carry is a `provenance.json`, so the origin is
+printed for the commit message instead — `artifact.json` rejects an unknown field, and inventing a
+provenance record for bytes that were not vendored would be a lie the audit would repeat.
 """
 
 from __future__ import annotations
@@ -489,6 +498,115 @@ def command_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def repository_stem(url: str) -> str:
+    stem = url.rstrip("/").rsplit("/", 1)[-1]
+    return slugify(stem[:-4] if stem.endswith(".git") else stem) or "upstream"
+
+
+def command_adopt(args: argparse.Namespace) -> int:
+    """Take a single loose document into the registry as an artifact you name and own.
+
+    This is the answer to the hint `scan` reports for `CLAUDE.md`, `AGENTS.md` and `TABNINE.md`.
+    `registry vendor` cannot take a file (`AD-11`), so nothing here pretends to vendor: it scaffolds
+    a package with `aart registry scaffold`, then puts the upstream document in as the payload. From
+    that point AART treats it like any other artifact — under the tabnine profile a `memory` lands
+    as project-root `TABNINE.md`, and each harness gets its own destination from its own profile.
+
+    What is lost is the provenance link, and it cannot be faked: `artifact.json` rejects an unknown
+    field, so there is nowhere honest to record the origin. The origin is printed for the commit
+    message instead, which is the only place it can live until `AD-11` is settled.
+    """
+
+    manifest = load(args.manifest)
+    registry = Path(args.source).expanduser().resolve()
+    if not (registry / "aart-registry.json").is_file():
+        die(f"{registry} is not a registry checkout: no aart-registry.json")
+    adoptable = [
+        hint for hint in manifest.get("hints", []) if hint["looks_like"] in {"memory", "guideline"}
+    ]
+    if not adoptable:
+        die(f"{args.manifest} holds no single-document hints to adopt")
+
+    workspace = Path(tempfile.mkdtemp(prefix="vendor-adopt-"))
+    adopted: list[tuple[str, str, str]] = []
+    try:
+        root = acquire(manifest["url"], manifest["ref"], workspace)
+        print(f"{len(adoptable)} documents. [y]es  [n]o  [q]uit\n")
+        for position, hint in enumerate(adoptable, 1):
+            document = root / hint["path"]
+            if not document.is_file():
+                print(f"({position}/{len(adoptable)}) {hint['path']}: gone from {manifest['ref']}")
+                continue
+            print(f"({position}/{len(adoptable)}) {hint['path']} — a {hint['looks_like']}")
+            print(f"    {summarize(document, '(no readable summary)')}")
+            if input("    adopt it? ").strip().lower() not in {"y", "yes"}:
+                if input("    stop here? [y/N] ").strip().lower() in {"y", "yes"}:
+                    break
+                print()
+                continue
+            default = (
+                f"{repository_stem(manifest['url'])}-memory"
+                if hint["looks_like"] == "memory"
+                else slugify(document.stem)
+            )
+            name = input(f"    name it [{default}]: ").strip() or default
+            if SLUG_RE.match(name) is None:
+                print("    a name must be lowercase words joined by single hyphens; skipped\n")
+                continue
+            summary = input("    summary [read from the document]: ").strip() or summarize(
+                document, f"Adopted {name} from upstream."
+            )
+            adopted.append((name, summary, str(document)))
+            print()
+
+        if not adopted:
+            print("nothing adopted")
+            return 0
+
+        for name, summary, source_path in adopted:
+            print(f"\n{args.kind}/{name}", flush=True)
+            command = [
+                args.aart,
+                "registry",
+                "scaffold",
+                args.kind,
+                name,
+                "--source",
+                str(registry),
+                "--summary",
+                summary,
+                "--platform",
+                args.platform,
+            ]
+            for profile in args.profile:
+                command += ["--profile", profile]
+            if args.yes:
+                command.append("--yes")
+            if subprocess.run(command, text=True).returncode != 0:
+                print(f"    scaffold failed for {name}", file=sys.stderr)
+                return 1
+            payload = registry / "artifacts" / args.kind / name / "payload" / f"{name}.md"
+            if not args.yes:
+                print(f"    then the document would replace {payload.relative_to(registry)}")
+                continue
+            payload.write_bytes(Path(source_path).read_bytes())
+            print(f"    wrote {payload.relative_to(registry)} from {manifest['url']}")
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    if not args.yes:
+        print("\nReviewed only. Re-run with --yes to write them.")
+        return 0
+
+    print("\nThese packages carry no provenance.json — `registry vendor` cannot take a single file")
+    print("(AD-11), so the origin has nowhere machine-readable to live. Put it in the commit:\n")
+    print(f"    Adopted from {manifest['url']} at {manifest['ref']}")
+    for name, _, source_path in adopted:
+        print(f"      {args.kind}/{name} ← {Path(source_path).name}")
+    print("\nnext: aart registry lock --source . --yes, commit, then build --source . --yes")
+    return 0
+
+
 def command_vendor(args: argparse.Namespace) -> int:
     manifest = load(args.manifest)
     registry = Path(args.source).expanduser().resolve()
@@ -587,8 +705,20 @@ def main(argv: list[str] | None = None) -> int:
     vendor.add_argument("--revendor", action="store_true", help="do not skip artifacts already in")
     vendor.set_defaults(handler=command_vendor)
 
+    adopt = actions.add_parser(
+        "adopt", help="take a loose CLAUDE.md/AGENTS.md/TABNINE.md in as an artifact you name"
+    )
+    adopt.add_argument("manifest")
+    adopt.add_argument("--source", required=True, help="registry checkout to write into")
+    adopt.add_argument("--kind", default="memory", choices=("memory", "guideline"))
+    adopt.add_argument("--profile", action="append", default=None, metavar="P")
+    adopt.add_argument("--platform", default="darwin")
+    adopt.add_argument("--aart", default="aart", help="the aart executable to run")
+    adopt.add_argument("--yes", action="store_true", help="write instead of reviewing")
+    adopt.set_defaults(handler=command_adopt)
+
     args = parser.parse_args(argv)
-    if args.action == "vendor" and not args.profile:
+    if args.action in {"vendor", "adopt"} and not args.profile:
         args.profile = ["tabnine"]
     handler = args.handler
     return int(handler(args))
