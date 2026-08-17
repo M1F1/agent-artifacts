@@ -51,6 +51,10 @@ Rules for this stream, same as every other:
 
 | `AD-23` | high | `2026-08-17`, installing an MCP server from a script | `marketplace install` prints `Install outcome: succeeded`, writes the payload, and exits `1`. The setup queue is folded into the exit code, and for any source the trust gate blocks it is all failures — while the two flags that would authorize it exist only on `marketplace setup`, never on `install`. Measured: exit `1` with `.mcp.json` correctly written. Under `set -e` a correct install aborts the adoption script, and `\|\| true` would swallow every real failure with it. |
 
+| `AD-24` | high | `2026-08-17`, running setup on an MCP server | The Keychain steps hand the terminal to `security`, which prints `password data for new item:` and `retype password for new item:` — twice in a row, identically, for two different values — while AART prints nothing. It has the service, the account and a human-readable summary in hand and shows them in the review, not at the prompt. Type the two values in the wrong order and both steps report success; the first sign of trouble is an Atlassian authentication error much later. |
+
+| `AD-25` | medium | `2026-08-17`, the same setup run | `setup state persistence failed; applied effects were compensated` replaces five distinct causes with one sentence. `persist_setup` returns a specific diagnostic; `finalize_setup` checks only whether it is an error and never reads it. Re-run it, re-review it, check the disk, or investigate a partial rollback — the message supports none of those, and it arrives after every effect has been compensated and the credentials already typed. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -1160,3 +1164,123 @@ reasoning a colleague should never have to reconstruct.
 An install's exit code should report the install. A setup queue this command has no flags to
 authorize is a **pending** state, already printed as `setup pending` in the very same output, and
 reporting it twice — once as a status and once as a failure — is what makes the two disagree.
+
+## Notes on `AD-24`
+
+### What was seen
+
+Setup reached the two Keychain steps and the terminal showed, with nothing else on it:
+
+```
+password data for new item:
+retype password for new item:
+```
+
+and then the same two lines again.
+
+Four prompts, two values, no labels. The person typing has to remember, from a review they read
+several minutes and one Docker build ago, that the first pair is an Atlassian e-mail address and the
+second is an API token.
+
+### AART knows and does not say
+
+`setup.py`, lines 743-770, builds both of these at plan time:
+
+```python
+target = f"Keychain generic password service={service!r} account={account!r}"
+...
+summary = f"Store {target}; the security tool prompts without echo{replacement}"
+```
+
+They appear in `setup review`. At apply time, `_keychain_apply` (`setup_runtime.py`, line 246) does:
+
+```python
+result = runtime.process(effect.argv, env=env, cwd=None, timeout=120, capture=False)
+```
+
+`capture=False` hands the terminal to `security`, which prints its own generic prompt. Nothing of
+AART's own is printed first. The string that would answer the reader's question is computed, stored
+on the effect, rendered in one place, and withheld in the only place it is needed.
+
+### Why this is `high` rather than cosmetic
+
+Getting the order wrong is silent and it is not recoverable by observation.
+
+Both steps succeed — `security` accepts any bytes. `setup receipt` records two stored items. The
+shell block exports both variables. Everything reports green. The e-mail is now in the service named
+`…/api-token` and the token in `…/username`, and the first symptom is an authentication failure from
+Atlassian, far enough away that nobody connects it to two anonymous prompts.
+
+Undoing it requires knowing which service holds which value — the thing the prompts declined to say.
+
+It also lands on the exact person this stream is about. The maintainer who wrote the recipe knows the
+order. The colleague running it has never seen the recipe.
+
+### Relation to `AD-17`
+
+`AD-17` is that a setup recipe can prompt for a secret and nothing else, so a non-secret per-user
+value — the e-mail — has to be stored as one. This is the next problem along: the slot it is forced
+into is anonymous. Fixing `AD-17` would remove one of the two prompts here and fixing this would make
+both legible; neither subsumes the other.
+
+### Asked for
+
+Print the step's own `summary` immediately before yielding the terminal. It exists, it is already
+redacted for review, and it names the service, the account and the purpose.
+
+## Notes on `AD-25`
+
+### What was seen
+
+After the effects ran:
+
+```
+setup state persistence failed; applied effects were compensated
+```
+
+That is the whole of it. The effects were undone, the run cost stands, and there is nothing in the
+message to act on.
+
+### Five causes, one sentence
+
+`persist_setup` (`setup_engine/io.py`, lines 89-187) can fail in five distinct ways, each with its
+own diagnostic:
+
+| Diagnostic | What it means | What the reader should do |
+|---|---|---|
+| `installed payload state is unavailable during setup persistence` | the install record cannot be read | check the install, re-install |
+| `installed payload changed before setup persistence` | something re-installed underneath the run | re-run setup; nothing is wrong |
+| `setup persistence preconditions cannot be inspected` | a path could not be stat-ed | permissions, disk |
+| `setup state or object reference changed after Review` | the plan is stale | re-review and re-run |
+| `cannot persist canonical setup state: <OSError>` | the write itself failed | disk, permissions — the real error text is here |
+
+The last one can carry `; rollback incomplete: …`, which is the one case where something is left
+behind.
+
+`finalize_setup` (`setup_engine/application.py`, lines 690-708) does this with it:
+
+```python
+persisted = ports.persist_setup(plan, applied, expected_record=plan.previous_record)
+if isinstance(persisted, Err):
+    recovery = rollback_record(applied, runtime) if applied.receipt else applied
+    status = ... FAILED or ROLLBACK_INCOMPLETE
+    return Ok(_outcome(plan, status, "setup state persistence failed; applied effects were compensated" ...))
+```
+
+`persisted.diagnostics` is never read. The only thing that varies the message is whether the rollback
+finished, which is a different question from why the persistence failed.
+
+### Why the placement makes it worse
+
+This message arrives *after* every effect has been applied and then compensated. The Docker build ran.
+The certificates were exported. The credentials were typed at an unlabelled prompt (`AD-24`). All of
+it was undone, correctly. What the reader has to show for it is one sentence that does not
+distinguish *run it again, it was a race* from *your disk is full*.
+
+`AD-22` recorded that this module's `_error` takes no remediation. This is the same module discarding
+a diagnostic it already holds.
+
+### Asked for
+
+Propagate the diagnostic. It is constructed, it is redacted, and it is thrown away one frame above
+where it was made.
