@@ -265,6 +265,22 @@ in one directory. These are real artifacts that `vendor` cannot take as they sta
 payload must be a directory in exactly the shape AART compiles. A hint says what the obstacle is and
 what you would have to author. It never becomes a command that would fail.
 
+**Project memory is the hint that will annoy you most.** `CLAUDE.md`, `AGENTS.md`, `TABNINE.md` and
+their kin are the `memory` kind — under the tabnine profile a `memory` artifact installs as
+project-root `TABNINE.md` — and they live at a repository root beside twenty other files. `vendor
+--path` takes a directory, and a `memory` payload must be exactly one Markdown document, so a
+root-level memory file satisfies neither. `upstream-superpowers-v6.2.0` carries three of them and
+not one can be vendored. Until `AD-11` is settled the only route is:
+
+```sh
+aart registry scaffold memory house-rules --source . --yes
+```
+
+and then pasting the content into the payload — which gives you the artifact but no
+`provenance.json`, so `revendor --check` and the audit's upstream-drift pass will never see it. If
+the document *is* alone in its own directory upstream, the scan picks it up as a real `memory`
+candidate and vendoring works normally.
+
 `review` shows one candidate at a time and takes `y`/`n`, `r` to rename, `e` to rewrite the summary,
 `v` to set the version. Your answers are written back into the manifest, so the review is resumable
 and lands in Git as a reviewable list — the same property the hand-written `vendor.tsv` has.

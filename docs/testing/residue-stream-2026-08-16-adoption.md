@@ -29,6 +29,7 @@ Rules for this stream, same as every other:
 | `AD-10` | low | `2026-08-17`, walking `AD-07`'s stopgap | `registry lock` accepts a collection that `registry build` rejects. Measured `2026-08-17`: a `collections/broken.json` whose selector reads `{"type": "nonsense", "name": "x"}` passes `lock` in review **and** with `--yes`, both exit `0` and neither says anything; `build --yes` then refuses it with `error: selector identity is invalid` and writes no index, and `validate` reports the same. So the malformed collection survives the one step a maintainer performs *before* committing — the documented order is lock, commit the lock, build — and the error arrives after the commit that was supposed to record a good state. Nothing ships broken, because the compiler holds; the cost is the ordering. |
 | `AD-08` | high | `2026-08-16`, raised as a proposal | Nothing helps a maintainer find what is worth vendoring in a foreign repository. Asked for: a scan that walks an external checkout, recognises the conventional shapes for the five kinds — `skills/`, `SKILL.md`, `guidelines/`, `hooks/`, `mcp`-ish files — and returns a list of candidate paths a maintainer then accepts or rejects one at a time, feeding the existing `vendor` command. Measured `2026-08-16` against three repositories on the raiser's disk: **69 candidate artifacts** — 14 `SKILL.md` in `upstream-superpowers-v6.2.0`, 20 in `residues-architecture-framework` (plus a `guidelines/` directory), 35 in `upstream-matt-skills-v1.2.3`. At six required arguments per `vendor` invocation that is the manual work the proposal is about. |
 | `AD-09` | high | `2026-08-17` | Usage reporting never offers to create an issue, and never says why. Raised after installing a skill; the raiser then confirmed the same silence in the TUI. Measured `2026-08-17`: `registry init` scaffolds the whole registry side — `.github/ISSUE_TEMPLATE/usage-report.yml`, the `aart-usage-dashboard` and `aart-usage-validate` workflows — and writes `"services": {}`. `reporting/destination.py:61` demands exactly one advertised `usage_reporting` service, so `reporting/runtime.py:157-160` skips every source with a bare `continue`. Nothing under `registry_commands/` ever writes that block; the string `usage_reporting` does not occur there. Separately, the consumer-side offer has one caller — `tui.py:821`, in the setup flow only — with `interface="tui"` hardcoded, so `marketplace install` from the CLI has no reporting path at all. |
+| `AD-11` | high | `2026-08-17`, raised against the `AD-08` stopgap | `registry vendor` cannot take a single file, and a harness memory document is always a single file at a repository root. `--path DIR` is documented as a directory and refuses anything else — `error: the requested subtree path is not a directory` — while the `memory` payload rule demands *exactly one Markdown document*. Those two are only satisfiable by a directory that holds nothing but that document, which is not how any upstream stores it. Measured `2026-08-17`: `upstream-superpowers-v6.2.0` carries `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` at its root beside 20 other entries; `upstream-matt-skills-v1.2.3` carries `CLAUDE.md`, `AGENTS.md` and `CONTEXT.md`. Under the `tabnine` profile a `memory` artifact installs as project-root `TABNINE.md` (`profiles/builtin.py:179`), so this is the artifact the raiser called indispensable, and it is the one kind the tool cannot import. The only route today is `registry scaffold memory` plus a paste, which produces a copy with no `provenance.json` and no `revendor --check`. The same wall stands in front of every loose `.md` guideline. |
 | `AD-04` | high | `2026-08-16`, walking `AD-03` | Nobody has verified where Tabnine reads MCP servers from, and AART writes them to one of two candidate files. `profiles/builtin.py:139` points the Tabnine `mcp` target at `.tabnine/agent/settings.json` under `mcpServers`, above a comment recording that the published Tabnine documentation puts server *definitions* in a standalone `.tabnine/mcp_servers.json` and uses `settings.json` for a different `mcp` key that is governance only. The comment ends *Verify in-environment* and that verification has not happened. If the documentation is right, every MCP artifact installs successfully, reports success, and Tabnine never sees the server. |
 
 ## Notes on `AD-01`
@@ -208,6 +209,48 @@ Measured on the three repositories in the row above: **73 candidates** — 69 sk
 row's count exactly, and 4 guidelines the row's manual count had missed — and 1 hint. Walked end to
 end against a real `2.6.1` wheel on `2026-08-16`, into a throwaway registry: scan → review → vendor
 → lock → commit → build → `validate` passed, `audit` warning only about a missing upstream license.
+
+## Notes on `AD-11`
+
+Raised by the raiser against the `AD-08` stopgap — *it did not detect `TABNINE.md`, kind `memory`,
+which is an indispensable part of superpowers* — and the scan was indeed silent about it. Fixing the
+scan turned out to be the small half. The large half is that **the thing it was silent about cannot
+be vendored at all.**
+
+Two rules meet and leave nothing between them. `registry vendor --path DIR` takes a directory: point
+it at a file and it answers `error: the requested subtree path is not a directory`. And
+`native_tree.py:274-283` requires a `memory` or `guideline` payload to be *exactly one Markdown
+document*. Both are satisfied only by a directory holding that document and nothing else. No
+upstream stores a memory document that way, because to its own harness it is a root-level file:
+`CLAUDE.md` for Claude Code, `AGENTS.md` for the common convention, `GEMINI.md`, `TABNINE.md`.
+
+Measured `2026-08-17`. `upstream-superpowers-v6.2.0` has all three of `CLAUDE.md`, `AGENTS.md`,
+`GEMINI.md` at its root, among 20 other entries. `upstream-matt-skills-v1.2.3` has `CLAUDE.md`,
+`AGENTS.md`, `CONTEXT.md`. Not one is vendorable.
+
+**The kind itself is fine.** Vendored from a directory that does hold exactly one document,
+`aart registry vendor memory house-rules … --path packages/branch-conventions --yes` compiles,
+writes `artifacts/memory/house-rules/payload/branch-conventions.md` and a `provenance.json`, and
+passes `vendor-assessment`, `vendor-license` and `vendor-origin`. So this is not a defect in
+`memory`. It is the file/directory boundary in `vendor`.
+
+**What it costs.** The only route today is `registry scaffold memory <name>` and a paste. That
+produces a package with no `provenance.json`, therefore outside `revendor --check`, therefore
+invisible to `registry audit`'s upstream-drift pass — and `AD-02`'s whole argument for vendoring is
+that a copy without provenance is the thing AART exists to replace. For a Tabnine shop it is the
+worst possible kind to lose: `profiles/builtin.py:179` installs a `memory` artifact as project-root
+`TABNINE.md`, which is the file that makes a skills repository do anything at all.
+
+Not decided here, and the choice is real: teach `--path` to accept a file and synthesise the
+single-document payload, or add something narrower like `--payload-file`. The first is a smaller
+surface and reads as what a maintainer meant; the second cannot be confused with taking a subtree.
+Either way the provenance record has to keep meaning the same thing, since `revendor --check` reads
+it.
+
+Meanwhile the scan reports every one it finds as a hint, naming the scaffold command and the
+provenance it costs — a maintainer who never learns the file is there cannot decide anything about
+it. And when a memory document *is* alone in a directory, the scan now classifies it as a `memory`
+candidate rather than a `guideline`, which is what it was doing before.
 
 ## Notes on `AD-07`
 

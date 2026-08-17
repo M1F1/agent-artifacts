@@ -23,6 +23,7 @@ the only programs it runs, and the only dependencies it has.
 
     skill      a directory holding SKILL.md
     guideline  a directory holding exactly one file, and that file is Markdown
+    memory     the same, when that document is CLAUDE.md, AGENTS.md, TABNINE.md and the like
     mcp        a directory holding mcp.json
     hook       a directory holding hook.json with non-empty name and command
 
@@ -31,12 +32,18 @@ stands, because `vendor --path` takes a directory and the payload rules are stri
 work you would have to do, and the scan never turns one into a command that would fail. In a foreign
 repository, hints are where MCP servers and hooks nearly always land: `mcp.json` and `hook.json` are
 AART's own payload names, and nobody outside AART writes them.
+
+Project memory lands there too, and that one hurts. `CLAUDE.md`, `AGENTS.md` and `TABNINE.md` live
+at a repository root beside twenty other files, so the single most important document in a skills
+repository is the one shape `vendor` cannot take. That is `AD-11`. The scan reports each one it
+finds rather than passing over it in silence.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -53,7 +60,22 @@ SKIP_DIRS = frozenset({".git", ".github", "node_modules", "__pycache__", ".venv"
 # turns every `docs/` tree into a wall of hints and buries the ones worth acting on.
 GUIDANCE_DIRS = frozenset({"guideline", "guidelines", "rules", "conventions", "policies"})
 MCP_FILES = frozenset({".mcp.json", "mcp_servers.json", "mcp-servers.json", "mcp.config.json"})
-HOOK_SUFFIXES = frozenset({".sh", ".py", ".js", ".ts"})
+HOOK_SUFFIXES = frozenset({".sh", ".py", ".js", ".ts", ".cmd", ".ps1"})
+HOOK_FILES = frozenset({"hooks.json", "hooks-cursor.json", "settings.json"})
+# The document a harness reads as project memory, under each harness's own name. AART calls the kind
+# `memory`; the tabnine profile installs one as `TABNINE.md` in the project root
+# (`profiles/builtin.py`), which is exactly what these files are to their own harness.
+MEMORY_FILES = frozenset(
+    {
+        "claude.md",
+        "agents.md",
+        "gemini.md",
+        "tabnine.md",
+        "context.md",
+        "copilot-instructions.md",
+        ".cursorrules",
+    }
+)
 # File stems that name a document's place rather than its subject, so they make poor artifact names.
 GENERIC_STEMS = frozenset({"readme", "index", "guide", "notes", "overview", "contributing"})
 DEFAULT_VERSION = "1.0.0"
@@ -172,10 +194,19 @@ def classify(directory: Path, root: Path) -> Candidate | None:
 
     files = payload_files(directory)
     markdown = [path for path in files if path.suffix == ".md"]
-    if len(files) == 1 and len(markdown) == 1:
+    # The lone document has to be a direct child. A wrapper directory whose only file is nested one
+    # level down would compile — AART counts payload files recursively — but it would take its name
+    # from the wrapper, so `memory/house-rules/AGENTS.md` would be published as `memory`. Declining
+    # here lets the walk descend to the directory that actually names the thing.
+    if len(files) == 1 and len(markdown) == 1 and markdown[0].parent == directory:
         # The directory holding a lone guideline is usually named for where it sits rather than for
         # what it says — `docs/windows/polyglot-hooks.md`, `guidelines/residuality-theory.md`. The
         # document names the subject, so it names the artifact better; `review` renames either way.
+        if markdown[0].name.lower() in MEMORY_FILES:
+            # Alone in a directory, a harness memory document is vendorable as it stands — the
+            # payload rule for `memory` is the same as for `guideline`, exactly one Markdown file.
+            summary = summarize(markdown[0], "Project memory vendored from upstream.")
+            return Candidate("memory", name, relative, summary, notes=notes)
         stem = markdown[0].stem
         if SLUG_RE.match(stem) and stem not in GENERIC_STEMS:
             name, notes = stem, []
@@ -207,6 +238,31 @@ def guidance_hints(directory: Path, root: Path) -> list[Hint]:
         )
         for document in documents
     ]
+
+
+def memory_hint(path: Path, root: Path) -> Hint:
+    """A harness memory document that shares its directory — which is where they all live.
+
+    `CLAUDE.md`, `AGENTS.md`, `TABNINE.md` sit at a repository root beside twenty other files, and
+    a `memory` payload must be a directory holding exactly that one Markdown file. So the shape
+    that matters most is the one `vendor` cannot take, which is `AD-11`. Reported here rather than
+    quietly dropped: a maintainer who never learns the file exists cannot decide anything about it.
+    """
+
+    where = "the repository root" if path.parent == root else f"{path.parent.name}/"
+    return Hint(
+        path=path.relative_to(root).as_posix(),
+        looks_like="memory",
+        why_not=(
+            f"`vendor --path` takes a directory, and this sits in {where} beside other files; a "
+            "`memory` payload must be a directory holding exactly one Markdown document"
+        ),
+        what_to_do=(
+            "author it in your registry — `aart registry scaffold memory <name>`, then paste the "
+            "content into the payload — which costs the provenance link to upstream. Under the "
+            "tabnine profile a `memory` artifact installs as `TABNINE.md` in the project root"
+        ),
+    )
 
 
 def foreign_mcp_hint(path: Path, root: Path) -> Hint:
@@ -253,16 +309,25 @@ def scan_tree(root: Path) -> tuple[list[Candidate], list[Hint]]:
             if directory.name.lower() in GUIDANCE_DIRS:
                 hints.extend(guidance_hints(directory, root))
             if directory.name.lower() == "hooks":
+                # A hook is a script and a declaration of when to run it, and upstreams spell both
+                # every way there is: an extension, a bare executable, a `hooks.json` beside them.
                 scripts = [
                     path
                     for path in directory.iterdir()
-                    if path.is_file() and path.suffix in HOOK_SUFFIXES
+                    if path.is_file()
+                    and (
+                        path.suffix in HOOK_SUFFIXES
+                        or path.name.lower() in HOOK_FILES
+                        or (not path.suffix and os.access(path, os.X_OK))
+                    )
                 ]
                 if scripts:
                     hints.append(foreign_hook_hint(directory, root, len(scripts)))
         for child in sorted(directory.iterdir()):
             if child.is_file() and child.name in MCP_FILES:
                 hints.append(foreign_mcp_hint(child, root))
+            if child.is_file() and child.name.lower() in MEMORY_FILES:
+                hints.append(memory_hint(child, root))
             if child.is_dir() and not child.is_symlink() and child.name not in SKIP_DIRS:
                 stack.append(child)
     candidates.sort(key=lambda item: (item.type, item.name))
