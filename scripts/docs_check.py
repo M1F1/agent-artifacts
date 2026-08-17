@@ -20,9 +20,15 @@ _LEDGER_RE = re.compile(r"^\| ([A-Z][A-Z0-9]*\d+) \|", re.MULTILINE)
 # `RR-7` / cluster C6: the residue register is the single place that says what is open, and these
 # expressions are what make it authoritative rather than aspirational.
 _REGISTER_PATH = ("docs", "testing", "residue-register.md")
-_FINDING_RE = re.compile(r"\b((?:LAF|RS)-\d+)\b")
+# The id families the register carries.  `LAF` is a live-acceptance finding, `RS` a residue of the
+# `2026-08-15` stream, `AD` a finding raised while adopting AART inside a company.  A new stream
+# adds its prefix here once, so its ids are held by every rule below rather than by none of them —
+# a family the expressions do not know about is invisible to the gate, which is the failure the
+# register exists to prevent.
+_FINDING_PREFIXES = "LAF|RS|AD"
+_FINDING_RE = re.compile(rf"\b((?:{_FINDING_PREFIXES})-\d+)\b")
 _REGISTER_ROW_RE = re.compile(
-    r"^\| `((?:LAF|RS)-\d+)` \| [^|]+ \| [^|]+ \| `(open|closed|visible|deferred)` \|",
+    rf"^\| `((?:{_FINDING_PREFIXES})-\d+)` \| [^|]+ \| [^|]+ \| `(open|closed|visible|deferred)` \|",
     re.MULTILINE,
 )
 _OPEN_HEADING_RE = re.compile(r"^(#{2,6}) .*\bshipped open\b.*$", re.MULTILINE | re.IGNORECASE)
@@ -279,7 +285,7 @@ def _register_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
 
     for stream_path in sorted(root.glob(_STREAM_GLOB)):
         stream = stream_path.read_text(encoding="utf-8")
-        for match in re.finditer(r"^\| `((?:LAF|RS)-\d+)` \|", stream, re.MULTILINE):
+        for match in re.finditer(rf"^\| `((?:{_FINDING_PREFIXES})-\d+)` \|", stream, re.MULTILINE):
             if match.group(1) not in rows:
                 diagnostics.append(
                     Diagnostic(
