@@ -57,6 +57,8 @@ Rules for this stream, same as every other:
 
 | `AD-26` | high | `2026-08-17`, running setup on an MCP server | A symlinked `~/.zshrc` — the normal result of keeping dotfiles in a repository — makes the managed-block step impossible. The refusal is correct; the timing is not. Planning is a pure function with no filesystem access, by design, so the review lists `~/.zshrc` as the target of a write that cannot succeed, and nothing stats it before the first effect. The reader pays for the image build and types two credentials blind before reaching a step one `lstat` would have ruled out. There is no follow option and no alternative target. |
 
+| `AD-27` | high | `2026-08-17`, iterating on a setup recipe | An artifact's setup succeeds exactly once. Any change to the package bytes leaves the object-store `setup` reference pointing at the superseded digest, and persistence requires it to match, so every later run applies its effects, fails, and compensates — for good. The version is not part of the check, so re-vendoring at the same `1.0.0` trips it just as surely as a bump. No command recovers it: `receipt undo` finds no record, and uninstall plus install leaves both the stale reference and an orphaned state file behind. |
+
 ## Notes on `AD-01`
 
 The finding is filed as `low` because nothing is broken. It is at the top of this stream anyway,
@@ -1377,3 +1379,108 @@ be removed cleanly, and it never contends with whatever else manages the dotfile
 A preflight between the reviewed plan and the first effect that stats every managed-file target and
 refuses before anything runs. It sits outside the plan hash, so determinism is untouched, and it
 turns a late compensated failure into an immediate one that names the file.
+
+## Notes on `AD-27`
+
+### The loop this breaks
+
+Edit `installer.json`. Delete the files vendoring derives and the files it copied. Re-run `vendor` at
+the same version. Publish. Update the consumer. Run setup. Read what happened. Repeat.
+
+That is the ordinary loop for getting a setup recipe right, and it is the loop the raiser was in. It
+terminates after the first successful setup. Every iteration after that ends with
+
+```
+setup state persistence failed; applied effects were compensated
+```
+
+no matter what the recipe says.
+
+### Reproduced without Docker or Keychain
+
+Built `2026-08-17` in an isolated `HOME`: a probe MCP artifact whose whole recipe is one
+`file.managed-block@1` step writing `export AART_PROBE=1` into a file it owns. Nothing to prompt for,
+nothing to build.
+
+| Step | Result |
+|---|---|
+| install, then setup | `configured=1, failures=0` |
+| setup again, unchanged | `already-configured` — fine |
+| change the block content, re-publish, `update --force`, setup | **`setup state persistence failed`** |
+| repeat that setup | same, every time |
+
+The third row is the finding. Nothing about it depends on Docker, the Keychain, the trust store, or a
+symlinked dotfile — the failures this stream chased for two days on a seven-step recipe reproduce on
+a one-step one.
+
+### The cause, recovered by instrumenting
+
+`AD-25` throws the diagnostic away, so it had to be read by wrapping `persist_setup`:
+
+```
+>>> REAL CAUSE: ['setup state or object reference changed after Review']
+>>> owner: sha256:539991e1…  | plan: sha256:be08b1d5…  | match: False
+```
+
+`setup_engine/io.py`, lines 139-141:
+
+```python
+reference_matches = _owner_digests(references.value, plan) == (plan.object_digest,)
+```
+
+And the consumer's reference index at that moment:
+
+```json
+{"digest": "sha256:be08b1d5…", "kind": "installed", "owner": "project/lab/mcp/probe/claude"}
+{"digest": "sha256:539991e1…", "kind": "setup",     "owner": "setup/setup-aa6f772c…"}
+```
+
+`update` moved the `installed` reference to the new object and left the `setup` reference on the old
+one. Nothing moves it, and the check treats the mismatch as evidence that something changed
+underneath the review rather than as the ordinary consequence of updating an artifact.
+
+**The version appears nowhere in this.** The check compares object digests, so re-vendoring at the
+same `1.0.0` with one byte different is indistinguishable from a version bump. There is no way to
+edit a recipe that avoids it.
+
+### Nothing gets you out
+
+| Attempt | Result |
+|---|---|
+| run setup again | identical failure |
+| `marketplace receipt undo` | `lab/mcp/probe is installed and no setup run has been recorded for it` |
+| `uninstall` then `install` | stale reference survives; setup still fails |
+
+The second row is `AD-25` closing the exit behind itself: the command built to reverse a setup needs
+a persisted record, and the runs that fail persistence write none. The third leaves an orphaned
+`state/setup/setup-<id>.json` that no installation points at any more, while planning recomputes the
+same deterministic owner id and finds it again.
+
+### The escape, and its own trap
+
+Editing consumer state by hand is the only route found:
+
+1. remove the `"kind": "setup"` entry from
+   `~/Library/Application Support/agent-artifacts/state/object-references.json`;
+2. delete `~/Library/Application Support/agent-artifacts/state/setup/setup-<id>.json`.
+
+Setup then reported `configured=1`.
+
+The trap is in step 1. Rewriting that file re-indented is refused:
+
+```
+failed — cannot retain transaction object reference: object reference index is not canonical
+```
+
+It has to be written back compact, with sorted keys and a trailing newline. So the only workaround
+for a `high` defect requires knowing an unwritten serialization rule, and getting it wrong produces a
+different error that says nothing about formatting.
+
+It also costs the record of whatever a previous successful setup applied: any effect that run owned —
+a managed block, a Keychain item — stays on disk with nothing claiming it.
+
+### Asked for
+
+Move the `setup` reference with the object, the way the `installed` one already moves. Failing that,
+treat a `setup` reference pointing at a superseded digest as replaceable rather than as evidence of
+tampering — the digest it points at is one the same run is about to stop using.
