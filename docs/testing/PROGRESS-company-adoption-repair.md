@@ -423,3 +423,33 @@ dispositions.
   `AD-04` and `AD-28` are closed; `AD-29` is medium and explicitly outside the builtin target
   reversal. Publication proceeds through branch push, PR/CI, merge, release-check, tag, final wheel,
   GitHub release, downloaded-asset digest verification, and the public 3×3 installer matrix.
+
+### 08:35 CEST — `v2.7.1` released, verified, and publicly installable
+
+- Pushed final checkpoint `f4ea6e6c4434a74db74d7d36b9b7edf111371153` and opened GitHub PR
+  [#95](https://github.com/M1F1/agent-artifacts/pull/95). All four quality jobs passed: Python 3.10
+  and 3.14 for both branch-push and pull-request runs. Merged as
+  `b5cf660707354b7d6194b16013708306a8bb0070`, verified the branch checkpoint is its ancestor, and
+  fast-forwarded local `main` to clean `origin/main`.
+- Cloned the reference registry from its exact HTTPS origin at clean commit
+  `f25eba97bf71c4e6a4b224f2b081a6bb7c7327f9`. `make release-check` passed all 11 gates:
+  repository, schema-freeze, system-matrix, package, registry-origin, registry-format,
+  registry-validate, registry-lock, registry-build, registry-audit, and registry-compatibility.
+- Created and pushed annotated tag `v2.7.1`; tag object
+  `2a96cc37ebd61f534453c3547e0dd9606b20267c` resolves locally and remotely to merge commit
+  `b5cf660707354b7d6194b16013708306a8bb0070`.
+- Rebuilt the final 569,191-byte `agent_artifacts-2.7.1-py3-none-any.whl` from the detached tag. It
+  stamps the merge commit and has SHA-256
+  `5c50df30d5768a143b233a3b01abe7b8a3a05bee1dced1b83a94d7ad39940cff`.
+- Published the non-draft, non-prerelease GitHub release
+  [`v2.7.1`](https://github.com/M1F1/agent-artifacts/releases/tag/v2.7.1). Downloaded its wheel into
+  a fresh directory; the GitHub asset digest, local SHA-256, byte comparison and tagged build all
+  matched exactly.
+- Exercised the README's public installation matrix in nine isolated environments. `pip`, `pipx`,
+  and `uv tool` each passed for the downloaded wheel, GitHub release URL, and tagged Git URL; every
+  executable returned exactly `agent-artifacts 2.7.1`. Matrix result: 9/9 pass, root
+  `/tmp/aart-271-matrix.68AmcV`.
+- Exact release status: the company-proven Tabnine target is restored at both scopes, `AD-04` and
+  shipped regression `AD-28` are closed, all quality/live/release gates are green, tag and asset are
+  public and verified. `AD-29` remains a separate medium override-loader finding; no high-severity
+  adoption finding is open.
