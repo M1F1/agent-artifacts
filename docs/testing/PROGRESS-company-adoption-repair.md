@@ -305,3 +305,45 @@ dispositions.
   `workflow` scopes; repository `M1F1/agent-artifacts` has default branch `main`. Publication now
   proceeds through branch push, draft PR, merge, release-check, tag, wheel attachment, and asset
   verification.
+
+### 04:30 CEST — review, CI, merge, and release-check green
+
+- Pushed checkpoint `f78932da131fc89f6319ecc0c1c2c4dc8caa5474` and opened GitHub PR
+  [#93](https://github.com/M1F1/agent-artifacts/pull/93). After making it ready for review, all four
+  required quality jobs passed: Python 3.10 and 3.14 for both the branch-push and pull-request runs.
+- Merged PR #93 into `main` as
+  `7fc12863772dad14da6605f21b19298020d3f7b6`, then verified the published branch head is its
+  ancestor and fast-forwarded the local `main` to `origin/main`.
+- Cloned the approved registry from its exact HTTPS origin into a fresh directory. Its clean
+  `origin/HEAD` was `f25eba97bf71c4e6a4b224f2b081a6bb7c7327f9`.
+- `make release-check REGISTRY=/tmp/aart-270-live-87e56b8.0JrujN/release-registry` passed all 11
+  release gates: repository, schema-freeze, system-matrix, package, registry-origin,
+  registry-format, registry-validate, registry-lock, registry-build, registry-audit, and
+  registry-compatibility. No gate or branch protection was bypassed.
+
+### 04:33 CEST — `v2.7.0` released and asset independently verified
+
+- Created and pushed annotated tag `v2.7.0`; tag object
+  `f534286e0fba8580c319003fb5688d8a25e251f2` resolves to merge commit
+  `7fc12863772dad14da6605f21b19298020d3f7b6` locally and on `origin`.
+- Rebuilt the final wheel from the detached tagged commit. The published 569,169-byte
+  `agent_artifacts-2.7.0-py3-none-any.whl` has SHA-256
+  `6673ae24be9894ea9310c6331521ff613815768a5a50e36b622bf3de425be2da`.
+- Published the non-draft, non-prerelease GitHub release
+  [`v2.7.0`](https://github.com/M1F1/agent-artifacts/releases/tag/v2.7.0) with that exact wheel and
+  its digest in the release notes. Downloaded the asset again through GitHub into a fresh
+  directory; its SHA-256 matched the tagged build exactly.
+
+### 04:35 CEST — public install matrix 9/9 and stream complete
+
+- Exercised every README installation cell against the public release in isolated environments.
+  `pip`, `pipx`, and `uv tool` each passed for the freshly downloaded wheel, the GitHub release
+  URL, and `git+https://github.com/M1F1/agent-artifacts.git@v2.7.0`. Every resulting executable
+  returned exactly `agent-artifacts 2.7.0`; result: 9/9 pass.
+- Live acceptance is green across maintainer publication, consumer lifecycle, repeatable setup,
+  real 2.6.1-to-2.7.0 migration, remote-origin freshness, reporting, Tabnine project/user scope,
+  and shared memory ownership. The machine receipts are named in the entries above.
+- Final adoption disposition: all 27 findings `AD-01` through `AD-27` are closed. Fifty-six
+  unrelated findings remain recorded (one `major`, two `high`, 32 `medium`, and 21 `low`); none
+  blocks this adoption-stream release. The immutable release is public, its asset is reproducible
+  and independently verified, and there is no remaining work in the requested stream.
