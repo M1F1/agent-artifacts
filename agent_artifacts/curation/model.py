@@ -91,6 +91,7 @@ class CurationRequest:
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
+    usage_reporting_repository: str | None = None
     minimum_version: str = DEFAULT_MINIMUM_AART
     maximum_version: str = DEFAULT_MAXIMUM_AART
 
@@ -127,6 +128,7 @@ class CurationRequest:
                     self.setup_recipe,
                     self.source_id,
                     self.display_name,
+                    self.usage_reporting_repository,
                 )
             )
             or not _one_line(self.ref)

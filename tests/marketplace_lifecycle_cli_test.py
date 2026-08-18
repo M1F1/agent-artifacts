@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from unittest import mock
 
 from agent_artifacts import cli
-from agent_artifacts.configuration.model import SourceKind
+from agent_artifacts.configuration.model import ReportingMode, SourceKind
 from agent_artifacts.consumer.model import (
     ConsumerActionRequest,
     ConsumerOutcome,
@@ -37,6 +37,12 @@ from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.protocol.hashing import sha256_bytes
 from agent_artifacts.protocol.native_models import ArtifactSelector, CollectionManifest
+from agent_artifacts.reporting.application import (
+    RegistryReportingNotice,
+    RegistryReportingRoute,
+    ReportingApplicationService,
+)
+from agent_artifacts.reporting.model import ReportingDestination
 from tests.marketplace_fixtures import (
     artifact,
     configured_source,
@@ -112,6 +118,7 @@ def _review_item(
 @dataclass(frozen=True, slots=True)
 class _StubContext:
     catalog: object
+    effective: object | None = None
 
 
 @dataclass
@@ -352,6 +359,138 @@ class ReviewFinalizeBoundaryTests(unittest.TestCase):
         payload = _payload(output)
         self.assertTrue(payload["finalized"])
         self.assertEqual(payload["session_status"], "succeeded")
+
+    def test_finalized_cli_install_projects_and_offers_the_registry_report(self) -> None:
+        review = _review()
+        team = configured_source("team", SourceKind.SOURCE_GIT)
+        service = _StubService(
+            context=_StubContext(_catalog(), effective_configuration((team,))),
+            review=review,
+            outcome=_outcome(),
+        )
+        destination = ReportingDestination(
+            ReportingMode.PROMPT,
+            "github.company.example",
+            "acme/agent-artifacts-registry",
+        )
+        reporting = ReportingApplicationService(
+            None,
+            lambda _plan: self.fail("JSON prompt reporting opened a browser"),
+            lambda _plan: self.fail("JSON prompt reporting submitted automatically"),
+            routes=(RegistryReportingRoute(SourceAlias("team"), destination),),
+        )
+
+        with mock.patch(
+            "agent_artifacts.commands.marketplace.load_local_reporting_service",
+            return_value=Ok(reporting),
+        ):
+            code, output = _run(
+                [
+                    "marketplace",
+                    "install",
+                    "team/skill/code-review",
+                    "--profile",
+                    "claude",
+                    "--json",
+                    "--yes",
+                ],
+                service,
+            )
+
+        self.assertEqual(code, 0, output)
+        payload = _payload(output)
+        self.assertEqual(payload["reporting"]["status"], "offered")
+        plan = payload["reporting"]["plans"][0]
+        self.assertEqual(
+            plan["destination"],
+            "github.company.example/acme/agent-artifacts-registry",
+        )
+        self.assertEqual(plan["status"], "offered")
+        self.assertEqual(plan["payload"]["interface"], "cli")
+
+    def test_cli_explains_a_missing_registry_advertisement_without_failing_install(self) -> None:
+        team = configured_source("team", SourceKind.SOURCE_GIT)
+        service = _StubService(
+            context=_StubContext(_catalog(), effective_configuration((team,))),
+            review=_review(),
+            outcome=_outcome(),
+        )
+        reporting = ReportingApplicationService(
+            None,
+            lambda _plan: self.fail("browser provider called without a route"),
+            lambda _plan: self.fail("automatic provider called without a route"),
+            notices=(
+                RegistryReportingNotice(
+                    SourceAlias("team"),
+                    "it does not advertise a usage_reporting service",
+                ),
+            ),
+        )
+
+        with mock.patch(
+            "agent_artifacts.commands.marketplace.load_local_reporting_service",
+            return_value=Ok(reporting),
+        ):
+            code, output = _run(
+                [
+                    "marketplace",
+                    "install",
+                    "team/skill/code-review",
+                    "--profile",
+                    "claude",
+                    "--yes",
+                ],
+                service,
+            )
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("Usage report not offered for registry team", output)
+
+    def test_automatic_reporting_failure_is_advisory_to_cli_exit(self) -> None:
+        team = configured_source("team", SourceKind.SOURCE_GIT)
+        service = _StubService(
+            context=_StubContext(_catalog(), effective_configuration((team,))),
+            review=_review(),
+            outcome=_outcome(),
+        )
+        destination = ReportingDestination(
+            ReportingMode.AUTOMATIC,
+            "github.company.example",
+            "acme/usage",
+        )
+        reporting = ReportingApplicationService(
+            destination,
+            lambda _plan: self.fail("automatic mode used browser provider"),
+            lambda _plan: Err(
+                (
+                    Diagnostic(
+                        DiagnosticCode("reporting-provider-failed"),
+                        Severity.ERROR,
+                        "provider unavailable",
+                    ),
+                )
+            ),
+        )
+
+        with mock.patch(
+            "agent_artifacts.commands.marketplace.load_local_reporting_service",
+            return_value=Ok(reporting),
+        ):
+            code, output = _run(
+                [
+                    "marketplace",
+                    "install",
+                    "team/skill/code-review",
+                    "--profile",
+                    "claude",
+                    "--json",
+                    "--yes",
+                ],
+                service,
+            )
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(_payload(output)["reporting"]["plans"][0]["status"], "failed")
 
     def test_review_only_output_names_the_flag_that_would_apply_it(self) -> None:
         service = _StubService(review=_review(), outcome=_outcome())

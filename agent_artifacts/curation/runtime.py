@@ -427,13 +427,23 @@ class LocalCurationService:
                 request.display_name,
                 minimum.value,
                 maximum.value,
+                request.usage_reporting_repository,
             )
         except ValueError as error:
             return _error(str(error))
         planned = prepare_registry_init(options, output=self.workspace)
         if isinstance(planned, Err):
             return planned
-        return Ok(self._workspace_review(request, planned.value))
+        warnings = (
+            ()
+            if request.usage_reporting_repository is not None
+            else (
+                "usage reporting templates are inert because no destination was advertised; "
+                "re-run init with --usage-reporting-repository OWNER/REPOSITORY to enable "
+                "prompt-only registry routing",
+            )
+        )
+        return Ok(self._workspace_review(request, planned.value, warnings=warnings))
 
     def _prepare_scaffold(self, request: CurationRequest) -> Result[PreparedCuration]:
         if (

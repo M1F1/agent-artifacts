@@ -8,6 +8,7 @@ from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Sever
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.reporting.application import (
+    RegistryReportingNotice,
     RegistryReportingRoute,
     ReportingApplicationService,
 )
@@ -150,6 +151,37 @@ class ReportingTuiTest(unittest.TestCase):
         rendered = "\n".join(writes)
         self.assertIn("github.com/M1F1/agent-artifacts-registry", rendered)
         self.assertNotIn("Exact redacted", rendered)
+
+    def test_registry_without_an_advertisement_explains_why_no_offer_appears(self) -> None:
+        service = ReportingApplicationService(
+            None,
+            lambda _plan: self.fail("browser provider called without a route"),
+            lambda _plan: self.fail("automatic provider called without a route"),
+            notices=(
+                RegistryReportingNotice(
+                    SourceAlias("reference"),
+                    "it does not advertise a usage_reporting service",
+                ),
+            ),
+        )
+        event = _event()
+        writes = []
+
+        tui._offer_routed_usage_reports(
+            service,
+            event,
+            (RegistryUsageReport(SourceAlias("reference"), event),),
+            read=lambda _prompt: self.fail("reporting without a route prompted"),
+            write=writes.append,
+        )
+
+        self.assertEqual(
+            writes,
+            [
+                "Usage report not offered for registry reference: it does not advertise a "
+                "usage_reporting service."
+            ],
+        )
 
 
 if __name__ == "__main__":

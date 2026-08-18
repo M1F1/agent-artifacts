@@ -54,6 +54,7 @@ from agent_artifacts.protocol.registry_models import (
     RegistryLock,
     RegistryManifest,
     ReviewRecord,
+    ServiceAdvertisement,
 )
 from agent_artifacts.protocol.registry_schema import (
     parse_registry_entry,
@@ -528,6 +529,17 @@ def plan_registry_init(
             )
         ),
         "main",
+        (
+            (
+                ServiceAdvertisement(
+                    "usage_reporting",
+                    "github-issues",
+                    options.usage_reporting_repository,
+                ),
+            )
+            if options.usage_reporting_repository is not None
+            else ()
+        ),
     )
     source = SourceManifest(
         1,

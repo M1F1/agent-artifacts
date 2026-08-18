@@ -199,6 +199,29 @@ class RegistryInitScaffoldTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(cli.build_parser().parse_args(argv).command, "registry")
 
+    def test_init_can_advertise_the_scaffolded_usage_reporting_service(self) -> None:
+        empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())
+        options = RegistryInitOptions(
+            "company-registry",
+            "Company Agent Artifacts",
+            SemVer(1, 0, 0),
+            SemVer(2, 0, 0),
+            "acme/agent-artifacts-registry",
+        )
+
+        planned = plan_registry_init(empty, options)
+        assert isinstance(planned, Ok), planned
+        projected = project_registry_workspace_plan(empty, planned.value)
+        assert isinstance(projected, Ok), projected
+        files = {str(item.path): item.content for item in projected.value.entries}
+        manifest = parse_registry_manifest(files["aart-registry.json"])
+        assert isinstance(manifest, Ok), manifest
+
+        self.assertEqual(len(manifest.value.services), 1)
+        self.assertEqual(manifest.value.services[0].name, "usage_reporting")
+        self.assertEqual(manifest.value.services[0].kind, "github-issues")
+        self.assertEqual(manifest.value.services[0].repository, "acme/agent-artifacts-registry")
+
     def test_scaffold_produces_a_valid_native_package_and_refuses_overwrite(self) -> None:
         empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())
         initialized = plan_registry_init(

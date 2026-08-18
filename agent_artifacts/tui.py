@@ -791,6 +791,10 @@ def _offer_routed_usage_reports(
 ) -> None:
     if service is None:
         return
+    selected_aliases = {report.source_alias for report in routed}
+    for notice in service.notices:
+        if notice.source_alias in selected_aliases:
+            write(f"Usage report not offered for registry {notice.source_alias}: {notice.reason}.")
     prepared = service.prepare_routed(combined, routed)
     if isinstance(prepared, DomainErr):
         write("warning: usage reports could not be prepared; the artifact outcome is unchanged")

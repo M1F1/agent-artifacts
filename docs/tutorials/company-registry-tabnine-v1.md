@@ -53,7 +53,8 @@ Every mutating AART command runs twice: once to show you what it would do, once 
 it. Look at the first output before you type the second.
 
 ```sh
-aart registry init --source . --source-id company --display-name "Company AART Registry"
+aart registry init --source . --source-id company --display-name "Company AART Registry" \
+  --usage-reporting-repository platform/agent-artifacts-registry
 ```
 
 ```text
@@ -72,11 +73,16 @@ Review canonical Maintainer action: init
 ```
 
 ```sh
-aart registry init --source . --source-id company --display-name "Company AART Registry" --yes
+aart registry init --source . --source-id company --display-name "Company AART Registry" \
+  --usage-reporting-repository platform/agent-artifacts-registry --yes
 ```
 
 `--source-id` is the identity every artifact coordinate starts with — your colleagues will type
 `company/skill/release-evidence`. It is stable; changing it later changes every coordinate.
+`--usage-reporting-repository` publishes the GitHub owner/repository coordinate that makes the
+generated Issue Form reachable from the default prompt-only consumer flow. AART derives the host
+from this registry's configured Git URL. Omit the option to keep reporting disabled; Review says
+explicitly that the generated templates are inert and names the option that enables them.
 
 The generated `.gitignore` excludes AART caches, build output, and the project/user harness targets
 used by the built-in profiles (`.agent-artifacts/`, `.claude/`, `.tabnine/`, `.opencode/`, `.vibe/`,
@@ -415,6 +421,13 @@ Reviewed only; re-run with --yes to apply this exact plan.
 aart marketplace install company/skill/release-evidence --profile tabnine --yes
 aart marketplace install company/guideline/branch-conventions --profile tabnine --yes
 ```
+
+After a finalized CLI or TUI action, AART offers one redacted report per registry that advertises
+`usage_reporting`. Prompt mode defaults to No twice: once before showing the exact payload and once
+before opening the prefilled issue. Non-interactive and JSON CLI runs never open a browser; JSON
+returns the same bounded plan for automation. If the registry was initialized without the service,
+AART now says why no offer appeared and names `--usage-reporting-repository` as the maintainer fix.
+Reporting failures are advisory and never change the install result or exit code.
 
 ### Where the files land for Tabnine
 

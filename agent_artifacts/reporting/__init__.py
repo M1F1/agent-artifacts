@@ -1,7 +1,11 @@
 """Versioned, redacted, destination-bound optional usage reporting."""
 
 from .aggregation import DashboardFiles, UsageAggregate, aggregate_issue_export, dashboard_files
-from .application import RegistryReportingRoute, ReportingApplicationService
+from .application import (
+    RegistryReportingNotice,
+    RegistryReportingRoute,
+    ReportingApplicationService,
+)
 from .destination import configured_reporting_source, destination_from_services
 from .io import GitHubIssueProvider, browser_provider
 from .model import (
@@ -30,6 +34,7 @@ from .runtime import (
 __all__ = [
     "ReportingApplicationService",
     "RegistryReportingRoute",
+    "RegistryReportingNotice",
     "RegistryUsageReport",
     "ReportingDestination",
     "ReportingFailure",

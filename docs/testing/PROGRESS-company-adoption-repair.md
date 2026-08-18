@@ -146,3 +146,17 @@ dispositions.
   test imports require the repository on `PYTHONPATH`; rerunning with
   `PYTHONPATH=/Users/mifi/code/agent-artifacts` passed 77 tests and 16 subtests across memory E2E,
   install-state schema, lifecycle, and install planning.
+
+### 03:52 CEST — `AD-09` closed
+
+- Registry initialization accepts `--usage-reporting-repository OWNER/REPOSITORY` and writes the
+  service advertisement that activates its generated Issue Form/workflows. Omitting the option is
+  still valid but Review now says the templates are inert and gives the exact enabling flag.
+- Prompt-only route discovery retains a local reason for every rejected registry. The TUI and CLI
+  show the reason only for registries represented in the completed action; disabled reporting and
+  direct sources remain intentionally silent.
+- Finalized marketplace CLI actions now project `interface=cli` reports. TTY prompt mode keeps two
+  default-No consents, JSON returns the exact inert plan, non-interactive text never opens a
+  browser, and automatic/provider failures cannot change the artifact result or exit code.
+- Full-package mypy passes. Ruff/format pass, and the reporting/registry/consumer/TUI cluster passes
+  93 tests and 42 subtests. Documentation now walks the authoring flag and post-install behavior.

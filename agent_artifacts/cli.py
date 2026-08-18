@@ -607,6 +607,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--display-name", required=True, metavar="TEXT", help="human-readable registry name"
     )
     p_init.add_argument(
+        "--usage-reporting-repository",
+        metavar="OWNER/REPOSITORY",
+        help=(
+            "advertise this registry's GitHub Issues repository for optional prompt-only usage "
+            "reports"
+        ),
+    )
+    p_init.add_argument(
         # A registry initialised today cannot honestly claim an older AART can read it: the
         # scaffolded markers, manifests, and setup recipes are the current dialect.  The floor is
         # therefore the AART that wrote them, and an author who really supports more says so.
@@ -1222,6 +1230,7 @@ def _to_request(args: argparse.Namespace) -> Request:
         frozen=bool(getattr(args, "frozen", False)),
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
+        usage_reporting_repository=getattr(args, "usage_reporting_repository", None),
         summary=getattr(args, "summary", None),
         collection_members=tuple(getattr(args, "collection_members", ()) or ()),
         discovery_checkout=getattr(args, "discovery_checkout", None),

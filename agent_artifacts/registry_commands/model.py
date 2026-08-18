@@ -21,6 +21,7 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _SCOPES = frozenset({"project", "user"})
 _MODES = frozenset({"copy", "symlink"})
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _valid_digest(value: object) -> bool:
@@ -74,6 +75,7 @@ class RegistryInitOptions:
     display_name: str
     minimum_aart: SemVer
     maximum_aart_exclusive: SemVer
+    usage_reporting_repository: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -82,6 +84,10 @@ class RegistryInitOptions:
             or not isinstance(self.minimum_aart, SemVer)
             or not isinstance(self.maximum_aart_exclusive, SemVer)
             or not self.minimum_aart < self.maximum_aart_exclusive
+            or (
+                self.usage_reporting_repository is not None
+                and _REPOSITORY_RE.fullmatch(self.usage_reporting_repository) is None
+            )
         ):
             raise ValueError("registry init options are invalid")
 

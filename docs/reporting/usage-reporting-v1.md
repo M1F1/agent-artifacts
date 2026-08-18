@@ -48,7 +48,10 @@ day dimension; clients do not create persistent identifiers or timestamps.
 
 ## Registry ingestion and dashboard
 
-`aart registry init` installs inert, deterministic templates in addition to registry CI:
+`aart registry init --usage-reporting-repository OWNER/REPOSITORY` installs deterministic
+templates in addition to registry CI and advertises their GitHub Issues destination in both the
+authored manifest and the next built index. Without the option the templates remain inert and the
+init Review names the missing advertisement and exact enabling flag:
 
 - `.github/ISSUE_TEMPLATE/usage-report.yml` for disclosure and browser prefill;
 - `.github/workflows/aart-usage-validate.yml` to read the issue body as a file, validate it, and

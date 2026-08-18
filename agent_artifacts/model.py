@@ -418,6 +418,8 @@ class Request:
     frozen: bool = False
     source_id: Optional[str] = None
     display_name: Optional[str] = None
+    # Optional registry-owned GitHub Issues destination advertised by ``registry init``.
+    usage_reporting_repository: Optional[str] = None
     summary: Optional[str] = None
     collection_members: Tuple[str, ...] = ()
     # Discovery emits, and batch vendoring consumes, one reviewable JSON manifest.  The checkout

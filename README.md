@@ -170,8 +170,10 @@ proxy that is the whole failure.
 
 ```sh
 # Create a registry
-aart registry init --source . --source-id company --display-name "Company Registry"
-aart registry init --source . --source-id company --display-name "Company Registry" --yes
+aart registry init --source . --source-id company --display-name "Company Registry" \
+  --usage-reporting-repository acme/agent-artifacts-registry
+aart registry init --source . --source-id company --display-name "Company Registry" \
+  --usage-reporting-repository acme/agent-artifacts-registry --yes
 
 # Author a package, or review a native package from another repository
 aart registry scaffold skill code-review --source . --summary "Review code." \
