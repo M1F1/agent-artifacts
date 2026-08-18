@@ -579,6 +579,31 @@ def _setup_plan_payload(plan) -> dict:
     }
 
 
+def _setup_warnings(outcome) -> list[dict]:
+    """Advisory findings a completed run recorded, carried to the surface the operator reads.
+
+    A truncated Keychain secret configures cleanly and fails much later, at the server, as one
+    word in a harness UI (`AD-34`). The receipt knows; nothing read it until here.
+    """
+
+    warnings: list[dict] = []
+    for item in outcome.items:
+        record = item.record
+        if record is None:
+            continue
+        for receipt in record.receipt:
+            if not receipt.get("truncation_suspected"):
+                continue
+            warnings.append(
+                {
+                    "key": f"{item.coordinate}#{item.profile}/{item.scope}",
+                    "detail": str(receipt.get("truncation_detail", "")),
+                    "commands": [str(one) for one in receipt.get("remediation_commands", ())],
+                }
+            )
+    return warnings
+
+
 def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
     payload: dict = {
         "planned": [_setup_plan_payload(plan) for plan in queue.plans],
@@ -602,6 +627,9 @@ def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
             }
             for item in outcome.items
         ]
+        warnings = _setup_warnings(outcome)
+        if warnings:
+            payload["warnings"] = warnings
     return payload
 
 

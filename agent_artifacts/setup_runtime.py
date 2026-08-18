@@ -39,6 +39,7 @@ Consent = Callable[[SetupEffect], bool]
 ToolLookup = Callable[[str], bool]
 PromptWriter = Callable[[str], None]
 TextInputReader = Callable[[str], str]
+SecretLengthProbe = Callable[[str, str], Optional[int]]
 
 
 class RollbackIncompleteError(RuntimeError):
@@ -128,6 +129,73 @@ def run_process(
     )
 
 
+# `security` reads its prompt through `getpass(3)`, whose static buffer is `_PASSWORD_LEN` in
+# `pwd.h` — 128 bytes, "max length, not counting NULL".  A longer secret is discarded past that
+# point with no error and no exit status, and because the tool prompts twice and compares, two
+# identically truncated pastes agree with each other.  An Atlassian API token is 193 bytes, so this
+# path cannot carry one at all (`AD-34`).
+_PROMPT_CEILING = 128
+
+
+def _stored_secret_length(service: str, account: str) -> Optional[int]:
+    """Measure what was stored without ever holding it.
+
+    `security` writes the value into a pipe that only `wc` reads; this process reads the count and
+    never the bytes.  Capturing the value here to measure it would put the secret into AART's own
+    memory, which is the single property the Keychain step exists to preserve.
+
+    Bytes, not characters: the ceiling is a buffer size, so a multi-byte secret is cut by bytes.
+    """
+
+    find = ("/usr/bin/security", "find-generic-password", "-a", account, "-s", service, "-w")
+    try:
+        reader = subprocess.Popen(find, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    assert reader.stdout is not None
+    try:
+        counter = subprocess.Popen(
+            ("/usr/bin/wc", "-c"),
+            stdin=reader.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        reader.stdout.close()
+        reader.kill()
+        reader.wait(timeout=30)
+        return None
+    # Only the counting child may hold the read end, or the pipe never reaches EOF.
+    reader.stdout.close()
+    try:
+        digits, _ignored = counter.communicate(timeout=30)
+        reader.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        counter.kill()
+        reader.kill()
+        return None
+    if reader.returncode != 0 or counter.returncode != 0:
+        return None
+    try:
+        counted = int(digits.strip())
+    except ValueError:
+        return None
+    # `-w` prints the value followed by a newline, which is not part of what is stored.
+    return max(counted - 1, 0)
+
+
+def _manual_keychain_commands(service: str, account: str) -> tuple[str, ...]:
+    """The two commands that set the value by hand, and the one that proves the length."""
+
+    quoted_service, quoted_account = shlex.quote(service), shlex.quote(account)
+    return (
+        f"/usr/bin/security add-generic-password -U -a {quoted_account} -s {quoted_service} "
+        '-w "$(pbpaste)"',
+        f"/usr/bin/security find-generic-password -a {quoted_account} -s {quoted_service} -w "
+        "| wc -c",
+    )
+
+
 def _actual_tool_exists(tool: str) -> bool:
     if os.path.isabs(tool):
         return os.path.isfile(tool) and os.access(tool, os.X_OK)
@@ -160,6 +228,8 @@ class SetupRuntime:
     enforce_source_hash: bool = False
     write_prompt: PromptWriter = _write_prompt
     read_text_input: TextInputReader = _read_text_input
+    # Inert by default so a test runtime never reaches a real Keychain; production wires it.
+    secret_length: SecretLengthProbe = lambda _service, _account: None
 
     def __post_init__(self) -> None:
         if self.environ is None:
@@ -173,6 +243,7 @@ def production_runtime() -> SetupRuntime:
         environ=os.environ,
         tool_exists=_actual_tool_exists,
         enforce_source_hash=True,
+        secret_length=_stored_secret_length,
     )
 
 
@@ -329,7 +400,11 @@ def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
         return _keychain_receipt(
             effect.module, service, account, created=False, replaced=False
         ), False
-    runtime.write_prompt(f"Setup input: {effect.summary}")
+    runtime.write_prompt(
+        f"Setup input: {effect.summary}\n"
+        f"  The tool asks twice and keeps at most {_PROMPT_CEILING} bytes; anything longer is cut "
+        f"here with no error. This run measures what was stored and says so if it hit that mark."
+    )
     result = runtime.process(effect.argv, env=env, cwd=None, timeout=120, capture=False)
     if result.returncode != 0:
         if replace_existing:
@@ -396,13 +471,28 @@ def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
                 ),
             )
         raise RuntimeError("Keychain item was not found after add")
-    return _keychain_receipt(
+    receipt = _keychain_receipt(
         effect.module,
         service,
         account,
         created=not exists,
         replaced=exists,
-    ), True
+    )
+    # The value is never read back into this process: `secret_length` counts it in a pipe between
+    # two children.  A stored length of exactly the ceiling is the signature of a truncated paste
+    # — it can also be a secret that is genuinely that long, so this warns and never fails.
+    stored = runtime.secret_length(service, account)
+    if stored is not None:
+        receipt["stored_length"] = stored
+        if stored == _PROMPT_CEILING:
+            receipt["truncation_suspected"] = True
+            receipt["truncation_detail"] = (
+                f"the stored secret is exactly {_PROMPT_CEILING} bytes, the ceiling this prompt "
+                "truncates at; if what you pasted was longer, only its first "
+                f"{_PROMPT_CEILING} bytes are in the Keychain"
+            )
+            receipt["remediation_commands"] = _manual_keychain_commands(service, account)
+    return receipt, True
 
 
 def _managed_block_apply(effect: SetupEffect) -> tuple[dict, bool]:

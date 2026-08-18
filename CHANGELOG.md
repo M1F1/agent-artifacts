@@ -3,6 +3,17 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## Unreleased
+
+Setup now says when a Keychain secret was truncated at the prompt. `security` reads its prompt
+through `getpass(3)`, whose buffer is 128 bytes, and it asks twice — so two identically truncated
+pastes agree with each other and the short value is stored without an error (`AD-34`). The step
+now warns before the prompt that the ceiling exists, measures what was stored afterwards, and, when
+the length is exactly 128, ends the run with the commands that set the value by hand. The
+measurement never holds the secret: `security` writes into a pipe that only `wc` reads, and AART
+reads the count. No protocol, schema, command or flag changes; the ceiling itself is Apple's and
+is unchanged.
+
 ## 2.7.1 — 2026-08-18
 
 This patch restores the Tabnine MCP target used by the company build after 2.7.0 replaced measured
