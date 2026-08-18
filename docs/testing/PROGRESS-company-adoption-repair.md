@@ -410,3 +410,16 @@ dispositions.
   `no-op/current`; its state and settings bytes remained identical, proving the restored target
   needs no migration from the last working release. Live root:
   `/tmp/aart-271-live-fbc2a0c.RqjrTx`. `AD-28` is closed; `AD-29` remains medium and separate.
+
+### 08:27 CEST — final 2.7.1 quality gate green
+
+- Ran complete `make quality` after the repaired target, v17 contract, live evidence and final
+  finding dispositions were committed. All nine gates passed: format-check, lint, mypy over 168
+  source files, unit, integration/E2E, validate/version, coverage, packaging-check and docs-check.
+- Unit discovery passed 1,597 tests; separate E2E discovery passed 46 tests. Coverage remains
+  83.20% over 26,492 statements. Packaging built and validated the zero-dependency
+  `agent_artifacts-2.7.1-py3-none-any.whl`; version and schema freeze v17 checks passed.
+- The register now has 57 open findings: one `major`, two `high`, 33 `medium`, and 21 `low`.
+  `AD-04` and `AD-28` are closed; `AD-29` is medium and explicitly outside the builtin target
+  reversal. Publication proceeds through branch push, PR/CI, merge, release-check, tag, final wheel,
+  GitHub release, downloaded-asset digest verification, and the public 3×3 installer matrix.
