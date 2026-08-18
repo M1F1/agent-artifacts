@@ -347,3 +347,21 @@ dispositions.
   unrelated findings remain recorded (one `major`, two `high`, 32 `medium`, and 21 `low`); none
   blocks this adoption-stream release. The immutable release is public, its asset is reproducible
   and independently verified, and there is no remaining work in the requested stream.
+
+### 08:13 CEST — `AD-04` reopened; shipped regression and override hazard recorded
+
+- Operator review corrected the evidence hierarchy used for `AD-04`. The company Tabnine build
+  reported a server from `.tabnine/agent/settings.json` as `disconnected`, which proves that it
+  parsed the entry and reached a downstream runtime failure. The 2.7.0 repair wrongly demoted that
+  measurement below current documentation and a different machine's user-scope file.
+- Reopened `AD-04`. Filed `AD-28` for the released 2.7.0 migration onto the unproven file and the
+  test that required the proven file to be absent. Filed `AD-29` for the pre-existing profile
+  override loader behavior: a partial same-name override replaces the complete builtin profile.
+- Audited every code change from the adoption-stream baseline `6c85451` through `v2.7.0`. No other
+  builtin profile target moved. The other hard public-identifier substitution was
+  `com.m1f1.runtime-requirements` to `aart.runtime-requirements`; unlike Tabnine, no contradicting
+  live observation was found. The generic retired-effect update guard is wider than Tabnine but
+  does not move data by itself and prevents an old owned destination from being orphaned.
+- Repair scope is now explicit: restore project and user MCP files to `settings.json`, retain the
+  new user scope and `mcpServers` merge shape, reverse the pinning tests and current normative docs,
+  then run focused tests, complete quality, live acceptance, and a 2.7.1 patch release.
