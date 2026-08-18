@@ -165,8 +165,21 @@ Read it in order, because every line of it matters:
   and it lands **before** any input is collected and before the first effect: nothing is built,
   nothing is typed, nothing is written (`AD-26`, closed). The plan does not predict it, because
   planning never touches the filesystem, so it appears only when you apply. Check `ls -l ~/.zshrc`
-  first; if it is a link, either point the step's `with.file` at a real file, or make `~/.zshrc` a
-  real file that `source`s the copy in the dotfiles repository.
+  first; if it is a link, remove the link before running setup:
+
+```bash
+ls -l ~/.zshrc
+```
+
+```bash
+REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && rm ~/.zshrc && printf 'source %s\n' "$REAL" > ~/.zshrc && ls -l ~/.zshrc
+```
+
+`rm` deletes the link, never the file it pointed at. What replaces it is a real file that still
+loads your dotfiles copy, so nothing of your own configuration is lost and setup now has a regular
+file to own: it appends its block below the `source` line. Confirm the second `ls -l` prints
+`-rw-r--r--` with no `->` arrow, then run setup again. If your dotfiles tool re-creates the link on
+its next run, exclude `.zshrc` from it, or the managed block disappears with the link.
 
 The Keychain item itself is written by `macos-keychain.store@1`, which plans
 `/usr/bin/security add-generic-password -U -a <account> -s <service> -w` and lets `security` prompt.
