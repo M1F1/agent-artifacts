@@ -31,6 +31,12 @@ The measurement never holds the secret. `security` writes the value into a pipe 
 reads; AART closes its own copy of the read end and reads the count. Putting the value in AART's
 own memory — or in its `argv` — is the thing this step exists to avoid.
 
+Two counts are needed, not one. `security -w` prints a value that is not printable ASCII as hex
+and marks it in no way, while a password of nothing but hex digits prints literally. `-g` tells
+the two apart — it writes `password: 0x` before a hex dump — and `grep` answers with a number. So
+a 128-byte UTF-8 secret measures 128 rather than 256, and a 128-character hex token measures 128
+rather than 64.
+
 ## What this does not fix
 
 The ceiling is Apple's and is unchanged. An Atlassian API token is 193 bytes, so it still cannot be

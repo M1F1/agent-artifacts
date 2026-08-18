@@ -41,6 +41,13 @@ The measurement never holds the secret. `security` writes the value into a pipe 
 value to measure it would put the secret into AART's memory, which is the one property this step
 exists to preserve.
 
+It takes two counts rather than one. `security -w` prints any value that is not printable ASCII as
+hex, and prints nothing to say it did; a password made only of hex digits prints literally. So the
+printed length alone cannot be read — halving whatever looks like hex would report a 128-character
+hex token as 64 bytes and lose exactly the warning this exists to raise. `-g` is the
+discriminator: it writes `password: 0x<hex>` for the hex form and a quoted string otherwise, and
+`grep -c` answers that shape with a number. An odd hex count is refused rather than guessed.
+
 ## Evidence boundary
 
 The ceiling is Apple's and is unchanged by this release. An Atlassian API token is 193 bytes, so it

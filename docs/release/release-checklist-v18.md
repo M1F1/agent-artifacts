@@ -31,6 +31,10 @@ compare its digest.
 - The measurement never holds the secret: `security` writes into a pipe that only `/usr/bin/wc`
   reads, AART closes its own copy of the read end, and AART reads the count. No AART process
   captures the value, and no AART argv carries it.
+- The measurement reports **stored bytes**, not printed characters. `security -w` prints anything
+  that is not printable ASCII as unmarked hex, and prints a hex-digit password literally, so the
+  shape is taken from `-g`'s `password: 0x` marker through `grep -c` and never guessed from the
+  printed form. An odd hex count returns no measurement.
 - A failed or unavailable measurement leaves the receipt silent. No measurement is not the same
   claim as no problem.
 - `SetupRuntime.secret_length` is inert by default, so no test run reaches a real Keychain;
@@ -52,11 +56,16 @@ stamped wheel and use only isolated project, HOME, data and cache roots for thes
    the summary, both commands appear on one line each, and `--json` carries the same commands.
 3. The two printed commands, pasted into a shell, replace the item and report its length. The
    second run of the recipe reports the item as current and does not prompt again.
-4. Installing and uninstalling an artifact with a setup recipe is unchanged from 2.7.1 in every
+4. The measurement is exact across print forms. Against throwaway Keychain items holding
+   non-secret values, the reported length equals the real byte length for: printable ASCII below
+   the ceiling, printable ASCII at 128, a 128-byte UTF-8 value, a 64-byte UTF-8 value, a
+   128-character hex-digit value, and a 128-byte value containing a tab. A missing item reports no
+   measurement. Delete every probe item afterwards.
+5. Installing and uninstalling an artifact with a setup recipe is unchanged from 2.7.1 in every
    other respect: same effects, same receipts otherwise, same idempotence.
-5. The full release check passes against a fresh clean checkout of
+6. The full release check passes against a fresh clean checkout of
    `https://github.com/M1F1/agent-artifacts-registry` at its remote default revision.
-6. After publication, every README installer/source cell passes for the release asset and tag:
+7. After publication, every README installer/source cell passes for the release asset and tag:
    `pip`, `pipx`, and `uv tool` against a downloaded wheel, the release URL, and the Git URL.
 
 Fix every failure and repeat the affected scenario. Record exact wheel digests, version stamps,

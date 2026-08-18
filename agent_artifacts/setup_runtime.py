@@ -137,51 +137,95 @@ def run_process(
 _PROMPT_CEILING = 128
 
 
-def _stored_secret_length(service: str, account: str) -> Optional[int]:
-    """Measure what was stored without ever holding it.
+_PROBE_TIMEOUT = 30
 
-    `security` writes the value into a pipe that only `wc` reads; this process reads the count and
-    never the bytes.  Capturing the value here to measure it would put the secret into AART's own
-    memory, which is the single property the Keychain step exists to preserve.
+
+def _piped_count(
+    producer: tuple[str, ...],
+    counter: tuple[str, ...],
+    *,
+    from_stderr: bool = False,
+    counter_ok: tuple[int, ...] = (0,),
+) -> Optional[int]:
+    """Run ``producer | counter`` and read only the number the counter prints.
+
+    What the producer writes reaches the counting child and never this process.  Reading it here
+    to measure it would put the secret into AART's own memory, which is the single property the
+    Keychain step exists to preserve.
+    """
+
+    streams = {
+        "stdout": subprocess.DEVNULL if from_stderr else subprocess.PIPE,
+        "stderr": subprocess.PIPE if from_stderr else subprocess.DEVNULL,
+    }
+    try:
+        source = subprocess.Popen(producer, **streams)  # type: ignore[call-overload]
+    except OSError:
+        return None
+    pipe = source.stderr if from_stderr else source.stdout
+    assert pipe is not None
+    try:
+        sink = subprocess.Popen(
+            counter, stdin=pipe, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+    except OSError:
+        pipe.close()
+        source.kill()
+        source.wait(timeout=_PROBE_TIMEOUT)
+        return None
+    # Only the counting child may hold the read end, or the pipe never reaches EOF.
+    pipe.close()
+    try:
+        digits, _ignored = sink.communicate(timeout=_PROBE_TIMEOUT)
+        source.wait(timeout=_PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        sink.kill()
+        source.kill()
+        return None
+    if source.returncode != 0 or sink.returncode not in counter_ok:
+        return None
+    try:
+        return int(digits.strip())
+    except ValueError:
+        return None
+
+
+def _stored_secret_length(service: str, account: str) -> Optional[int]:
+    """Measure what was stored, in bytes, without ever holding it.
+
+    Two questions, two counts, and the secret in neither answer.
+
+    `security -w` prints the value, so `wc -c` counts the *printed* form — which is not the stored
+    length whenever `security` chooses hex.  It prints hex for any value that is not printable
+    ASCII, with no marker saying so, and a password made only of hex digits prints literally, so
+    the printed form alone cannot be read: halving whatever looks like hex would silently report
+    a 128-character hex token as 64 bytes and lose exactly the warning this exists to raise.
+
+    `-g` is the discriminator.  It writes `password: 0x<hex>` for the hex form and a quoted string
+    otherwise, so `grep -c` answers the shape with a number and nothing else.
 
     Bytes, not characters: the ceiling is a buffer size, so a multi-byte secret is cut by bytes.
     """
 
-    find = ("/usr/bin/security", "find-generic-password", "-a", account, "-s", service, "-w")
-    try:
-        reader = subprocess.Popen(find, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
+    find = ("/usr/bin/security", "find-generic-password", "-a", account, "-s", service)
+    printed = _piped_count(find + ("-w",), ("/usr/bin/wc", "-c"))
+    if printed is None:
         return None
-    assert reader.stdout is not None
-    try:
-        counter = subprocess.Popen(
-            ("/usr/bin/wc", "-c"),
-            stdin=reader.stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError:
-        reader.stdout.close()
-        reader.kill()
-        reader.wait(timeout=30)
-        return None
-    # Only the counting child may hold the read end, or the pipe never reaches EOF.
-    reader.stdout.close()
-    try:
-        digits, _ignored = counter.communicate(timeout=30)
-        reader.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        counter.kill()
-        reader.kill()
-        return None
-    if reader.returncode != 0 or counter.returncode != 0:
-        return None
-    try:
-        counted = int(digits.strip())
-    except ValueError:
+    # grep exits 1 when it matches nothing, and nothing is the plain-text answer, not a failure.
+    hex_form = _piped_count(
+        find + ("-g",),
+        ("/usr/bin/grep", "-c", "^password: 0x"),
+        from_stderr=True,
+        counter_ok=(0, 1),
+    )
+    if hex_form is None:
         return None
     # `-w` prints the value followed by a newline, which is not part of what is stored.
-    return max(counted - 1, 0)
+    counted = max(printed - 1, 0)
+    if not hex_form:
+        return counted
+    # Two hex digits per stored byte.  An odd count is not a hex dump, so refuse to guess.
+    return counted // 2 if counted % 2 == 0 else None
 
 
 def _manual_keychain_commands(service: str, account: str) -> tuple[str, ...]:
@@ -192,7 +236,7 @@ def _manual_keychain_commands(service: str, account: str) -> tuple[str, ...]:
         f"/usr/bin/security add-generic-password -U -a {quoted_account} -s {quoted_service} "
         '-w "$(pbpaste)"',
         f"/usr/bin/security find-generic-password -a {quoted_account} -s {quoted_service} -w "
-        "| wc -c",
+        "| wc -c  # one more than the stored bytes: -w adds a newline",
     )
 
 

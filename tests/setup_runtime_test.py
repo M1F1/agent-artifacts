@@ -7,6 +7,7 @@ import pathlib
 import tempfile
 import unittest
 
+from agent_artifacts import setup_runtime
 from agent_artifacts.model import SetupQueueItem
 from agent_artifacts.setup import parse_installer, plan_setup, render_setup_review
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
@@ -290,6 +291,48 @@ class SetupRuntimeTests(unittest.TestCase):
 
             self.assertEqual(result.status, "unsupported")
             self.assertEqual(fake.calls, [])
+
+
+class StoredSecretLengthTest(unittest.TestCase):
+    """`security -w` prints hex for anything but printable ASCII, and says so only under `-g`."""
+
+    def _measure(self, printed, hex_form):
+        """Answer the two child pipelines without running them, recording what they were asked."""
+
+        asked: list[tuple[str, ...]] = []
+
+        def fake_count(producer, counter, **_options):
+            asked.append(tuple(producer))
+            return printed if "-w" in producer else hex_form
+
+        original = setup_runtime._piped_count
+        setup_runtime._piped_count = fake_count
+        try:
+            return setup_runtime._stored_secret_length("svc", "acct"), asked
+        finally:
+            setup_runtime._piped_count = original
+
+    def test_a_printable_value_is_as_long_as_it_printed(self):
+        # `wc -c` counts the trailing newline `-w` adds, which is not part of what is stored.
+        measured, asked = self._measure(printed=94, hex_form=0)
+
+        self.assertEqual(measured, 93)
+        self.assertTrue(any("-g" in producer for producer in asked))
+
+    def test_a_hex_dump_is_half_as_long_as_it_printed(self):
+        # 128 stored bytes print as 256 hex characters; reading them as 256 would lose the warning.
+        self.assertEqual(self._measure(printed=257, hex_form=1)[0], setup_runtime._PROMPT_CEILING)
+
+    def test_a_value_of_only_hex_digits_is_not_a_hex_dump(self):
+        # `-g` quotes it, so it is 128 printable characters and warns, rather than halving to 64.
+        self.assertEqual(self._measure(printed=129, hex_form=0)[0], setup_runtime._PROMPT_CEILING)
+
+    def test_an_odd_hex_count_is_refused_rather_than_guessed(self):
+        self.assertIsNone(self._measure(printed=100, hex_form=1)[0])
+
+    def test_either_count_failing_leaves_the_length_unknown(self):
+        self.assertIsNone(self._measure(printed=None, hex_form=1)[0])
+        self.assertIsNone(self._measure(printed=129, hex_form=None)[0])
 
 
 if __name__ == "__main__":

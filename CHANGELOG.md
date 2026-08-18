@@ -26,9 +26,13 @@ normative input digests as v17.
 - `SetupRuntime.secret_length` is a new seam, inert by default so no test run reaches a real
   Keychain. `production_runtime()` wires the real probe.
 
-The measurement never holds the secret: `security` writes into a pipe that only `wc` reads, AART
-closes its own copy of the read end, and AART reads the count. A failed or unavailable measurement
-leaves the receipt silent, because no measurement is not the same claim as no problem.
+The measurement never holds the secret. `security` writes into a pipe that only `wc` reads, AART
+closes its own copy of the read end, and AART reads the count. It takes two counts, not one:
+`security -w` prints a value that is not printable ASCII as hex, with nothing marking it as hex,
+and a password made only of hex digits prints literally — so `-g`, which writes `password: 0x` for
+the hex form and a quoted string otherwise, is counted by `grep` to tell the two apart. A failed or
+unavailable measurement leaves the receipt silent, because no measurement is not the same claim as
+no problem.
 
 ### Upgrading from 2.7.1
 
