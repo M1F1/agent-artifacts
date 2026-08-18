@@ -70,16 +70,16 @@ Target support and reasons are pure profile data. A missing user target is valid
 profile gives an unsupported reason. Choice builders use the same resolver as command execution,
 preventing preview/execution path drift.
 
-## 4. Official user-target matrix
+## 4. User-target matrix
 
-The following paths were checked against current official documentation on 2026-08-06. `~` is a
+The following paths combine current documentation with target-environment measurements. `~` is a
 template resolved against the selected user's home, not `os.getcwd()` and not the project path.
 
 | Harness | Skills | Guidelines | MCP | Hooks | Memory |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | `~/.claude/skills/<name>/` | `~/.claude/rules/` | `~/.claude.json` · `mcpServers` | scripts in managed `~/.claude/hooks/<name>/`; registration in `~/.claude/settings.json` · `hooks.PreToolUse` | `~/.claude/CLAUDE.md` |
 | OpenCode | `~/.config/opencode/skills/<name>/` | unsupported: no standalone global guideline discovery target | `~/.config/opencode/opencode.json` · `mcp` | unsupported: catalog hook descriptors are not OpenCode plugin modules | `~/.config/opencode/AGENTS.md` |
-| Tabnine | unsupported: no documented Agent Skills discovery location | `~/.tabnine/guidelines/` | `~/.tabnine/mcp_servers.json` · `mcpServers` | unsupported: official CLI hook page does not declare a user-global discovery target | unsupported: official CLI documents project-root `TABNINE.md`, not a global memory file |
+| Tabnine | unsupported: no documented Agent Skills discovery location | `~/.tabnine/guidelines/` | `~/.tabnine/agent/settings.json` · `mcpServers` | unsupported: official CLI hook page does not declare a user-global discovery target | unsupported: official CLI documents project-root `TABNINE.md`, not a global memory file |
 | Mistral Vibe | `~/.vibe/skills/<name>/` | unsupported: no global standalone guideline discovery target | unsupported: official target is TOML `~/.vibe/config.toml`, while the merge core is JSON-only | unsupported: official target is TOML `~/.vibe/hooks.toml`, while the merge core is JSON-only | unsupported: no documented always-loaded global instruction file |
 
 Primary references:
@@ -100,6 +100,12 @@ Primary references:
   [skills](https://docs.mistral.ai/vibe/code/cli/skills),
   [MCP](https://docs.mistral.ai/vibe/code/cli/mcp-servers), and
   [hooks](https://docs.mistral.ai/vibe/code/cli/hooks).
+
+Tabnine's published MCP reference names a standalone file, but the target company build has been
+measured parsing `mcpServers` from project `.tabnine/agent/settings.json`: the installed entry
+appeared as `disconnected`, after configuration discovery and before a successful server runtime.
+The user target mirrors that proven shape. Whether the company build also reads the standalone
+file remains open; documentation or a different machine cannot displace the target measurement.
 
 The Claude hook script directory is an `aart`-managed payload location; the officially discovered
 part is the global `settings.json` registration. Commands in the registration use the resolved

@@ -63,9 +63,9 @@ class TestVibePartialProfile(unittest.TestCase):
 class TestTabnineCorrectedTargets(unittest.TestCase):
     """The corrected tabnine MCP/hooks targets (DESIGN-memory §6/§6.1/§6.2)."""
 
-    def test_tabnine_mcp_in_documented_server_file(self) -> None:
+    def test_tabnine_mcp_in_company_build_settings_file(self) -> None:
         m = builtin()["tabnine"].mcp
-        self.assertEqual(m.file, ".tabnine/mcp_servers.json")
+        self.assertEqual(m.file, ".tabnine/agent/settings.json")
         self.assertEqual(m.json_path, "mcpServers")
         self.assertEqual(m.mode, "key")
 

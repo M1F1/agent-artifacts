@@ -347,3 +347,79 @@ dispositions.
   unrelated findings remain recorded (one `major`, two `high`, 32 `medium`, and 21 `low`); none
   blocks this adoption-stream release. The immutable release is public, its asset is reproducible
   and independently verified, and there is no remaining work in the requested stream.
+
+### 08:13 CEST — `AD-04` reopened; shipped regression and override hazard recorded
+
+- Operator review corrected the evidence hierarchy used for `AD-04`. The company Tabnine build
+  reported a server from `.tabnine/agent/settings.json` as `disconnected`, which proves that it
+  parsed the entry and reached a downstream runtime failure. The 2.7.0 repair wrongly demoted that
+  measurement below current documentation and a different machine's user-scope file.
+- Reopened `AD-04`. Filed `AD-28` for the released 2.7.0 migration onto the unproven file and the
+  test that required the proven file to be absent. Filed `AD-29` for the pre-existing profile
+  override loader behavior: a partial same-name override replaces the complete builtin profile.
+- Audited every code change from the adoption-stream baseline `6c85451` through `v2.7.0`. No other
+  builtin profile target moved. The other hard public-identifier substitution was
+  `com.m1f1.runtime-requirements` to `aart.runtime-requirements`; unlike Tabnine, no contradicting
+  live observation was found. The generic retired-effect update guard is wider than Tabnine but
+  does not move data by itself and prevents an old owned destination from being orphaned.
+- Repair scope is now explicit: restore project and user MCP files to `settings.json`, retain the
+  new user scope and `mcpServers` merge shape, reverse the pinning tests and current normative docs,
+  then run focused tests, complete quality, live acceptance, and a 2.7.1 patch release.
+
+### 08:16 CEST — measured Tabnine target restored; `AD-04` reclosed
+
+- The builtin Tabnine profile again merges project MCP entries into
+  `.tabnine/agent/settings.json` and user entries into `~/.tabnine/agent/settings.json`, both at
+  `mcpServers`. The 2.7.0 user-scope capability remains; no skill, guideline, hook or memory target
+  changed. The generic retired-effect guard remains but its comment no longer calls the 2.7.0 move
+  a correction.
+- Reversed the real CLI E2E rather than relaxing it: it requires the two settings files, checks the
+  entry and status at both scopes, requires both standalone files to be absent, and removes each
+  scope independently. Profile and install-scope tests pin the same project/user filenames and say
+  that the company-build measurement outranks documentation for other builds.
+- Corrected the two current tutorials, `DESIGN-memory.md`, `DESIGN-install-scope.md`, and their plans.
+  They preserve the published-doc discrepancy as an unmeasured verify item and keep the live
+  `disconnected` server out of this file-target repair. Historical 2.7.0 release/progress documents
+  remain descriptions of the regression that release actually shipped.
+- Focused verification passed: 83 tests and 27 subtests across builtin profiles, overrides, install
+  scope, real marketplace CLI Tabnine lifecycle, and canonical lifecycle. Ruff format/check,
+  focused mypy, docs-check and diff whitespace checks are green. `AD-04` is closed on corrected
+  evidence; released-regression `AD-28` stays open through cross-version live acceptance and the
+  patch release. `AD-29` remains an explicitly separate loader finding.
+
+### 08:24 CEST — wheel-installed and cross-version live acceptance green; `AD-28` closed
+
+- Prepared patch release `2.7.1` and contract v17 at checkpoint `fbc2a0c`. V17 retains every v16
+  protocol number and every normative schema-input digest; only the freeze's release version
+  changes. Release/version/adoption verification passed 37 tests and 17 subtests.
+- Built the stamped `agent_artifacts-2.7.1-py3-none-any.whl`, installed it with `pip --no-deps`, and
+  confirmed `agent-artifacts 2.7.1`. Checkpoint digest:
+  `sha256:66295bcdd539a300c7d0ee3635342bdf8d0c442c5ca57c7eb969279d5eaa4950`.
+- Fresh isolated HOME/project/data/cache acceptance installed the same MCP artifact at project and
+  user scope. It wrote only `.tabnine/agent/settings.json` and
+  `~/.tabnine/agent/settings.json`, both under `mcpServers`; both standalone files stayed absent.
+  Repeated install and user update returned `no-op/current`, both statuses were current, and either
+  scope uninstalled without touching the other.
+- Downloaded the real public 2.7.0 and 2.6.1 release wheels and matched them to GitHub's asset
+  digests (`6673ae24…` and `33337df5…`). With 2.7.0, installed project and user entries into the
+  standalone files. The 2.7.1 updates exited 1/conflict at both scopes, named exact scope-correct
+  uninstall/install commands, left both target and installation-state hashes unchanged, and wrote
+  no settings file. Executing the remediation independently removed the old entries, wrote the
+  restored files and ended both scopes current.
+- The 2.6.1 control installed a project entry into settings. A 2.7.1 update returned
+  `no-op/current`; its state and settings bytes remained identical, proving the restored target
+  needs no migration from the last working release. Live root:
+  `/tmp/aart-271-live-fbc2a0c.RqjrTx`. `AD-28` is closed; `AD-29` remains medium and separate.
+
+### 08:27 CEST — final 2.7.1 quality gate green
+
+- Ran complete `make quality` after the repaired target, v17 contract, live evidence and final
+  finding dispositions were committed. All nine gates passed: format-check, lint, mypy over 168
+  source files, unit, integration/E2E, validate/version, coverage, packaging-check and docs-check.
+- Unit discovery passed 1,597 tests; separate E2E discovery passed 46 tests. Coverage remains
+  83.20% over 26,492 statements. Packaging built and validated the zero-dependency
+  `agent_artifacts-2.7.1-py3-none-any.whl`; version and schema freeze v17 checks passed.
+- The register now has 57 open findings: one `major`, two `high`, 33 `medium`, and 21 `low`.
+  `AD-04` and `AD-28` are closed; `AD-29` is medium and explicitly outside the builtin target
+  reversal. Publication proceeds through branch push, PR/CI, merge, release-check, tag, final wheel,
+  GitHub release, downloaded-asset digest verification, and the public 3×3 installer matrix.
