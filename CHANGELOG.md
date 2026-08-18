@@ -3,6 +3,38 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.7.1 — 2026-08-18
+
+This patch restores the Tabnine MCP target used by the company build after 2.7.0 replaced measured
+target-environment evidence with a path from documentation for another or unmeasured build. No
+protocol, persisted schema, command, flag, or registry shape changes; schema freeze v17 retains the
+v16 protocol versions and normative input digests.
+
+### Fixed
+
+- Project MCP entries again merge into `.tabnine/agent/settings.json` under `mcpServers`; user
+  entries use `~/.tabnine/agent/settings.json`. The user scope added in 2.7.0 remains available.
+- The Tabnine filesystem E2E now requires both company-build settings files, requires both
+  `mcp_servers.json` alternatives to remain absent, checks status, and removes either scope without
+  touching the other.
+- Current tutorials and profile designs state the evidence boundary: `disconnected` proves the
+  company build parsed the settings entry and reached a separate server-runtime failure. Published
+  standalone-file documentation remains an unmeasured verify item for that build.
+
+### Upgrading from 2.7.0
+
+An MCP installation already written by 2.7.0 remains owned at `mcp_servers.json`. Update fails
+closed rather than orphaning it. Run the exact `marketplace uninstall` command it reports, then
+install the artifact under 2.7.1; the new installation lands in `settings.json`. Installations from
+2.6.1 already use the restored project target and do not need this file migration.
+
+### Known defects shipped open
+
+Fifty-seven findings remain open: one `major`, two `high`, 33 `medium`, and 21 `low`. `AD-29` is the
+new medium profile-override hazard found while auditing this repair: a partial same-name override
+replaces the whole builtin record. It is separate from the target reversal. No high-severity
+adoption finding remains open.
+
 ## 2.7.0 — 2026-08-18
 
 The company-adoption stream closes all 27 `AD` findings. This is a minor release because it adds
