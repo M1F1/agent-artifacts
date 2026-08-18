@@ -160,3 +160,19 @@ dispositions.
   browser, and automatic/provider failures cannot change the artifact result or exit code.
 - Full-package mypy passes. Ruff/format pass, and the reporting/registry/consumer/TUI cluster passes
   93 tests and 42 subtests. Documentation now walks the authoring flag and post-install behavior.
+
+### 03:58 CEST — `AD-04` closed; all adoption findings disposed
+
+- Current official Tabnine documentation explicitly names `.tabnine/mcp_servers.json` at project
+  scope and `~/.tabnine/mcp_servers.json` at user scope. The local Tabnine home on this machine has
+  the latter with the documented `mcpServers` object and a named server; no credential values were
+  printed or copied. The earlier project observation established that one IDE build also read the
+  old settings-file fallback, but it is not the canonical publication contract.
+- The built-in profile now targets the standalone MCP file at both scopes. A new real CLI E2E
+  synchronizes a source, installs one MCP artifact into project and user scope, checks both JSON
+  destinations and status, proves no `.tabnine/agent/settings.json` was created, and uninstalls the
+  scopes independently.
+- Ruff and full-package mypy pass. The Tabnine/profile/lifecycle cluster passes 90 tests and 29
+  subtests. The company tutorial and MCP porting tutorial no longer carry the location caveat.
+- Every `AD-01` through `AD-27` row is now `closed`; full quality, live acceptance, and release
+  validation remain before publication.

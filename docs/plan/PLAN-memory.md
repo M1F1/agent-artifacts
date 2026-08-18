@@ -156,7 +156,8 @@ Build / Done when.
 - **Build:**
   - Add `memory` targets: `claude`→`CLAUDE.md` (file), `opencode`→`AGENTS.md` (file),
     `tabnine`→`.tabnine/guidelines/` (dir).
-  - **Fix tabnine** (DESIGN-memory §6): mcp → `.tabnine/agent/settings.json` · `mcpServers`;
+  - **Fix tabnine** (DESIGN-memory §6; project MCP path subsequently settled by `AD-04`):
+    mcp → `.tabnine/mcp_servers.json` · `mcpServers`;
     hooks → scripts `.tabnine/agent/hooks/<name>/`, merge `.tabnine/agent/settings.json` ·
     `hooks.<event>`, events `PreToolUse→BeforeTool`, `PostToolUse→AfterTool`, `Stop→SessionEnd`.
   - **Add `vibe`** (DESIGN-memory §7): memory `AGENTS.md` (file), skills `.vibe/skills/<name>/`,
@@ -206,7 +207,8 @@ Build / Done when.
 - **Owns:** `README.md`, `tests/e2e_test.py` (extend), DESIGN-memory/PLAN-memory open-q updates.
 - **Depends:** WP-29, WP-30, WP-31.
 - **Build:** README — "author an `memory` artifact," the four modes + precedence, the `vibe`
-  profile, the corrected tabnine paths (+ the §6.1 MCP caveat). e2e — temp project + local
+  profile, and the corrected Tabnine paths. The former §6.1 MCP caveat was settled by `AD-04`.
+  E2E — temp project + local
   `--source`: install→status→update→uninstall for `memory` across **{claude (file), vibe (file),
   tabnine (dir)}** and **all four modes**; golden Plan snapshots; `--dry-run`/`--json`/`--force`;
   the unsupported-type skip/err paths; `.bak` create+restore on replace.

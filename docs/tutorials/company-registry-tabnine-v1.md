@@ -446,20 +446,20 @@ Walked, not quoted from a design document:
 | `skill` | `.tabnine/agent/skills/<name>/` | yes |
 | `guideline` | `.tabnine/guidelines/` | yes |
 | `memory` | `TABNINE.md` at the project root | no |
-| `mcp` | `.tabnine/agent/settings.json`, key `mcpServers` | no — **see the caveat below** |
+| `mcp` | `.tabnine/mcp_servers.json`, key `mcpServers` | yes — project and user filesystem contract |
 | `hook` | `.tabnine/agent/hooks/<name>/` plus `hooks.BeforeTool`/`AfterTool`/`SessionEnd` in `.tabnine/agent/settings.json` | no |
 
 `.agent-artifacts/manifest.json` is AART's own record of what it installed. Commit it if you want
 the project's artifact set to be reproducible for the next person who clones; it contains no
 secrets.
 
-**MCP caveat, stated plainly.** AART writes MCP servers for Tabnine into
-`.tabnine/agent/settings.json` under `mcpServers`. The profile's own source comment records a
-disagreement with the published Tabnine documentation, which puts server *definitions* in a
-standalone `.tabnine/mcp_servers.json` and uses `settings.json` for governance instead. Nobody has
-verified which one a current Tabnine actually reads. **Install one MCP artifact into a scratch
-project and check that Tabnine sees the server before you roll MCP artifacts out to a team.** If it
-reads the other file, say so — it is a one-line change in the profile, not a redesign.
+**MCP location is settled.** Current Tabnine documentation names
+`.tabnine/mcp_servers.json` for a project and `~/.tabnine/mcp_servers.json` for the user-global
+equivalent. The latter also exists on the maintainer's Tabnine machine with the documented
+`mcpServers` shape. AART now targets those two files; the real CLI regression installs the same
+server into both scopes, reports both current, and uninstalls either without touching the other.
+An earlier Tabnine IDE build also surfaced a server from `.tabnine/agent/settings.json`, but that
+undocumented fallback is no longer AART's publication contract.
 
 ### Day-to-day
 

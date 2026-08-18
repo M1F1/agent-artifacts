@@ -140,14 +140,10 @@ _TABNINE = Profile(
     name="tabnine",
     skills=CopyTarget(dir=".tabnine/agent/skills/<name>/"),
     guidelines=GuidelineTarget(dest=".tabnine/guidelines/"),
-    # MCP target set to .tabnine/agent/settings.json · mcpServers per directive
-    # (docs/design/DESIGN-memory.md §6.1). DOC CAVEAT: the published docs put server
-    # *definitions* in the standalone .tabnine/mcp_servers.json (key
-    # "mcpServers"); settings.json documents a different "mcp" key (governance
-    # only). Verify in-environment — switching the file later is a one-line
-    # record change since this is a single MergeSpec.
+    # Tabnine's MCP contract is the standalone mcp_servers.json at project or home scope.
+    # settings.json is the hierarchical CLI settings document, not the documented server store.
     mcp=MergeSpec(
-        file=".tabnine/agent/settings.json",
+        file=".tabnine/mcp_servers.json",
         json_path="mcpServers",
         mode="key",
     ),
