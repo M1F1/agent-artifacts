@@ -829,6 +829,46 @@ def _previous_effect(
     return None
 
 
+def _shared_managed_memory_is_current(
+    state: InstallState,
+    request: InstallRequest,
+    destination: str,
+    current: PathSnapshot,
+) -> bool:
+    """Whether a valid name-scoped memory block already makes this a shared destination.
+
+    Managed memory writes preserve the rest of the file. Once one recorded block is still present,
+    another name-scoped block is not an overwrite of unowned content; it is the same merge boundary
+    lifecycle status and uninstall already use.
+    """
+
+    if current.kind != "file":
+        return False
+    try:
+        text = current.content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return False
+    for record in state.installations:
+        if (
+            record.profile != request.profile
+            or record.scope != request.scope
+            or record.artifact.identity.kind != "memory"
+            or record.artifact.identity == request.identity
+            or record.memory_mode not in {"prepend", "append"}
+            or not any(
+                effect.kind == "managed-block" and effect.destination == destination
+                for effect in record.effects
+            )
+        ):
+            continue
+        name = record.artifact.identity.name
+        begin = f"<!-- >>> agent-artifacts memory:{name} >>> -->"
+        end = f"<!-- <<< agent-artifacts memory:{name} <<< -->"
+        if text.count(begin) == text.count(end) == 1 and text.index(begin) < text.index(end):
+            return True
+    return False
+
+
 def _conflicts(
     operations: tuple[InstallOperation, ...],
     state: InstallState,
@@ -843,6 +883,12 @@ def _conflicts(
         if current.kind == "absent" or operation_is_current(operation):
             continue
         if isinstance(operation, MergeJsonOperation):
+            continue
+        if (
+            isinstance(operation, WriteFileOperation)
+            and operation.effect_kind == "managed-block"
+            and _shared_managed_memory_is_current(state, request, operation.destination, current)
+        ):
             continue
         previous = _previous_effect(state, request, coordinate, operation.destination)
         previous_owns = previous is not None and (

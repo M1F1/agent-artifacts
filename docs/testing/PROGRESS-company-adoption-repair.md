@@ -133,3 +133,16 @@ dispositions.
 - Focused verification passes 83 tests and 20 subtests across README contracts, runtime
   requirements, the text/curses consumer TUI, wizard state, and smoke coverage. Full-package mypy,
   Ruff, docs-check, and diff-check pass. The full unit gate passes all 1,586 tests.
+
+### 03:41 CEST — `AD-12` closed
+
+- Distinct named memory artifacts can now share one instruction file through their existing
+  name-scoped managed-block markers. Admission requires another recorded block to remain current;
+  same-name marker collisions remain forbidden by install-state ownership validation.
+- The real marketplace/Tabnine regression installs two memories into `TABNINE.md`, verifies both
+  are current, removes either block independently, and proves the file disappears only after the
+  final block is uninstalled. The tutorial's merge-by-hand workaround is removed.
+- Ruff and full-package mypy pass. The first direct pytest command exposed that this checkout's
+  test imports require the repository on `PYTHONPATH`; rerunning with
+  `PYTHONPATH=/Users/mifi/code/agent-artifacts` passed 77 tests and 16 subtests across memory E2E,
+  install-state schema, lifecycle, and install planning.

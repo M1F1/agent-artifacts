@@ -233,9 +233,9 @@ upstream `provenance.json` and remains visible to `revendor --check`; no copy-an
 is needed.
 
 Under the Tabnine profile a `memory` artifact installs into project-root `TABNINE.md` inside a
-managed block. Today a second memory artifact targeting that same file is refused (`AD-12`), so
-merge the documents into one package until shared-destination ownership is repaired. Section 8
-shows the consumer command.
+name-scoped managed block. Differently named memory artifacts can share that file: status checks
+each block independently, and uninstalling one artifact preserves every other managed block.
+Section 8 shows the consumer command.
 ## 3b. Grouping artifacts so a colleague installs them in one command
 
 The word for a group of artifacts is a **collection**. Compose one only from artifacts this registry
