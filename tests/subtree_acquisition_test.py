@@ -125,10 +125,17 @@ class SubtreeFailsClosedTest(unittest.TestCase):
 
         self.assertIn("servers/atlassain", _message(refused))
 
-    def test_a_path_naming_a_file_is_refused_as_a_path_rather_than_as_emptiness(self) -> None:
-        refused = _taken(_foreign_repository(), "servers/atlassian/index.js")
+    def test_a_path_naming_a_file_takes_that_file_under_its_basename(self) -> None:
+        taken = _taken(_foreign_repository(), "servers/atlassian/index.js")
 
-        self.assertIn("not a directory", _message(refused))
+        self.assertIsInstance(taken, Ok)
+        assert isinstance(taken, Ok)
+        self.assertEqual(taken.value.path, _path("servers/atlassian/index.js"))
+        self.assertEqual(
+            tuple(str(entry.path) for entry in taken.value.snapshot.entries),
+            ("index.js",),
+        )
+        self.assertEqual(taken.value.files, 1)
 
     def test_a_subtree_holding_only_directories_is_refused(self) -> None:
         empty = SourceSnapshot(

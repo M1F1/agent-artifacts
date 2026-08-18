@@ -15,12 +15,12 @@ your own registry id; keep the profile.
 - The URL of at least one existing company repository that holds material worth sharing. It does
   **not** need to know anything about AART. That is the point of most of this document.
 
-**What AART will never do**
+**What AART does with Git**
 
-It never commits and never pushes. Every command below writes files into your checkout and stops.
-You review the diff and commit it yourself, through whatever review your company already has. AART
-also never handles credentials: it runs system Git, so if `git clone` works at your prompt, AART
-works, and if it does not, fix it in Git.
+Maintainer mutations stop after writing reviewed files. The explicit `registry publish --yes`
+workflow is the one exception: it runs the publisher gates and creates the listed commit. It never
+pushes. AART also never handles credentials: it runs system Git, so if `git clone` works at your
+prompt, AART works, and if it does not, fix it in Git.
 
 ---
 
@@ -61,6 +61,7 @@ Review canonical Maintainer action: init
   Workspace: /path/to/agent-artifacts-registry
   Review digest: sha256:209d2da8…
   Mutation: yes, only on Finalize
+  - added: .gitignore
   - added: .github/ISSUE_TEMPLATE/usage-report.yml
   - added: .github/workflows/aart-registry.yml
   - added: .github/workflows/aart-usage-dashboard.yml
@@ -76,6 +77,10 @@ aart registry init --source . --source-id company --display-name "Company AART R
 
 `--source-id` is the identity every artifact coordinate starts with — your colleagues will type
 `company/skill/release-evidence`. It is stable; changing it later changes every coordinate.
+
+The generated `.gitignore` excludes AART caches, build output, and the project/user harness targets
+used by the built-in profiles (`.agent-artifacts/`, `.claude/`, `.tabnine/`, `.opencode/`, `.vibe/`,
+and `.mcp.json`), so an acceptance install inside the checkout does not pollute the next publish.
 
 The marker it writes declares which AART versions may read this registry:
 
@@ -196,242 +201,71 @@ why almost everything in a normal company gets vendored.
 
 ## 3a. Vendoring a whole repository's worth of artifacts
 
-There is no bulk vendor. `registry vendor` takes one kind, one name and one `--path`, so a monorepo
-of twenty prompts is twenty invocations. Write the list down and loop over it — that keeps the list
-reviewable in Git, which hand-typed commands never are.
-
-`vendor.tsv`, tab-separated, one artifact per line:
-
-```text
-skill	release-evidence	packages/release-evidence	1.0.0	Evidence checklist for a release.
-guideline	branch-conventions	packages/branch-conventions	1.0.0	How we name and merge branches.
-```
-
-`vendor-all.sh`:
+Scan a checkout you already have and write the review manifest:
 
 ```sh
-#!/usr/bin/env bash
-set -euo pipefail
-URL="$1"; REF="${2:-main}"
-
-while IFS=$'\t' read -r kind name path version summary; do
-  [ -z "${kind:-}" ] && continue
-  case "$kind" in \#*) continue ;; esac
-  echo "== vendoring $kind/$name from $path"
-  aart registry vendor "$kind" "$name" --source . \
-    --url "$URL" --ref "$REF" --path "$path" \
-    --artifact-version "$version" --summary "$summary" \
-    --profile tabnine --platform darwin \
-    --review-policy manual-review-v1 --yes >/dev/null
-done < vendor.tsv
-
-aart registry lock --source . --yes >/dev/null
-echo "now commit the lock, then: aart registry build --source . --yes"
+aart registry discover \
+  --checkout ../shared-tools \
+  --url https://ghe.company.example/platform/shared-tools.git \
+  --ref main \
+  --artifact-version 1.0.0 \
+  --profile tabnine --platform darwin \
+  --output vendor-candidates.json
 ```
+
+Discovery recognises conservative conventional shapes: `SKILL.md` packages, Markdown below
+`guidelines/` or `rules/`, MCP descriptors, hook descriptors, and loose harness-memory documents
+such as `CLAUDE.md` and `AGENTS.md`. Every candidate starts with `"accept": false`. Review names,
+summaries, versions and paths in the JSON and change only the keepers to `true`; discovery itself
+never authors registry content.
+
+Then review the one atomic batch and finalize it:
 
 ```sh
-./vendor-all.sh https://ghe.company.example/platform/shared-tools.git main
+aart registry vendor-batch --source . --manifest vendor-candidates.json
+aart registry vendor-batch --source . --manifest vendor-candidates.json --yes
 ```
 
-Two artifacts took three seconds, and `validate --strict --frozen` passed afterwards. **Each
-invocation clones the upstream again** — the clone is per artifact, not per repository — so budget
-roughly a clone per line on a large repository.
+The command resolves the manifest's URL and ref once, then runs the same provenance, license,
+security and delivery checks as `registry vendor` for every accepted item. Either the whole reviewed
+plan lands or none of it does. A loose Markdown file is a valid subtree, so project memory keeps its
+upstream `provenance.json` and remains visible to `revendor --check`; no copy-and-paste adoption path
+is needed.
 
-`--yes` inside a loop skips the review step, which is the whole point of a loop and also its risk.
-Run the script once without `--yes` first if the upstream is one you have not vendored before.
-
-### Filling that list without reading the repository yourself
-
-Writing `vendor.tsv` by hand is the slow part: on three repositories on a maintainer's disk it is
-73 lines and six fields each. [`scripts/vendor_scan.py`](../../scripts/vendor_scan.py) writes it for
-you. It depends on nothing but `git` and `aart`, it decides nothing, and it vendors through the real
-`registry vendor` — with its review step and its three checks — one artifact at a time.
-
-```sh
-scripts/vendor_scan.py scan https://ghe.company.example/platform/shared-tools.git --out cand.json
-scripts/vendor_scan.py review cand.json
-scripts/vendor_scan.py vendor cand.json --source . --yes
-```
-
-`scan` clones read-only and reports directories `vendor` can take today: a directory holding
-`SKILL.md` is a skill, a directory holding exactly one Markdown file is a guideline, `mcp.json` and
-`hook.json` are an MCP server and a hook. It reads the summary out of the document — front-matter
-`description` first — instead of inventing one, and names a lone guideline after the document rather
-than the directory it happens to sit in.
-
-Anything else it recognises it reports as a **hint** rather than a candidate: a `.mcp.json` in the
-upstream's own layout, a `hooks/` directory of scripts, guidance split across several Markdown files
-in one directory. These are real artifacts that `vendor` cannot take as they stand, because a
-payload must be a directory in exactly the shape AART compiles. A hint says what the obstacle is and
-what you would have to author. It never becomes a command that would fail.
-
-**Project memory is the hint that will annoy you most.** `CLAUDE.md`, `AGENTS.md`, `TABNINE.md` and
-their kin are the `memory` kind — under the tabnine profile a `memory` artifact installs as
-project-root `TABNINE.md` — and they live at a repository root beside twenty other files. `vendor
---path` takes a directory, and a `memory` payload must be exactly one Markdown document, so a
-root-level memory file satisfies neither. `upstream-superpowers-v6.2.0` carries three of them and
-not one can be vendored. The scan has a command for exactly this case:
-
-```sh
-scripts/vendor_scan.py adopt candidates.json --source . --yes
-```
-
-It walks the loose documents the scan found, asks what you want to call each one, runs `aart
-registry scaffold memory <name>`, and writes the upstream document in as the payload. Then lock,
-commit, build, commit as usual, and it installs like anything else:
-
-```sh
-aart marketplace install company/memory/superpowers-house-rules --profile tabnine --yes
-```
-
-which lands it in project-root `TABNINE.md` inside a managed block. Under a different profile it
-goes wherever that profile says — that is the point of the `memory` kind: upstream's filename is
-irrelevant, the installing profile decides the destination.
-
-**One memory artifact per project, though.** Installing a second one fails with `install
-destinations contain unowned or drifted content: TABNINE.md`, and `--force` fails too with
-`installation effect ownership must be unique across the manifest`. That is `AD-12`. So if you want
-the upstream's house rules *and* your own, merge them into one document before you adopt it.
-
-**What adoption costs is the provenance.** The package has no `provenance.json`, so `revendor
---check` will never tell you upstream moved and the audit's drift pass cannot see it. There is
-nowhere to record the origin — `artifact.json` rejects an unknown field — so `adopt` prints an
-origin line for your commit message, and that is the only place it lives until `AD-11` is settled.
-If the document *is* alone in its own directory upstream, the scan picks it up as a real `memory`
-candidate instead and ordinary vendoring works, provenance and all.
-
-`review` shows one candidate at a time and takes `y`/`n`, `r` to rename, `e` to rewrite the summary,
-`v` to set the version. Your answers are written back into the manifest, so the review is resumable
-and lands in Git as a reviewable list — the same property the hand-written `vendor.tsv` has.
-
-`vendor` runs `aart registry vendor` per keeper, skips what is already in the registry, and reviews
-without finalizing until you add `--yes`. Scanning a checkout you already have on disk works too; it
-reads the working tree but pins the vendoring to your `--ref` on `origin`, and it says so.
-
-This is a stopgap for `AD-08`, and it lives in `scripts/` rather than in `aart` on purpose: batch
-discovery that guesses on your behalf is exactly what `DESIGN-registry-vendoring.md` §10 leaves
-open, and a script you can read in one sitting is the honest form of it until that is settled.
-
+Under the Tabnine profile a `memory` artifact installs into project-root `TABNINE.md` inside a
+managed block. Today a second memory artifact targeting that same file is refused (`AD-12`), so
+merge the documents into one package until shared-destination ownership is repaired. Section 8
+shows the consumer command.
 ## 3b. Grouping artifacts so a colleague installs them in one command
 
-The word for a group of artifacts is a **collection**. (If you have used AART before under a
-different name: `bundle` still appears in some internal type names, but nothing in the protocol,
-the registry format, or the CLI uses it. `collection` is the shipped word.)
-
-A collection is one file under `collections/` — `registry init` already declared that root in
-`aart-source.json`. There is **no `registry scaffold collection`**; write the file:
-
-`collections/platform-baseline.json`
-
-```json
-{
-  "schema_version": 1,
-  "name": "platform-baseline",
-  "summary": "What every platform-team repository starts with.",
-  "artifacts": [
-    {"type": "skill", "name": "release-evidence"},
-    {"type": "guideline", "name": "branch-conventions"}
-  ]
-}
-```
-
-Four fields are required — `schema_version`, `name`, `summary`, `artifacts` — and `name` must be a
-lowercase slug. A member selector needs only `type` and `name`.
-
-**Then lock, commit, build, commit.** A collection is compiled into the index like everything else,
-so until you do, `validate` says:
-
-```text
-error: compiled index does not match registry inputs
-  remediation: resolve the authored entries again with `aart registry lock --yes`, then `aart registry build --yes`
-```
+The word for a group of artifacts is a **collection**. Compose one only from artifacts this registry
+already holds:
 
 ```sh
-aart registry lock --source . --yes
-git add -A && git commit -m "Add the platform-baseline collection"
-aart registry build --source . --yes
-git add -A && git commit -m "Rebuild the index"
-aart registry validate --source . --strict --frozen
+aart registry collection platform-baseline --source . \
+  --summary "What every platform-team repository starts with." \
+  --include skill/release-evidence \
+  --include guideline/branch-conventions
 ```
 
-### Pinning a member, and building on another collection
+The review shows the canonical `collections/platform-baseline.json` it will add. Finalize the same
+digest with `--yes`, or use the Maintainer TUI's **Author collection** flow for the same name,
+summary, and member selection. Both interfaces refuse unknown members before writing anything.
 
-A selector may carry half-open version bounds, and a collection may include other collections.
-Walked — this one validates, builds, and installs all three members it resolves to:
-
-```json
-{
-  "schema_version": 1,
-  "name": "platform-pinned",
-  "summary": "The baseline, pinned to the 1.x line.",
-  "artifacts": [
-    {"type": "skill", "name": "release-evidence",
-     "version": {"min_inclusive": "1.0.0", "max_exclusive": "2.0.0"}}
-  ],
-  "collections": ["platform-baseline"]
-}
+```sh
+aart registry collection platform-baseline --source . \
+  --summary "What every platform-team repository starts with." \
+  --include skill/release-evidence \
+  --include guideline/branch-conventions --yes
 ```
 
-The compiler rejects duplicate selectors, direct self-reference, dangling members, and cycles, and
-refuses a collection with no members at all. Those are compile-time failures, so a broken collection
-never reaches a consumer.
-
-Your colleague now installs the whole set with one coordinate:
+Collections are compiled into the index. `registry lock` validates their selectors before it writes
+the lock, so a malformed or hand-written collection is rejected at the first publishing step. A
+consumer can then install the baseline in one command:
 
 ```sh
 aart marketplace install company/collection/platform-baseline --profile tabnine --yes
 ```
-
-```text
-Install outcome: succeeded
-  Selected: 2; changed=2
-  - company/guideline/branch-conventions@1.0.0#tabnine/project: changed
-  - company/skill/release-evidence@1.0.0#tabnine/project: changed
-```
-
-Collections show up in `marketplace list` with their members spelled out, so nobody has to install
-one to find out what is in it:
-
-```text
-company/collection/platform-baseline [collection] What every platform-team repository starts with. members=company/guideline/branch-conventions@1.0.0,company/skill/release-evidence@1.0.0
-```
-
-This is the piece worth building first if you want adoption. *Run one command and you have the
-team's baseline* is a much easier thing to put in an onboarding document than a list of seven
-coordinates.
-
-### Writing the collection without writing the JSON
-
-[`scripts/collection_new.py`](../../scripts/collection_new.py) composes one out of what the registry
-already holds. `aart` is its only dependency, and it only runs it to check what it wrote.
-
-```sh
-scripts/collection_new.py platform-baseline --source . --summary "What every repo here starts with."
-```
-
-With no `--include` it lists every artifact in the registry — type, name, version, summary, and
-whether it was vendored or written here — and asks about each one. With `--include skill/foo
---include guideline/bar` it takes your list and asks nothing. `--pin` bounds each member to its
-current version up to the next major, which is what you want for a baseline and not what you want
-for a topic, so it is never the default. `--nest other-collection` includes another collection whole.
-
-Re-running with a name that already exists **edits** it: current members come back pre-selected, so
-adding one artifact is a run through with one answer changed, and existing version bounds are kept
-even if you leave `--pin` off. Unpinning a baseline should take a decision, not a re-run.
-
-It reads `artifact_roots` and `collection_roots` out of your `aart-source.json` rather than assuming
-the layout, and refuses a member that is not in the registry rather than writing a collection that
-will fail to build. Afterwards it runs `aart registry validate` and separates the three complaints
-that just mean *you authored something and have not built yet* from anything that is actually wrong.
-
-Then publish it the normal way — lock, commit, build, commit — exactly as above.
-
-Two caveats worth knowing. This is a stopgap for `AD-07`; the real thing is a maintainer-mode
-command in the CLI and a flow in the TUI, and it does not exist yet. And `registry lock` does not
-check collections at all (`AD-10`) — a malformed one passes `lock --yes` silently and is only caught
-by `build`, which runs after the commit. If you hand-write a collection, run `validate` before you
-commit the lock.
-
 ## 4. Write an artifact of your own
 
 For material that has no upstream, scaffold a package and fill it in:
@@ -451,98 +285,46 @@ aart registry scaffold skill onboarding --source . \
 Edit `artifacts/skill/onboarding/payload/SKILL.md`. The starter is a placeholder, and the warning
 means it.
 
-## 5. Lock, commit, build — in that order
+## 5. Publish one reviewed cycle
 
-This sequence has one non-obvious step, and skipping it produces the only confusing error in this
-document.
-
-```sh
-aart registry lock --source .          # review
-aart registry lock --source . --yes    # writes aart.lock.json
-```
-
-Then build:
+Publishing is one command. First review the exact generated files, publisher checks, commit subject,
+and every path Git would include:
 
 ```sh
-aart registry build --source . --yes   # writes aart.index.json
+aart registry publish --source .
 ```
 
-**Without a lock at all, `build` refuses**, and its wording is worth reading carefully:
+Then finalize the reviewed cycle:
 
-```text
-error: registry build requires a committed aart.lock.json
-  remediation: `aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`
+```sh
+aart registry publish --source . --yes
 ```
 
-It says *committed*, and it does not mean it. Measured `2026-08-17` in a fresh registry: with
-`aart.lock.json` present but **untracked** — `git status` reporting `?? aart.lock.json` — `build`
-compiles the index and exits `0`. The precondition is that the file exists
-(`registry_commands/planning.py:1244`), not that it is in history. That is `AD-15`, and it means one
-commit is enough for the whole cycle rather than the two this guide used to tell you to make.
+The command plans `lock` then `build` in memory, validates and audits that exact projected
+snapshot, writes the reviewed `aart.lock.json` and `aart.index.json`, and creates one commit. A
+failed lock, build, validation, or audit stops before the commit. It never pushes.
 
-The lock resolves what you authored; the index is what consumers read. Commit both together once the
-checks in the next section pass — `validate --strict` is the one that requires committed generated
-outputs, so that is where history starts to matter.
+The lock file only has to be valid and present for a standalone `registry build`; it does not have
+to be committed first. Its diagnostic and remediation say exactly that. `registry publish` removes
+the ordering trap entirely and commits the lock and index together.
+
+Every pre-existing Git change is listed alongside the generated files because finalization uses
+`git add -A`. Keep unrelated work out of the registry checkout. Use `--message TEXT` to state the
+commit subject; otherwise AART derives one from the compiled index. Re-running an unchanged,
+already-clean registry reports that there is nothing to commit.
 
 ## 6. Check it before anyone else sees it
+
+`registry publish` already runs strict compiled validation and the audit before committing. CI
+should independently verify what history contains:
 
 ```sh
 aart registry validate --source . --strict --frozen
 aart registry audit --source .
 ```
 
-```text
-registry validate: passed
-registry audit: passed
-  warning: no per-object installation-risk evidence was supplied to registry audit
-  warning: registry contains no external references; provenance coverage is partial
-```
-
-Both warnings are informational and expected for a young registry. The second one is not a defect:
-a registry whose artifacts are all vendored copies has no external references, so there is no
-external provenance to check.
-
-Run these two in CI on every pull request. `--frozen` is what makes the check meaningful: it fails
-if the committed lock and index do not match the authored content, which is exactly the mistake a
-reviewer cannot catch by reading a diff.
-
-Push, open a pull request, get it reviewed like any other repository.
-
-### The whole cycle in one command
-
-Sections 5 and 6 are four `aart` commands in a fixed order plus a commit, and typing them from
-memory every time is how the order gets wrong.
-[`scripts/registry_publish.py`](../../scripts/registry_publish.py) runs them:
-
-```sh
-scripts/registry_publish.py --source .          # shows what would happen, writes nothing
-scripts/registry_publish.py --source . --yes    # runs them and commits
-```
-
-`lock` → `build` → `validate` → `audit` → `git add -A` → `git commit`. Any step failing stops it
-before the commit. Before committing it prints **every file**, one per line, not a collapsed
-`artifacts/`:
-
-```text
-=== committing 10 paths
-  ??  .github/workflows/aart-registry.yml
-  ??  aart-registry.json
-  ??  aart-source.json
-  ??  aart.index.json
-  ??  aart.lock.json
-  ??  artifacts/guideline/probe/artifact.json
-  …
-committed f56e56f: Publish registry: 1 artifact
-Not pushed — that step is yours.
-```
-
-`-m` sets the subject; without it one is derived from the compiled index. If the tree was already
-dirty when you started, it says so first and lists what it found — those files land in the same
-commit, so stash anything unrelated. `--allow-audit-failure` commits despite an audit finding;
-`validate` failing always stops it. It never pushes.
-
-This is `AD-14`'s stopgap: the cycle should be a maintainer verb in the CLI and a flow in the TUI.
-
+`--frozen` fails when the committed lock or index does not match authored content. Push the commit,
+open a pull request, and review it like any other repository.
 ## 7. Keeping a vendored copy current
 
 Ask whether upstream has moved. This writes nothing:
@@ -571,8 +353,8 @@ aart registry revendor skill release-evidence --source . --artifact-version 1.1.
 aart registry revendor skill release-evidence --source . --artifact-version 1.1.0 --yes
 ```
 
-Without `--artifact-version` nothing is planned — deliberately. Then lock, commit, build, commit,
-as in section 5.
+Without `--artifact-version` nothing is planned — deliberately. Then publish the reviewed registry
+cycle as in section 5.
 
 ## 8. The consumer side — what a colleague runs
 

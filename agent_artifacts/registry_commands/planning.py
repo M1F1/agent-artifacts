@@ -21,7 +21,9 @@ from agent_artifacts.protocol.native_models import (
     INSTALL_EFFECTS_BY_TYPE,
     PAYLOAD_FORMAT_BY_TYPE,
     ArtifactManifest,
+    ArtifactSelector,
     CanonicalArtifactType,
+    CollectionManifest,
     CompatibilitySpec,
     InstallMode,
     InstallScope,
@@ -31,6 +33,7 @@ from agent_artifacts.protocol.native_models import (
 )
 from agent_artifacts.protocol.native_schema import (
     artifact_manifest_to_json,
+    collection_manifest_to_json,
     parse_artifact_manifest,
     parse_provenance,
     parse_source_manifest,
@@ -99,6 +102,7 @@ from agent_artifacts.sources.subtree import TakenSubtree, take_subtree
 
 from .model import (
     ArtifactScaffoldOptions,
+    CollectionAuthorOptions,
     RegistryInitOptions,
     RegistryOperation,
     RegistryQualityCheck,
@@ -110,7 +114,7 @@ from .model import (
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
-from .templates import REGISTRY_CI_WORKFLOW, REPORTING_TEMPLATES
+from .templates import REGISTRY_CI_WORKFLOW, REGISTRY_GITIGNORE, REPORTING_TEMPLATES
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
@@ -149,7 +153,7 @@ _RELOCK = (
     "`aart registry build --yes`",
 )
 _LOCK_FIRST = (
-    "`aart registry lock --yes`, commit the lock it writes, then `aart registry build --yes`",
+    "write the lock with `aart registry lock --yes`, then run `aart registry build --yes`",
 )
 _APPROVE_ENTRIES = (
     "approve the review record of every authored entry under `entries/`, then "
@@ -494,6 +498,7 @@ def plan_registry_init(
     if occupied:
         return _error("registry init refuses an existing registry workspace", _ALREADY_A_REGISTRY)
     templates = (
+        (".gitignore", REGISTRY_GITIGNORE),
         (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
         *REPORTING_TEMPLATES,
     )
@@ -699,6 +704,57 @@ def plan_artifact_scaffold(
             ),
             *payload,
         ),
+    )
+
+
+def plan_registry_collection(
+    snapshot: SourceSnapshot,
+    options: CollectionAuthorOptions,
+    *,
+    executable_version: SemVer,
+    available_capabilities: tuple[Capability, ...],
+) -> Result[RegistryWorkspacePlan]:
+    """Author one collection solely from identities this registry already holds."""
+
+    parsed = _registry_inputs(snapshot)
+    if isinstance(parsed, Err):
+        return parsed
+    registry, source, entries = parsed.value
+    if not source.collection_roots:
+        return _error(
+            "registry source declares no collection root",
+            _CANONICAL_ROOTS,
+        )
+    files = _files(snapshot)
+    assert isinstance(files, Ok)
+    native = registry_native_content(
+        snapshot,
+        files.value,
+        registry,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
+    if isinstance(native, Err):
+        return native
+    available = {item.identity for item in native.value[0]} | {entry.identity for entry in entries}
+    missing = tuple(member for member in options.members if member not in available)
+    if missing:
+        return _error(
+            "collection members are absent from this registry: "
+            + ", ".join(str(member) for member in missing),
+            _LIST_PACKAGES,
+        )
+    manifest = CollectionManifest(
+        1,
+        options.name,
+        options.summary,
+        tuple(ArtifactSelector(member) for member in options.members),
+    )
+    target = f"{source.collection_roots[0]}/{options.name}.json"
+    return _plan(
+        RegistryOperation.COLLECTION,
+        snapshot,
+        ((target, canonical_json_bytes(collection_manifest_to_json(manifest)), False),),
     )
 
 
@@ -1182,7 +1238,18 @@ def plan_registry_lock(
     parsed = _registry_inputs(snapshot)
     if isinstance(parsed, Err):
         return parsed
-    _registry, _source, entries = parsed.value
+    registry, _source, entries = parsed.value
+    files = _files(snapshot)
+    assert isinstance(files, Ok)
+    native = registry_native_content(
+        snapshot,
+        files.value,
+        registry,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
+    if isinstance(native, Err):
+        return native
     if any(entry.review.status != "approved" for entry in entries):
         return _error(
             "registry lock requires every authored entry to be approved", _APPROVE_ENTRIES
@@ -1243,7 +1310,7 @@ def plan_registry_build(
     assert isinstance(files, Ok)
     lock_file = files.value.get("aart.lock.json")
     if lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE:
-        return _error("registry build requires a committed aart.lock.json", _LOCK_FIRST)
+        return _error("registry build requires a valid aart.lock.json", _LOCK_FIRST)
     lock = parse_registry_lock(lock_file.content)
     inputs = registry_inputs_digest(snapshot)
     if isinstance(lock, Err):
@@ -1388,9 +1455,7 @@ def validate_registry_workspace(
                     _diagnostic("compiled index does not match registry inputs", _RELOCK)
                 )
     if parsed_index is not None and parsed_lock is None:
-        diagnostics.append(
-            _diagnostic("compiled index requires a valid committed lock", _LOCK_FIRST)
-        )
+        diagnostics.append(_diagnostic("compiled index requires a valid lock", _LOCK_FIRST))
     if parsed_index is not None and parsed_lock is not None and isinstance(native, Ok):
         indexed_by_identity = {item.identity: item for item in parsed_index.artifacts}
         locked_by_identity = dict(parsed_lock.entries)
@@ -1715,7 +1780,7 @@ def audit_registry_workspace(
     lock_file = files.value.get("aart.lock.json")
     if entries and (lock_file is None or lock_file.kind is not SnapshotEntryKind.FILE):
         diagnostics.append(
-            _diagnostic("external reference audit requires a valid committed lock", _LOCK_FIRST)
+            _diagnostic("external reference audit requires a valid lock", _LOCK_FIRST)
         )
     if lock_file is not None and lock_file.kind is SnapshotEntryKind.FILE:
         lock = parse_registry_lock(lock_file.content)

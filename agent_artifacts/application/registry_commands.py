@@ -11,6 +11,7 @@ from agent_artifacts.protocol.registry_models import ReviewRecord
 from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.registry_commands.model import (
     ArtifactScaffoldOptions,
+    CollectionAuthorOptions,
     RegistryApplyCommand,
     RegistryApplyReceipt,
     RegistryInitOptions,
@@ -24,6 +25,7 @@ from agent_artifacts.registry_commands.planning import (
     plan_artifact_scaffold,
     plan_artifact_vendor,
     plan_registry_build,
+    plan_registry_collection,
     plan_registry_format,
     plan_registry_init,
     plan_registry_lock,
@@ -62,6 +64,24 @@ def prepare_artifact_scaffold(
     if isinstance(current, Err):
         return current
     return plan_artifact_scaffold(current.value, options)
+
+
+def prepare_registry_collection(
+    options: CollectionAuthorOptions,
+    *,
+    executable_version: SemVer,
+    available_capabilities: tuple[Capability, ...],
+    output: RegistryWorkspacePort,
+) -> Result[RegistryWorkspacePlan]:
+    current = output.current()
+    if isinstance(current, Err):
+        return current
+    return plan_registry_collection(
+        current.value,
+        options,
+        executable_version=executable_version,
+        available_capabilities=available_capabilities,
+    )
 
 
 def prepare_artifact_vendor(

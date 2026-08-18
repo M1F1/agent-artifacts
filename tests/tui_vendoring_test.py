@@ -99,6 +99,47 @@ def _flags(root: Path, arguments, service):
 
 
 class VendorFrontEndParityTest(unittest.TestCase):
+    def test_collection_wizard_and_flags_build_the_same_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "registry"
+            root.mkdir()
+            wizard_service = _Service()
+            _wizard(
+                root,
+                [
+                    "",
+                    "2",
+                    _action_number("collection"),
+                    "platform-baseline",
+                    "What every project receives.",
+                    "skill/review,guideline/branching",
+                    "quit",
+                    "y",
+                ],
+                wizard_service,
+            )
+            flag_service = _Service()
+            _flags(
+                root,
+                [
+                    "registry",
+                    "collection",
+                    "platform-baseline",
+                    "--summary",
+                    "What every project receives.",
+                    "--include",
+                    "skill/review",
+                    "--include",
+                    "guideline/branching",
+                ],
+                flag_service,
+            )
+
+            self.assertEqual(len(wizard_service.prepared), 1)
+            self.assertEqual(len(flag_service.prepared), 1)
+            self.assertEqual(wizard_service.prepared[0], flag_service.prepared[0])
+            self.assertIs(wizard_service.prepared[0].action, CurationAction.COLLECTION)
+
     def test_the_wizard_builds_the_request_the_flags_build(self) -> None:
         # One fixture, two front-ends. The wizard is a way of stating the same action, not a
         # second definition of what vendoring means.

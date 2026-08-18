@@ -92,3 +92,27 @@ dispositions.
   the default `auto` mode and therefore now synchronized successfully. Pinning those scenarios to
   `manual` preserves their intended never-synchronized condition. The full gate then passed all
   1,572 tests; full-package mypy also passes across 167 modules.
+
+### 03:24 CEST — maintainer authoring and publishing cluster closed
+
+- `AD-11`: vendoring accepts one regular file as a subtree, so loose memory/guideline documents
+  retain pinned provenance instead of falling onto a copy-and-paste path.
+- `AD-08` and `AD-05`: `registry discover` emits a durable reject-by-default candidate manifest;
+  `registry vendor-batch` resolves its origin once and aggregates accepted ordinary vendor plans
+  into one atomic review/finalization.
+- `AD-07` and `AD-10`: collection authoring is available through the CLI and Maintainer TUI, and
+  lock validates collection selectors before it writes anything.
+- `AD-13`: registry initialization now writes a managed `.gitignore` for build, AART state, and all
+  built-in harness destinations.
+- `AD-15`: build's diagnostic now asks for a valid lock, not a committed lock.
+- `AD-14`: `registry publish` plans lock/build in memory, runs validate/audit over the exact
+  projection, lists every Git path, and creates one commit without pushing. There is no gate-bypass
+  flag. Preview, unchanged rerun, and malformed collection behavior are regression-covered.
+- Added `docs/design/DESIGN-registry-discovery-batch-publish.md`; replaced the tutorial's stopgap
+  scripts and stale caveats with the shipped commands.
+- Full-package mypy passes across 168 modules. The focused maintainer cluster passes 54 tests and
+  9 subtests, including the new discovery, batch, publish, collection, lock, init, and TUI coverage.
+- The first full unit run correctly tripped the former product invariant that no registry command
+  may commit. The boundary test now permits exactly one Git commit call inside `_run_publish` and
+  still forbids push everywhere and commit in the functional core/workspace adapter. The repeated
+  full gate passes all 1,582 tests; Ruff, format-check, mypy, and docs-check pass as well.

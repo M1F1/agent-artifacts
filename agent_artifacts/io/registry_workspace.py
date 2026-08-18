@@ -31,7 +31,7 @@ REGISTRY_WORKSPACE_INVALID = DiagnosticCode("registry-workspace-invalid")
 REGISTRY_WORKSPACE_STALE = DiagnosticCode("registry-workspace-stale")
 REGISTRY_WORKSPACE_APPLY_FAILED = DiagnosticCode("registry-workspace-apply-failed")
 _ROOT_FILES = frozenset(
-    {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json"}
+    {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json", ".gitignore"}
 )
 # `security/` holds committed assessment evidence.  The reader has to see it for two reasons: a
 # plan that writes an attestation is verified against a re-read snapshot, and `registry audit` reads

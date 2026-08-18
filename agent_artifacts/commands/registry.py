@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 
 from agent_artifacts import command_outcome as _common
+from agent_artifacts.configuration.model import ConfiguredSource, SourceKind
 from agent_artifacts.curation.model import (
     DEFAULT_MAXIMUM_AART,
     DEFAULT_MINIMUM_AART,
@@ -26,6 +28,7 @@ from agent_artifacts.domain.diagnostics import (
     Severity,
     diagnostic_to_data,
 )
+from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
 from agent_artifacts.model import Request
@@ -39,7 +42,10 @@ from agent_artifacts.registry_commands.planning import (
     test_registry_compatibility,
     validate_registry_workspace,
 )
+from agent_artifacts.registry_maintenance.discovery import discover_vendor_candidates
 from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE_VERSION
+from agent_artifacts.sources.local import read_local_snapshot
+from agent_artifacts.sources.model import LocalSnapshotRequest, SnapshotLimits, source_instance_id
 
 _VERSION = EXECUTABLE_VERSION
 _CAPABILITIES = EXECUTABLE_CAPABILITIES
@@ -192,6 +198,8 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
         return _error(
             f"{action.value} requires an exact artifact kind and name", _NAME_THE_ARTIFACT
         )
+    if action is CurationAction.COLLECTION and len(request.names) != 1:
+        return _error("collection requires an exact collection name", _NAME_THE_ARTIFACT)
     try:
         return Ok(
             CurationRequest(
@@ -200,6 +208,12 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 kind=request.artifact_kind,
                 name=request.names[0] if len(request.names) == 1 else None,
                 summary=request.summary,
+                members=request.collection_members,
+                vendor_manifest=(
+                    os.path.abspath(request.vendor_manifest)
+                    if request.vendor_manifest is not None
+                    else None
+                ),
                 # Re-vendoring is the one action where an unstated version is an answer rather
                 # than a gap: it means "tell me what moved, plan nothing".
                 artifact_version=(
@@ -376,6 +390,314 @@ def _run_test(request: Request, workspace: FilesystemRegistryWorkspace) -> int:
     return _common.OK if selected.passed else _common.ERROR
 
 
+def _run_discover(request: Request) -> int:
+    """Scan one inert checkout and emit the manifest the batch command consumes."""
+
+    if (
+        request.discovery_checkout is None
+        or request.native_url is None
+        or request.artifact_version is None
+        or not request.profiles
+        or not request.registry_platforms
+    ):
+        return _emit_error(
+            request,
+            "discover",
+            _error(
+                "discover requires checkout, URL, artifact version, profiles, and platforms",
+                _READ_THE_ACTIONS,
+            ),
+        )
+    version = _version(request.artifact_version, "artifact version")
+    if isinstance(version, Err):
+        return _emit_error(request, "discover", version)
+    checkout = os.path.abspath(request.discovery_checkout)
+    try:
+        configured = ConfiguredSource(
+            SourceAlias("registry-discovery"),
+            SourceKind.SOURCE_LOCAL,
+            checkout,
+            None,
+            True,
+        )
+        acquired = read_local_snapshot(
+            LocalSnapshotRequest(
+                source_instance_id(configured),
+                configured.alias,
+                checkout,
+                SnapshotLimits(),
+            )
+        )
+    except ValueError as error:
+        return _emit_error(request, "discover", _error(str(error), _READ_THE_ACTIONS))
+    if isinstance(acquired, Err):
+        return _emit_error(request, "discover", acquired)
+    candidates = discover_vendor_candidates(acquired.value.snapshot)
+    defaults: dict[str, object] = {
+        "artifact_version": str(version.value),
+        "profiles": list(request.profiles),
+        "platforms": list(request.registry_platforms),
+        "scopes": list(request.registry_scopes or ("project",)),
+        "modes": list(request.registry_modes or ("copy",)),
+        "review_policy": request.review_policy or "manual-review-v1",
+    }
+    manifest = {
+        "schema_version": 1,
+        "origin": {"url": request.native_url, "ref": request.ref or "main"},
+        "defaults": defaults,
+        "artifacts": [
+            {
+                "accept": request.discovery_accept_all,
+                "kind": candidate.kind,
+                "name": candidate.name,
+                "path": candidate.path,
+                "summary": f"Discovered {candidate.kind} from {candidate.path}.",
+                "reason": candidate.reason,
+            }
+            for candidate in candidates
+        ],
+    }
+    rendered = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    if request.discovery_output is None:
+        print(rendered, end="")
+        return _common.OK
+    output = os.path.abspath(request.discovery_output)
+    try:
+        with open(output, "x", encoding="utf-8") as stream:
+            stream.write(rendered)
+    except OSError as error:
+        return _emit_error(
+            request,
+            "discover",
+            _error(f"cannot create discovery manifest {output}: {error}", _READ_THE_ACTIONS),
+        )
+    if request.json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "ok": True,
+                    "operation": "registry.discover",
+                    "output": output,
+                    "candidates": len(candidates),
+                    "accepted": len(candidates) if request.discovery_accept_all else 0,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"wrote {len(candidates)} candidates to {output}")
+        print("review each `accept` field, then run `aart registry vendor-batch --manifest FILE`")
+    return _common.OK
+
+
+def _git(root: str, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ("git", "-C", root, *arguments),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _git_pending(root: str) -> Result[tuple[tuple[str, str], ...]]:
+    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if result.returncode != 0:
+        return _error(f"git status failed: {result.stderr.strip()}", _READ_THE_ACTIONS)
+    records = result.stdout.split("\0")
+    changes: list[tuple[str, str]] = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 4:
+            return _error("git status returned an invalid record", _READ_THE_ACTIONS)
+        status = record[:2].strip() or "??"
+        path = record[3:]
+        changes.append((status, path))
+        if ("R" in status or "C" in status) and index < len(records):
+            previous = records[index]
+            index += 1
+            if previous:
+                changes.append(("D", previous))
+    return Ok(tuple(sorted(set(changes), key=lambda item: item[1])))
+
+
+def _publish_subject(root: str, stated: str | None) -> Result[str]:
+    if stated is not None:
+        if not stated or stated != stated.strip() or "\n" in stated or "\r" in stated:
+            return _error("publish commit message must be one non-empty line", _READ_THE_ACTIONS)
+        return Ok(stated)
+    try:
+        with open(os.path.join(root, "aart.index.json"), encoding="utf-8") as stream:
+            index = json.load(stream)
+        artifacts = len(index.get("artifacts", [])) if isinstance(index, dict) else 0
+        collections = len(index.get("collections", [])) if isinstance(index, dict) else 0
+    except (OSError, ValueError):
+        return Ok("Publish registry")
+    subject = f"Publish registry: {artifacts} artifact{'s' if artifacts != 1 else ''}"
+    if collections:
+        subject += f", {collections} collection{'s' if collections != 1 else ''}"
+    return Ok(subject)
+
+
+def _reviewed_publish_paths(
+    review: CurationReview,
+    pending: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    by_path = {path: status for status, path in pending}
+    for change in review.changes:
+        if change.status != "unchanged":
+            by_path[change.path] = "planned"
+    return tuple((status, path) for path, status in sorted(by_path.items()))
+
+
+def _run_publish(request: Request) -> int:
+    """Finalize one reviewed publisher snapshot, then commit exactly the listed Git worktree."""
+
+    if request.publish_message is not None and (
+        not request.publish_message
+        or request.publish_message != request.publish_message.strip()
+        or "\n" in request.publish_message
+        or "\r" in request.publish_message
+    ):
+        return _emit_error(
+            request,
+            "publish",
+            _error("publish commit message must be one non-empty line", _READ_THE_ACTIONS),
+        )
+    curation_request = _curation_request(request, CurationAction.PUBLISH)
+    if isinstance(curation_request, Err):
+        return _emit_error(request, "publish", curation_request)
+    root = _root(request)
+    if _git(root, "rev-parse", "--is-inside-work-tree").returncode != 0:
+        return _emit_error(
+            request,
+            "publish",
+            _error("registry publish requires a Git checkout", _INITIALIZE),
+        )
+    service = load_local_curation_service(root)
+    if isinstance(service, Err):
+        return _emit_error(request, "publish", service)
+    prepared = service.value.prepare(curation_request.value)
+    if isinstance(prepared, Err):
+        return _emit_error(request, "publish", prepared)
+    review = prepared.value.review
+    before = _git_pending(root)
+    if isinstance(before, Err):
+        return _emit_error(request, "publish", before)
+    reviewed_paths = _reviewed_publish_paths(review, before.value)
+    if not request.yes:
+        subject = request.publish_message or "Publish registry (derived after build)"
+        if request.json:
+            print(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "ok": True,
+                        "operation": "registry.publish",
+                        "phase": "review",
+                        "review": _curation_review_data(review),
+                        "commit": {
+                            "subject": subject,
+                            "paths": [
+                                {"status": status, "path": path} for status, path in reviewed_paths
+                            ],
+                            "push": False,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            _emit_curation_review(request, review)
+            print(f"\n{len(reviewed_paths)} paths would be committed:")
+            for status, path in reviewed_paths:
+                print(f"  {status:>7}  {path}")
+            print(f"subject: {subject}")
+            print("Reviewed only. Re-run with --yes to write, validate, audit, and commit.")
+        return _common.OK
+    finalized = service.value.finalize(prepared.value, review.review_digest)
+    if isinstance(finalized, Err):
+        return _emit_error(request, "publish", finalized)
+    pending = _git_pending(root)
+    if isinstance(pending, Err):
+        return _emit_error(request, "publish", pending)
+    publish_subject = _publish_subject(root, request.publish_message)
+    if isinstance(publish_subject, Err):
+        return _emit_error(request, "publish", publish_subject)
+    if not pending.value:
+        if request.json:
+            print(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "ok": True,
+                        "operation": "registry.publish",
+                        "phase": "finalized",
+                        "review": _curation_review_data(review),
+                        "outcome": _curation_outcome_data(finalized.value),
+                        "commit": None,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            _emit_curation_finalization(request, review, finalized.value)
+            print("\nnothing changed; there is nothing to commit")
+        return _common.OK
+    added = _git(root, "add", "-A")
+    if added.returncode != 0:
+        return _emit_error(
+            request,
+            "publish",
+            _error(f"git add failed: {added.stderr.strip()}", _READ_THE_ACTIONS),
+        )
+    committed = _git(root, "commit", "-m", publish_subject.value)
+    if committed.returncode != 0:
+        return _emit_error(
+            request,
+            "publish",
+            _error(
+                f"git commit failed: {committed.stderr.strip() or committed.stdout.strip()}",
+                _READ_THE_ACTIONS,
+            ),
+        )
+    revision = _git(root, "rev-parse", "--short", "HEAD").stdout.strip()
+    if request.json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "ok": True,
+                    "operation": "registry.publish",
+                    "phase": "finalized",
+                    "review": _curation_review_data(review),
+                    "outcome": _curation_outcome_data(finalized.value),
+                    "commit": {
+                        "revision": revision,
+                        "subject": publish_subject.value,
+                        "paths": [
+                            {"status": status, "path": path} for status, path in pending.value
+                        ],
+                        "push": False,
+                    },
+                },
+                indent=2,
+            )
+        )
+    else:
+        _emit_curation_finalization(request, review, finalized.value)
+        print(f"\ncommitted {len(pending.value)} paths:")
+        for status, path in pending.value:
+            print(f"  {status:>7}  {path}")
+        print(f"committed {revision}: {publish_subject.value}")
+        print("Not pushed.")
+    return _common.OK
+
+
 def run(request: Request) -> int:
     action = request.registry_action or "unknown"
     workspace = FilesystemRegistryWorkspace(_root(request))
@@ -383,6 +705,10 @@ def run(request: Request) -> int:
         return _run_curation(request, CurationAction.INIT)
     if action == "scaffold":
         return _run_curation(request, CurationAction.SCAFFOLD)
+    if action == "collection":
+        return _run_curation(request, CurationAction.COLLECTION)
+    if action == "discover":
+        return _run_discover(request)
     if action == "format":
         return _run_curation(request, CurationAction.FORMAT)
     if action == "promote-native":
@@ -391,6 +717,8 @@ def run(request: Request) -> int:
         return _run_curation(request, CurationAction.REFRESH_NATIVE)
     if action == "vendor":
         return _run_curation(request, CurationAction.VENDOR)
+    if action == "vendor-batch":
+        return _run_curation(request, CurationAction.VENDOR_BATCH)
     if action == "revendor":
         return _run_curation(request, CurationAction.REVENDOR)
     if action in {"lock", "build"}:
@@ -399,6 +727,8 @@ def run(request: Request) -> int:
         return _run_validate(request, workspace)
     if action == "audit":
         return _run_audit(request, workspace)
+    if action == "publish":
+        return _run_publish(request)
     if action == "test":
         return _run_test(request, workspace)
     if action == "diff":

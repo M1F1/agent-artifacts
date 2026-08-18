@@ -2,6 +2,7 @@
 
 from .model import (
     ArtifactScaffoldOptions,
+    CollectionAuthorOptions,
     RegistryApplyCommand,
     RegistryApplyReceipt,
     RegistryInitOptions,
@@ -16,6 +17,7 @@ from .planning import (
     audit_registry_workspace,
     plan_artifact_scaffold,
     plan_registry_build,
+    plan_registry_collection,
     plan_registry_format,
     plan_registry_init,
     plan_registry_lock,
@@ -27,6 +29,7 @@ from .planning import (
 
 __all__ = [
     "ArtifactScaffoldOptions",
+    "CollectionAuthorOptions",
     "RegistryApplyCommand",
     "RegistryApplyReceipt",
     "RegistryInitOptions",
@@ -38,6 +41,7 @@ __all__ = [
     "WorkspaceChangeKind",
     "audit_registry_workspace",
     "plan_artifact_scaffold",
+    "plan_registry_collection",
     "plan_registry_build",
     "plan_registry_format",
     "plan_registry_init",

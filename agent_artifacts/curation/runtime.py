@@ -15,6 +15,7 @@ from agent_artifacts.application.registry_commands import (
     prepare_artifact_scaffold,
     prepare_artifact_vendor,
     prepare_registry_build,
+    prepare_registry_collection,
     prepare_registry_init,
     prepare_registry_lock,
     read_vendored_artifact_origin,
@@ -33,6 +34,7 @@ from agent_artifacts.protocol.registry_schema import parse_registry_entry
 from agent_artifacts.protocol.semver import SemVer, parse_semver
 from agent_artifacts.registry_commands.model import (
     ArtifactScaffoldOptions,
+    CollectionAuthorOptions,
     RegistryInitOptions,
     RegistryOperation,
     RegistryQualityReport,
@@ -48,7 +50,12 @@ from agent_artifacts.registry_commands.model import (
 from agent_artifacts.registry_commands.planning import (
     VendoredArtifactOrigin,
     audit_registry_workspace,
+    plan_artifact_vendor,
+    plan_registry_build,
     plan_registry_format,
+    plan_registry_lock,
+    plan_registry_workspace_files,
+    project_registry_workspace_plan,
     validate_registry_workspace,
     verify_vendored_artifact,
 )
@@ -114,6 +121,13 @@ class _ReadOnlyPrepared:
 class PreparedCuration:
     review: CurationReview
     payload: RegistryWorkspacePlan | RegistryMutationPlan | _ReadOnlyPrepared | SourceSnapshot
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchVendorItem:
+    options: VendorOptions
+    path: SafeRelativePath
+    review_policy: str
 
 
 class CurationService(Protocol):
@@ -187,10 +201,12 @@ def _follow_up(
     if action in {
         CurationAction.INIT,
         CurationAction.SCAFFOLD,
+        CurationAction.COLLECTION,
         # A vendored package is new owned content, so the lock and index are stale until they are
         # rebuilt: `validate --strict` alone would fail and send the maintainer looking for a fault
         # in the copy.
         CurationAction.VENDOR,
+        CurationAction.VENDOR_BATCH,
         CurationAction.REVENDOR,
     }:
         return (
@@ -457,6 +473,33 @@ class LocalCurationService:
             )
         )
 
+    def _prepare_collection(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if request.name is None or request.summary is None or not request.members:
+            return _error("collection requires name, summary, and at least one member")
+        try:
+            options = CollectionAuthorOptions(
+                request.name,
+                request.summary,
+                tuple(
+                    ArtifactIdentity(
+                        cast(CanonicalArtifactType, member.split("/", 1)[0]),
+                        member.split("/", 1)[1],
+                    )
+                    for member in request.members
+                ),
+            )
+        except ValueError as error:
+            return _error(str(error))
+        planned = prepare_registry_collection(
+            options,
+            executable_version=_VERSION,
+            available_capabilities=_CAPABILITIES,
+            output=self.workspace,
+        )
+        if isinstance(planned, Err):
+            return planned
+        return Ok(self._workspace_review(request, planned.value))
+
     def _vendor_review_check(
         self,
         request: CurationRequest,
@@ -564,6 +607,230 @@ class LocalCurationService:
             "vendor-assessment",
             assessment.status is AssessmentStatus.COMPLETE,
             tuple(details),
+        )
+
+    def _vendor_batch_manifest(
+        self, path: str
+    ) -> Result[tuple[str, str, tuple[_BatchVendorItem, ...]]]:
+        """Parse the small review document discovery emits, refusing ambiguous defaults."""
+
+        try:
+            if os.path.getsize(path) > 1024 * 1024:
+                return _error("vendor batch manifest exceeds 1 MiB")
+            with open(path, encoding="utf-8") as stream:
+                document = json.load(stream)
+        except (OSError, ValueError) as error:
+            return _error(f"cannot read vendor batch manifest: {error}")
+        if not isinstance(document, dict) or document.get("schema_version") != 1:
+            return _error("vendor batch manifest must be a schema_version 1 JSON object")
+        origin = document.get("origin")
+        defaults = document.get("defaults", {})
+        artifacts = document.get("artifacts")
+        if (
+            not isinstance(origin, dict)
+            or not isinstance(defaults, dict)
+            or not isinstance(artifacts, list)
+        ):
+            return _error("vendor batch manifest requires origin, defaults, and artifacts")
+
+        def one_line(value: object, label: str) -> str:
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+                or "\n" in value
+                or "\r" in value
+            ):
+                raise ValueError(f"{label} must be one non-empty line")
+            return value
+
+        def strings(value: object, label: str) -> tuple[str, ...]:
+            if (
+                not isinstance(value, list)
+                or not value
+                or any(not isinstance(item, str) for item in value)
+            ):
+                raise ValueError(f"{label} must be a non-empty string array")
+            return tuple(cast(list[str], value))
+
+        def selected(item: dict[str, object], key: str, fallback: object = None) -> object:
+            return item[key] if key in item else defaults.get(key, fallback)
+
+        try:
+            url = one_line(origin.get("url"), "origin.url")
+            ref = one_line(origin.get("ref", "main"), "origin.ref")
+            parsed_items: list[_BatchVendorItem] = []
+            identities: set[ArtifactIdentity] = set()
+            for index, raw in enumerate(artifacts):
+                if not isinstance(raw, dict) or not isinstance(raw.get("accept"), bool):
+                    raise ValueError(f"artifacts[{index}].accept must be true or false")
+                if raw["accept"] is not True:
+                    continue
+                item = cast(dict[str, object], raw)
+                kind = one_line(selected(item, "kind"), f"artifacts[{index}].kind")
+                name = one_line(selected(item, "name"), f"artifacts[{index}].name")
+                summary = one_line(selected(item, "summary"), f"artifacts[{index}].summary")
+                version = _semver(
+                    one_line(
+                        selected(item, "artifact_version"),
+                        f"artifacts[{index}].artifact_version",
+                    ),
+                    f"artifacts[{index}].artifact_version",
+                )
+                if isinstance(version, Err):
+                    return version
+                raw_path = one_line(selected(item, "path"), f"artifacts[{index}].path")
+                parsed_path = parse_relative_path(raw_path)
+                if isinstance(parsed_path, Err):
+                    raise ValueError(f"artifacts[{index}].path is unsafe: {raw_path}")
+                setup_recipe: SafeRelativePath | None = None
+                raw_recipe = selected(item, "setup_recipe")
+                if raw_recipe is not None:
+                    recipe = parse_relative_path(
+                        one_line(raw_recipe, f"artifacts[{index}].setup_recipe")
+                    )
+                    if isinstance(recipe, Err):
+                        raise ValueError(f"artifacts[{index}].setup_recipe is unsafe")
+                    setup_recipe = recipe.value
+                license_value = selected(item, "license")
+                license_text = (
+                    None
+                    if license_value is None
+                    else one_line(license_value, f"artifacts[{index}].license")
+                )
+                identity = ArtifactIdentity(cast(CanonicalArtifactType, kind), name)
+                if identity in identities:
+                    raise ValueError(f"vendor batch repeats artifact {identity}")
+                identities.add(identity)
+                options = VendorOptions(
+                    identity,
+                    version.value,
+                    summary,
+                    strings(selected(item, "profiles"), f"artifacts[{index}].profiles"),
+                    strings(selected(item, "platforms"), f"artifacts[{index}].platforms"),
+                    strings(
+                        selected(item, "scopes", ["project"]),
+                        f"artifacts[{index}].scopes",
+                    ),
+                    strings(
+                        selected(item, "modes", ["copy"]),
+                        f"artifacts[{index}].modes",
+                    ),
+                    setup_recipe,
+                    license=license_text,
+                )
+                parsed_items.append(
+                    _BatchVendorItem(
+                        options,
+                        parsed_path.value,
+                        one_line(
+                            selected(item, "review_policy", "manual-review-v1"),
+                            f"artifacts[{index}].review_policy",
+                        ),
+                    )
+                )
+        except ValueError as error:
+            return _error(str(error))
+        if not parsed_items:
+            return _error("vendor batch manifest has no accepted artifacts")
+        return Ok((url, ref, tuple(parsed_items)))
+
+    def _prepare_vendor_batch(self, request: CurationRequest) -> Result[PreparedCuration]:
+        if request.vendor_manifest is None:
+            return _error("vendor-batch requires a manifest path")
+        loaded = self._vendor_batch_manifest(request.vendor_manifest)
+        if isinstance(loaded, Err):
+            return loaded
+        url, ref, items = loaded.value
+        acquired = self.native_acquirer(url, ref)
+        if isinstance(acquired, Err):
+            return acquired
+        current = self._current()
+        if isinstance(current, Err):
+            return current
+        projected = current.value
+        touched: set[str] = set()
+        checks: list[CurationCheck] = []
+        for item in items:
+            planned = plan_artifact_vendor(
+                projected,
+                acquired.value,
+                item.options,
+                path=item.path,
+                review=ReviewRecord("approved", item.review_policy),
+                importer_version=_VERSION,
+            )
+            if isinstance(planned, Err):
+                return planned
+            try:
+                per_item_request = CurationRequest(
+                    CurationAction.VENDOR_BATCH,
+                    self.root,
+                    kind=item.options.identity.kind,
+                    name=item.options.identity.name,
+                    summary=item.options.summary,
+                    artifact_version=str(item.options.version),
+                    artifact_license=item.options.license,
+                    profiles=item.options.profiles,
+                    platforms=item.options.platforms,
+                    scopes=item.options.scopes,
+                    modes=item.options.modes,
+                    url=url,
+                    ref=ref,
+                    path=str(item.path),
+                    setup_recipe=(
+                        None
+                        if item.options.setup_recipe is None
+                        else str(item.options.setup_recipe)
+                    ),
+                    review_policy=item.review_policy,
+                )
+            except ValueError as error:
+                return _error(f"invalid accepted vendor batch item: {error}")
+            checks.extend(
+                (
+                    self._vendor_review_check(per_item_request, acquired.value, planned.value.plan),
+                    self._vendor_license_check(per_item_request, planned.value.license),
+                    self._vendor_assessment_check(planned.value.assessment),
+                )
+            )
+            if planned.value.delivery is not None:
+                checks.append(
+                    self._vendor_delivery_check(item.options.identity, planned.value.delivery)
+                )
+            touched.update(str(change.path) for change in planned.value.plan.changes)
+            next_snapshot = project_registry_workspace_plan(projected, planned.value.plan)
+            if isinstance(next_snapshot, Err):
+                return next_snapshot
+            projected = next_snapshot.value
+        files = {
+            str(entry.path): entry
+            for entry in projected.entries
+            if entry.kind is SnapshotEntryKind.FILE
+        }
+        aggregate = plan_registry_workspace_files(
+            RegistryOperation.VENDOR_BATCH,
+            current.value,
+            tuple(
+                (path, files[path].content, files[path].executable)
+                for path in sorted(touched)
+                if path in files
+            ),
+        )
+        if isinstance(aggregate, Err):
+            return aggregate
+        return Ok(
+            self._workspace_review(
+                request,
+                aggregate.value,
+                checks=tuple(checks),
+                warnings=(
+                    f"The batch acquired {url}@{ref} once and plans {len(items)} owned copies in one atomic review.",
+                    "Vendoring copies upstream bytes and pins them to a commit; success is not a safety claim.",
+                    "Assessments reduce uncertainty; they are not safety guarantees.",
+                    "This registry owns every accepted copy; upstream fixes require re-vendoring.",
+                ),
+            )
         )
 
     def _prepare_vendor(self, request: CurationRequest) -> Result[PreparedCuration]:
@@ -991,6 +1258,92 @@ class LocalCurationService:
             return planned
         return Ok(self._workspace_review(request, planned.value))
 
+    def _prepare_publish(self, request: CurationRequest) -> Result[PreparedCuration]:
+        """Plan lock + build and run both publisher gates over the one projected result."""
+
+        current = self._current()
+        if isinstance(current, Err):
+            return current
+        acquired = self._acquire_entries(current.value)
+        if isinstance(acquired, Err):
+            return acquired
+        locked = plan_registry_lock(
+            current.value,
+            acquired.value,
+            executable_version=_VERSION,
+            available_capabilities=_CAPABILITIES,
+        )
+        if isinstance(locked, Err):
+            return locked
+        locked_snapshot = project_registry_workspace_plan(current.value, locked.value)
+        if isinstance(locked_snapshot, Err):
+            return locked_snapshot
+        built = plan_registry_build(
+            locked_snapshot.value,
+            acquired.value,
+            executable_version=_VERSION,
+            available_capabilities=_CAPABILITIES,
+        )
+        if isinstance(built, Err):
+            return built
+        published_snapshot = project_registry_workspace_plan(locked_snapshot.value, built.value)
+        if isinstance(published_snapshot, Err):
+            return published_snapshot
+        validated = validate_registry_workspace(
+            published_snapshot.value,
+            executable_version=_VERSION,
+            available_capabilities=_CAPABILITIES,
+            require_compiled=True,
+        )
+        if isinstance(validated, Err):
+            return validated
+        audited = audit_registry_workspace(
+            published_snapshot.value,
+            executable_version=_VERSION,
+            available_capabilities=_CAPABILITIES,
+        )
+        if isinstance(audited, Err):
+            return audited
+        failed = tuple(
+            diagnostic.message
+            for report in (validated.value, audited.value)
+            for check in report.checks
+            for diagnostic in check.diagnostics
+            if diagnostic.severity is Severity.ERROR
+        )
+        if failed:
+            return _error("registry publish gate failed: " + "; ".join(failed))
+        touched = {
+            str(change.path) for plan in (locked.value, built.value) for change in plan.changes
+        }
+        files = {
+            str(entry.path): entry
+            for entry in published_snapshot.value.entries
+            if entry.kind is SnapshotEntryKind.FILE
+        }
+        aggregate = plan_registry_workspace_files(
+            RegistryOperation.PUBLISH,
+            current.value,
+            tuple(
+                (path, files[path].content, files[path].executable)
+                for path in sorted(touched)
+                if path in files
+            ),
+        )
+        if isinstance(aggregate, Err):
+            return aggregate
+        return Ok(
+            self._workspace_review(
+                request,
+                aggregate.value,
+                checks=(*_checks(validated.value), *_checks(audited.value)),
+                warnings=(
+                    "Publish runs lock, build, validate, and audit in that order over one reviewed snapshot.",
+                    "Finalizing commits every listed Git change in the registry checkout and never pushes.",
+                ),
+            )
+        )
+
     def _prepare_read_only(self, request: CurationRequest) -> Result[PreparedCuration]:
         current = self._current()
         if isinstance(current, Err):
@@ -1053,13 +1406,16 @@ class LocalCurationService:
         mutating = request.action in {
             CurationAction.INIT,
             CurationAction.SCAFFOLD,
+            CurationAction.COLLECTION,
             CurationAction.FORMAT,
             CurationAction.PROMOTE_NATIVE,
             CurationAction.REFRESH_NATIVE,
             CurationAction.VENDOR,
+            CurationAction.VENDOR_BATCH,
             CurationAction.REVENDOR,
             CurationAction.LOCK,
             CurationAction.BUILD,
+            CurationAction.PUBLISH,
         }
         if mutating:
             target = self._mutation_target()
@@ -1069,10 +1425,14 @@ class LocalCurationService:
             return self._prepare_init(request)
         if request.action is CurationAction.SCAFFOLD:
             return self._prepare_scaffold(request)
+        if request.action is CurationAction.COLLECTION:
+            return self._prepare_collection(request)
         if request.action is CurationAction.FORMAT:
             return self._prepare_format(request)
         if request.action is CurationAction.VENDOR:
             return self._prepare_vendor(request)
+        if request.action is CurationAction.VENDOR_BATCH:
+            return self._prepare_vendor_batch(request)
         if request.action is CurationAction.REVENDOR:
             return self._prepare_revendor(request)
         if request.action is CurationAction.PROMOTE_NATIVE:
@@ -1081,6 +1441,8 @@ class LocalCurationService:
             return self._prepare_update(request)
         if request.action in {CurationAction.LOCK, CurationAction.BUILD}:
             return self._prepare_generated(request)
+        if request.action is CurationAction.PUBLISH:
+            return self._prepare_publish(request)
         return self._prepare_read_only(request)
 
     def finalize(

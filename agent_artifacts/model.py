@@ -441,6 +441,15 @@ class Request:
     source_id: Optional[str] = None
     display_name: Optional[str] = None
     summary: Optional[str] = None
+    collection_members: Tuple[str, ...] = ()
+    # Discovery emits, and batch vendoring consumes, one reviewable JSON manifest.  The checkout
+    # is deliberately distinct from the registry source: it is inert foreign input, never a
+    # configured consumer source.
+    discovery_checkout: Optional[str] = None
+    discovery_output: Optional[str] = None
+    discovery_accept_all: bool = False
+    vendor_manifest: Optional[str] = None
+    publish_message: Optional[str] = None
     artifact_version: Optional[str] = None
     # The licence the registry records for a vendored copy.  Stated by the maintainer, because a
     # licence read out of an upstream file is a reading of somebody else's document.

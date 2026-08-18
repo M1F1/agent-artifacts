@@ -205,11 +205,12 @@ ROLES: Tuple[_RoleChoice, ...] = (
 CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("validate", "Validate canonical registry protocol and generated evidence"),
     ("scaffold", "Scaffold one native artifact package for review"),
+    ("collection", "Compose a collection from artifacts this registry already holds"),
     ("promote-native", "Promote one reviewed native Git reference"),
     ("refresh-native", "Check and review one locked native reference update"),
     ("vendor", "Copy one foreign subtree in as a package this registry owns"),
     ("revendor", "Re-resolve one vendored copy's upstream and review what moved"),
-    ("lock", "Resolve approved references into the committed lock"),
+    ("lock", "Resolve approved references into the registry lock"),
     ("build", "Build the payload-free marketplace index"),
     ("audit", "Audit review, provenance, setup, license, and security evidence"),
     ("diff", "Preview deterministic canonical-format diff without writing"),
@@ -2883,6 +2884,29 @@ def _prompt_curation_request(
             platforms=platforms,
             scopes=scopes,
             modes=modes,
+        )
+
+    if action is CurationAction.COLLECTION:
+        name = value("Collection name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        summary = value("One-line collection description: ", "summary")
+        if isinstance(summary, WizardInput):
+            return summary
+        members = _prompt_wizard_csv(
+            read,
+            write,
+            "Members (comma-separated kind/name values): ",
+            current=existing.members if existing else (),
+        )
+        if isinstance(members, WizardInput):
+            return members
+        return CurationRequest(
+            action,
+            workspace,
+            name=name,
+            summary=summary,
+            members=members,
         )
 
     if action is CurationAction.PROMOTE_NATIVE:

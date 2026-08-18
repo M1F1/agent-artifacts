@@ -173,6 +173,7 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     if action in (
         "init",
         "scaffold",
+        "collection",
         "promote-native",
         "refresh-native",
         "vendor",

@@ -22,19 +22,27 @@ class RegistryCommandBoundaryTest(unittest.TestCase):
                         violations.append(f"{path.name}: {name}")
         self.assertEqual(violations, [])
 
-    def test_registry_command_product_code_cannot_commit_or_push(self) -> None:
-        files = tuple(PURE.rglob("*.py")) + (
-            ROOT / "agent_artifacts" / "commands" / "registry.py",
-            ROOT / "agent_artifacts" / "io" / "registry_workspace.py",
-        )
-        violations = []
-        for path in files:
-            if not path.exists():
-                continue
+    def test_only_the_explicit_publish_flow_can_commit_and_no_registry_code_can_push(self) -> None:
+        command = ROOT / "agent_artifacts" / "commands" / "registry.py"
+        calls: list[tuple[str, str]] = []
+        tree = ast.parse(command.read_text(encoding="utf-8"), filename=str(command))
+        for function in (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)):
+            for node in ast.walk(function):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_git"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value in {"commit", "push"}
+                ):
+                    calls.append((function.name, node.args[1].value))
+        self.assertEqual(calls, [("_run_publish", "commit")])
+
+        for path in (*PURE.rglob("*.py"), ROOT / "agent_artifacts/io/registry_workspace.py"):
             text = path.read_text(encoding="utf-8")
-            if "git commit" in text or "git push" in text:
-                violations.append(path.name)
-        self.assertEqual(violations, [])
+            self.assertNotIn("git commit", text, path)
+            self.assertNotIn("git push", text, path)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # Registry maintainer commands v1
 
-`aart registry` turns a local Git checkout into a canonical, reviewable AART registry. The command
-boundary never commits or pushes. Maintainers review the resulting files and use their normal Git
-workflow after the command succeeds.
+`aart registry` turns a local Git checkout into a canonical, reviewable AART registry. Ordinary
+mutations stop after reviewed managed-file writes. The explicit `publish --yes` workflow validates,
+audits, and commits every listed Git change; no registry command pushes.
 
 ## Command contract
 
@@ -15,6 +15,7 @@ workflow after the command succeeds.
 | `lock` | writes, or reads with `--check` | Resolve every approved native reference to an exact commit and digests |
 | `build` | writes, or reads with `--check` | Compile the payload-free marketplace index from owned and locked artifacts |
 | `audit` | reads | Check review, provenance, setup, license, and currently available risk evidence |
+| `publish` | writes and commits with `--yes` | Plan lock/build, validate/audit the projection, list all Git paths, and create one commit without pushing |
 | `test` | reads | Validate the registry at its minimum and/or a supplied latest compatible version |
 | `diff` | reads | Show deterministic canonical-format drift without changing the checkout |
 
