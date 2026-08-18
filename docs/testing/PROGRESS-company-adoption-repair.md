@@ -188,7 +188,7 @@ dispositions.
   walk in fresh repositories/HOME directories, followed by the new release contract and release
   process rather than reusing the already-published `2.6.1` evidence.
 
-### 04:16 CEST — release series and contract selected
+### 04:06 CEST — release series and contract selected
 
 - Selected stable `2.7.0` and release contract v16. This is a minor release because the stream adds
   public `registry collection`, `discover`, `vendor-batch`, and `publish` commands, a registry-init
@@ -202,7 +202,7 @@ dispositions.
   release documents to v16. Schema freeze generation, focused release-contract verification, and
   live acceptance are next.
 
-### 04:28 CEST — v16 verified; Tabnine upgrade path made fail-closed
+### 04:09 CEST — v16 verified; Tabnine upgrade path made fail-closed
 
 - Generated schema freeze v16. It retains every v15 protocol number and changes exactly one
   normative input, `agent_artifacts/setup.py`, which owns the setup recipe and persistence changes.
@@ -219,3 +219,75 @@ dispositions.
 - Lifecycle, Tabnine MCP, and shared-memory verification passed: 49 tests. Focused mypy, Ruff,
   docs-check, and diff whitespace checks also pass. v16 upgrade notes now state the proven
   fail-closed uninstall/reinstall route rather than the disproved automatic update claim.
+
+### 04:13 CEST — maintainer-path live acceptance green
+
+- Built the stamped `agent_artifacts-2.7.0-py3-none-any.whl` from checkpoint `87e56b8`; digest
+  `sha256:b10a8841981e34a8d5d96bae5631409209066ea3a7077fd721c0d5b1bc17db91`. Installed it with
+  `pip --no-index --no-deps` into an isolated venv; `aart --version` returned 2.7.0.
+- In a fresh real Git repository and isolated HOME/XDG roots, init preview wrote nothing; finalize
+  wrote the 2.7.0 compatibility floor, reporting service, workflows, templates, and ignore rules.
+  Scaffold and collection finalize succeeded; collection preview remained inert.
+- Discovery found three conventional shapes and rejected all by default. A real HTTPS acquisition
+  vendored root `README.md` as one memory artifact. Batch vendoring acquired the same public origin
+  and atomically wrote two accepted single-file memories while leaving one rejected missing path
+  inert. Every owned copy carries provenance.
+- Publish preview produced neither lock/index nor Git HEAD. Finalize passed all internal checks and
+  committed 24 listed paths once at registry commit
+  `a4c2c136df55486ce61e48afa4b196c502d8c6f4`, without pushing. An unchanged rerun created no commit.
+  Post-publish `format --check`, strict frozen validate, lock/build checks, audit, and Git-clean checks
+  all passed.
+- Machine receipt: `/tmp/aart-270-live-87e56b8.0JrujN/maintainer-receipt.json`. A first runner
+  attempt stopped only because its assertion expected the review-only `applied` field in finalized
+  JSON; the product init had succeeded, and the corrected runner continued from that exact state.
+
+### 04:15 CEST — consumer lifecycle live acceptance green
+
+- Extended the live registry with a Tabnine MCP scaffold, published it through the same gates, and
+  consumed the committed registry through an isolated local source. An attempted `--default` local
+  source correctly refused because only `registry-git` may become the default; explicit
+  `--no-default` synchronized it and projected all five artifacts plus the collection.
+- Collection preview was inert. Finalized install wrote the skill, and repeated install plus status
+  returned `no-op/current`. Two vendored memories installed as distinct named blocks in the same
+  Tabnine `TABNINE.md`; both were current, removing one retained the other, and its status remained
+  current.
+- The MCP installed independently at project and user scope into the documented
+  `.tabnine/mcp_servers.json` targets under `mcpServers`; neither scope wrote
+  `.tabnine/agent/settings.json`. Repeated install and update were `no-op/current`. Removing project
+  scope retained user scope, then user uninstall removed its own file.
+- Final uninstalls reclaimed the remaining owned memory and skill files. Machine receipt:
+  `/tmp/aart-270-live-87e56b8.0JrujN/consumer-receipt.json`.
+- The first consumer runner stopped after the successful initial skill install because it expected
+  `succeeded` on the deliberate repeat; the actual terminal contract was the stronger `no-op` with
+  item status `current`. The resumed runner asserted that idempotent result and completed green.
+
+### 04:22 CEST — setup, cross-version migration, freshness, and reporting live acceptance green
+
+- A fresh setup-bearing local source used setup recipe v2 `text` input and
+  `shell.env-from-input@1`. Source validation first rejected a non-canonical step id in the live
+  fixture before configuration was written; renaming it to `account_env` made the source valid.
+  Review named the echoed prompt and target. Finalize prompted on stderr, safely shell-quoted an
+  apostrophe-containing value, and wrote one owned block.
+- Repeated setup kept the managed file byte-identical and reported `already-configured`. After
+  changing only `SETUP.md` while keeping artifact version 1.0.0, automatic source sync published a
+  new object, marketplace update returned `changed`, setup completed without conflict, and the
+  setup reference moved from object
+  `sha256:d37b20bff5928e520b2916d49cd6efdbe2d43bc28a562dd3165b3972a46940ab` to
+  `sha256:2a712cb96365ad14eb0ec1d1337c6c47122c7d1664d49d111454f8d69aecaa5e`. A further setup was
+  `already-configured` with identical file and reference bytes. Receipt:
+  `/tmp/aart-270-live-87e56b8.0JrujN/setup-receipt.json`.
+- Installed the published 2.6.1 release wheel into a separate venv and used it to create a real
+  Tabnine project MCP installation at `.tabnine/agent/settings.json`. The 2.7.0 wheel's update
+  exited 1 with the reviewed target-migration conflict, exact uninstall/install remediation, and
+  identical state/settings hashes before and after; the new target did not exist. Executing those
+  two commands with 2.7.0 removed the old file, wrote `.tabnine/mcp_servers.json`, and ended
+  `current`. Receipt: `/tmp/aart-270-live-87e56b8.0JrujN/migration-receipt.json`.
+- Added the real public reference registry over HTTPS as `registry-git`. In manual mode, changed
+  only its cached publication timestamp to epoch second 1 and compared it to the real origin. At
+  age 1,787,019,737 seconds, matching source id, revision
+  `f25eba97bf71c4e6a4b224f2b081a6bb7c7327f9`, and snapshot digest remained `healthy`, proving age
+  is evidence rather than freshness classification at the CLI boundary.
+- A finalized JSON install from that remote returned a relevant unavailable-reporting notice and
+  the exact `registry init --usage-reporting-repository OWNER/REPOSITORY` remediation; it performed
+  no browser effect. Receipt:
+  `/tmp/aart-270-live-87e56b8.0JrujN/remote-freshness-reporting-receipt.json`.
