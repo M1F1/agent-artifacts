@@ -217,7 +217,11 @@ def _claims_for_step(index: int, module: str, step: Mapping[str, object]) -> Tup
             ),
         )
 
-    if module in ("shell.env-from-keychain@1", "file.managed-block@1"):
+    if module in (
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+    ):
         path = str(step.get("path", ""))
         block = str(step.get("installed_block", ""))
         if not path:

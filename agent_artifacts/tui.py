@@ -1771,12 +1771,23 @@ def _load_user_wizard_read_model(
     selected_sources = (
         () if session.source_selection is None else session.source_selection.enabled_aliases
     )
+    setup_capabilities = getattr(
+        getattr(getattr(consumer_service.context, "effective", None), "policy", None),
+        "allowed_setup_capabilities",
+        None,
+    )
+    # Test doubles and alternative service skins may expose no typed policy context. Absence has
+    # the same semantics as an unset allowlist; an arbitrary mock value must not become a
+    # capability set and mask the domain result returned by `browse`.
+    if setup_capabilities is not None and not isinstance(setup_capabilities, tuple):
+        setup_capabilities = None
     projected = consumer_service.browse(
         MarketplaceTarget(
             tuple(sorted(session.profiles)),
             "darwin" if sys.platform == "darwin" else "linux",
             scope,  # type: ignore[arg-type]
             session.install_mode,  # type: ignore[arg-type]
+            setup_capabilities,
         ),
         sources=selected_sources,
     )

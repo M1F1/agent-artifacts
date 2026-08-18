@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from agent_artifacts.model import SetupQueueItem
-from agent_artifacts.setup import parse_installer, plan_setup
+from agent_artifacts.setup import parse_installer, plan_setup, render_setup_review
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
 from tests.setup_fixtures import recipe
 
@@ -19,8 +19,10 @@ class FakeProcess:
         self.capture_modes: list[tuple[tuple[str, ...], bool]] = []
         self.exists = False
         self.fail_add = fail_add
+        self.events: list[tuple[str, object]] = []
 
     def __call__(self, argv, *, env, cwd, timeout, capture):
+        self.events.append(("process", tuple(argv)))
         self.calls.append((tuple(argv), dict(env), cwd))
         self.capture_modes.append((tuple(argv), capture))
         if "find-generic-password" in argv:
@@ -46,7 +48,112 @@ def _plan(home: str):
     return plan_setup(item, target_root=home, platform="darwin")
 
 
+def _text_plan(home: str):
+    parsed = parse_installer(
+        recipe(
+            required_tools=[],
+            capabilities=["filesystem"],
+            inputs=[
+                {
+                    "id": "account_email",
+                    "type": "text",
+                    "prompt": "Your Atlassian account e-mail",
+                }
+            ],
+            steps=[
+                {
+                    "id": "account",
+                    "use": "shell.env-from-input@1",
+                    "with": {
+                        "file": "~/.zshrc",
+                        "variables": {"ATLASSIAN_USERNAME": "account_email"},
+                    },
+                }
+            ],
+        ),
+        artifact_key="mcp/atlassian",
+        descriptor_path="mcp/atlassian/setup/installer.json",
+    ).value
+    item = SetupQueueItem("mcp", "atlassian", "tabnine", "user", "pin:abc", "/source", parsed)
+    return plan_setup(item, target_root=home, platform="darwin")
+
+
 class SetupRuntimeTests(unittest.TestCase):
+    def test_text_input_is_reviewed_prompted_with_echo_and_written_as_an_owned_shell_value(self):
+        fake = FakeProcess()
+        prompts: list[str] = []
+        with tempfile.TemporaryDirectory() as home:
+            plan = _text_plan(home)
+            review = "\n".join(render_setup_review(plan))
+            runtime = SetupRuntime(
+                process=fake,
+                platform="darwin",
+                environ={},
+                read_text_input=lambda prompt: prompts.append(prompt) or "dev'one@example.test",
+            )
+
+            first = apply_setup_plan(plan, runtime, consent=lambda _effect: True)
+            second = apply_setup_plan(plan, runtime, consent=lambda _effect: True)
+
+            content = pathlib.Path(home, ".zshrc").read_text(encoding="utf-8")
+
+        self.assertIn("prompts with echo", review)
+        self.assertIn("Your Atlassian account e-mail", review)
+        self.assertEqual(prompts, ["Your Atlassian account e-mail"] * 2)
+        self.assertEqual(first.status, "configured")
+        self.assertEqual(second.status, "already_configured")
+        self.assertIn("export ATLASSIAN_USERNAME='dev'\"'\"'one@example.test'", content)
+        self.assertEqual(fake.calls, [])
+
+    def test_keychain_prompt_is_named_immediately_before_security_takes_the_terminal(self):
+        fake = FakeProcess()
+        with tempfile.TemporaryDirectory() as home:
+            runtime = SetupRuntime(
+                process=fake,
+                platform="darwin",
+                environ={},
+                write_prompt=lambda message: fake.events.append(("prompt", message)),
+            )
+
+            result = apply_setup_plan(_plan(home), runtime, consent=lambda _effect: True)
+
+        self.assertEqual(result.status, "configured")
+        add_index = next(
+            index
+            for index, event in enumerate(fake.events)
+            if event[0] == "process" and "add-generic-password" in event[1]
+        )
+        prompt = fake.events[add_index - 1]
+        self.assertEqual(prompt[0], "prompt")
+        self.assertIn("Paste the Atlassian API token", prompt[1])
+        self.assertIn("service='aart/mcp/atlassian'", prompt[1])
+        self.assertIn("account='default'", prompt[1])
+
+    def test_managed_file_preflight_refuses_a_symlink_before_the_first_effect(self):
+        fake = FakeProcess()
+        with tempfile.TemporaryDirectory() as home:
+            real = pathlib.Path(home, "dotfiles-zshrc")
+            real.write_text("owned by dotfiles\n", encoding="utf-8")
+            pathlib.Path(home, ".zshrc").symlink_to(real)
+            prompts: list[str] = []
+
+            result = apply_setup_plan(
+                _plan(home),
+                SetupRuntime(
+                    process=fake,
+                    platform="darwin",
+                    environ={},
+                    write_prompt=prompts.append,
+                ),
+                consent=lambda _effect: True,
+            )
+
+            self.assertEqual(result.status, "prerequisite_missing")
+            self.assertIn("refusing to edit symlink", result.detail)
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(prompts, [])
+            self.assertEqual(real.read_text(encoding="utf-8"), "owned by dotfiles\n")
+
     def test_keychain_prompt_argv_never_contains_secret_and_shell_stores_lookup_only(self):
         canary = "aart-secret-canary-123"
         fake = FakeProcess()

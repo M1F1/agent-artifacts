@@ -84,7 +84,7 @@ class SetupHelpUrl:
 @dataclass(frozen=True, slots=True)
 class SetupInput:
     id: str
-    type: Literal["secret"]
+    type: Literal["secret", "text"]
     prompt: str
     help_url: Optional[str] = None
 

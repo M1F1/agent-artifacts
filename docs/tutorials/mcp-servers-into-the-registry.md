@@ -114,25 +114,17 @@ script below `setup/`, hash-bound into the recipe, requiring the `custom-code` c
 `# AART manual setup: see ../SETUP.md` header. Reach for it last. It is the one step a reviewer
 cannot read as a plan.
 
-### Every input is a secret
+### Secret and text inputs stay separate
 
-`inputs[].type` accepts `"secret"` and nothing else:
+Use `type: "secret"` for credentials and `type: "text"` for per-user values that may be shown on
+screen, such as an account e-mail, board key, or space name. A text value is consumed by
+`shell.env-from-input@1`: AART prompts with echo before the first effect and writes a shell-quoted
+export into an owned managed block. A secret still goes only to `macos-keychain.store@1`; arbitrary
+secret interpolation remains invalid.
 
-```
-error: inputs[0].type must be 'secret'
-```
-
-There is no `text`. A per-user value that is not secret — an e-mail address, a board key, a space
-name — has three homes, in order of preference:
-
-1. **Author it into the recipe or the descriptor** if it is the same for everyone. The Jira and
-   Confluence URLs are in `mcp.json` as literal arguments, because they are company-wide.
-2. **Keep it in the Keychain with the secrets** if it is per-user. This is what `company-atlassian`
-   does with the account e-mail. It works, and the prompt is hidden, so the person types their own
-   e-mail address into an unechoed field. Say so in `SETUP.md`; do not let them discover it.
-3. **Read it from the environment** in `server.py`, if the company already exports it.
-
-Recorded as `AD-17` in [the adoption register](../testing/residue-register.md).
+Author a non-secret value directly into the recipe only when it is the same for everyone. The Jira
+and Confluence URLs are literals in `mcp.json` because they are company-wide. Keep machine-specific
+non-secrets as text inputs and credentials in Keychain.
 
 ### Secrets never pass through AART
 
@@ -317,7 +309,7 @@ The `company-atlassian` recipe, complete. This is the pattern to copy.
   "inputs": [
     {
       "id": "atlassian_username",
-      "type": "secret",
+      "type": "text",
       "prompt": "Your Atlassian account e-mail (name@company.com)"
     },
     {
@@ -344,13 +336,11 @@ The `company-atlassian` recipe, complete. This is the pattern to copy.
       "with": { "context": "payload", "dockerfile": "Dockerfile" }
     },
     {
-      "id": "store_username",
-      "use": "macos-keychain.store@1",
+      "id": "shell_username",
+      "use": "shell.env-from-input@1",
       "with": {
-        "input": "atlassian_username",
-        "service": "aart/mcp/company-atlassian/username",
-        "account": "atlassian",
-        "replace_existing": true
+        "file": "~/.zshrc",
+        "variables": {"ATLASSIAN_USERNAME": "atlassian_username"}
       }
     },
     {
@@ -369,10 +359,6 @@ The `company-atlassian` recipe, complete. This is the pattern to copy.
       "with": {
         "file": "~/.zshrc",
         "variables": {
-          "ATLASSIAN_USERNAME": {
-            "service": "aart/mcp/company-atlassian/username",
-            "account": "atlassian"
-          },
           "ATLASSIAN_API_TOKEN": {
             "service": "aart/mcp/company-atlassian/api-token",
             "account": "atlassian"

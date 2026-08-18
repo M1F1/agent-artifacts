@@ -15,6 +15,85 @@ from tests.setup_fixtures import recipe
 
 
 class SetupRecipeParserTests(unittest.TestCase):
+    def test_text_input_has_one_echoed_managed_file_module_and_never_enters_keychain(self):
+        text_input = {
+            "id": "account_email",
+            "type": "text",
+            "prompt": "Your account e-mail",
+        }
+        valid = parse_installer(
+            recipe(
+                required_tools=[],
+                capabilities=["filesystem"],
+                inputs=[text_input],
+                steps=[
+                    {
+                        "id": "account",
+                        "use": "shell.env-from-input@1",
+                        "with": {
+                            "file": "~/.zshrc",
+                            "variables": {"ACCOUNT_EMAIL": "account_email"},
+                        },
+                    }
+                ],
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+        keychain = parse_installer(
+            recipe(
+                inputs=[text_input],
+                steps=[
+                    {
+                        "id": "account",
+                        "use": "macos-keychain.store@1",
+                        "with": {
+                            "input": "account_email",
+                            "service": "aart/mcp/atlassian",
+                            "account": "default",
+                        },
+                    }
+                ],
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+        wrong_module = parse_installer(
+            recipe(
+                capabilities=["filesystem"],
+                required_tools=[],
+                steps=[
+                    {
+                        "id": "account",
+                        "use": "shell.env-from-input@1",
+                        "with": {
+                            "file": "~/.zshrc",
+                            "variables": {"ACCOUNT_EMAIL": "api_token"},
+                        },
+                    }
+                ],
+            ),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(valid, Ok, getattr(valid, "reason", ""))
+        self.assertEqual(valid.value.inputs[0].type, "text")
+        self.assertIsInstance(keychain, Err)
+        self.assertIn("secret input", keychain.reason)
+        self.assertIsInstance(wrong_module, Err)
+        self.assertIn("text input", wrong_module.reason)
+
+    def test_unknown_input_type_is_rejected_without_loosening_secret_interpolation(self):
+        invalid = parse_installer(
+            recipe(inputs=[{"id": "x", "type": "choice", "prompt": "Choose"}]),
+            artifact_key="mcp/atlassian",
+            descriptor_path="mcp/atlassian/setup/installer.json",
+        )
+
+        self.assertIsInstance(invalid, Err)
+        self.assertIn("'secret' or 'text'", invalid.reason)
+
     def test_valid_recipe_is_frozen_and_hash_bound(self):
         raw = recipe()
         result = parse_installer(

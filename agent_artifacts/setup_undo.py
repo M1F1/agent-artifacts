@@ -118,7 +118,11 @@ def _disposition(receipt: Mapping[str, object]) -> tuple[str, str]:
             return REVERSES, "deletes the Keychain item this run created"
         return KEEPS, "this step stored nothing, so there is nothing to delete"
 
-    if module in ("shell.env-from-keychain@1", "file.managed-block@1"):
+    if module in (
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+    ):
         if receipt.get("changed") is True:
             if receipt.get("file_existed") is False:
                 return REVERSES, "removes the file this run created for the managed block"
