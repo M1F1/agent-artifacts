@@ -234,7 +234,7 @@ afterwards, and what to add. Write it by hand only for a package with no upstrea
     "recipe": "setup/installer.json",
     "platforms": ["darwin"]
   },
-  "com.m1f1.runtime-requirements": {
+  "aart.runtime-requirements": {
     "schema_version": 1,
     "requirements": [
       {
@@ -252,7 +252,7 @@ Five things that are not free choices:
 - `setup` takes `recipe` and `platforms` and no other field. A POC's `poc_script` is rejected.
 - `setup.platforms` must be a subset of `compatibility.platforms`. A Keychain recipe means both are
   `["darwin"]`, and the artifact then does not offer itself on Linux, which is correct.
-- `com.m1f1.runtime-requirements` is a real extension and is advisory: it feeds
+- `aart.runtime-requirements` is a real extension and is advisory: it feeds
   `aart marketplace health` and never blocks an install. Extension keys must be dotted and
   lowercase; `x-anything` is refused as an unknown field.
 - `scopes` decides which file the descriptor is merged into. Under the `tabnine` profile, `user`
@@ -495,7 +495,7 @@ what an MCP artifact wants.
 Run it once without `--yes` first. The review names every file the vendoring would write, and it is
 cheaper to read that than to unpick a package that landed under the wrong name.
 
-**6. Extend `artifact.json`** with the `com.m1f1.runtime-requirements` block if the server needs one.
+**6. Extend `artifact.json`** with the `aart.runtime-requirements` block if the server needs one.
 No flag carries it. It is an ordinary edit, because the integrity check looks only inside `payload/`.
 
 **7. Publish.**

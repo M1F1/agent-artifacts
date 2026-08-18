@@ -19,13 +19,13 @@ unsatisfied declaration never hides an artifact and never blocks Install, Update
 ## Artifact declaration
 
 Requirements live in the optional namespaced artifact-manifest extension
-`com.m1f1.runtime-requirements`. Existing protocol-v1 readers already preserve namespaced
+`aart.runtime-requirements`. Existing protocol-v1 readers already preserve namespaced
 extensions, so older AART versions can continue to browse and install the artifact without
 understanding this advisory data.
 
 ```json
 {
-  "com.m1f1.runtime-requirements": {
+  "aart.runtime-requirements": {
     "schema_version": 1,
     "requirements": [
       {

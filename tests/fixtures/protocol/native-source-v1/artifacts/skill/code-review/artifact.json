@@ -20,7 +20,7 @@
   "authors": ["AART maintainers"],
   "license": "MIT",
   "homepage": "https://github.com/M1F1/agent-artifacts",
-  "com.m1f1.runtime-requirements": {
+  "aart.runtime-requirements": {
     "schema_version": 1,
     "requirements": [
       {

@@ -105,7 +105,7 @@ class TuiConsumerTextTest(unittest.TestCase):
         self.assertIn("Review could not be reviewed", rendered)
         self.assertIn("error [install-conflict]", rendered)
         self.assertIn("Back = b", rendered)
-        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        self.assertIn("Select artifact(s)/collection(s)", rendered)
         service.prepare.assert_called_once()
 
     def test_err06_finalize_failure_is_a_record_and_back_returns_to_artifacts(self) -> None:
@@ -161,7 +161,7 @@ class TuiConsumerTextTest(unittest.TestCase):
         self.assertIn("Review could not be finalized", rendered)
         self.assertIn("error [install-conflict]", rendered)
         self.assertIn("Back = b", rendered)
-        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        self.assertIn("Select artifact(s)/collection(s)", rendered)
         service.finalize.assert_called_once_with(review, review.review_digest)
 
     def test_err04_retry_reloads_only_artifacts_and_keeps_the_existing_basket(self) -> None:
@@ -207,7 +207,7 @@ class TuiConsumerTextTest(unittest.TestCase):
         self.assertEqual(load.call_count, 2)
         rendered = "\n".join(writes)
         self.assertIn("Retry = r", rendered)
-        self.assertIn("Select artifact(s)/bundle(s)", rendered)
+        self.assertIn("Select artifact(s)/collection(s)", rendered)
         self.assertIn("Discard 1 selected basket item(s)?", rendered)
 
     def test_err03_canonical_loader_returns_the_original_domain_error_unchanged(self) -> None:
@@ -331,7 +331,7 @@ class TuiConsumerTextTest(unittest.TestCase):
                 "aartmarketplaceinstall<coordinate>--profile<name>",
                 compact,
             )
-            self.assertIn("Select artifact(s)/bundle(s)", rendered)
+            self.assertIn("Select artifact(s)/collection(s)", rendered)
             self.assertEqual((_tree_snapshot(project), _tree_snapshot(Path(paths.root))), before)
 
     def test_federated_collection_row_expands_to_members_before_review(self) -> None:

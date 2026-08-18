@@ -61,7 +61,7 @@ class WizardPosition:
 
 @dataclass(frozen=True, slots=True)
 class BasketItem:
-    kind: Literal["artifact", "bundle", "reference"]
+    kind: Literal["artifact", "collection", "reference"]
     key: str
     label: str
     description: str = ""

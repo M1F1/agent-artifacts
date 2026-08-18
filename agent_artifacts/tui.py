@@ -288,7 +288,7 @@ INSTALL_MODE_CHOICES: Tuple[InstallModeChoice, ...] = (
         "Symlink",
         (
             "Live-link supported skills and hooks to a local catalog; file and merged "
-            "artifacts selected through bundles use copy semantics."
+            "artifacts selected through collections use copy semantics."
         ),
     ),
 )
@@ -319,14 +319,14 @@ INSTALL_SCOPE_CHOICES: Tuple[InstallScopeChoice, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class _Choice:
-    """One selectable catalog row: either a single artifact or a whole bundle.
+    """One selectable catalog row: either a single artifact or a whole collection.
 
-    ``kind`` is ``"artifact"`` or ``"bundle"``. ``label`` is the human row text. ``key`` is
+    ``kind`` is ``"artifact"`` or ``"collection"``. ``label`` is the human row text. ``key`` is
     ``(type, name)`` for an artifact (so we can build ``Request.names`` + ``type_filter``-free
-    selection) or the bundle name for a bundle.
+    selection) or the qualified collection coordinate.
     """
 
-    kind: Literal["artifact", "bundle", "profile"]
+    kind: Literal["artifact", "collection", "profile"]
     name: str
     type: Optional[ArtifactType]
     label: str
@@ -352,7 +352,7 @@ def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
 
 
 def _choice_label(
-    kind: Literal["artifact", "bundle", "profile"],
+    kind: Literal["artifact", "collection", "profile"],
     name: str,
     art_type: Optional[ArtifactType],
     description: str,
@@ -361,8 +361,8 @@ def _choice_label(
     """Render a one-line choice label from structured choice data."""
     if kind == "artifact" and art_type is not None:
         label = f"[{art_type}] {name}"
-    elif kind == "bundle":
-        label = f"[bundle] {name}"
+    elif kind == "collection":
+        label = f"[collection] {name}"
     else:
         label = name
     if description:
@@ -1553,7 +1553,7 @@ def _basket_key(choice: _Choice) -> str:
 
 def _basket_item(choice: _Choice) -> BasketItem:
     return BasketItem(
-        "bundle" if choice.kind == "bundle" else "artifact",
+        "collection" if choice.kind == "collection" else "artifact",
         _basket_key(choice),
         choice.label,
         choice.description,
@@ -1605,7 +1605,7 @@ def _canonical_collection_choices(
         members = ", ".join(str(member) for member in collection.members)
         choices.append(
             _Choice(
-                "bundle",
+                "collection",
                 collection.coordinate.name,
                 None,
                 f"[collection] {collection.coordinate} — {collection.summary} "
@@ -2066,7 +2066,7 @@ def _run_user_text_wizard(
                 for choice in read_model.choices
             }
             session = reconcile_basket(session, availability)
-            write(f"Select artifact(s)/bundle(s) for {_profiles_label(session.profiles)}:")
+            write(f"Select artifact(s)/collection(s) for {_profiles_label(session.profiles)}:")
             width = shutil.get_terminal_size(fallback=(200, 24)).columns
             for index, choice in enumerate(read_model.choices, start=1):
                 write(_text_choice_line(index, choice, width))
@@ -2092,7 +2092,7 @@ def _run_user_text_wizard(
                     return _cancel(write)
                 continue
             if not event.selected:
-                write("Select at least one artifact or bundle before continuing.")
+                write("Select at least one artifact or collection before continuing.")
                 continue
             session = wizard_select(
                 session,
@@ -3378,7 +3378,7 @@ def _profiles_label(profile_names: Sequence[str]) -> str:
 def _empty_choices_message(action: str, profile_names: Sequence[str]) -> str:
     profiles = _profiles_label(profile_names)
     if action == "install":
-        return f"No installable artifacts or bundles for profile(s): {profiles}."
+        return f"No installable artifacts or collections for profile(s): {profiles}."
     if action == "update":
         return f"No installed artifacts to update for profile(s): {profiles}."
     if action == "uninstall":
@@ -4405,7 +4405,7 @@ def _run_user_curses_wizard(
             event = _curses_multi_event(
                 curses,
                 stdscr,
-                "Select artifacts and bundles",
+                "Select artifacts and collections",
                 tuple(choice.label for choice in read_model.choices),
                 session,
                 selected=selected,

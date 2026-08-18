@@ -116,3 +116,20 @@ dispositions.
   may commit. The boundary test now permits exactly one Git commit call inside `_run_publish` and
   still forbids push everywhere and commit in the functional core/workspace adapter. The repeated
   full gate passes all 1,582 tests; Ruff, format-check, mypy, and docs-check pass as well.
+
+### 03:35 CEST — first-contact and naming cluster closed
+
+- `AD-01`: README now has the requested installer × source grid and separates adoption from the
+  editable developer workflow. Each of the nine `pip`, `pipx`, and `uv tool` commands was executed
+  in an isolated temporary environment against the local 2.6.1 wheel, the published GitHub release
+  wheel, or the tagged Git repository; every installed executable printed `agent-artifacts 2.6.1`.
+- `AD-02` and `AD-03`: README explains reference versus vendored ownership, provenance, integrity,
+  and re-vendoring, and links the walked Tabnine company-registry tutorial instead of inlining it.
+- `AD-06`: removed the unused `Bundle`/`Catalog`/`ResolvedBundle` values and renamed the live
+  basket/choice/UI vocabulary to `collection`.
+- `AD-18`: the live extension is `aart.runtime-requirements`; the personal namespace is rejected
+  with an exact migration diagnostic rather than accepted as an alias. Current docs and fixtures
+  use only the live key.
+- Focused verification passes 83 tests and 20 subtests across README contracts, runtime
+  requirements, the text/curses consumer TUI, wizard state, and smoke coverage. Full-package mypy,
+  Ruff, docs-check, and diff-check pass. The full unit gate passes all 1,586 tests.
