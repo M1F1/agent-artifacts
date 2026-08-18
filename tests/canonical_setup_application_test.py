@@ -391,7 +391,9 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertEqual(projected.manual.relative_path, "SETUP.md")
             self.assertEqual(
                 projected.manual.source,
-                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+                "https://registry.example/agents/registry/blob/"
+                + "a" * 40
+                + "/artifacts/skill/review/SETUP.md",
             )
 
     def test_planning_denial_after_recipe_validation_keeps_the_verified_manual_route(
@@ -407,7 +409,9 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertEqual(attempt.manual.relative_path, "SETUP.md")
             self.assertEqual(
                 attempt.manual.source,
-                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+                "https://registry.example/agents/registry/blob/"
+                + "a" * 40
+                + "/artifacts/skill/review/SETUP.md",
             )
 
     def test_planning_failure_before_recipe_validation_claims_no_manual_route(self) -> None:
@@ -443,6 +447,10 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertIsInstance(denied, Err)
             assert isinstance(denied, Err)
             self.assertEqual(denied.diagnostics[0].code.value, "setup-policy-denied")
+            self.assertIn(
+                "--authorize-untrusted-source",
+                denied.diagnostics[0].remediation[0],
+            )
             self.assertIsInstance(planned, Ok)
             assert isinstance(planned, Ok)
             plan = planned.value

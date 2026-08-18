@@ -60,3 +60,17 @@ dispositions.
 - The first typecheck found one narrowing error in the new text-input collector. Rewriting the set
   comprehension as an explicitly narrowed loop fixed it; the full 167-module mypy gate then
   passed.
+- Checkpoint commit: `3bd1f01` (`Repair setup machine and TUI adoption paths`).
+
+### 02:47 CEST — `AD-19`, `AD-20`, and `AD-22` closed
+
+- `AD-19`: registry mutation refusals distinguish a directory that needs `git init` from a
+  registry nested below another checkout; each diagnostic names the exact repair and paths.
+- `AD-20`: MCP vendoring names the full authored `payload/mcp.json` destination when missing, and
+  the inverse upstream-collision branch names the authored copy that must be removed.
+- `AD-22`: the manual setup route now includes the artifact package root under the pinned commit,
+  and setup policy refusals name the relevant authorization flag or organization-policy action.
+- Targeted verification passed: 59 tests and 2 subtests across workspace mutation, vendoring
+  projection, canonical setup application, setup review, and registry command boundaries.
+- Ruff, focused mypy, and the documentation gate pass. The company tutorial contains no caveat
+  matching these three repaired diagnostic defects.

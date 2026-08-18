@@ -134,8 +134,22 @@ _LICENSE_PREFIX_BYTES = 4096
 _PROJECTED_ROOTS = frozenset({"artifact.json", "provenance.json"})
 
 
-def _error(message: str, path: str | None = None) -> Err:
-    return Err((Diagnostic(ARTIFACT_INVALID, Severity.ERROR, message, SourceLocation(path=path)),))
+def _error(
+    message: str,
+    path: str | None = None,
+    remediation: tuple[str, ...] = (),
+) -> Err:
+    return Err(
+        (
+            Diagnostic(
+                ARTIFACT_INVALID,
+                Severity.ERROR,
+                message,
+                SourceLocation(path=path),
+                remediation=remediation,
+            ),
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,7 +558,10 @@ def discover_license(subtree: TakenSubtree) -> LicenseFinding:
 
 
 def _authored_files(
-    options: VendorOptions, taken: frozenset[str]
+    options: VendorOptions,
+    taken: frozenset[str],
+    *,
+    package_root: str,
 ) -> Result[tuple[tuple[str, bytes, bool], ...]]:
     files: list[tuple[str, bytes, bool]] = []
     seen: set[str] = set()
@@ -563,7 +580,14 @@ def _authored_files(
         # Never silently over-write a taken byte: the maintainer would be reviewing upstream content
         # that is not the content their registry ships.
         if relative in taken:
-            return _error(f"authored file collides with the taken subtree: {relative}")
+            package_path = f"{package_root}/{relative}"
+            return _error(
+                f"authored file collides with the taken subtree: {relative}; upstream already "
+                "provides this file",
+                remediation=(
+                    f"remove the authored copy at {package_path} and vendor the upstream copy",
+                ),
+            )
         seen.add(relative)
         files.append((relative, content, executable))
     return Ok(tuple(files))
@@ -592,7 +616,12 @@ def project_vendored_package(
         for entry in subtree.snapshot.entries
         if entry.kind is SnapshotEntryKind.FILE
     }
-    authored = _authored_files(options, frozenset(taken_files))
+    package_root = f"{artifact_root}/{kind}/{options.identity.name}"
+    authored = _authored_files(
+        options,
+        frozenset(taken_files),
+        package_root=package_root,
+    )
     if isinstance(authored, Err):
         return authored
     payload_paths = set(taken_files) | {
@@ -600,9 +629,14 @@ def project_vendored_package(
     }
     required = _REQUIRED_PAYLOAD_DOCUMENT.get(kind)
     if required is not None and required not in payload_paths:
+        package_path = f"{package_root}/{required}"
         return _error(
             f"a vendored {kind} needs {required}; the taken subtree does not contain it, "
-            "so the maintainer supplies it"
+            f"so the maintainer supplies it at {package_path}",
+            remediation=(
+                f"author {package_path} before vendoring, unless the upstream subtree supplies "
+                f"{required}",
+            ),
         )
     if kind in {"guideline", "memory"} and (
         len(payload_paths) != 1 or not next(iter(payload_paths)).endswith(".md")
@@ -664,7 +698,7 @@ def project_vendored_package(
             ),
         ),
     )
-    base = f"{artifact_root}/{kind}/{options.identity.name}"
+    base = package_root
     files: list[tuple[str, bytes, bool]] = [
         (f"{base}/artifact.json", canonical_json_bytes(artifact_manifest_to_json(manifest)), False),
         (f"{base}/provenance.json", canonical_json_bytes(provenance_to_json(provenance)), False),

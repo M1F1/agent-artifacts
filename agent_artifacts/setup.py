@@ -1049,7 +1049,10 @@ class SetupReview:
     preflight_detail: str
 
 
-_PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
+_PINNED_SOURCE_URL = re.compile(
+    r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}(?:/.*)?$",
+    re.IGNORECASE,
+)
 
 
 _REDACTED_ASSIGNMENT = re.compile(r"[A-Za-z0-9_.-]*\s*[:=]\s*\[redacted\]")
