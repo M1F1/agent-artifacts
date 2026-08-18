@@ -205,11 +205,12 @@ ROLES: Tuple[_RoleChoice, ...] = (
 CANONICAL_MAINTAINER_ACTIONS: Tuple[Tuple[str, str], ...] = (
     ("validate", "Validate canonical registry protocol and generated evidence"),
     ("scaffold", "Scaffold one native artifact package for review"),
+    ("collection", "Compose a collection from artifacts this registry already holds"),
     ("promote-native", "Promote one reviewed native Git reference"),
     ("refresh-native", "Check and review one locked native reference update"),
     ("vendor", "Copy one foreign subtree in as a package this registry owns"),
     ("revendor", "Re-resolve one vendored copy's upstream and review what moved"),
-    ("lock", "Resolve approved references into the committed lock"),
+    ("lock", "Resolve approved references into the registry lock"),
     ("build", "Build the payload-free marketplace index"),
     ("audit", "Audit review, provenance, setup, license, and security evidence"),
     ("diff", "Preview deterministic canonical-format diff without writing"),
@@ -287,7 +288,7 @@ INSTALL_MODE_CHOICES: Tuple[InstallModeChoice, ...] = (
         "Symlink",
         (
             "Live-link supported skills and hooks to a local catalog; file and merged "
-            "artifacts selected through bundles use copy semantics."
+            "artifacts selected through collections use copy semantics."
         ),
     ),
 )
@@ -318,14 +319,14 @@ INSTALL_SCOPE_CHOICES: Tuple[InstallScopeChoice, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class _Choice:
-    """One selectable catalog row: either a single artifact or a whole bundle.
+    """One selectable catalog row: either a single artifact or a whole collection.
 
-    ``kind`` is ``"artifact"`` or ``"bundle"``. ``label`` is the human row text. ``key`` is
+    ``kind`` is ``"artifact"`` or ``"collection"``. ``label`` is the human row text. ``key`` is
     ``(type, name)`` for an artifact (so we can build ``Request.names`` + ``type_filter``-free
-    selection) or the bundle name for a bundle.
+    selection) or the qualified collection coordinate.
     """
 
-    kind: Literal["artifact", "bundle", "profile"]
+    kind: Literal["artifact", "collection", "profile"]
     name: str
     type: Optional[ArtifactType]
     label: str
@@ -351,7 +352,7 @@ def _profile_supports(profile: Profile, art_type: ArtifactType) -> bool:
 
 
 def _choice_label(
-    kind: Literal["artifact", "bundle", "profile"],
+    kind: Literal["artifact", "collection", "profile"],
     name: str,
     art_type: Optional[ArtifactType],
     description: str,
@@ -360,8 +361,8 @@ def _choice_label(
     """Render a one-line choice label from structured choice data."""
     if kind == "artifact" and art_type is not None:
         label = f"[{art_type}] {name}"
-    elif kind == "bundle":
-        label = f"[bundle] {name}"
+    elif kind == "collection":
+        label = f"[collection] {name}"
     else:
         label = name
     if description:
@@ -790,6 +791,10 @@ def _offer_routed_usage_reports(
 ) -> None:
     if service is None:
         return
+    selected_aliases = {report.source_alias for report in routed}
+    for notice in service.notices:
+        if notice.source_alias in selected_aliases:
+            write(f"Usage report not offered for registry {notice.source_alias}: {notice.reason}.")
     prepared = service.prepare_routed(combined, routed)
     if isinstance(prepared, DomainErr):
         write("warning: usage reports could not be prepared; the artifact outcome is unchanged")
@@ -912,7 +917,6 @@ def _runtime_source_stage_context(
         finalize_source_management,
         finalize_source_removal,
     )
-    from .application.sources import SourceStatusRequest, source_status
     from .configuration.paths import Platform, resolve_config_paths
     from .configuration.policy import RuntimeOverrides
     from .io.config_cas import checked_config_writer
@@ -921,8 +925,7 @@ def _runtime_source_stage_context(
         recover_configuration,
         write_configuration,
     )
-    from .io.source_store import read_current_source
-    from .sources.model import CurrentSourceRequest, source_instance_id, source_store_paths
+    from .sources.runtime import observe_configured_source
 
     platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
     home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -950,14 +953,11 @@ def _runtime_source_stage_context(
     now = int(time.time())
     health = {}
     for source in configuration.sources:
-        store_paths = source_store_paths(paths.data_root, source_instance_id(source))
-        health[source.alias] = source_status(
-            SourceStatusRequest(
-                CurrentSourceRequest(store_paths, source.alias),
-                now,
-                configuration.sync.max_age_seconds,
-            ),
-            read_current_source,
+        health[source.alias] = observe_configured_source(
+            source,
+            data_root=paths.data_root,
+            mode=loaded.value.effective.configuration.sync.mode,
+            observed_at_epoch_seconds=now,
         )
     projected = build_source_stage(
         configuration,
@@ -1557,7 +1557,7 @@ def _basket_key(choice: _Choice) -> str:
 
 def _basket_item(choice: _Choice) -> BasketItem:
     return BasketItem(
-        "bundle" if choice.kind == "bundle" else "artifact",
+        "collection" if choice.kind == "collection" else "artifact",
         _basket_key(choice),
         choice.label,
         choice.description,
@@ -1609,7 +1609,7 @@ def _canonical_collection_choices(
         members = ", ".join(str(member) for member in collection.members)
         choices.append(
             _Choice(
-                "bundle",
+                "collection",
                 collection.coordinate.name,
                 None,
                 f"[collection] {collection.coordinate} — {collection.summary} "
@@ -1771,12 +1771,23 @@ def _load_user_wizard_read_model(
     selected_sources = (
         () if session.source_selection is None else session.source_selection.enabled_aliases
     )
+    setup_capabilities = getattr(
+        getattr(getattr(consumer_service.context, "effective", None), "policy", None),
+        "allowed_setup_capabilities",
+        None,
+    )
+    # Test doubles and alternative service skins may expose no typed policy context. Absence has
+    # the same semantics as an unset allowlist; an arbitrary mock value must not become a
+    # capability set and mask the domain result returned by `browse`.
+    if setup_capabilities is not None and not isinstance(setup_capabilities, tuple):
+        setup_capabilities = None
     projected = consumer_service.browse(
         MarketplaceTarget(
             tuple(sorted(session.profiles)),
             "darwin" if sys.platform == "darwin" else "linux",
             scope,  # type: ignore[arg-type]
             session.install_mode,  # type: ignore[arg-type]
+            setup_capabilities,
         ),
         sources=selected_sources,
     )
@@ -2059,7 +2070,7 @@ def _run_user_text_wizard(
                 for choice in read_model.choices
             }
             session = reconcile_basket(session, availability)
-            write(f"Select artifact(s)/bundle(s) for {_profiles_label(session.profiles)}:")
+            write(f"Select artifact(s)/collection(s) for {_profiles_label(session.profiles)}:")
             width = shutil.get_terminal_size(fallback=(200, 24)).columns
             for index, choice in enumerate(read_model.choices, start=1):
                 write(_text_choice_line(index, choice, width))
@@ -2085,7 +2096,7 @@ def _run_user_text_wizard(
                     return _cancel(write)
                 continue
             if not event.selected:
-                write("Select at least one artifact or bundle before continuing.")
+                write("Select at least one artifact or collection before continuing.")
                 continue
             session = wizard_select(
                 session,
@@ -2879,6 +2890,29 @@ def _prompt_curation_request(
             modes=modes,
         )
 
+    if action is CurationAction.COLLECTION:
+        name = value("Collection name: ", "name")
+        if isinstance(name, WizardInput):
+            return name
+        summary = value("One-line collection description: ", "summary")
+        if isinstance(summary, WizardInput):
+            return summary
+        members = _prompt_wizard_csv(
+            read,
+            write,
+            "Members (comma-separated kind/name values): ",
+            current=existing.members if existing else (),
+        )
+        if isinstance(members, WizardInput):
+            return members
+        return CurationRequest(
+            action,
+            workspace,
+            name=name,
+            summary=summary,
+            members=members,
+        )
+
     if action is CurationAction.PROMOTE_NATIVE:
         kind = value("Artifact kind: ", "kind")
         if isinstance(kind, WizardInput):
@@ -3348,7 +3382,7 @@ def _profiles_label(profile_names: Sequence[str]) -> str:
 def _empty_choices_message(action: str, profile_names: Sequence[str]) -> str:
     profiles = _profiles_label(profile_names)
     if action == "install":
-        return f"No installable artifacts or bundles for profile(s): {profiles}."
+        return f"No installable artifacts or collections for profile(s): {profiles}."
     if action == "update":
         return f"No installed artifacts to update for profile(s): {profiles}."
     if action == "uninstall":
@@ -4375,7 +4409,7 @@ def _run_user_curses_wizard(
             event = _curses_multi_event(
                 curses,
                 stdscr,
-                "Select artifacts and bundles",
+                "Select artifacts and collections",
                 tuple(choice.label for choice in read_model.choices),
                 session,
                 selected=selected,

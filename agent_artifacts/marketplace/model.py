@@ -57,7 +57,13 @@ class MarketplaceSourceState:
         if (
             (self.health.status is HealthStatus.MISSING and current is not None)
             or (
-                self.health.status in {HealthStatus.HEALTHY, HealthStatus.STALE} and current is None
+                self.health.status
+                in {
+                    HealthStatus.HEALTHY,
+                    HealthStatus.STALE,
+                    HealthStatus.NOT_SYNCHRONIZED,
+                }
+                and current is None
             )
             or (current is None and self.health.age_seconds is not None)
             or (current is not None and self.health.age_seconds is None)
@@ -110,7 +116,15 @@ class MarketplaceSourceView:
             )
             or not (has_current or has_no_current)
             or (self.health is HealthStatus.MISSING and has_current)
-            or (self.health in {HealthStatus.HEALTHY, HealthStatus.STALE} and has_no_current)
+            or (
+                self.health
+                in {
+                    HealthStatus.HEALTHY,
+                    HealthStatus.STALE,
+                    HealthStatus.NOT_SYNCHRONIZED,
+                }
+                and has_no_current
+            )
             or (has_current != (self.age_seconds is not None))
             or (self.snapshot_digest is not None and not _valid_digest(self.snapshot_digest))
         ):

@@ -50,6 +50,7 @@ from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKin
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.registry_models import IndexArtifact, IndexSetup, ReviewRecord
 from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.receipt_service import load_receipt
 from agent_artifacts.setup import dump_setup_state, project_setup_review
 from agent_artifacts.setup_engine import (
     LocalSetupAdapter,
@@ -358,6 +359,25 @@ class MissingObjectAdapter(LocalSetupAdapter):
         return Ok(None)
 
 
+class FailOncePersistenceAdapter(LocalSetupAdapter):
+    def __init__(self) -> None:
+        self.persist_calls = 0
+
+    def persist_setup(self, plan, record, *, expected_record):
+        self.persist_calls += 1
+        if self.persist_calls == 1:
+            return Err(
+                (
+                    Diagnostic(
+                        DiagnosticCode("synthetic-persistence-failure"),
+                        Severity.ERROR,
+                        "disk became read-only during setup persistence",
+                    ),
+                )
+            )
+        return super().persist_setup(plan, record, expected_record=expected_record)
+
+
 class CanonicalSetupApplicationTest(unittest.TestCase):
     def test_setup_binds_the_object_root_manual_document_and_pinned_source(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -371,7 +391,9 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertEqual(projected.manual.relative_path, "SETUP.md")
             self.assertEqual(
                 projected.manual.source,
-                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+                "https://registry.example/agents/registry/blob/"
+                + "a" * 40
+                + "/artifacts/skill/review/SETUP.md",
             )
 
     def test_planning_denial_after_recipe_validation_keeps_the_verified_manual_route(
@@ -387,7 +409,9 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertEqual(attempt.manual.relative_path, "SETUP.md")
             self.assertEqual(
                 attempt.manual.source,
-                "https://registry.example/agents/registry/blob/" + "a" * 40 + "/SETUP.md",
+                "https://registry.example/agents/registry/blob/"
+                + "a" * 40
+                + "/artifacts/skill/review/SETUP.md",
             )
 
     def test_planning_failure_before_recipe_validation_claims_no_manual_route(self) -> None:
@@ -423,6 +447,10 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertIsInstance(denied, Err)
             assert isinstance(denied, Err)
             self.assertEqual(denied.diagnostics[0].code.value, "setup-policy-denied")
+            self.assertIn(
+                "--authorize-untrusted-source",
+                denied.diagnostics[0].remediation[0],
+            )
             self.assertIsInstance(planned, Ok)
             assert isinstance(planned, Ok)
             plan = planned.value
@@ -664,6 +692,112 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
                 tuple((item.kind, item.owner, item.digest) for item in references.value.references),
             )
 
+    def test_setup_moves_a_superseded_reference_and_succeeds_again_after_object_update(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw))
+            first_plan = fixture.plan(authorize_untrusted_source=True)
+            assert isinstance(first_plan, Ok), first_plan
+            first = finalize_setup(
+                first_plan.value,
+                first_plan.value.review_digest,
+                fixture.catalog,
+                fixture.effective,
+                fixture.adapter,
+                _runtime(),
+                consent=lambda _effect: True,
+            )
+            assert isinstance(first, Ok), first
+            self.assertIs(first.value.setup_status, SetupExecutionStatus.CONFIGURED)
+
+            # Re-vendor the same version with changed package bytes, exactly as AD-27 was
+            # found. Marketplace update writes a fresh installation record without carrying
+            # its setup pointer; the deterministic setup record and old CAS reference remain.
+            updated_entries = tuple(
+                replace(entry, content=b"Updated manual setup instructions.\n")
+                if str(entry.path) == "SETUP.md"
+                else entry
+                for entry in fixture.candidate.entries
+            )
+            updated_candidate = make_object_candidate(updated_entries)
+            assert isinstance(updated_candidate, Ok), updated_candidate
+            published = publish_object(ObjectPublishCommand(fixture.paths, updated_candidate.value))
+            assert isinstance(published, Ok), published
+            fixture.candidate = updated_candidate.value
+            fixture.indexed = replace(
+                fixture.indexed,
+                object_digest=updated_candidate.value.digest,
+            )
+            fixture.catalog = fixture._catalog(fixture.indexed)
+
+            state_path = install_state_paths(
+                "project",
+                project_root=str(fixture.project),
+                user_home=str(fixture.home),
+                data_root=str(fixture.data),
+            ).destination_path
+            state = parse_install_state(Path(state_path).read_bytes(), path=state_path)
+            assert isinstance(state, Ok), state
+            old_installation = state.value.installations[0]
+            updated_installation = replace(
+                old_installation,
+                artifact=replace(
+                    old_installation.artifact,
+                    object_digest=updated_candidate.value.digest,
+                ),
+                setup_state_ref=None,
+            )
+            _write_atomic(
+                Path(state_path),
+                install_state_bytes(InstallState(2, (updated_installation,))),
+            )
+
+            second_plan = fixture.plan(authorize_untrusted_source=True)
+            assert isinstance(second_plan, Ok), second_plan
+            self.assertEqual(
+                second_plan.value.setup_reference_precondition,
+                (first_plan.value.object_digest,),
+            )
+            second = finalize_setup(
+                second_plan.value,
+                second_plan.value.review_digest,
+                fixture.catalog,
+                fixture.effective,
+                fixture.adapter,
+                _runtime(),
+                consent=lambda _effect: True,
+            )
+            assert isinstance(second, Ok), second
+            self.assertTrue(second.value.successful)
+            self.assertTrue(second.value.state_written)
+
+            # Do it once more: the repaired transition must leave a stable reference, not
+            # merely admit one exceptional retry.
+            third_plan = fixture.plan(authorize_untrusted_source=True)
+            assert isinstance(third_plan, Ok), third_plan
+            third = finalize_setup(
+                third_plan.value,
+                third_plan.value.review_digest,
+                fixture.catalog,
+                fixture.effective,
+                fixture.adapter,
+                _runtime(),
+                consent=lambda _effect: True,
+            )
+            assert isinstance(third, Ok), third
+            self.assertTrue(third.value.successful)
+            references = read_references(ReferenceReadRequest(fixture.paths))
+            assert isinstance(references, Ok), references
+            self.assertIn(
+                (
+                    ReferenceKind.SETUP,
+                    second_plan.value.setup_reference_owner,
+                    updated_candidate.value.digest,
+                ),
+                tuple((item.kind, item.owner, item.digest) for item in references.value.references),
+            )
+
     def test_finalize_rejects_wrong_review_and_compensates_reference_persistence_failure(
         self,
     ) -> None:
@@ -713,6 +847,48 @@ class CanonicalSetupApplicationTest(unittest.TestCase):
             self.assertFalse(outcome.value.state_written)
             self.assertFalse((fixture.project / ".setup-config").exists())
             self.assertFalse(Path(planned.value.setup_state_path).exists())
+
+    def test_persistence_failure_keeps_the_specific_cause_and_a_compensated_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = Fixture(Path(raw))
+            fixture.adapter = FailOncePersistenceAdapter()
+            planned = fixture.plan(authorize_untrusted_source=True)
+            assert isinstance(planned, Ok), planned
+
+            outcome = finalize_setup(
+                planned.value,
+                planned.value.review_digest,
+                fixture.catalog,
+                fixture.effective,
+                fixture.adapter,
+                _runtime(),
+                consent=lambda _effect: True,
+            )
+
+            assert isinstance(outcome, Ok), outcome
+            self.assertIs(outcome.value.setup_status, SetupExecutionStatus.FAILED)
+            self.assertIn("disk became read-only", outcome.value.detail)
+            self.assertTrue(outcome.value.state_written)
+            self.assertFalse((fixture.project / ".setup-config").exists())
+            self.assertEqual(fixture.adapter.persist_calls, 2)
+
+            loaded = load_receipt(
+                data_root=str(fixture.data),
+                project_root=str(fixture.project),
+                user_home=str(fixture.home),
+                scope="project",
+                selector="registry/skill/review",
+                profiles=("claude",),
+            )
+            assert isinstance(loaded, Ok), loaded
+            self.assertEqual(loaded.value.record.status, "apply_failed_rolled_back")
+            self.assertIn("disk became read-only", loaded.value.record.detail)
+            self.assertEqual(
+                loaded.value.record.receipt[0]["setup_disposition"],
+                "compensated",
+            )
 
     def test_custom_entrypoint_executes_only_from_private_digest_verified_copy(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

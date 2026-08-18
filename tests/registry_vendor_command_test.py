@@ -203,6 +203,52 @@ class VendorCommandTest(unittest.TestCase):
             self.assertEqual(provenance["origin"]["path"], "servers/atlassian")
             self.assertEqual(provenance["importer"]["id"], "registry-vendor-v1")
 
+    def test_a_single_markdown_file_can_be_vendored_as_memory_with_provenance(self) -> None:
+        upstream = SourceSnapshot(
+            SnapshotOrigin.IMMUTABLE_GIT,
+            (
+                SnapshotEntry(
+                    _path("CLAUDE.md"),
+                    SnapshotEntryKind.FILE,
+                    b"# Shared house rules\n",
+                ),
+            ),
+        )
+        with self._registry(upstream, wrapper=False) as root:
+            code, output = _run(
+                "registry",
+                "vendor",
+                "--source",
+                str(root),
+                "memory",
+                "shared-house-rules",
+                "--url",
+                _URL,
+                "--ref",
+                "v1.4.0",
+                "--path",
+                "CLAUDE.md",
+                "--artifact-version",
+                "1.0.0",
+                "--summary",
+                "Shared upstream house rules.",
+                "--profile",
+                "tabnine",
+                "--platform",
+                "darwin",
+                "--yes",
+                "--json",
+            )
+
+            self.assertEqual(code, 0, output)
+            package = root / "artifacts" / "memory" / "shared-house-rules"
+            self.assertEqual(
+                (package / "payload" / "CLAUDE.md").read_text(),
+                "# Shared house rules\n",
+            )
+            provenance = json.loads((package / "provenance.json").read_text())
+            self.assertEqual(provenance["origin"]["path"], "CLAUDE.md")
+
     def test_the_maintainers_authored_wrapper_is_adopted_rather_than_overwritten(self) -> None:
         with self._registry() as root:
             code, output = _run(*_vendor_command(root, "--yes", "--json"))

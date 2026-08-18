@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, sort_diagnostics
-from agent_artifacts.domain.identifiers import ObjectDigest
+from agent_artifacts.domain.identifiers import ArtifactIdentity, ObjectDigest
 from agent_artifacts.protocol.hashing import json_digest, sha256_bytes
 from agent_artifacts.protocol.json import JsonArray, JsonObject
 from agent_artifacts.protocol.paths import SafeRelativePath
@@ -21,6 +21,7 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _KINDS = frozenset({"skill", "guideline", "mcp", "hook", "memory"})
 _SCOPES = frozenset({"project", "user"})
 _MODES = frozenset({"copy", "symlink"})
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _valid_digest(value: object) -> bool:
@@ -43,6 +44,7 @@ def _one_safe_line(value: object) -> bool:
 class RegistryOperation(str, Enum):
     INIT = "init"
     SCAFFOLD = "scaffold"
+    COLLECTION = "collection"
     FORMAT = "format"
     LOCK = "lock"
     BUILD = "build"
@@ -52,6 +54,8 @@ class RegistryOperation(str, Enum):
     # workspace operation like `scaffold`, not a mutation like `promote-native`, even though the two
     # commands read as siblings.
     VENDOR = "vendor"
+    VENDOR_BATCH = "vendor-batch"
+    PUBLISH = "publish"
     REVENDOR = "revendor"
 
 
@@ -71,6 +75,7 @@ class RegistryInitOptions:
     display_name: str
     minimum_aart: SemVer
     maximum_aart_exclusive: SemVer
+    usage_reporting_repository: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -79,6 +84,10 @@ class RegistryInitOptions:
             or not isinstance(self.minimum_aart, SemVer)
             or not isinstance(self.maximum_aart_exclusive, SemVer)
             or not self.minimum_aart < self.maximum_aart_exclusive
+            or (
+                self.usage_reporting_repository is not None
+                and _REPOSITORY_RE.fullmatch(self.usage_reporting_repository) is None
+            )
         ):
             raise ValueError("registry init options are invalid")
 
@@ -113,6 +122,23 @@ class ArtifactScaffoldOptions:
         object.__setattr__(self, "platforms", tuple(sorted(set(self.platforms))))
         object.__setattr__(self, "scopes", tuple(sorted(set(self.scopes))))
         object.__setattr__(self, "modes", tuple(sorted(set(self.modes))))
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionAuthorOptions:
+    name: str
+    summary: str
+    members: tuple[ArtifactIdentity, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            _SLUG_RE.fullmatch(self.name) is None
+            or not _one_safe_line(self.summary)
+            or not self.members
+            or any(not isinstance(member, ArtifactIdentity) for member in self.members)
+        ):
+            raise ValueError("collection author options are invalid")
+        object.__setattr__(self, "members", tuple(sorted(set(self.members), key=str)))
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -162,6 +188,7 @@ def _managed_path(path: SafeRelativePath) -> bool:
         "aart-source.json",
         "aart.lock.json",
         "aart.index.json",
+        ".gitignore",
         ".github/workflows/aart-registry.yml",
         ".github/ISSUE_TEMPLATE/usage-report.yml",
         ".github/workflows/aart-usage-dashboard.yml",

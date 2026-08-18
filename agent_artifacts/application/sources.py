@@ -17,6 +17,7 @@ from agent_artifacts.sources.model import (
     CurrentSource,
     CurrentSourceRequest,
     GitSnapshotRequest,
+    HealthStatus,
     LocalSnapshotRequest,
     SnapshotLimits,
     SourceCandidate,
@@ -203,6 +204,34 @@ class SourceStatusRequest:
             or self.max_age_seconds < 0
         ):
             raise ValueError("source status clock and maximum age must be non-negative integers")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceFreshnessRequest:
+    """One read-only comparison between a published snapshot and its configured origin."""
+
+    source: ConfiguredSource
+    data_root: str
+    executable_version: SemVer
+    available_capabilities: tuple[Capability, ...]
+    observed_at_epoch_seconds: int
+    timeout_seconds: int
+    limits: SnapshotLimits = field(default_factory=SnapshotLimits)
+    lock_timeout_seconds: float = 30.0
+    lock_stale_after_seconds: int = 300
+
+    def __post_init__(self) -> None:
+        if (
+            not posixpath.isabs(self.data_root)
+            or posixpath.normpath(self.data_root) != self.data_root
+            or not isinstance(self.observed_at_epoch_seconds, int)
+            or isinstance(self.observed_at_epoch_seconds, bool)
+            or self.observed_at_epoch_seconds < 0
+            or not isinstance(self.timeout_seconds, int)
+            or isinstance(self.timeout_seconds, bool)
+            or self.timeout_seconds <= 0
+        ):
+            raise ValueError("source freshness request is invalid")
 
 
 def _failure(code: str, message: str, *remediation: str) -> Err:
@@ -511,6 +540,112 @@ def adopt_source_identity(
             return Err((*outcome.diagnostics, *released.diagnostics))
         return released
     return outcome
+
+
+def _freshness_age(current: CurrentSource, observed_at_epoch_seconds: int) -> int:
+    return max(0, observed_at_epoch_seconds - current.published_at_epoch_seconds)
+
+
+def _check_freshness_locked(
+    request: SourceFreshnessRequest,
+    ports: SourceSyncPorts,
+) -> SourceHealth:
+    """Compare exact validated origin evidence without publishing it."""
+
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    loaded = ports.read_current(CurrentSourceRequest(paths, request.source.alias))
+    if isinstance(loaded, Err):
+        return SourceHealth(HealthStatus.DEGRADED, None, None, loaded.diagnostics)
+    current = loaded.value
+    if current is None:
+        return SourceHealth(HealthStatus.MISSING, None, None)
+    age = _freshness_age(current, request.observed_at_epoch_seconds)
+    acquired = _candidate(request, paths, ports)
+    if isinstance(acquired, Err):
+        return SourceHealth(
+            HealthStatus.CHECK_UNAVAILABLE,
+            age,
+            current,
+            acquired.diagnostics,
+        )
+    validated = ports.validate(
+        SourceValidationRequest(
+            acquired.value,
+            request.executable_version,
+            request.available_capabilities,
+        )
+    )
+    if isinstance(validated, Err):
+        return SourceHealth(HealthStatus.DEGRADED, age, current, validated.diagnostics)
+    if validated.value.candidate != acquired.value:
+        return SourceHealth(
+            HealthStatus.DEGRADED,
+            age,
+            current,
+            _failure(
+                "source-invalid",
+                "source validator returned a candidate different from its request",
+            ).diagnostics,
+        )
+    observed = validated.value
+    synchronized = (
+        current.declared_source_id == observed.declared_source_id
+        and current.candidate.resolved_revision == observed.candidate.resolved_revision
+        and current.candidate.snapshot_digest == observed.candidate.snapshot_digest
+    )
+    return SourceHealth(
+        HealthStatus.HEALTHY if synchronized else HealthStatus.NOT_SYNCHRONIZED,
+        age,
+        current,
+    )
+
+
+def check_source_freshness(
+    request: SourceFreshnessRequest,
+    ports: SourceSyncPorts,
+) -> SourceHealth:
+    """Inspect origin freshness under the source lease, without moving the current pointer."""
+
+    if not request.source.enabled:
+        paths = source_store_paths(request.data_root, source_instance_id(request.source))
+        return source_status(
+            SourceStatusRequest(
+                CurrentSourceRequest(paths, request.source.alias),
+                request.observed_at_epoch_seconds,
+                0,
+            ),
+            ports.read_current,
+        )
+    paths = source_store_paths(request.data_root, source_instance_id(request.source))
+    lease = ports.acquire_lock(
+        SourceLockRequest(
+            paths.lock_directory,
+            request.lock_timeout_seconds,
+            request.lock_stale_after_seconds,
+        )
+    )
+    if isinstance(lease, Err):
+        loaded = ports.read_current(CurrentSourceRequest(paths, request.source.alias))
+        current = None if isinstance(loaded, Err) else loaded.value
+        age = (
+            None if current is None else _freshness_age(current, request.observed_at_epoch_seconds)
+        )
+        diagnostics = (
+            lease.diagnostics
+            if isinstance(loaded, Ok)
+            else (*loaded.diagnostics, *lease.diagnostics)
+        )
+        return SourceHealth(HealthStatus.CHECK_UNAVAILABLE, age, current, diagnostics)
+    health = _check_freshness_locked(request, ports)
+    released = ports.release_lock(lease.value)
+    if isinstance(released, Err):
+        return SourceHealth(
+            HealthStatus.CHECK_UNAVAILABLE,
+            health.age_seconds,
+            health.current,
+            (*health.diagnostics, *released.diagnostics),
+        )
+    return health
 
 
 def source_status(

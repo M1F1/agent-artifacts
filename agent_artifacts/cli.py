@@ -572,7 +572,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="initialize, compile, and audit an AART registry",
         description=(
             "Maintain a writable AART registry checkout. Read/check commands never mutate it; "
-            "mutation commands only write reviewed managed files and never commit or push. "
+            "mutation commands write only reviewed managed files. The explicit publish action "
+            "also commits every listed Git change and never pushes. "
             "An artifact's requires resolves inside this one registry, against artifacts this "
             "registry owns: depend on foreign content by publishing it here, never by naming "
             "another registry's artifact."
@@ -604,6 +605,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.add_argument(
         "--display-name", required=True, metavar="TEXT", help="human-readable registry name"
+    )
+    p_init.add_argument(
+        "--usage-reporting-repository",
+        metavar="OWNER/REPOSITORY",
+        help=(
+            "advertise this registry's GitHub Issues repository for optional prompt-only usage "
+            "reports"
+        ),
     )
     p_init.add_argument(
         # A registry initialised today cannot honestly claim an older AART can read it: the
@@ -674,6 +683,107 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_registry_finalize(p_scaffold)
     _add_json(p_scaffold)
+
+    p_collection = registry_sub.add_parser(
+        "collection",
+        help="author a collection from artifacts this registry already holds",
+    )
+    _add_registry_source(p_collection)
+    p_collection.add_argument("names", nargs=1, metavar="NAME")
+    p_collection.add_argument(
+        "--summary",
+        required=True,
+        metavar="TEXT",
+        help="one-line collection description",
+    )
+    p_collection.add_argument(
+        "--include",
+        action="append",
+        required=True,
+        dest="collection_members",
+        metavar="KIND/NAME",
+        help="artifact already held by this registry (repeatable)",
+    )
+    _add_registry_finalize(p_collection)
+    _add_json(p_collection)
+
+    p_discover = registry_sub.add_parser(
+        "discover",
+        help="scan a foreign checkout and emit a reviewable vendoring manifest",
+        description=(
+            "Recognize conservative conventional shapes in an inert local checkout. The output "
+            "is a vendor-batch manifest: candidates are rejected by default so discovery never "
+            "turns a guess into registry content. Edit each accept field, then review the one "
+            "atomic `registry vendor-batch` plan."
+        ),
+    )
+    p_discover.add_argument(
+        "--checkout",
+        required=True,
+        dest="discovery_checkout",
+        metavar="DIR",
+        help="foreign repository checkout to scan without following symlinks",
+    )
+    p_discover.add_argument(
+        "--url", dest="native_url", required=True, metavar="URL", help="credential-free Git URL"
+    )
+    p_discover.add_argument(
+        "--ref", default="main", metavar="REF", help="Git ref the later vendoring resolves"
+    )
+    p_discover.add_argument(
+        "--artifact-version",
+        default="1.0.0",
+        metavar="VERSION",
+        help="version proposed for every candidate (default: 1.0.0)",
+    )
+    p_discover.add_argument(
+        "--profile",
+        action="append",
+        required=True,
+        metavar="P[,P...]",
+        help="target harness profile(s); comma-separated or repeated",
+    )
+    p_discover.add_argument(
+        "--platform",
+        action="append",
+        required=True,
+        metavar="PLATFORM",
+        help="supported platform (repeatable)",
+    )
+    p_discover.add_argument(
+        "--install-scope",
+        action="append",
+        choices=_INSTALL_SCOPES,
+        dest="registry_scopes",
+        default=[],
+        help="supported install scope (repeatable; default: project)",
+    )
+    p_discover.add_argument(
+        "--install-mode",
+        action="append",
+        choices=("copy", "symlink"),
+        dest="registry_modes",
+        default=[],
+        help="supported install mode (repeatable; default: copy)",
+    )
+    p_discover.add_argument(
+        "--review-policy",
+        default="manual-review-v1",
+        metavar="POLICY",
+        help="approved review policy identifier (default: manual-review-v1)",
+    )
+    p_discover.add_argument(
+        "--accept-all",
+        action="store_true",
+        dest="discovery_accept_all",
+        help="mark every candidate accepted in the manifest; the batch still requires review",
+    )
+    p_discover.add_argument(
+        "--output",
+        dest="discovery_output",
+        metavar="FILE",
+        help="write the manifest to a new file instead of standard output",
+    )
 
     p_format = registry_sub.add_parser("format", help="canonicalize registry JSON files")
     _add_registry_source(p_format)
@@ -810,6 +920,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_registry_finalize(p_vendor)
     _add_json(p_vendor)
 
+    p_vendor_batch = registry_sub.add_parser(
+        "vendor-batch",
+        help="vendor accepted manifest candidates in one acquisition and one atomic review",
+    )
+    _add_registry_source(p_vendor_batch)
+    p_vendor_batch.add_argument(
+        "--manifest",
+        required=True,
+        dest="vendor_manifest",
+        metavar="FILE",
+        help="reviewed discovery/vendor manifest whose accepted artifacts to vendor",
+    )
+    _add_registry_finalize(p_vendor_batch)
+    _add_json(p_vendor_batch)
+
     p_revendor = registry_sub.add_parser(
         "revendor",
         help="re-resolve one vendored copy's upstream and report, or apply what moved",
@@ -888,6 +1013,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_json(p_audit)
+
+    p_publish = registry_sub.add_parser(
+        "publish",
+        help="lock, build, validate, audit, and commit every listed registry change",
+        description=(
+            "Prepare lock and index in memory, run validate and audit over that exact snapshot, "
+            "and list every path Git would commit. Without --yes this is review-only. With --yes "
+            "it writes the reviewed generated files and creates one commit; it never pushes."
+        ),
+    )
+    _add_registry_source(p_publish)
+    p_publish.add_argument(
+        "-m", "--message", dest="publish_message", metavar="TEXT", help="commit subject"
+    )
+    _add_registry_finalize(p_publish)
+    _add_json(p_publish)
 
     p_test = registry_sub.add_parser("test", help="run a compatibility validation fixture")
     _add_registry_source(p_test)
@@ -1089,7 +1230,14 @@ def _to_request(args: argparse.Namespace) -> Request:
         frozen=bool(getattr(args, "frozen", False)),
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
+        usage_reporting_repository=getattr(args, "usage_reporting_repository", None),
         summary=getattr(args, "summary", None),
+        collection_members=tuple(getattr(args, "collection_members", ()) or ()),
+        discovery_checkout=getattr(args, "discovery_checkout", None),
+        discovery_output=getattr(args, "discovery_output", None),
+        discovery_accept_all=bool(getattr(args, "discovery_accept_all", False)),
+        vendor_manifest=getattr(args, "vendor_manifest", None),
+        publish_message=getattr(args, "publish_message", None),
         artifact_version=getattr(args, "artifact_version", None),
         artifact_license=getattr(args, "artifact_license", None),
         minimum_version=getattr(args, "minimum_version", None),

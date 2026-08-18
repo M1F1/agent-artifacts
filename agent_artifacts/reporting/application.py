@@ -44,18 +44,41 @@ class RegistryReportingRoute:
 
 
 @dataclass(frozen=True, slots=True)
+class RegistryReportingNotice:
+    """A local reason one registry cannot receive a report for this session."""
+
+    source_alias: SourceAlias
+    reason: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.source_alias.value
+            or not self.reason
+            or self.reason != self.reason.strip()
+            or "\n" in self.reason
+            or "\r" in self.reason
+        ):
+            raise ValueError("registry reporting notice is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ReportingApplicationService:
     destination: ReportingDestination | None
     browser: ReportingProvider
     authenticated: ReportingProvider
     routes: tuple[RegistryReportingRoute, ...] = ()
+    notices: tuple[RegistryReportingNotice, ...] = ()
 
     def __post_init__(self) -> None:
         aliases = tuple(route.source_alias for route in self.routes)
+        notice_aliases = tuple(notice.source_alias for notice in self.notices)
         if (
             any(not isinstance(route, RegistryReportingRoute) for route in self.routes)
             or len(set(aliases)) != len(aliases)
-            or (self.destination is not None and self.routes)
+            or any(not isinstance(notice, RegistryReportingNotice) for notice in self.notices)
+            or len(set(notice_aliases)) != len(notice_aliases)
+            or set(aliases) & set(notice_aliases)
+            or (self.destination is not None and (self.routes or self.notices))
         ):
             raise ValueError("reporting service routes are invalid")
 
@@ -152,3 +175,11 @@ class ReportingApplicationService:
             )
         except Exception:
             return _error("reporting provider failed")
+
+
+__all__ = [
+    "RegistryReportingNotice",
+    "RegistryReportingRoute",
+    "ReportingApplicationService",
+    "ReportingProvider",
+]

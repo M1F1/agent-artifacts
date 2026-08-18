@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -36,6 +37,8 @@ class ProcessResult:
 ProcessRunner = Callable[..., ProcessResult]
 Consent = Callable[[SetupEffect], bool]
 ToolLookup = Callable[[str], bool]
+PromptWriter = Callable[[str], None]
+TextInputReader = Callable[[str], str]
 
 
 class RollbackIncompleteError(RuntimeError):
@@ -131,6 +134,22 @@ def _actual_tool_exists(tool: str) -> bool:
     return shutil.which(tool) is not None
 
 
+def _write_prompt(message: str) -> None:
+    # Keep structured command output on stdout while placing context immediately above the
+    # human-gated tool's own terminal prompt.
+    print(message, file=sys.stderr, flush=True)
+
+
+def _read_text_input(prompt: str) -> str:
+    # stdin remains attached to the terminal, so the terminal echoes this deliberately
+    # non-secret value. The prompt goes to stderr to preserve one-document JSON on stdout.
+    print(f"Setup input: {prompt}: ", file=sys.stderr, end="", flush=True)
+    value = sys.stdin.readline()
+    if value == "":
+        raise EOFError("text input stream ended")
+    return value.rstrip("\n")
+
+
 @dataclass(frozen=True, slots=True)
 class SetupRuntime:
     process: ProcessRunner = run_process
@@ -139,6 +158,8 @@ class SetupRuntime:
     tool_exists: ToolLookup = lambda _tool: True
     clock: Callable[[], str] = _now
     enforce_source_hash: bool = False
+    write_prompt: PromptWriter = _write_prompt
+    read_text_input: TextInputReader = _read_text_input
 
     def __post_init__(self) -> None:
         if self.environ is None:
@@ -202,6 +223,71 @@ def _read_regular_text(path: str) -> tuple[str, bool, Optional[int]]:
     return fs.read_text(path), True, mode
 
 
+_MANAGED_FILE_MODULES = frozenset(
+    {
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+        "json.managed-merge@1",
+    }
+)
+
+
+def _managed_file_preflight(plan: SetupPlan) -> str:
+    """Stat every reviewed managed-file target before the first effect."""
+
+    for effect in plan.effects:
+        if effect.module not in _MANAGED_FILE_MODULES:
+            continue
+        try:
+            if os.path.islink(effect.target):
+                return f"refusing to edit symlink: {effect.target}"
+            if os.path.lexists(effect.target) and not stat.S_ISREG(os.lstat(effect.target).st_mode):
+                return f"managed target is not a regular file: {effect.target}"
+        except OSError as error:
+            return f"managed target cannot be inspected: {effect.target}: {error}"
+    return ""
+
+
+def _text_input_values(plan: SetupPlan, runtime: SetupRuntime) -> tuple[dict[str, str], str]:
+    required: set[str] = set()
+    for effect in plan.effects:
+        variables = effect.config.get("variables")
+        if effect.module == "shell.env-from-input@1" and isinstance(variables, Mapping):
+            required.update(str(input_id) for input_id in variables.values())
+    values: dict[str, str] = {}
+    for declared in plan.item.installer.inputs:
+        if declared.type != "text" or declared.id not in required:
+            continue
+        try:
+            value = runtime.read_text_input(declared.prompt).strip()
+        except (EOFError, KeyboardInterrupt):
+            return {}, f"text input {declared.id!r} was not provided"
+        if not value or "\r" in value or "\n" in value:
+            return {}, f"text input {declared.id!r} must be a non-empty single-line value"
+        values[declared.id] = value
+    missing = tuple(sorted(required - set(values)))
+    if missing:
+        return {}, "text input declaration is unavailable: " + ", ".join(missing)
+    return values, ""
+
+
+def _materialize_text_input_effect(effect: SetupEffect, values: Mapping[str, str]) -> SetupEffect:
+    if effect.module != "shell.env-from-input@1":
+        return effect
+    variables = effect.config.get("variables")
+    assert isinstance(variables, Mapping)
+    content = "\n".join(
+        f"export {name}={shlex.quote(values[str(input_id)])}"
+        for name, input_id in variables.items()
+    )
+    config = dict(effect.config)
+    config["content"] = content
+    frozen = _freeze(config)
+    assert isinstance(frozen, Mapping)
+    return replace(effect, config=frozen)
+
+
 def _keychain_receipt(
     module: str,
     service: str,
@@ -243,6 +329,7 @@ def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
         return _keychain_receipt(
             effect.module, service, account, created=False, replaced=False
         ), False
+    runtime.write_prompt(f"Setup input: {effect.summary}")
     result = runtime.process(effect.argv, env=env, cwd=None, timeout=120, capture=False)
     if result.returncode != 0:
         if replace_existing:
@@ -1033,7 +1120,11 @@ def _apply_effect(
 ) -> tuple[dict, bool]:
     if effect.module == "macos-keychain.store@1":
         return _keychain_apply(effect, runtime)
-    if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
+    if effect.module in (
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+    ):
         return _managed_block_apply(effect)
     if effect.module == "json.managed-merge@1":
         return _json_apply(effect)
@@ -1055,6 +1146,10 @@ def _apply_effect(
 
 
 def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> bool:
+    # Failure receipts retain already-compensated steps as audit evidence for `receipt show`.
+    # Replaying one would undo someone else's later change, so it is already terminal here.
+    if receipt.get("setup_disposition") == "compensated":
+        return True
     module = receipt.get("module")
     if module == "macos-keychain.store@1" and receipt.get("replaced") is True:
         return False
@@ -1074,7 +1169,11 @@ def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> b
             capture=True,
         )
         return result.returncode == 0
-    if module in ("shell.env-from-keychain@1", "file.managed-block@1") and receipt.get("changed"):
+    if module in (
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+    ) and receipt.get("changed"):
         path = str(receipt["path"])
         try:
             current, _existed, _mode = _read_regular_text(path)
@@ -1301,10 +1400,38 @@ def apply_setup_plan(
             started=started,
             finished=runtime.clock(),
         )
+    preflight_failure = _managed_file_preflight(plan)
+    if preflight_failure:
+        return _record(
+            plan,
+            "prerequisite_missing",
+            preflight_failure,
+            started=started,
+            finished=runtime.clock(),
+            exit_status=1,
+        )
+    text_inputs, input_failure = _text_input_values(plan, runtime)
+    if input_failure:
+        return _record(
+            plan,
+            "cancelled",
+            input_failure,
+            started=started,
+            finished=runtime.clock(),
+            exit_status=1,
+        )
     receipts: list[Mapping[str, object]] = []
     workspace = _RunWorkspace()
     try:
-        return _apply_effects(plan, runtime, consent, receipts, workspace, started)
+        return _apply_effects(
+            plan,
+            runtime,
+            consent,
+            receipts,
+            workspace,
+            started,
+            text_inputs,
+        )
     finally:
         # The working copy belongs to the run, not to the recipe: it goes whether the run
         # configured, declined, or failed, and it leaves the package it was copied from alone.
@@ -1318,6 +1445,7 @@ def _apply_effects(
     receipts: list[Mapping[str, object]],
     workspace: _RunWorkspace,
     started: str,
+    text_inputs: Mapping[str, str],
 ) -> SetupStateRecord:
     changed = False
     for effect in plan.effects:
@@ -1337,7 +1465,8 @@ def _apply_effects(
                 receipts=() if rolled_back else receipts,
             )
         try:
-            receipt, effect_changed = _apply_effect(effect, runtime, plan, workspace)
+            run_effect = _materialize_text_input_effect(effect, text_inputs)
+            receipt, effect_changed = _apply_effect(run_effect, runtime, plan, workspace)
             receipt = {"step_id": effect.step_id, **receipt}
             receipts.append(receipt)
             changed = changed or effect_changed

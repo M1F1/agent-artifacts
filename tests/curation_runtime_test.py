@@ -244,6 +244,10 @@ class CurationRuntimeTest(unittest.TestCase):
             )
             assert isinstance(initialized, Ok), initialized
             self.assertIn(
+                "--usage-reporting-repository OWNER/REPOSITORY",
+                " ".join(initialized.value.review.warnings),
+            )
+            self.assertIn(
                 f"aart registry validate --source {root}",
                 initialized.value.review.follow_up_commands,
             )

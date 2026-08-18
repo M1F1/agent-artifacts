@@ -45,6 +45,8 @@ class SourceDisplayHealth(str, Enum):
 
     CURRENT = "current"
     STALE = "stale"
+    NOT_SYNCHRONIZED = "not-synchronized"
+    COULD_NOT_CHECK = "could-not-check"
     OFFLINE = "offline"
     INVALID = "invalid"
     INCOMPATIBLE = "incompatible"
@@ -352,6 +354,10 @@ def _display_health(
         return SourceDisplayHealth.MISSING
     if health.status is HealthStatus.HEALTHY:
         return SourceDisplayHealth.CURRENT
+    if health.status is HealthStatus.NOT_SYNCHRONIZED:
+        return SourceDisplayHealth.NOT_SYNCHRONIZED
+    if health.status is HealthStatus.CHECK_UNAVAILABLE:
+        return SourceDisplayHealth.COULD_NOT_CHECK
     if health.status is HealthStatus.STALE:
         return SourceDisplayHealth.STALE
     codes = {diagnostic.code.value for diagnostic in health.diagnostics}

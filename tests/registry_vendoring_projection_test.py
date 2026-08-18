@@ -317,7 +317,12 @@ class VendorProjectionRefusesTest(unittest.TestCase):
 
         message = _message(refused)
         self.assertIn("payload/mcp.json", message)
-        self.assertIn("the maintainer supplies it", message)
+        self.assertIn("artifacts/mcp/atlassian/payload/mcp.json", message)
+        assert isinstance(refused, Err)
+        self.assertIn(
+            "author artifacts/mcp/atlassian/payload/mcp.json",
+            refused.diagnostics[0].remediation[0],
+        )
 
     def test_an_authored_file_may_not_overwrite_a_taken_byte(self) -> None:
         """Otherwise the maintainer reviews upstream content their registry does not ship."""
@@ -330,6 +335,12 @@ class VendorProjectionRefusesTest(unittest.TestCase):
         )
 
         self.assertIn("collides with the taken subtree", _message(refused))
+        assert isinstance(refused, Err)
+        self.assertIn("upstream already provides", refused.diagnostics[0].message)
+        self.assertIn(
+            "remove the authored copy at artifacts/mcp/atlassian/payload/index.js",
+            refused.diagnostics[0].remediation[0],
+        )
 
     def test_the_two_derived_documents_are_not_authored(self) -> None:
         for reserved in ("artifact.json", "provenance.json"):

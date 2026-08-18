@@ -31,7 +31,7 @@ REGISTRY_WORKSPACE_INVALID = DiagnosticCode("registry-workspace-invalid")
 REGISTRY_WORKSPACE_STALE = DiagnosticCode("registry-workspace-stale")
 REGISTRY_WORKSPACE_APPLY_FAILED = DiagnosticCode("registry-workspace-apply-failed")
 _ROOT_FILES = frozenset(
-    {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json"}
+    {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json", ".gitignore"}
 )
 # `security/` holds committed assessment evidence.  The reader has to see it for two reasons: a
 # plan that writes an attestation is verified against a re-read snapshot, and `registry audit` reads
@@ -52,8 +52,8 @@ _MAX_FILE_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_BYTES = 256 * 1024 * 1024
 
 
-def _error(code: DiagnosticCode, message: str) -> Err:
-    return Err((Diagnostic(code, Severity.ERROR, message),))
+def _error(code: DiagnosticCode, message: str, remediation: tuple[str, ...] = ()) -> Err:
+    return Err((Diagnostic(code, Severity.ERROR, message, remediation=remediation),))
 
 
 def _real_directory(path: Path) -> bool:
@@ -235,9 +235,38 @@ class FilesystemRegistryWorkspace:
         """Prove that reviewed writes would target an explicit writable local Git checkout."""
 
         if not self._writable_checkout():
+            nested = run_git_process(
+                GitProcessRequest(
+                    (
+                        "git",
+                        "-c",
+                        "core.hooksPath=/dev/null",
+                        "-C",
+                        str(self.root),
+                        "rev-parse",
+                        "--show-toplevel",
+                    ),
+                    str(self.root),
+                    10,
+                    max_output_bytes=4096,
+                )
+            )
+            top = os.fsdecode(nested.value.stdout).strip() if isinstance(nested, Ok) else ""
+            if top and os.path.abspath(top) != str(self.root):
+                remediation = (
+                    f"the registry must be the repository root, not {self.root} inside {top}; "
+                    "move it to its own checkout or use the repository root as --source",
+                )
+            elif not os.path.lexists(self.root / ".git"):
+                remediation = (f"initialize this registry checkout with: git -C {self.root} init",)
+            else:
+                remediation = (
+                    f"make {self.root} writable and repair its Git checkout, then run git status",
+                )
             return _error(
                 REGISTRY_WORKSPACE_INVALID,
                 "registry mutation requires a writable local Git checkout",
+                remediation,
             )
         return Ok(None)
 

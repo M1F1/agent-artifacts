@@ -8,6 +8,9 @@ mode that stops reaching the planner fails here rather than in a unit-level mock
 
 from __future__ import annotations
 
+import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +26,76 @@ def _instruction_file(environment) -> Path:
 
 
 class MemoryModeE2ETest(unittest.TestCase):
+    def test_two_named_memories_share_one_tabnine_file_and_uninstall_independently(self) -> None:
+        fixture = Path(__file__).parent / "fixtures/protocol/native-source-v1"
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "source"
+            shutil.copytree(fixture, source)
+            house = source / "artifacts/memory/house"
+            rules = source / "artifacts/memory/rules"
+            shutil.copytree(house, rules)
+            manifest_path = rules / "artifact.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["name"] = "rules"
+            manifest["summary"] = "Shared testing rules."
+            manifest_path.write_text(json.dumps(manifest))
+            (rules / "payload/HOUSE.md").write_text("# Testing rules\n\nRun tests twice.\n")
+            (rules / "provenance.json").unlink()
+
+            with _environment(source) as environment:
+                first, first_payload = environment.run(
+                    "marketplace",
+                    "install",
+                    "reference/memory/house@1.0.0",
+                    "--profile",
+                    "tabnine",
+                    "--yes",
+                )
+                second, second_payload = environment.run(
+                    "marketplace",
+                    "install",
+                    "reference/memory/rules@1.0.0",
+                    "--profile",
+                    "tabnine",
+                    "--yes",
+                )
+
+                self.assertEqual(first, 0, first_payload)
+                self.assertEqual(second, 0, second_payload)
+                destination = environment.project / "TABNINE.md"
+                rendered = destination.read_text()
+                self.assertIn("memory:house", rendered)
+                self.assertIn("memory:rules", rendered)
+                status, status_payload = environment.run(
+                    "marketplace", "status", "--profile", "tabnine"
+                )
+                self.assertEqual(status, 0, status_payload)
+                self.assertEqual({item["status"] for item in status_payload["items"]}, {"current"})
+
+                removed, removed_payload = environment.run(
+                    "marketplace",
+                    "uninstall",
+                    "reference/memory/house",
+                    "--profile",
+                    "tabnine",
+                    "--yes",
+                )
+                self.assertEqual(removed, 0, removed_payload)
+                rendered = destination.read_text()
+                self.assertNotIn("memory:house", rendered)
+                self.assertIn("memory:rules", rendered)
+
+                last, last_payload = environment.run(
+                    "marketplace",
+                    "uninstall",
+                    "reference/memory/rules",
+                    "--profile",
+                    "tabnine",
+                    "--yes",
+                )
+                self.assertEqual(last, 0, last_payload)
+                self.assertFalse(destination.exists())
+
     def test_default_prepend_writes_the_managed_block_into_a_fresh_file(self) -> None:
         with _environment() as environment:
             destination = _instruction_file(environment)

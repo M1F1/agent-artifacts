@@ -331,7 +331,17 @@ class InstallState:
         if len({item.key for item in ordered}) != len(ordered):
             raise ValueError("installation identities must be unique")
         effect_owners = tuple(
-            (item.scope, *effect.locator) for item in ordered for effect in item.effects
+            (
+                item.scope,
+                *effect.locator,
+                (
+                    str(item.artifact.identity)
+                    if item.artifact.identity.kind == "memory" and effect.kind == "managed-block"
+                    else ""
+                ),
+            )
+            for item in ordered
+            for effect in item.effects
         )
         if len(set(effect_owners)) != len(effect_owners):
             raise ValueError("installation effect ownership must be unique across the manifest")

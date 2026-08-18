@@ -46,6 +46,11 @@ _EVERY_MODULE = [
             "variables": {"T": {"service": "aart/mcp/atlassian", "account": "default"}},
         },
     },
+    {
+        "id": "account",
+        "use": "shell.env-from-input@1",
+        "with": {"file": "~/.zshrc", "variables": {"ACCOUNT_EMAIL": "account_email"}},
+    },
     {"id": "block", "use": "file.managed-block@1", "with": {"file": "~/.config/x", "content": "y"}},
     {
         "id": "merge",
@@ -69,6 +74,18 @@ def _installer(steps: list[dict[str, object]]) -> SetupInstaller:
                 "trust-store",
                 "keychain",
                 "filesystem",
+            ],
+            inputs=[
+                {
+                    "id": "api_token",
+                    "type": "secret",
+                    "prompt": "Paste the Atlassian API token",
+                },
+                {
+                    "id": "account_email",
+                    "type": "text",
+                    "prompt": "Your Atlassian account e-mail",
+                },
             ],
             steps=steps,
         ),

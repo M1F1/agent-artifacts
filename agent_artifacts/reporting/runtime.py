@@ -44,6 +44,7 @@ from agent_artifacts.sources.model import (
 )
 
 from .application import (
+    RegistryReportingNotice,
     RegistryReportingRoute,
     ReportingApplicationService,
     ReportingProvider,
@@ -134,17 +135,37 @@ def reporting_routes_from_current(
     changes an artifact outcome.  Source aliases remain local routing keys and are never serialized.
     """
 
+    return _reporting_route_resolution_from_current(effective, data_root, read_current)[0]
+
+
+def _reporting_route_resolution_from_current(
+    effective: EffectiveConfiguration,
+    data_root: str,
+    read_current: CurrentSourcePort = read_current_source,
+) -> tuple[tuple[RegistryReportingRoute, ...], tuple[RegistryReportingNotice, ...]]:
+    """Discover eligible routes and retain a visible local reason for each rejected registry."""
+
     settings = effective.configuration.reporting
     if settings.mode is not ReportingMode.PROMPT or settings.destination is not None:
-        return ()
+        return (), ()
     routes = []
+    notices = []
     for source in effective.configuration.sources:
         if not source.enabled or source.kind is not SourceKind.REGISTRY_GIT:
             continue
         location = git_location_parts(source.location)
         if location is None:
+            notices.append(
+                RegistryReportingNotice(source.alias, "its configured Git location is invalid")
+            )
             continue
         if effective.policy.reporting.deny_public_destinations and location[0] in _PUBLIC_GIT_HOSTS:
+            notices.append(
+                RegistryReportingNotice(
+                    source.alias,
+                    "organization policy denies reporting to its public Git host",
+                )
+            )
             continue
         current = read_current(
             CurrentSourceRequest(
@@ -152,18 +173,49 @@ def reporting_routes_from_current(
                 source.alias,
             )
         )
-        if isinstance(current, Err) or current.value is None:
+        if isinstance(current, Err):
+            notices.append(
+                RegistryReportingNotice(
+                    source.alias, "its local registry snapshot could not be read"
+                )
+            )
+            continue
+        if current.value is None:
+            notices.append(
+                RegistryReportingNotice(source.alias, "it has no synchronized local snapshot")
+            )
             continue
         services = _coherent_services(current.value)
-        if isinstance(services, Err) or not any(
-            service.name == "usage_reporting" for service in services.value
-        ):
+        if isinstance(services, Err):
+            notices.append(
+                RegistryReportingNotice(
+                    source.alias,
+                    "its published manifest and index do not provide coherent services",
+                )
+            )
+            continue
+        if not any(service.name == "usage_reporting" for service in services.value):
+            notices.append(
+                RegistryReportingNotice(
+                    source.alias,
+                    "it does not advertise a usage_reporting service; maintainers can set one "
+                    "with registry init --usage-reporting-repository OWNER/REPOSITORY",
+                )
+            )
             continue
         destination = destination_from_services(ReportingMode.PROMPT, source, services.value)
         if isinstance(destination, Err):
+            notices.append(
+                RegistryReportingNotice(
+                    source.alias, "its usage_reporting advertisement is invalid"
+                )
+            )
             continue
         routes.append(RegistryReportingRoute(source.alias, destination.value))
-    return tuple(sorted(routes, key=lambda route: route.source_alias.value))
+    return (
+        tuple(sorted(routes, key=lambda route: route.source_alias.value)),
+        tuple(sorted(notices, key=lambda notice: notice.source_alias.value)),
+    )
 
 
 def load_local_reporting_service(
@@ -207,13 +259,14 @@ def load_local_reporting_service(
     destination = reporting_destination_from_current(effective, paths.data_root)
     if isinstance(destination, Err):
         return destination
-    routes = reporting_routes_from_current(effective, paths.data_root)
+    routes, notices = _reporting_route_resolution_from_current(effective, paths.data_root)
     return Ok(
         ReportingApplicationService(
             destination.value,
             browser or browser_provider(),
             authenticated or GitHubIssueProvider(),
             routes,
+            notices,
         )
     )
 

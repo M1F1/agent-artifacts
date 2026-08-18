@@ -84,7 +84,7 @@ class SetupHelpUrl:
 @dataclass(frozen=True, slots=True)
 class SetupInput:
     id: str
-    type: Literal["secret"]
+    type: Literal["secret", "text"]
     prompt: str
     help_url: Optional[str] = None
 
@@ -239,28 +239,6 @@ class SetupState:
     records: Tuple[SetupStateRecord, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class Bundle:
-    name: str
-    description: str
-    extends: Tuple[str, ...]
-    includes: Mapping[ArtifactType, Tuple[str, ...]]
-    pins: Mapping[str, str]  # artifact name -> ref
-
-
-@dataclass(frozen=True, slots=True)
-class Catalog:
-    artifacts: Mapping[Tuple[ArtifactType, str], Artifact]
-    bundles: Mapping[str, Bundle]
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedBundle:
-    name: str
-    artifacts: Tuple[Tuple[ArtifactType, str], ...]  # ordered, de-duplicated
-    pins: Mapping[str, str]  # artifact name -> resolved ref
-
-
 # Profile/harness mapping types live in ``agent_artifacts.profiles.model``; that module is
 # the single definition of the canonical profile data. Nothing may re-declare them here.
 
@@ -370,7 +348,7 @@ class ManifestEntry:
     type: ArtifactType
     profile: str
     source: str  # "main:<sha>" | "pin:<sha>"
-    bundle: Optional[str] = None
+    collection: Optional[str] = None
     files: Mapping[str, str] = field(default_factory=dict)  # path -> "sha256:…"
     merge: Optional[MergeProof] = None  # hooks carry both files and merge
     installed_at: str = ""
@@ -440,7 +418,18 @@ class Request:
     frozen: bool = False
     source_id: Optional[str] = None
     display_name: Optional[str] = None
+    # Optional registry-owned GitHub Issues destination advertised by ``registry init``.
+    usage_reporting_repository: Optional[str] = None
     summary: Optional[str] = None
+    collection_members: Tuple[str, ...] = ()
+    # Discovery emits, and batch vendoring consumes, one reviewable JSON manifest.  The checkout
+    # is deliberately distinct from the registry source: it is inert foreign input, never a
+    # configured consumer source.
+    discovery_checkout: Optional[str] = None
+    discovery_output: Optional[str] = None
+    discovery_accept_all: bool = False
+    vendor_manifest: Optional[str] = None
+    publish_message: Optional[str] = None
     artifact_version: Optional[str] = None
     # The licence the registry records for a vendored copy.  Stated by the maintainer, because a
     # licence read out of an upstream file is a reading of somebody else's document.

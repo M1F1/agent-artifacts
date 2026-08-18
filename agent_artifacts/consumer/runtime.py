@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from agent_artifacts.application.configuration import (
@@ -22,7 +23,7 @@ from agent_artifacts.configuration.policy import (
     apply_configuration,
 )
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
-from agent_artifacts.domain.identifiers import ArtifactCoordinate
+from agent_artifacts.domain.identifiers import ArtifactCoordinate, SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.installation.model import InstallLocation
 from agent_artifacts.io.config_store import (
@@ -95,7 +96,7 @@ from agent_artifacts.sources.model import (
     source_instance_id,
     source_store_paths,
 )
-from agent_artifacts.sources.runtime import sync_configured_source
+from agent_artifacts.sources.runtime import observe_configured_source, sync_configured_source
 from agent_artifacts.store.model import (
     ObjectPublishCommand,
     ObjectReadRequest,
@@ -759,6 +760,7 @@ def load_read_only_marketplace(
     effective: EffectiveConfiguration,
     *,
     data_root: str,
+    observe_freshness: bool = False,
 ) -> Result[MarketplaceCatalog]:
     """Build the configured marketplace from durable snapshots without object-store mutation.
 
@@ -776,14 +778,23 @@ def load_read_only_marketplace(
         source for source in effective.configuration.sources if source.enabled
     ):
         source_paths = source_store_paths(data_root, source_instance_id(configured))
-        health: SourceHealth = source_status(
-            SourceStatusRequest(
-                CurrentSourceRequest(source_paths, configured.alias),
-                now,
-                effective.configuration.sync.max_age_seconds,
-            ),
-            read_current_source,
-        )
+        health: SourceHealth
+        if observe_freshness:
+            health = observe_configured_source(
+                configured,
+                data_root=data_root,
+                mode=effective.configuration.sync.mode,
+                observed_at_epoch_seconds=now,
+            )
+        else:
+            health = source_status(
+                SourceStatusRequest(
+                    CurrentSourceRequest(source_paths, configured.alias),
+                    now,
+                    effective.configuration.sync.max_age_seconds,
+                ),
+                read_current_source,
+            )
         states.append(MarketplaceSourceState(configured, health, order))
         if health.current is None:
             continue
@@ -811,6 +822,7 @@ def load_local_consumer_service(
     user_home: str | None,
     configuration: UserConfiguration | None = None,
     refresh_sources: bool = False,
+    observe_freshness: bool = False,
     offline: bool = False,
     content_required: bool = True,
 ) -> Result[ConsumerApplicationService]:
@@ -856,7 +868,18 @@ def load_local_consumer_service(
         if isinstance(prospective, Err):
             return prospective
         effective = prospective.value
-    if refresh_sources and not offline:
+    observed_health: Mapping[SourceAlias, SourceHealth] = {}
+    if observe_freshness and not offline:
+        observed_health = {
+            source.alias: observe_configured_source(
+                source,
+                data_root=config_paths.data_root,
+                mode=effective.configuration.sync.mode,
+            )
+            for source in effective.configuration.sources
+            if source.enabled
+        }
+    elif refresh_sources and not offline:
         for source in effective.configuration.sources:
             if not source.enabled:
                 continue
@@ -873,14 +896,16 @@ def load_local_consumer_service(
         source for source in effective.configuration.sources if source.enabled
     ):
         paths = source_store_paths(config_paths.data_root, source_instance_id(configured))
-        health: SourceHealth = source_status(
-            SourceStatusRequest(
-                CurrentSourceRequest(paths, configured.alias),
-                now,
-                effective.configuration.sync.max_age_seconds,
-            ),
-            read_current_source,
-        )
+        health = observed_health.get(configured.alias)
+        if health is None:
+            health = source_status(
+                SourceStatusRequest(
+                    CurrentSourceRequest(paths, configured.alias),
+                    now,
+                    effective.configuration.sync.max_age_seconds,
+                ),
+                read_current_source,
+            )
         states.append(MarketplaceSourceState(configured, health, order))
         if health.current is None:
             continue

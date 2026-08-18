@@ -220,7 +220,9 @@ edit, and re-locking or rebuilding does not make it green again. The supported w
 bytes is to change them upstream, or in a fork you vendor from, and vendor again; a copy that says
 where it came from has to be that.
 
-Commit the working tree yourself. AART never commits and never pushes.
+`registry vendor` stops at the reviewed working-tree change. Commit it yourself, or use
+`aart registry publish --source . --yes` to run lock, build, validate, and audit before one listed
+commit. AART never pushes.
 
 ## 6. When upstream moves
 

@@ -80,6 +80,25 @@ def _statuses(record, probes) -> dict:
     return {result.claim.kind: (result.status, result.detail) for result in results}
 
 
+def test_a_compensated_failure_receipt_makes_no_live_world_claim() -> None:
+    record = _record(
+        {
+            "module": "macos-keychain.store@1",
+            "step_id": "token",
+            "service": "aart/mcp/x",
+            "account": "token",
+            "created": True,
+            "setup_disposition": "compensated",
+        },
+        plan_hash="",
+    )
+
+    kinds = tuple(claim.kind for claim in plan_verification(record))
+
+    assert KEYCHAIN_HOLDS_VALUE not in kinds
+    assert kinds == (NO_CREDENTIAL_IN_RECORD,)
+
+
 def test_laf55_a_keychain_item_that_holds_nothing_is_reported_false() -> None:
     # The condition LAF-55 describes: the step exited 0, the receipt records it, and the
     # Keychain is empty. Nothing but asking the Keychain can tell them apart.

@@ -1,5 +1,23 @@
 """Byte-stable templates emitted by registry initialization."""
 
+REGISTRY_GITIGNORE = b""".agent-artifacts/
+.agent-artifacts-bak/
+.claude/
+.coverage
+.mcp.json
+.mypy_cache/
+.opencode/
+.pytest_cache/
+.ruff_cache/
+.tabnine/
+.vibe/
+__pycache__/
+build/
+dist/
+htmlcov/
+usage-dashboard/
+"""
+
 REGISTRY_CI_WORKFLOW = b"""name: AART registry quality
 on:
   pull_request:

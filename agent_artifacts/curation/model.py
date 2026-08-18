@@ -30,10 +30,13 @@ DEFAULT_MAXIMUM_AART = f"{EXECUTABLE_VERSION.major + 1}.0.0"
 class CurationAction(str, Enum):
     INIT = "init"
     SCAFFOLD = "scaffold"
+    COLLECTION = "collection"
     FORMAT = "format"
     PROMOTE_NATIVE = "promote-native"
     REFRESH_NATIVE = "refresh-native"
     VENDOR = "vendor"
+    VENDOR_BATCH = "vendor-batch"
+    PUBLISH = "publish"
     REVENDOR = "revendor"
     LOCK = "lock"
     BUILD = "build"
@@ -65,6 +68,8 @@ class CurationRequest:
     kind: str | None = None
     name: str | None = None
     summary: str | None = None
+    members: tuple[str, ...] = ()
+    vendor_manifest: str | None = None
     # `None` means the maintainer did not state one.  Re-vendoring needs that distinction: upstream
     # movement without a stated version is reported, never applied (design §4), and a default would
     # silently answer the one question the command exists to ask.
@@ -86,6 +91,7 @@ class CurationRequest:
     review_policy: str = "manual-review-v1"
     source_id: str | None = None
     display_name: str | None = None
+    usage_reporting_repository: str | None = None
     minimum_version: str = DEFAULT_MINIMUM_AART
     maximum_version: str = DEFAULT_MAXIMUM_AART
 
@@ -97,6 +103,19 @@ class CurationRequest:
             or (self.kind is not None and self.kind not in _KINDS)
             or (self.name is not None and _SLUG_RE.fullmatch(self.name) is None)
             or (self.summary is not None and not _one_line(self.summary))
+            or any(
+                len(value.split("/")) != 2
+                or value.split("/", 1)[0] not in _KINDS
+                or _SLUG_RE.fullmatch(value.split("/", 1)[1]) is None
+                for value in self.members
+            )
+            or (
+                self.vendor_manifest is not None
+                and (
+                    not os.path.isabs(self.vendor_manifest)
+                    or os.path.normpath(self.vendor_manifest) != self.vendor_manifest
+                )
+            )
             or any(_SLUG_RE.fullmatch(value) is None for value in self.profiles + self.platforms)
             or not set(self.scopes) <= _SCOPES
             or not set(self.modes) <= _MODES
@@ -109,6 +128,7 @@ class CurationRequest:
                     self.setup_recipe,
                     self.source_id,
                     self.display_name,
+                    self.usage_reporting_repository,
                 )
             )
             or not _one_line(self.ref)
@@ -116,6 +136,7 @@ class CurationRequest:
         ):
             raise ValueError("curation request is invalid")
         object.__setattr__(self, "profiles", tuple(sorted(set(self.profiles))))
+        object.__setattr__(self, "members", tuple(sorted(set(self.members))))
         object.__setattr__(self, "platforms", tuple(sorted(set(self.platforms))))
         object.__setattr__(self, "scopes", tuple(sorted(set(self.scopes))))
         object.__setattr__(self, "modes", tuple(sorted(set(self.modes))))
@@ -265,7 +286,11 @@ def render_curation_review(review: CurationReview) -> tuple[str, ...]:
         lines.extend(f"      {detail}" for detail in check.details)
     lines.extend(f"  warning: {warning}" for warning in review.warnings)
     if review.mutating:
-        lines.append("  AART will not commit or push; review the working-tree diff afterward.")
+        lines.append(
+            "  Finalizing publish commits every listed Git change and never pushes."
+            if review.action is CurationAction.PUBLISH
+            else "  AART will not commit or push; review the working-tree diff afterward."
+        )
     return tuple(lines)
 
 

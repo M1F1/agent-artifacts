@@ -10,12 +10,13 @@ is [`tui_sources.py`](../../agent_artifacts/tui_sources.py), and its durable bou
 ## Read model
 
 At runtime AART loads the effective user configuration and organization policy through the CFG01
-application service. Each configured source is joined with its durable SRC01 current pointer and
-projected into one immutable row. Git origins are normalized to credential-free `host/repository`
-text. Rows distinguish:
+application service. It then applies the effective sync mode: `auto` synchronizes enabled sources,
+while `manual` compares validated origin evidence without publishing it. Each configured source is
+joined with that result and its durable SRC01 current pointer, then projected into one immutable
+row. Git origins are normalized to credential-free `host/repository` text. Rows distinguish:
 
 - enabled or disabled configuration;
-- current, stale, offline, invalid, incompatible, or missing managed health;
+- current, not-synchronized, could-not-check, invalid, incompatible, or missing managed health;
 - registry, direct Git, or mutable local kind;
 - default-registry presentation rank;
 - organization-required or recommended aliases;
@@ -26,10 +27,11 @@ listed as needing setup. A source is labelled company-reviewed only when its cur
 source ID plus normalized Git host/repository exactly matches local organization policy. Alias,
 default rank, or source-authored metadata cannot grant that label.
 
-An existing managed snapshot may support last-known-good operation while its source is offline. The
-row still says `offline`; it is never rewritten as current. Invalid and incompatible rows are not
-selectable. Direct/local sources become unavailable when organization policy denies direct
-sources.
+An existing managed snapshot may support last-known-good operation when its origin could not be
+checked. The row still says `could-not-check`; it is never rewritten as current. A completed
+comparison that differs says `not-synchronized`. Publication age is displayed but does not classify
+freshness. Invalid and incompatible rows are not selectable. Direct/local sources become
+unavailable when organization policy denies direct sources.
 
 ## First run and optional registries
 
@@ -93,5 +95,5 @@ full-screen UI before applying it.
 
 The TUI hands the reviewed effective configuration to the canonical consumer marketplace. It
 combines enabled current registry/direct/local sources by their qualified coordinates and preserves
-source trust/health facts. A missing, stale, invalid, or policy-denied source is rendered explicitly
+source trust/health facts. A missing, not-synchronized, invalid, or policy-denied source is rendered explicitly
 rather than being silently reinterpreted as the executable checkout or an old catalog layout.

@@ -147,6 +147,25 @@ class UndoReviewMatchesTheRollbackTest(unittest.TestCase):
 
 
 class UndoReviewContentTest(unittest.TestCase):
+    def test_a_compensated_failure_receipt_is_audit_evidence_not_a_second_undo(self) -> None:
+        record = _record(
+            {
+                "module": "macos-keychain.store@1",
+                "step_id": "token",
+                "service": "aart/mcp/x",
+                "account": "token",
+                "created": True,
+                "setup_disposition": "compensated",
+            }
+        )
+
+        step = plan_undo(record)[0]
+        rolled = rollback_record(record, _runtime(returncode=1))
+
+        self.assertEqual(step.disposition, KEEPS)
+        self.assertIn("already compensated", step.reason)
+        self.assertEqual(rolled.status, "skipped")
+
     def test_a_managed_block_in_a_file_the_run_created_says_the_file_goes(self) -> None:
         record = _record(
             {

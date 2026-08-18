@@ -1,8 +1,8 @@
 # Registry maintainer commands v1
 
-`aart registry` turns a local Git checkout into a canonical, reviewable AART registry. The command
-boundary never commits or pushes. Maintainers review the resulting files and use their normal Git
-workflow after the command succeeds.
+`aart registry` turns a local Git checkout into a canonical, reviewable AART registry. Ordinary
+mutations stop after reviewed managed-file writes. The explicit `publish --yes` workflow validates,
+audits, and commits every listed Git change; no registry command pushes.
 
 ## Command contract
 
@@ -15,6 +15,7 @@ workflow after the command succeeds.
 | `lock` | writes, or reads with `--check` | Resolve every approved native reference to an exact commit and digests |
 | `build` | writes, or reads with `--check` | Compile the payload-free marketplace index from owned and locked artifacts |
 | `audit` | reads | Check review, provenance, setup, license, and currently available risk evidence |
+| `publish` | writes and commits with `--yes` | Plan lock/build, validate/audit the projection, list all Git paths, and create one commit without pushing |
 | `test` | reads | Validate the registry at its minimum and/or a supplied latest compatible version |
 | `diff` | reads | Show deterministic canonical-format drift without changing the checkout |
 
@@ -34,7 +35,8 @@ Start from an empty Git checkout:
 ```console
 git init company-agent-artifacts-registry
 aart registry init --source company-agent-artifacts-registry \
-  --source-id company-registry --display-name "Company Agent Artifacts"
+  --source-id company-registry --display-name "Company Agent Artifacts" \
+  --usage-reporting-repository acme/company-agent-artifacts-registry
 ```
 
 The generated workflow checks out AART into an isolated `.aart-tool` directory and installs it from
@@ -44,10 +46,12 @@ that local checkout with `pip --no-deps`; it does not require PyPI or Nexus. `AA
 and minimum/latest compatibility checks. The workflow has read-only repository permissions and
 contains no commit or push step.
 
-Initialization also adds the inert usage-report Issue Form, validation workflow, and aggregation/
-Pages workflow. They do not enable client reporting: an effective AART configuration must still
-select this registry alias and choose `prompt` or `automatic`. Their untrusted-input and privacy
-contract is documented in [`optional usage reporting v1`](../reporting/usage-reporting-v1.md).
+Initialization also adds the usage-report Issue Form, validation workflow, and aggregation/Pages
+workflow. `--usage-reporting-repository OWNER/REPOSITORY` advertises those templates to consumers;
+without it Review explicitly says that the templates are inert. An effective AART configuration
+must still select this registry alias and choose `prompt` or `automatic`. Their untrusted-input and
+privacy contract is documented in
+[`optional usage reporting v1`](../reporting/usage-reporting-v1.md).
 
 Create a package with an explicit compatibility and installation contract:
 

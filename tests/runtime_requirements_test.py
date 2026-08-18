@@ -13,7 +13,7 @@ from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
 
 
-def _manifest(extension: object | None = None):
+def _manifest(extension: object | None = None, *, key: str = "aart.runtime-requirements"):
     document = {
         "schema_version": 1,
         "type": "skill",
@@ -29,7 +29,7 @@ def _manifest(extension: object | None = None):
         },
     }
     if extension is not None:
-        document["com.m1f1.runtime-requirements"] = extension
+        document[key] = extension
     parsed = parse_artifact_manifest(json.dumps(document))
     assert isinstance(parsed, Ok), parsed
     return parsed.value
@@ -68,6 +68,20 @@ class RuntimeRequirementParsingTests(unittest.TestCase):
         python = requirements[1]
         self.assertEqual(str(python.version.min_inclusive), "3.11.0")
         self.assertEqual(python.reason, "The artifact uses Python 3.11 stdlib features.")
+
+    def test_personal_namespace_is_rejected_with_one_key_migration(self) -> None:
+        parsed = parse_runtime_requirements(
+            _manifest(
+                {"schema_version": 1, "requirements": [{"id": "python"}]},
+                key="com.m1f1.runtime-requirements",
+            )
+        )
+
+        self.assertIsInstance(parsed, Err)
+        assert isinstance(parsed, Err)
+        diagnostic = parsed.diagnostics[0]
+        self.assertEqual(diagnostic.code.value, "runtime-requirements-migration-required")
+        self.assertIn("aart.runtime-requirements", " ".join(diagnostic.remediation))
 
     def test_malformed_advisory_extension_is_reportable_without_invalidating_manifest(self) -> None:
         manifest = _manifest(

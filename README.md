@@ -19,13 +19,33 @@ See the [native source contract](docs/protocol/native-source-v1.md),
 [registry contract](docs/protocol/registry-v1.md), and the accepted
 [remediation design](docs/design/DESIGN-post-live-acceptance-remediation.md).
 
-## Quick start
+## Install and quick start
 
-Python 3.10 or later is required.
+Python 3.10 or later is required. Pick the installer you use and the source you trust; all nine
+commands below were exercised against the published `v2.7.0` artifact or tag.
+
+| Source | `pip` (inside your environment) | `pipx` | `uv` |
+|---|---|---|---|
+| Downloaded wheel | `python -m pip install --no-deps ./agent_artifacts-2.7.0-py3-none-any.whl` | `pipx install ./agent_artifacts-2.7.0-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.7.0-py3-none-any.whl` |
+| GitHub release wheel | `python -m pip install --no-deps https://github.com/M1F1/agent-artifacts/releases/download/v2.7.0/agent_artifacts-2.7.0-py3-none-any.whl` | `pipx install https://github.com/M1F1/agent-artifacts/releases/download/v2.7.0/agent_artifacts-2.7.0-py3-none-any.whl` | `uv tool install https://github.com/M1F1/agent-artifacts/releases/download/v2.7.0/agent_artifacts-2.7.0-py3-none-any.whl` |
+| Tagged Git repository, no clone | `python -m pip install --no-deps "git+https://github.com/M1F1/agent-artifacts.git@v2.7.0"` | `pipx install "git+https://github.com/M1F1/agent-artifacts.git@v2.7.0"` | `uv tool install "git+https://github.com/M1F1/agent-artifacts.git@v2.7.0"` |
+
+`pipx` and `uv tool` create an isolated tool environment. For a company mirror, replace the
+GitHub host and repository with the reviewed HTTPS URL your normal Git credentials can reach; keep a
+reviewed tag instead of following a moving branch. AART has no runtime dependencies. The release
+wheel is byte-reproducible from its tag and its digest is published in the release notes.
+
+The editable install is for working on AART itself, not for a colleague adopting it:
 
 ```sh
-python -m pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
+git clone https://github.com/M1F1/agent-artifacts.git
+cd agent-artifacts
+python -m pip install --no-index --no-deps --no-build-isolation -e .
+```
 
+Then, in a consumer project:
+
+```sh
 cd /path/to/consumer-project
 aart source add \
   --alias company \
@@ -38,9 +58,9 @@ aart marketplace list --json
 ```
 
 `source add` acquires, compiles, and validates the exact snapshot before it saves configuration.
-`source sync` is the explicit snapshot-refresh operation; `marketplace list` and `status` use the
-last local validated snapshot and perform no hidden fetch.
-
+With automatic synchronization (the default), source-bearing marketplace and TUI entry points
+compare with the origin and publish a validated changed snapshot first. Manual mode reports
+`not-synchronized` or `could-not-check` without moving the local pointer.
 ## Consumer lifecycle
 
 Every mutation uses the same review and finalize boundary. Without `--yes`, a command renders its
@@ -138,8 +158,9 @@ All three are also reachable from `aart` with no arguments, under **Action → r
 
 ## Maintaining a registry
 
-A registry is an ordinary Git checkout. AART can prepare and verify changes, but never commits or
-pushes them. An empty Git repository is not a registry until its `aart-registry.json` marker exists.
+A registry is an ordinary Git checkout. Maintainer mutations prepare reviewed files and stop. The
+explicit `registry publish --yes` flow runs every publisher gate and creates the listed commit; AART
+never pushes. An empty Git repository is not a registry until its `aart-registry.json` marker exists.
 
 AART reaches every remote by running system Git, with an allowlisted environment rather than the
 operator's. If a repository clones at a shell prompt but not through AART, the environment is where
@@ -149,8 +170,10 @@ proxy that is the whole failure.
 
 ```sh
 # Create a registry
-aart registry init --source . --source-id company --display-name "Company Registry"
-aart registry init --source . --source-id company --display-name "Company Registry" --yes
+aart registry init --source . --source-id company --display-name "Company Registry" \
+  --usage-reporting-repository acme/agent-artifacts-registry
+aart registry init --source . --source-id company --display-name "Company Registry" \
+  --usage-reporting-repository acme/agent-artifacts-registry --yes
 
 # Author a package, or review a native package from another repository
 aart registry scaffold skill code-review --source . --summary "Review code." \
@@ -159,18 +182,27 @@ aart registry promote-native skill code-review --source . \
   --url https://github.com/acme/skills.git --ref main \
   --path artifacts/skill/code-review
 
-# Review/finalize generated publication artifacts
-aart registry lock --source .
-aart registry lock --source . --yes
-aart registry build --source .
-aart registry build --source . --yes
-aart registry validate --source . --strict --frozen --json
-aart registry audit --source . --json
+# Or copy foreign content the upstream has not packaged for AART
+aart registry vendor skill code-review --source . \
+  --url https://github.com/acme/prompts.git --ref main --path prompts/code-review \
+  --artifact-version 1.0.0 --summary "Review code." \
+  --profile claude --platform darwin
+
+# Review, then finalize lock + build + validate + audit + one commit
+aart registry publish --source .
+aart registry publish --source . --yes
 ```
 
 `promote-native` records a reference to an external repository, pins its resolved commit in the
-lock, and validates its package through the same compiler as a locally owned artifact. This keeps
-reviewed subscriptions and updates easy without adapting a foreign legacy layout.
+lock, and leaves ownership upstream. It requires the upstream to already be a native AART source.
+`vendor` is the foreign-repository path: it copies a file or subtree into this registry, records the
+origin and pinned commit in `provenance.json`, and makes this registry the copy's owner. `revendor`
+compares that copy with upstream and plans an explicit versioned refresh; validation and audit reject
+a copied payload that drifts from its provenance.
+
+For the complete path, use the [walked company-registry tutorial for Tabnine](docs/tutorials/company-registry-tabnine-v1.md).
+The [vendoring tutorial](docs/tutorials/vendoring-v1.md) covers provenance and re-vendoring, and
+[porting an MCP server](docs/tutorials/mcp-servers-into-the-registry.md) covers setup recipes.
 
 ## Canonical package
 
@@ -197,7 +229,7 @@ payload-free consumer projection. Both are generated and must pass their gates b
 ```text
 aart source add|list|sync|health
 aart marketplace list|health|install|update|uninstall|status|setup
-aart registry init|scaffold|format|promote-native|refresh-native|lock|build|validate|audit|diff
+aart registry init|scaffold|collection|discover|vendor|vendor-batch|revendor|promote-native|refresh-native|lock|build|validate|audit|publish|diff
 aart security scan|show|verify|analyzers|suites
 aart reporting validate-event|validate-issue|aggregate
 aart upgrade --wheel FILE | --source-checkout DIR

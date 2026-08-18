@@ -31,10 +31,11 @@ what a recipe may *say*.
 }
 ```
 
-Every field is required except `custom_entrypoint`. `platforms` is `["darwin"]`. `inputs` accepts
-only `type: "secret"`, and a secret may be interpolated **only** by `macos-keychain.store@1`; any
-other step that mentions one is refused. Step ids are lowercase identifiers, unique within the
-recipe, and steps run in the order written.
+Every field is required except `custom_entrypoint`. `platforms` is `["darwin"]`. An input is either
+`secret` or `text`. A secret may be consumed **only** by `macos-keychain.store@1`; any other step
+that mentions one is refused. A text input may be consumed only by `shell.env-from-input@1`, which
+prompts with terminal echo and writes a shell export into an owned managed block. Step ids are
+lowercase identifiers, unique within the recipe, and steps run in the order written.
 
 `capabilities` is the author's declaration, checked against the modules used: a step whose capability
 is not declared is refused, and a declared capability no step needs is still shown to the consumer.
@@ -51,7 +52,7 @@ index publishes, what `allowed_setup_capabilities` is written in, and what the r
 | module | declared | policy |
 |---|---|---|
 | `macos-keychain.store@1` | `keychain` | `keychain` |
-| `shell.env-from-keychain@1`, `file.managed-block@1`, `json.managed-merge@1`, `directory.create@1` | `filesystem` | `managed-file` |
+| `shell.env-from-keychain@1`, `shell.env-from-input@1`, `file.managed-block@1`, `json.managed-merge@1`, `directory.create@1` | `filesystem` | `managed-file` |
 | `docker.pull@1` | `docker` | `docker-pull`, `network` |
 | `docker.build@1` | `docker` | `docker-build`, `network`, `process` |
 | `trust-store.export-certificates@1` | `trust-store` | `trust-store` |
@@ -94,6 +95,23 @@ By hand, add between those two marker lines:
 
 ```sh
 export NAME="$(/usr/bin/security find-generic-password -a <account> -s <service> -w 2>/dev/null)"
+```
+
+### `shell.env-from-input@1`
+
+Capability `filesystem`. Fields: `file`, `variables` (a non-empty object mapping environment
+variable names to declared `text` input ids).
+
+Before any effect runs, AART prompts once for every referenced text input. The terminal echoes the
+value because it is not a secret. The review shows each prompt and the managed-file target, but not
+the machine-specific value. The module shell-quotes the value and manages an owned block whose
+marker includes the step id, so it can coexist with Keychain lookup blocks and other text inputs.
+Rollback removes exactly that block.
+
+By hand, ask for the declared value and add between the marker lines:
+
+```sh
+export NAME='<shell-quoted text value>'
 ```
 
 ### `file.managed-block@1`

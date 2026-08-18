@@ -4,8 +4,10 @@ import shlex
 import unittest
 
 from agent_artifacts import cli
+from agent_artifacts.domain.identifiers import ArtifactIdentity
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.capabilities import Capability
+from agent_artifacts.protocol.native_schema import parse_collection_manifest
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
@@ -16,9 +18,14 @@ from agent_artifacts.protocol.native_tree import (
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.registry_schema import parse_registry_manifest
 from agent_artifacts.protocol.semver import SemVer
-from agent_artifacts.registry_commands.model import ArtifactScaffoldOptions, RegistryInitOptions
+from agent_artifacts.registry_commands.model import (
+    ArtifactScaffoldOptions,
+    CollectionAuthorOptions,
+    RegistryInitOptions,
+)
 from agent_artifacts.registry_commands.planning import (
     plan_artifact_scaffold,
+    plan_registry_collection,
     plan_registry_init,
     project_registry_workspace_plan,
     validate_registry_workspace,
@@ -27,6 +34,83 @@ from tests.registry_maintenance_fixtures import replace_snapshot_file
 
 
 class RegistryInitScaffoldTest(unittest.TestCase):
+    def test_collection_authoring_uses_only_artifacts_the_registry_holds(self) -> None:
+        initialized = plan_registry_init(
+            SourceSnapshot(SnapshotOrigin.LOCAL, ()),
+            RegistryInitOptions(
+                "company-registry",
+                "Company Agent Artifacts",
+                SemVer(1, 0, 0),
+                SemVer(2, 0, 0),
+            ),
+        )
+        assert isinstance(initialized, Ok)
+        registry = project_registry_workspace_plan(
+            SourceSnapshot(SnapshotOrigin.LOCAL, ()), initialized.value
+        )
+        assert isinstance(registry, Ok)
+        scaffolded = plan_artifact_scaffold(
+            registry.value,
+            ArtifactScaffoldOptions(
+                "skill",
+                "review",
+                SemVer(1, 0, 0),
+                "Review changes.",
+                ("claude",),
+                ("darwin",),
+                ("project",),
+                ("copy",),
+            ),
+        )
+        assert isinstance(scaffolded, Ok)
+        with_artifact = project_registry_workspace_plan(registry.value, scaffolded.value)
+        assert isinstance(with_artifact, Ok)
+
+        authored = plan_registry_collection(
+            with_artifact.value,
+            CollectionAuthorOptions(
+                "baseline",
+                "Company baseline.",
+                (ArtifactIdentity("skill", "review"),),
+            ),
+            executable_version=SemVer(1, 0, 0),
+            available_capabilities=(
+                Capability("artifact-manifest-v1"),
+                Capability("lockfile-v1"),
+                Capability("registry-entry-v1"),
+            ),
+        )
+
+        self.assertIsInstance(authored, Ok)
+        assert isinstance(authored, Ok)
+        complete = project_registry_workspace_plan(with_artifact.value, authored.value)
+        assert isinstance(complete, Ok)
+        collection = next(
+            item for item in complete.value.entries if str(item.path) == "collections/baseline.json"
+        )
+        parsed = parse_collection_manifest(collection.content)
+        assert isinstance(parsed, Ok)
+        self.assertEqual(
+            tuple(selector.identity for selector in parsed.value.artifacts),
+            (ArtifactIdentity("skill", "review"),),
+        )
+
+        missing = plan_registry_collection(
+            with_artifact.value,
+            CollectionAuthorOptions(
+                "missing",
+                "Invalid member.",
+                (ArtifactIdentity("skill", "absent"),),
+            ),
+            executable_version=SemVer(1, 0, 0),
+            available_capabilities=(
+                Capability("artifact-manifest-v1"),
+                Capability("lockfile-v1"),
+                Capability("registry-entry-v1"),
+            ),
+        )
+        self.assertIsInstance(missing, Err)
+
     def test_init_is_deterministic_and_includes_ci_ready_minimum_latest_template(self) -> None:
         empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())
         options = RegistryInitOptions(
@@ -46,6 +130,15 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertIn("aart-source.json", files)
         self.assertIn(".github/workflows/aart-registry.yml", files)
         self.assertIn(".github/ISSUE_TEMPLATE/usage-report.yml", files)
+        self.assertIn(".gitignore", files)
+        ignored = files[".gitignore"].decode("utf-8").splitlines()
+        self.assertIn(".agent-artifacts/", ignored)
+        self.assertIn(".agent-artifacts-bak/", ignored)
+        self.assertIn(".claude/", ignored)
+        self.assertIn(".tabnine/", ignored)
+        self.assertIn(".opencode/", ignored)
+        self.assertIn(".vibe/", ignored)
+        self.assertIn(".mcp.json", ignored)
         self.assertIn(".github/workflows/aart-usage-validate.yml", files)
         self.assertIn(".github/workflows/aart-usage-dashboard.yml", files)
         workflow = files[".github/workflows/aart-registry.yml"]
@@ -105,6 +198,29 @@ class RegistryInitScaffoldTest(unittest.TestCase):
             )
             with self.subTest(command=command):
                 self.assertEqual(cli.build_parser().parse_args(argv).command, "registry")
+
+    def test_init_can_advertise_the_scaffolded_usage_reporting_service(self) -> None:
+        empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())
+        options = RegistryInitOptions(
+            "company-registry",
+            "Company Agent Artifacts",
+            SemVer(1, 0, 0),
+            SemVer(2, 0, 0),
+            "acme/agent-artifacts-registry",
+        )
+
+        planned = plan_registry_init(empty, options)
+        assert isinstance(planned, Ok), planned
+        projected = project_registry_workspace_plan(empty, planned.value)
+        assert isinstance(projected, Ok), projected
+        files = {str(item.path): item.content for item in projected.value.entries}
+        manifest = parse_registry_manifest(files["aart-registry.json"])
+        assert isinstance(manifest, Ok), manifest
+
+        self.assertEqual(len(manifest.value.services), 1)
+        self.assertEqual(manifest.value.services[0].name, "usage_reporting")
+        self.assertEqual(manifest.value.services[0].kind, "github-issues")
+        self.assertEqual(manifest.value.services[0].repository, "acme/agent-artifacts-registry")
 
     def test_scaffold_produces_a_valid_native_package_and_refuses_overwrite(self) -> None:
         empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())

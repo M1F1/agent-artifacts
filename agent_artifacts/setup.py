@@ -66,6 +66,11 @@ _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozense
         frozenset({"file", "variables"}),
         frozenset({"file", "variables"}),
     ),
+    "shell.env-from-input@1": (
+        "filesystem",
+        frozenset({"file", "variables"}),
+        frozenset({"file", "variables"}),
+    ),
     "file.managed-block@1": (
         "filesystem",
         frozenset({"file", "content", "marker"}),
@@ -115,6 +120,7 @@ _MODULES: Mapping[str, tuple[Optional[SetupCapability], frozenset[str], frozense
 _PLANNED_CAPABILITIES: Mapping[str, Tuple[str, ...]] = {
     "macos-keychain.store@1": ("keychain",),
     "shell.env-from-keychain@1": ("managed-file",),
+    "shell.env-from-input@1": ("managed-file",),
     "file.managed-block@1": ("managed-file",),
     "json.managed-merge@1": ("managed-file",),
     "directory.create@1": ("managed-file",),
@@ -381,6 +387,7 @@ def _validate_step(
     *,
     step_ids: set[str],
     secret_ids: set[str],
+    text_ids: set[str],
     capabilities: set[str],
     required_tools: Sequence[str],
 ) -> SetupStep:
@@ -436,6 +443,17 @@ def _validate_step(
                 raise _Invalid(f"step {step_id}.{name} must contain service and account")
             _single_line(lookup["service"], f"step {step_id}.{name}.service")
             _single_line(lookup["account"], f"step {step_id}.{name}.account")
+    elif use == "shell.env-from-input@1":
+        _validate_path(config["file"], f"step {step_id}.file")
+        variables = config["variables"]
+        if not isinstance(variables, dict) or not variables:
+            raise _Invalid(f"step {step_id}.variables must be a non-empty object")
+        for name, raw_input_id in variables.items():
+            if not isinstance(name, str) or not _ENV_NAME.fullmatch(name):
+                raise _Invalid(f"step {step_id!r} has invalid environment variable {name!r}")
+            input_id = _single_line(raw_input_id, f"step {step_id}.{name}")
+            if input_id not in text_ids:
+                raise _Invalid(f"step {step_id!r} references undeclared text input {input_id!r}")
     elif use == "file.managed-block@1":
         _validate_path(config["file"], f"step {step_id}.file")
         _single_line(config["marker"], f"step {step_id}.marker") if "marker" in config else None
@@ -570,6 +588,8 @@ def parse_installer(
             raise _Invalid("inputs must be a list")
         inputs = []
         input_ids: set[str] = set()
+        secret_ids: set[str] = set()
+        text_ids: set[str] = set()
         for index, entry in enumerate(inputs_raw):
             if not isinstance(entry, dict):
                 raise _Invalid(f"inputs[{index}] must be an object")
@@ -581,12 +601,14 @@ def parse_installer(
             if not _IDENTIFIER.fullmatch(input_id) or input_id in input_ids:
                 raise _Invalid(f"invalid or duplicate input id {input_id!r}")
             input_ids.add(input_id)
-            if entry["type"] != "secret":
-                raise _Invalid(f"inputs[{index}].type must be 'secret'")
+            input_type = entry["type"]
+            if input_type not in {"secret", "text"}:
+                raise _Invalid(f"inputs[{index}].type must be 'secret' or 'text'")
+            (secret_ids if input_type == "secret" else text_ids).add(input_id)
             inputs.append(
                 SetupInput(
                     id=input_id,
-                    type="secret",
+                    type=input_type,
                     prompt=_single_line(entry["prompt"], f"inputs[{index}].prompt"),
                     help_url=(
                         _https(entry["help_url"], f"inputs[{index}].help_url")
@@ -603,7 +625,8 @@ def parse_installer(
             _validate_step(
                 entry,
                 step_ids=step_ids,
-                secret_ids=input_ids,
+                secret_ids=secret_ids,
+                text_ids=text_ids,
                 capabilities=set(capabilities),
                 required_tools=required_tools,
             )
@@ -743,6 +766,10 @@ def _effect_for_step(
     if step.use == "macos-keychain.store@1":
         service = str(config["service"])
         account = str(config["account"])
+        input_id = str(config["input"])
+        input_prompt = next(
+            declared.prompt for declared in item.installer.inputs if declared.id == input_id
+        )
         target = f"Keychain generic password service={service!r} account={account!r}"
         replace_existing = bool(config.get("replace_existing", False))
         argv_parts = [
@@ -768,7 +795,9 @@ def _effect_for_step(
             if replace_existing
             else "; preserve an existing value"
         )
-        summary = f"Store {target}; the security tool prompts without echo{replacement}"
+        summary = (
+            f"{input_prompt}: store {target}; the security tool prompts without echo{replacement}"
+        )
     elif step.use == "shell.env-from-keychain@1":
         target = _resolve_target(str(config["file"]), target_root, home_root)
         variables = config["variables"]
@@ -777,6 +806,18 @@ def _effect_for_step(
         planned_config.update({"marker": marker, "content": _shell_block(item, variables)})
         reversible = True
         summary = f"Manage Keychain lookup block in {target}"
+    elif step.use == "shell.env-from-input@1":
+        target = _resolve_target(str(config["file"]), target_root, home_root)
+        variables = config["variables"]
+        assert isinstance(variables, Mapping)
+        declared = {input_.id: input_ for input_ in item.installer.inputs}
+        input_prompts = {
+            str(input_id): declared[str(input_id)].prompt for input_id in variables.values()
+        }
+        marker = f"{item.artifact_type}/{item.artifact_name}@{item.profile}:{step.id}"
+        planned_config.update({"marker": marker, "input_prompts": input_prompts})
+        reversible = True
+        summary = f"Manage echoed text input environment block in {target}"
     elif step.use == "file.managed-block@1":
         target = _resolve_target(str(config["file"]), target_root, home_root)
         planned_config.setdefault(
@@ -1008,7 +1049,10 @@ class SetupReview:
     preflight_detail: str
 
 
-_PINNED_SOURCE_URL = re.compile(r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}$", re.IGNORECASE)
+_PINNED_SOURCE_URL = re.compile(
+    r"^https://[^/]+/.+/blob/[0-9a-f]{40,64}(?:/.*)?$",
+    re.IGNORECASE,
+)
 
 
 _REDACTED_ASSIGNMENT = re.compile(r"[A-Za-z0-9_.-]*\s*[:=]\s*\[redacted\]")
@@ -1059,6 +1103,7 @@ def _effect_identity(effect: SetupEffect) -> str:
     return {
         "macos-keychain.store@1": "Store a secret in macOS Keychain",
         "shell.env-from-keychain@1": "Add a Keychain environment lookup",
+        "shell.env-from-input@1": "Export a prompted text input",
         "file.managed-block@1": "Write an owned configuration block",
         "json.managed-merge@1": "Merge an owned JSON value",
         "directory.create@1": "Create a directory",
@@ -1076,6 +1121,13 @@ def _effect_details(effect: SetupEffect) -> str:
         return "required tool: /usr/bin/security"
     if effect.module == "shell.env-from-keychain@1":
         return "Keychain lookup content is withheld from review"
+    if effect.module == "shell.env-from-input@1":
+        prompts = effect.config.get("input_prompts", {})
+        if isinstance(prompts, Mapping):
+            rendered = "; ".join(str(prompt) for prompt in prompts.values())
+        else:
+            rendered = "declared text input"
+        return f"prompts with echo before effects: {rendered}"
     if effect.module == "file.managed-block@1":
         return "managed content is withheld from review"
     if effect.module == "json.managed-merge@1":
@@ -1318,7 +1370,11 @@ def receipt_matches_plan(receipt: Mapping[str, object], plan: SetupPlan) -> bool
         return receipt.get("service") == effect.config.get("service") and receipt.get(
             "account"
         ) == effect.config.get("account")
-    if effect.module in ("shell.env-from-keychain@1", "file.managed-block@1"):
+    if effect.module in (
+        "shell.env-from-keychain@1",
+        "shell.env-from-input@1",
+        "file.managed-block@1",
+    ):
         return receipt.get("marker") == effect.config.get("marker")
     if effect.module == "json.managed-merge@1":
         configured_path = effect.config.get("path")

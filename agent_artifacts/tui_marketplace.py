@@ -56,11 +56,15 @@ class MarketplaceTarget:
     platform: str
     scope: InstallScope
     mode: InstallMode
-    setup_capabilities: tuple[Capability, ...] = ()
+    # ``None`` mirrors organization policy: no allowlist means every setup capability is
+    # permitted. An explicit empty tuple means the organization permits none.
+    setup_capabilities: tuple[Capability, ...] | None = None
 
     def __post_init__(self) -> None:
         profiles = tuple(sorted(set(self.profiles)))
-        capabilities = tuple(sorted(set(self.setup_capabilities)))
+        capabilities = (
+            None if self.setup_capabilities is None else tuple(sorted(set(self.setup_capabilities)))
+        )
         if (
             not profiles
             or profiles != self.profiles
@@ -225,6 +229,12 @@ def _compatibility(
 ) -> tuple[HarnessCompatibility, ...]:
     result = []
     for profile in target.profiles:
+        declared_setup = item.artifact.artifact.setup
+        setup_capabilities = (
+            declared_setup.capabilities
+            if target.setup_capabilities is None and declared_setup is not None
+            else (target.setup_capabilities or ())
+        )
         decision: CompatibilityDecision = evaluate_compatibility(
             item.artifact,
             CompatibilityTarget(
@@ -234,7 +244,7 @@ def _compatibility(
                 target.mode,
                 _AVAILABLE_EFFECTS,
                 EXECUTABLE_VERSION,
-                target.setup_capabilities,
+                setup_capabilities,
                 require_setup=True,
             ),
         )

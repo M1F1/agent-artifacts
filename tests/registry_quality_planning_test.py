@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from agent_artifacts.domain.result import Ok
+from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.json import JsonObject
@@ -145,6 +145,37 @@ class RegistryQualityPlanningTest(unittest.TestCase):
         assert isinstance(index, Ok)
         self.assertEqual(str(index.value.artifacts[0].source_id), "reference-native-source")
         self.assertNotIn(b"# Code review", snapshot_file(complete.value, "aart.index.json"))
+
+    def test_lock_refuses_a_collection_the_build_would_reject(self) -> None:
+        source = json.loads(snapshot_file(empty_registry_snapshot(), "aart-source.json"))
+        source["collection_roots"] = ["collections"]
+        malformed = append_snapshot_file(
+            replace_snapshot_file(
+                empty_registry_snapshot(),
+                "aart-source.json",
+                json.dumps(source).encode(),
+            ),
+            "collections/broken.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "name": "broken",
+                    "summary": "Broken selector",
+                    "artifacts": [{"type": "nonsense", "name": "x"}],
+                }
+            ).encode(),
+        )
+
+        locked = plan_registry_lock(
+            malformed,
+            (),
+            executable_version=VERSION,
+            available_capabilities=CAPABILITIES,
+        )
+
+        self.assertIsInstance(locked, Err)
+        assert isinstance(locked, Err)
+        self.assertIn("selector identity is invalid", locked.diagnostics[0].message)
 
     def test_validate_audit_and_minimum_latest_matrix_are_read_only(self) -> None:
         fixture = tree_snapshot(
@@ -301,7 +332,7 @@ class RegistryQualityPlanningTest(unittest.TestCase):
         messages = tuple(
             item.message for check in audited.value.checks for item in check.diagnostics
         )
-        self.assertTrue(any("committed lock" in message for message in messages))
+        self.assertTrue(any("valid lock" in message for message in messages))
 
     def test_compiled_outputs_must_be_regular_files(self) -> None:
         paths = []

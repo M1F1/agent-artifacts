@@ -286,6 +286,31 @@ class InstallStateSchemaTests(unittest.TestCase):
 
         self.assertEqual(len(state.installations), 2)
 
+    def test_distinct_memory_blocks_can_share_one_instruction_file(self) -> None:
+        original = _record()
+
+        def memory(name: str, digest: str):
+            identity = ArtifactIdentity("memory", name)
+            return replace(
+                original,
+                coordinate=ArtifactCoordinate(SourceAlias("company"), identity),
+                artifact=replace(original.artifact, identity=identity),
+                effects=(
+                    EffectProof(
+                        kind="managed-block",
+                        destination="CLAUDE.md",
+                        actual_mode="copy",
+                        installed_digest=_digest(digest),
+                    ),
+                ),
+                memory_mode="prepend",
+                setup_state_ref=None,
+            )
+
+        state = InstallState(2, (memory("house", "8"), memory("testing", "9")))
+
+        self.assertEqual(len(state.installations), 2)
+
     def test_project_and_user_effect_destinations_do_not_cross_scope(self) -> None:
         project_effect = EffectProof(
             kind="write-file",

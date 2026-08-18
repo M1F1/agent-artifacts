@@ -332,7 +332,8 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
     def test_two_reviews_seconds_apart_produce_one_digest_to_authorize(self) -> None:
         # The review digest is consent a human carries to a later ``--yes``.  This runs the real CLI
         # twice across a real second boundary: the workspace is untouched between them, so the
-        # digest must not move.  Freshness still reaches the operator, beside the digest.
+        # digest must not move. Freshness still reaches the operator beside the digest, and auto
+        # mode refreshes the publication observation for each entry instead of aging it locally.
         with _environment() as env:
             _, first = env.run("marketplace", "install", _COORDINATE, "--profile", "claude")
             time.sleep(1.2)
@@ -345,8 +346,15 @@ class LifecycleUpdateStatusUninstallE2ETest(unittest.TestCase):
                 for payload in (first, second)
                 for reading in payload["source_freshness"]
             ]
-            self.assertEqual(len(ages), 2)
-            self.assertGreater(ages[1], ages[0], "the clock must actually have advanced")
+            self.assertEqual(ages, [0, 0])
+            self.assertTrue(
+                all(
+                    reading["health"] == "healthy"
+                    for payload in (first, second)
+                    for reading in payload["source_freshness"]
+                ),
+                "auto mode must compare and republish before each review",
+            )
 
     def test_expect_carries_one_reviewed_decision_across_two_commands(self) -> None:
         # The workflow the review text prescribes: read the digest from a review, then finalize that

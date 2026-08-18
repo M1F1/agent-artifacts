@@ -146,9 +146,10 @@ own confirmation.
 - No cascading uninstall driven by a source operation.
 - No object-store reclamation in this change.
 - No new configuration schema revision: removal deletes an entry from the existing shape.
-- `sync.mode` is currently parsed, carried through policy, and consumed by nothing. It is a real
-  defect — a configuration knob that cannot change behaviour — but it is a separate one and is not
-  repaired here.
+- Source identity adoption remains separate from freshness policy. Effective `sync.mode` is now
+  consumed by the origin-freshness runtime described in
+  [`DESIGN-source-origin-freshness.md`](DESIGN-source-origin-freshness.md); it never authorizes an
+  identity transition.
 
 ## 9. Acceptance criteria
 

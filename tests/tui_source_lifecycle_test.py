@@ -21,6 +21,7 @@ from agent_artifacts.configuration.model import (
     UserConfiguration,
     default_user_configuration,
 )
+from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ObjectDigest, SourceAlias, SourceId
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.native_tree import (
@@ -32,6 +33,8 @@ from agent_artifacts.protocol.native_tree import (
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.sources.model import (
     CurrentSource,
+    HealthStatus,
+    SourceHealth,
     SourceIdentityTransition,
     SourceSyncOutcome,
     SyncDisposition,
@@ -43,6 +46,7 @@ from agent_artifacts.tui_sources import (
     build_source_stage,
     plan_source_removal,
     render_source_removal_review,
+    render_source_stage,
     render_source_sync_outcome,
     render_source_sync_review,
 )
@@ -222,6 +226,45 @@ class SourceLifecyclePlanningTests(unittest.TestCase):
         self.assertIn("snapshot updated", published[0])
         self.assertIn("already current", unchanged[0])
         self.assertIn("keeping the last good snapshot", retained[0])
+
+    def test_origin_mismatch_and_a_failed_comparison_have_distinct_source_rows(self) -> None:
+        source = _registry()
+        current = _outcome(source).current
+        unavailable = Diagnostic(
+            DiagnosticCode("source-unavailable"),
+            Severity.ERROR,
+            "origin could not be reached",
+        )
+        mismatched = _unwrap(
+            build_source_stage(
+                _configuration(source),
+                OrganizationPolicy(1),
+                {
+                    source.alias: SourceHealth(
+                        HealthStatus.NOT_SYNCHRONIZED,
+                        10,
+                        current,
+                    )
+                },
+            )
+        )
+        unchecked = _unwrap(
+            build_source_stage(
+                _configuration(source),
+                OrganizationPolicy(1),
+                {
+                    source.alias: SourceHealth(
+                        HealthStatus.CHECK_UNAVAILABLE,
+                        10,
+                        current,
+                        (unavailable,),
+                    )
+                },
+            )
+        )
+
+        self.assertIn("health: not-synchronized", "\n".join(render_source_stage(mismatched)))
+        self.assertIn("health: could-not-check", "\n".join(render_source_stage(unchecked)))
 
 
 class _Runtime:

@@ -96,16 +96,20 @@ def take_subtree(
         return _error("a vendored subtree must be taken from an immutable Git snapshot")
     prefix = f"{path}/"
     at_path = next((item for item in snapshot.entries if str(item.path) == str(path)), None)
-    if at_path is not None and at_path.kind is not SnapshotEntryKind.DIRECTORY:
-        return _error(f"the requested subtree path is not a directory: {path}")
+    single_file = at_path is not None and at_path.kind is SnapshotEntryKind.FILE
     entries: list[SnapshotEntry] = []
     files = 0
     total_bytes = 0
     for entry in snapshot.entries:
         raw = str(entry.path)
-        if not raw.startswith(prefix):
-            continue
-        relative = raw.removeprefix(prefix)
+        if single_file:
+            if entry is not at_path:
+                continue
+            relative = path.parts[-1]
+        else:
+            if not raw.startswith(prefix):
+                continue
+            relative = raw.removeprefix(prefix)
         parsed = parse_relative_path(relative)
         if isinstance(parsed, Err):
             return _error(f"the subtree contains an unsafe relative path: {raw}")

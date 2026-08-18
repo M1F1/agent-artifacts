@@ -28,8 +28,10 @@ from agent_artifacts.protocol.semver import (
     version_bounds_label,
 )
 
-RUNTIME_REQUIREMENTS_EXTENSION = "com.m1f1.runtime-requirements"
+RUNTIME_REQUIREMENTS_EXTENSION = "aart.runtime-requirements"
+RETIRED_RUNTIME_REQUIREMENTS_EXTENSION = "com.m1f1.runtime-requirements"
 RUNTIME_REQUIREMENTS_INVALID = DiagnosticCode("runtime-requirements-invalid")
+RUNTIME_REQUIREMENTS_MIGRATION = DiagnosticCode("runtime-requirements-migration-required")
 RUNTIME_ENVIRONMENT_INVALID = DiagnosticCode("runtime-environment-invalid")
 
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
@@ -75,6 +77,7 @@ def _error(
     *,
     path: str,
     pointer: str | None = None,
+    remediation: tuple[str, ...] = (),
 ) -> Err:
     return Err(
         (
@@ -83,6 +86,7 @@ def _error(
                 Severity.ERROR,
                 message,
                 SourceLocation(path=path, pointer=pointer),
+                remediation=remediation,
             ),
         )
     )
@@ -245,7 +249,18 @@ def parse_runtime_requirements(
 ) -> Result[tuple[RuntimeRequirement, ...]]:
     """Parse the optional namespaced extension while leaving native v1 compatibility unchanged."""
 
-    extension = dict(manifest.extensions).get(RUNTIME_REQUIREMENTS_EXTENSION)
+    extensions = dict(manifest.extensions)
+    if RETIRED_RUNTIME_REQUIREMENTS_EXTENSION in extensions:
+        return _error(
+            RUNTIME_REQUIREMENTS_MIGRATION,
+            f"runtime requirements extension {RETIRED_RUNTIME_REQUIREMENTS_EXTENSION!r} is retired",
+            path=path,
+            pointer=f"/{RETIRED_RUNTIME_REQUIREMENTS_EXTENSION}",
+            remediation=(
+                f"rename the extension to {RUNTIME_REQUIREMENTS_EXTENSION!r}; only the current key is accepted",
+            ),
+        )
+    extension = extensions.get(RUNTIME_REQUIREMENTS_EXTENSION)
     if extension is None:
         return Ok(())
     root_pointer = f"/{RUNTIME_REQUIREMENTS_EXTENSION}"
@@ -509,7 +524,9 @@ def runtime_check_to_data(check: RuntimeRequirementCheck) -> dict[str, object]:
 __all__ = [
     "RUNTIME_ENVIRONMENT_INVALID",
     "RUNTIME_REQUIREMENTS_EXTENSION",
+    "RETIRED_RUNTIME_REQUIREMENTS_EXTENSION",
     "RUNTIME_REQUIREMENTS_INVALID",
+    "RUNTIME_REQUIREMENTS_MIGRATION",
     "RuntimeCapability",
     "RuntimeEnvironment",
     "RuntimeRequirement",

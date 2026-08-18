@@ -10,7 +10,9 @@ As with the parent design, this document is **what** and **why**; the **how** is
 
 > **Decisions already taken** (in review, before this draft): type name = **`memory`**;
 > default install mode = **`prepend`**; per-profile type support is made **optional** so a
-> harness can decline a type it can't express; tabnine MCP target = **`.tabnine/agent/settings.json` · `mcpServers`** (per directive — see §6.1 for the doc caveat).
+> harness can decline a type it can't express; Tabnine MCP target =
+> **`.tabnine/mcp_servers.json` · `mcpServers`** at project scope and the same path under the home
+> directory at user scope (settled in §6.1).
 
 ---
 
@@ -216,30 +218,31 @@ wrong ones change.
 | skills | `.tabnine/agent/skills/<name>/` | ✅ already correct — keep |
 | guidelines | `.tabnine/guidelines/<name>.md` (copy) | ✅ already correct — keep |
 | memory | `.tabnine/guidelines/` (dir copy, `<name>.md`) | ➕ new |
-| **mcp** | **`.tabnine/agent/settings.json` · `mcpServers` · key** | ⚠️ changed (was `.tabnine/config.json`) — see §6.1 |
+| **mcp** | **`.tabnine/mcp_servers.json` · `mcpServers` · key** | ✅ official project target; user target is `~/.tabnine/mcp_servers.json` — see §6.1 |
 | **hooks** | scripts `.tabnine/agent/hooks/<name>/`; merge **`.tabnine/agent/settings.json` · `hooks.<event>` · list**; events **`BeforeTool`/`AfterTool`/`SessionEnd`** | 🔧 changed (was `.tabnine/hooks/` + `.tabnine/config.json` + Claude event names) |
 
 Sources: [Agent Skills](https://docs.tabnine.com/main/getting-started/tabnine-cli/features/agent-skills),
 [Agent Guidelines](https://docs.tabnine.com/main/getting-started/tabnine-agent/guidelines),
-[CLI Settings Reference](https://docs.tabnine.com/main/getting-started/tabnine-cli/features/settings/settings-reference)
+[MCP server configuration](https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-intro-and-setup),
+[CLI Settings](https://docs.tabnine.com/main/getting-started/tabnine-cli/features/settings)
 (settings.json has top-level `hooks` + `hooksConfig`; hook events include `BeforeTool`,
 `AfterTool`, `BeforeAgent`, `AfterAgent`, `Notification`, `SessionStart`, `SessionEnd`,
 `PreCompress`, `BeforeModel`, `AfterModel`, `BeforeToolSelection`).
 
-### 6.1 Note on the MCP target (doc caveat)
+### 6.1 MCP target evidence
 
-The MCP target is set to **`.tabnine/agent/settings.json` · `mcpServers`** per direction. The
-**published docs differ** and this should be verified in-environment (parent §19 style):
-- The documented home for MCP server *definitions* is the standalone **`.tabnine/mcp_servers.json`**
-  (key `mcpServers`) — [MCP intro/setup](https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-intro-and-setup),
-  [MCP config examples](https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-examples-and-advanced-usage).
-- The CLI's `settings.json` documents an MCP key named **`mcp`** (governance only:
-  `serverCommand`/`allowed`/`excluded`), **not** `mcpServers`.
+Tabnine's current MCP documentation names one standalone server-definition file with the same
+`{"mcpServers": {…}}` shape at both scopes:
 
-Because this is one `MergeSpec` (data, parent §11), switching the file later is a one-line
-record change with no engine impact. The hooks target genuinely *does* live in
-`settings.json`, so co-locating MCP there keeps everything Tabnine under `.tabnine/agent/` —
-internally consistent, just flagged against the docs.
+- project: **`<project>/.tabnine/mcp_servers.json`**;
+- user: **`~/.tabnine/mcp_servers.json`**.
+
+The separate `.tabnine/agent/settings.json` is Tabnine CLI's hierarchical behavior/settings file.
+It remains the hook target, but it is not the documented MCP server store. On `2026-08-18` the
+maintainer machine also held a real `~/.tabnine/mcp_servers.json` with an `mcpServers` object and an
+active named server (credentials and values were deliberately not read into this document).
+`tests/tabnine_mcp_e2e_test.py` installs the same artifact at project and user scope, proves both
+documented files and their JSON shape, checks status, and uninstalls each scope independently.
 
 ### 6.2 Hook event vocabulary
 
@@ -331,13 +334,10 @@ codes are unchanged; a `replace` needing `--force` returns the existing CONFLICT
 
 ## 9. Open questions / verify items (parent §19 style)
 
-1. **Tabnine MCP location** (§6.1) — directive says `.tabnine/agent/settings.json · mcpServers`;
-   docs say `.tabnine/mcp_servers.json`. Verify against the installed CLI; it's a one-line
-   record fix either way.
-2. **OpenCode hook events / `AGENTS.md` vs `opencode.json`** — still unverified (parent §19.1/3).
-3. **Vibe MCP/hooks via TOML** (§7.2) — promote from "deferred" once a stdlib TOML emitter +
+1. **OpenCode hook events / `AGENTS.md` vs `opencode.json`** — still unverified (parent §19.1/3).
+2. **Vibe MCP/hooks via TOML** (§7.2) — promote from "deferred" once a stdlib TOML emitter +
    `MergeSpec.format` land; until then `vibe` is a legitimate partial profile.
-4. **Replace-mode recovery** — `<dest>.agent-artifacts-bak` is the MVP safety net; revisit if a
+3. **Replace-mode recovery** — `<dest>.agent-artifacts-bak` is the MVP safety net; revisit if a
    richer undo/history is wanted.
 
 **Decided non-goal (2026-06-22):** a *per-bundle* `memory` mode override is **not** added — the

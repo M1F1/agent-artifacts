@@ -31,6 +31,7 @@ from agent_artifacts.lifecycle import (
 )
 from agent_artifacts.marketplace.catalog import build_marketplace
 from agent_artifacts.profiles.builtin import builtin
+from agent_artifacts.profiles.model import MergeSpec
 from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.semver import SemVer
 from agent_artifacts.store.model import ReferenceKind, ReferenceReadRequest
@@ -166,6 +167,94 @@ class CanonicalLifecycleTest(unittest.TestCase):
             # The last record out of the scope takes the manifest with it (SI-7), so "no
             # installations remain" is now read from the absence of the state itself.
             self.assertFalse((project / ".agent-artifacts").exists())
+
+    def test_profile_target_migration_refuses_orphan_then_uninstalls_and_reinstalls(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project, _checkout, paths, location, request, catalog, effective = _fixture(root, "mcp")
+            adapter = LocalLifecycleAdapter()
+            current_profile = builtin()["claude"]
+            old_profile = replace(
+                current_profile,
+                mcp=MergeSpec(
+                    file=".claude/legacy-mcp.json",
+                    json_path="mcpServers",
+                    mode="key",
+                ),
+            )
+            old_plan = prepare_install(
+                replace(request, mode="copy"),
+                catalog,
+                effective,
+                old_profile,
+                location,
+                paths,
+                adapter,
+            )
+            assert isinstance(old_plan, Ok), old_plan
+            old_install = finalize_install(
+                old_plan.value,
+                old_plan.value.review_digest,
+                catalog,
+                effective,
+                adapter,
+            )
+            assert isinstance(old_install, Ok), old_install
+            legacy = project / ".claude/legacy-mcp.json"
+            self.assertTrue(legacy.exists())
+            record = _state(project).installations[0]
+
+            migration = prepare_update(
+                record,
+                catalog,
+                effective,
+                current_profile,
+                location,
+                paths,
+                adapter,
+            )
+
+            assert isinstance(migration, Ok), migration
+            self.assertIsNotNone(migration.value.terminal)
+            assert migration.value.terminal is not None
+            self.assertEqual(migration.value.terminal.status, LifecycleStatus.CONFLICT)
+            self.assertIn("update would orphan recorded effects", migration.value.terminal.detail)
+            self.assertIn("marketplace uninstall", migration.value.terminal.detail)
+            self.assertIn("marketplace install", migration.value.terminal.detail)
+            self.assertTrue(legacy.exists())
+            self.assertFalse((project / ".mcp.json").exists())
+
+            uninstall = prepare_uninstall(record, _state(project), location, paths, adapter)
+            assert isinstance(uninstall, Ok), uninstall
+            removed = finalize_uninstall(
+                uninstall.value,
+                uninstall.value.review_digest,
+                adapter,
+            )
+            assert isinstance(removed, Ok), removed
+            self.assertEqual(removed.value.status, LifecycleStatus.REMOVED)
+            self.assertFalse(legacy.exists())
+
+            replacement = prepare_install(
+                replace(request, mode="copy"),
+                catalog,
+                effective,
+                current_profile,
+                location,
+                paths,
+                adapter,
+            )
+            assert isinstance(replacement, Ok), replacement
+            installed = finalize_install(
+                replacement.value,
+                replacement.value.review_digest,
+                catalog,
+                effective,
+                adapter,
+            )
+            assert isinstance(installed, Ok), installed
+            self.assertEqual(installed.value.status, InstallStatus.APPLIED)
+            self.assertTrue((project / ".mcp.json").exists())
 
     def test_check_is_fetch_free_and_compares_only_the_recorded_subscription(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

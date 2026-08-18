@@ -61,7 +61,7 @@ class WizardPosition:
 
 @dataclass(frozen=True, slots=True)
 class BasketItem:
-    kind: Literal["artifact", "bundle", "reference"]
+    kind: Literal["artifact", "collection", "reference"]
     key: str
     label: str
     description: str = ""
@@ -173,6 +173,7 @@ def stages_for(session: WizardSession) -> Tuple[WizardStage, ...]:
     if action in (
         "init",
         "scaffold",
+        "collection",
         "promote-native",
         "refresh-native",
         "vendor",

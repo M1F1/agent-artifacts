@@ -12,8 +12,10 @@ from agent_artifacts.lifecycle import (
     LifecycleStatus,
 )
 from agent_artifacts.marketplace.catalog import build_marketplace
+from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.native_models import InstallSpec
-from agent_artifacts.protocol.registry_models import ReviewRecord
+from agent_artifacts.protocol.paths import SafeRelativePath
+from agent_artifacts.protocol.registry_models import IndexSetup, ReviewRecord
 from agent_artifacts.protocol.semver import SemVer, VersionBounds
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.aggregation import ArtifactSecurityEvidence
@@ -106,6 +108,49 @@ def _flat(lines: tuple[str, ...]) -> str:
 
 
 class TuiMarketplaceTest(unittest.TestCase):
+    def test_unset_setup_policy_permits_recipe_capabilities_and_an_empty_policy_denies_them(
+        self,
+    ) -> None:
+        source = configured_source("team", SourceKind.SOURCE_GIT)
+        setup_artifact = replace(
+            artifact("team-source", "configured"),
+            setup=IndexSetup(
+                SafeRelativePath(("setup", "installer.json")),
+                ("darwin",),
+                (Capability("keychain"), Capability("managed-file")),
+            ),
+        )
+        result = build_marketplace(
+            graph((source, "team-source", (setup_artifact,))),
+            effective_configuration((source,)),
+            (source_state(source, "team-source", display_order=0),),
+        )
+        assert isinstance(result, Ok), result
+
+        unrestricted = project_marketplace_rows(
+            result.value,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy"),
+        )[0]
+        denied = project_marketplace_rows(
+            result.value,
+            MarketplaceTarget(("claude",), "darwin", "project", "copy", ()),
+        )[0]
+        allowed = project_marketplace_rows(
+            result.value,
+            MarketplaceTarget(
+                ("claude",),
+                "darwin",
+                "project",
+                "copy",
+                (Capability("keychain"), Capability("managed-file")),
+            ),
+        )[0]
+
+        self.assertTrue(unrestricted.compatible)
+        self.assertFalse(denied.compatible)
+        self.assertTrue(allowed.compatible)
+        self.assertEqual(denied.reasons[0].code, "setup-capability-missing")
+
     def test_newer_aart_requirement_stays_visible_but_cannot_enter_the_basket(self) -> None:
         source = configured_source("team", SourceKind.SOURCE_GIT)
         future = artifact(

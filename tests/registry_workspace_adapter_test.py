@@ -18,6 +18,31 @@ from agent_artifacts.registry_commands.planning import plan_registry_init
 
 
 class RegistryWorkspaceAdapterTest(unittest.TestCase):
+    def test_mutation_refusal_distinguishes_no_checkout_from_a_registry_inside_one(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            standalone = Path(temp) / "standalone"
+            standalone.mkdir()
+            missing = FilesystemRegistryWorkspace(str(standalone)).verify_mutation_target()
+            assert isinstance(missing, Err), missing
+            self.assertIn("git -C", missing.diagnostics[0].remediation[0])
+            self.assertIn(str(standalone), missing.diagnostics[0].remediation[0])
+
+            monorepo = Path(temp) / "monorepo"
+            registry = monorepo / "registry"
+            registry.mkdir(parents=True)
+            subprocess.run(
+                ("git", "-C", str(monorepo), "init", "-q"),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            nested = FilesystemRegistryWorkspace(str(registry)).verify_mutation_target()
+            assert isinstance(nested, Err), nested
+            remediation = nested.diagnostics[0].remediation[0]
+            self.assertIn("must be the repository root", remediation)
+            self.assertIn(str(registry), remediation)
+            self.assertIn(str(monorepo), remediation)
+
     def test_apply_requires_real_writable_git_checkout_and_exact_preconditions(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "registry"

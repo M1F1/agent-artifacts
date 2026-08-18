@@ -136,8 +136,15 @@ class LocalSetupAdapter(LocalInstallAdapter, SetupApplyPorts):
                         and not isinstance(parsed_setup, LegacyErr)
                         and parsed_setup.value.records == (expected_record,)
                     )
-                    reference_matches = _owner_digests(references.value, plan) == (
-                        plan.object_digest,
+                    # The reviewed precondition may deliberately name the superseded object.
+                    # An update replaces the installation record before setup runs, while the
+                    # setup receipt and its CAS reference still describe the previous object.
+                    # Requiring the new digest here made every updated artifact configurable
+                    # exactly once: planning reviewed the old reference, then persistence
+                    # rejected that same reviewed state. The write below atomically moves the
+                    # reference to ``plan.object_digest`` after accepting the exact precondition.
+                    reference_matches = (
+                        _owner_digests(references.value, plan) == plan.setup_reference_precondition
                     )
                 if not state_matches or not reference_matches:
                     return _error("setup state or object reference changed after Review")
