@@ -157,7 +157,7 @@ Build / Done when.
   - Add `memory` targets: `claude`→`CLAUDE.md` (file), `opencode`→`AGENTS.md` (file),
     `tabnine`→`.tabnine/guidelines/` (dir).
   - **Fix tabnine** (DESIGN-memory §6; project MCP path subsequently settled by `AD-04`):
-    mcp → `.tabnine/mcp_servers.json` · `mcpServers`;
+    mcp → `.tabnine/agent/settings.json` · `mcpServers`;
     hooks → scripts `.tabnine/agent/hooks/<name>/`, merge `.tabnine/agent/settings.json` ·
     `hooks.<event>`, events `PreToolUse→BeforeTool`, `PostToolUse→AfterTool`, `Stop→SessionEnd`.
   - **Add `vibe`** (DESIGN-memory §7): memory `AGENTS.md` (file), skills `.vibe/skills/<name>/`,

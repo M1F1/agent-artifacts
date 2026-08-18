@@ -11,8 +11,8 @@ As with the parent design, this document is **what** and **why**; the **how** is
 > **Decisions already taken** (in review, before this draft): type name = **`memory`**;
 > default install mode = **`prepend`**; per-profile type support is made **optional** so a
 > harness can decline a type it can't express; Tabnine MCP target =
-> **`.tabnine/mcp_servers.json` · `mcpServers`** at project scope and the same path under the home
-> directory at user scope (settled in §6.1).
+> **`.tabnine/agent/settings.json` · `mcpServers`** at project scope and the same path under the
+> home directory at user scope (settled from target-environment evidence in §6.1).
 
 ---
 
@@ -218,7 +218,7 @@ wrong ones change.
 | skills | `.tabnine/agent/skills/<name>/` | ✅ already correct — keep |
 | guidelines | `.tabnine/guidelines/<name>.md` (copy) | ✅ already correct — keep |
 | memory | `.tabnine/guidelines/` (dir copy, `<name>.md`) | ➕ new |
-| **mcp** | **`.tabnine/mcp_servers.json` · `mcpServers` · key** | ✅ official project target; user target is `~/.tabnine/mcp_servers.json` — see §6.1 |
+| **mcp** | **`.tabnine/agent/settings.json` · `mcpServers` · key** | ✅ measured company-build project target; user target is `~/.tabnine/agent/settings.json` — see §6.1 |
 | **hooks** | scripts `.tabnine/agent/hooks/<name>/`; merge **`.tabnine/agent/settings.json` · `hooks.<event>` · list**; events **`BeforeTool`/`AfterTool`/`SessionEnd`** | 🔧 changed (was `.tabnine/hooks/` + `.tabnine/config.json` + Claude event names) |
 
 Sources: [Agent Skills](https://docs.tabnine.com/main/getting-started/tabnine-cli/features/agent-skills),
@@ -231,18 +231,25 @@ Sources: [Agent Skills](https://docs.tabnine.com/main/getting-started/tabnine-cl
 
 ### 6.1 MCP target evidence
 
-Tabnine's current MCP documentation names one standalone server-definition file with the same
-`{"mcpServers": {…}}` shape at both scopes:
+The target company Tabnine build surfaced a server installed by AART into project
+**`.tabnine/agent/settings.json`** as `disconnected`. That result is downstream of configuration
+discovery: the build parsed the `mcpServers` entry, attempted to start the server, and could not
+connect to it. Other hand-authored servers in that same file work. This is the only direct
+measurement from the environment AART is shipping to, so it defines the profile target.
 
-- project: **`<project>/.tabnine/mcp_servers.json`**;
-- user: **`~/.tabnine/mcp_servers.json`**.
+Current published Tabnine documentation instead names standalone `.tabnine/mcp_servers.json` and
+`~/.tabnine/mcp_servers.json` files. A different maintainer machine also has the user-scope form
+with an active server. Neither observation establishes that the target company build reads those
+files. Until that build is measured, AART uses:
 
-The separate `.tabnine/agent/settings.json` is Tabnine CLI's hierarchical behavior/settings file.
-It remains the hook target, but it is not the documented MCP server store. On `2026-08-18` the
-maintainer machine also held a real `~/.tabnine/mcp_servers.json` with an `mcpServers` object and an
-active named server (credentials and values were deliberately not read into this document).
-`tests/tabnine_mcp_e2e_test.py` installs the same artifact at project and user scope, proves both
-documented files and their JSON shape, checks status, and uninstalls each scope independently.
+- project: **`<project>/.tabnine/agent/settings.json`**;
+- user: **`~/.tabnine/agent/settings.json`**;
+- JSON path: **`mcpServers`** at both scopes.
+
+`tests/tabnine_mcp_e2e_test.py` pins both filenames, checks their JSON shape and status, asserts the
+unmeasured standalone files are not written, and uninstalls either scope independently. The live
+`disconnected` server remains a separate runtime/startup problem; this target decision makes no
+claim about its command or derived image tag.
 
 ### 6.2 Hook event vocabulary
 
@@ -334,10 +341,12 @@ codes are unchanged; a `replace` needing `--force` returns the existing CONFLICT
 
 ## 9. Open questions / verify items (parent §19 style)
 
-1. **OpenCode hook events / `AGENTS.md` vs `opencode.json`** — still unverified (parent §19.1/3).
-2. **Vibe MCP/hooks via TOML** (§7.2) — promote from "deferred" once a stdlib TOML emitter +
+1. **Tabnine standalone MCP files** (§6.1) — does the target company build also read them? Do not
+   move the single profile target until this is measured in that environment.
+2. **OpenCode hook events / `AGENTS.md` vs `opencode.json`** — still unverified (parent §19.1/3).
+3. **Vibe MCP/hooks via TOML** (§7.2) — promote from "deferred" once a stdlib TOML emitter +
    `MergeSpec.format` land; until then `vibe` is a legitimate partial profile.
-3. **Replace-mode recovery** — `<dest>.agent-artifacts-bak` is the MVP safety net; revisit if a
+4. **Replace-mode recovery** — `<dest>.agent-artifacts-bak` is the MVP safety net; revisit if a
    richer undo/history is wanted.
 
 **Decided non-goal (2026-06-22):** a *per-bundle* `memory` mode override is **not** added — the

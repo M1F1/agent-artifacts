@@ -69,7 +69,7 @@ class ScopeDomainTests(unittest.TestCase):
         self.assertEqual(opencode.mcp.file, f"{home}/.config/opencode/opencode.json")
         self.assertEqual(opencode.memory.dest, f"{home}/.config/opencode/AGENTS.md")
         self.assertEqual(tabnine.guidelines.dest, f"{home}/.tabnine/guidelines/")
-        self.assertEqual(tabnine.mcp.file, f"{home}/.tabnine/mcp_servers.json")
+        self.assertEqual(tabnine.mcp.file, f"{home}/.tabnine/agent/settings.json")
         self.assertEqual(vibe.skills.dir, f"{home}/.vibe/skills/<name>/")
 
     def test_custom_profile_loads_explicit_user_targets_and_reasons(self):

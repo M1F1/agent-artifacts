@@ -823,9 +823,8 @@ def _retired_effect_update(
 
     Install plans replace the record and write their current effects atomically, but they do not
     remove effects absent from the replacement. Silently continuing would leave the old bytes on
-    disk after their ownership proof disappeared from state. A profile target migration (including
-    Tabnine's project MCP correction in 2.7.0) must therefore use the already-atomic uninstall and
-    install boundaries explicitly.
+    disk after their ownership proof disappeared from state. A profile target migration must
+    therefore use the already-atomic uninstall and install boundaries explicitly.
     """
 
     replacement = next(

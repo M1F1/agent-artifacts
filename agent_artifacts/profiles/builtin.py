@@ -133,17 +133,18 @@ _OPENCODE = Profile(
 # --------------------------------------------------------------------------- #
 # Tabnine                                                                      #
 # --------------------------------------------------------------------------- #
-# Paths corrected against the official Tabnine CLI docs (docs/design/DESIGN-memory.md §6).
+# Paths resolved against the target company build (docs/design/DESIGN-memory.md §6).
 # Skills (.tabnine/agent/skills/) and guidelines (copy → .tabnine/guidelines/)
 # were already correct and are kept; MCP and hooks are corrected below.
 _TABNINE = Profile(
     name="tabnine",
     skills=CopyTarget(dir=".tabnine/agent/skills/<name>/"),
     guidelines=GuidelineTarget(dest=".tabnine/guidelines/"),
-    # Tabnine's MCP contract is the standalone mcp_servers.json at project or home scope.
-    # settings.json is the hierarchical CLI settings document, not the documented server store.
+    # The target company build surfaced an installed entry from settings.json as disconnected,
+    # proving it parsed this mcpServers map before the server failed at runtime. Published docs
+    # name mcp_servers.json for other builds; do not move this target without measuring this build.
     mcp=MergeSpec(
-        file=".tabnine/mcp_servers.json",
+        file=".tabnine/agent/settings.json",
         json_path="mcpServers",
         mode="key",
     ),
@@ -175,7 +176,7 @@ _TABNINE = Profile(
     user=ProfileTargets(
         guidelines=GuidelineTarget(dest="~/.tabnine/guidelines/"),
         mcp=MergeSpec(
-            file="~/.tabnine/mcp_servers.json",
+            file="~/.tabnine/agent/settings.json",
             json_path="mcpServers",
             mode="key",
         ),

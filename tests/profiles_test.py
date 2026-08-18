@@ -99,10 +99,11 @@ class TestBuiltinProfiles(unittest.TestCase):
         self.assertEqual(p.guidelines.dest, ".tabnine/guidelines/")
 
     def test_tabnine_mcp(self) -> None:
-        # Official Tabnine Agent docs name one standalone MCP file at either scope.
+        # The target company build demonstrably parses this settings.json mcpServers map. Keep the
+        # measured environment above documentation for other Tabnine builds (AD-04/AD-28).
         p = builtin()["tabnine"]
         self.assertIsInstance(p.mcp, MergeSpec)
-        self.assertEqual(p.mcp.file, ".tabnine/mcp_servers.json")
+        self.assertEqual(p.mcp.file, ".tabnine/agent/settings.json")
         self.assertEqual(p.mcp.json_path, "mcpServers")
         self.assertEqual(p.mcp.mode, "key")
 

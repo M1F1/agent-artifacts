@@ -20,8 +20,8 @@ Red:
 - Test pure `profile_for_scope` keeps project targets unchanged and expands every user target to
   an absolute path beneath the supplied home.
 - Test all built-ins have a target or explicit one-line reason for every user artifact type.
-- Assert the official target matrix exactly, including Tabnine's standalone MCP file and Vibe's
-  JSON/TOML limitations.
+- Assert the target matrix exactly, including Tabnine's company-build `settings.json` MCP file and
+  Vibe's JSON/TOML limitations.
 - Test custom profile `user` records, malformed unsupported reasons, and the generic fallback for
   intentionally omitted reasons.
 

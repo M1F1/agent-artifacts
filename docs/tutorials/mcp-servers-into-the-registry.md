@@ -256,9 +256,11 @@ Five things that are not free choices:
   `aart marketplace health` and never blocks an install. Extension keys must be dotted and
   lowercase; `x-anything` is refused as an unknown field.
 - `scopes` decides which file the descriptor is merged into. Under the `tabnine` profile, `user`
-  means `~/.tabnine/mcp_servers.json` and `project` means `.tabnine/mcp_servers.json`. These are the
-  two locations in Tabnine's published MCP contract; AART's project/user install, status, and
-  independent uninstall paths are covered by `tests/tabnine_mcp_e2e_test.py`.
+  means `~/.tabnine/agent/settings.json` and `project` means
+  `.tabnine/agent/settings.json`, under `mcpServers`. The target company build demonstrably parses
+  the project file; published standalone-file documentation describes another or unmeasured build.
+  AART's project/user install, status, and independent uninstall paths are covered by
+  `tests/tabnine_mcp_e2e_test.py`.
 
 ### 5.3 Write `payload/mcp.json`
 

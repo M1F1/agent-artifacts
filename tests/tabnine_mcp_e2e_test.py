@@ -1,4 +1,4 @@
-"""Live filesystem contract for Tabnine's documented project and user MCP locations."""
+"""Live filesystem contract for the company Tabnine build's project and user MCP targets."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _source_with_mcp(root: Path) -> Path:
 
 
 class TabnineMcpE2ETest(unittest.TestCase):
-    def test_project_and_user_scopes_use_the_documented_files_independently(self) -> None:
+    def test_project_and_user_scopes_use_company_settings_files_independently(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             source = _source_with_mcp(Path(raw))
             with _environment(source) as environment:
@@ -84,8 +84,8 @@ class TabnineMcpE2ETest(unittest.TestCase):
 
                 self.assertEqual(project_code, 0, project_payload)
                 self.assertEqual(user_code, 0, user_payload)
-                project_file = environment.project / ".tabnine/mcp_servers.json"
-                user_file = environment.home / ".tabnine/mcp_servers.json"
+                project_file = environment.project / ".tabnine/agent/settings.json"
+                user_file = environment.home / ".tabnine/agent/settings.json"
                 for path in (project_file, user_file):
                     self.assertEqual(
                         json.loads(path.read_text(encoding="utf-8"))["mcpServers"]["atlassian"][
@@ -93,8 +93,11 @@ class TabnineMcpE2ETest(unittest.TestCase):
                         ],
                         "npx",
                     )
-                self.assertFalse((environment.project / ".tabnine/agent/settings.json").exists())
-                self.assertFalse((environment.home / ".tabnine/agent/settings.json").exists())
+                # AD-28 regression: 2.7.0 pinned these unmeasured standalone files as required and
+                # asserted that the company-proven settings files above did not exist. Flip that
+                # contract rather than accepting either destination silently.
+                self.assertFalse((environment.project / ".tabnine/mcp_servers.json").exists())
+                self.assertFalse((environment.home / ".tabnine/mcp_servers.json").exists())
 
                 project_status, project_status_payload = environment.run(
                     "marketplace", "status", "--profile", "tabnine"

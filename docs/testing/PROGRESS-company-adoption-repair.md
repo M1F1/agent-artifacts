@@ -365,3 +365,24 @@ dispositions.
 - Repair scope is now explicit: restore project and user MCP files to `settings.json`, retain the
   new user scope and `mcpServers` merge shape, reverse the pinning tests and current normative docs,
   then run focused tests, complete quality, live acceptance, and a 2.7.1 patch release.
+
+### 08:16 CEST — measured Tabnine target restored; `AD-04` reclosed
+
+- The builtin Tabnine profile again merges project MCP entries into
+  `.tabnine/agent/settings.json` and user entries into `~/.tabnine/agent/settings.json`, both at
+  `mcpServers`. The 2.7.0 user-scope capability remains; no skill, guideline, hook or memory target
+  changed. The generic retired-effect guard remains but its comment no longer calls the 2.7.0 move
+  a correction.
+- Reversed the real CLI E2E rather than relaxing it: it requires the two settings files, checks the
+  entry and status at both scopes, requires both standalone files to be absent, and removes each
+  scope independently. Profile and install-scope tests pin the same project/user filenames and say
+  that the company-build measurement outranks documentation for other builds.
+- Corrected the two current tutorials, `DESIGN-memory.md`, `DESIGN-install-scope.md`, and their plans.
+  They preserve the published-doc discrepancy as an unmeasured verify item and keep the live
+  `disconnected` server out of this file-target repair. Historical 2.7.0 release/progress documents
+  remain descriptions of the regression that release actually shipped.
+- Focused verification passed: 83 tests and 27 subtests across builtin profiles, overrides, install
+  scope, real marketplace CLI Tabnine lifecycle, and canonical lifecycle. Ruff format/check,
+  focused mypy, docs-check and diff whitespace checks are green. `AD-04` is closed on corrected
+  evidence; released-regression `AD-28` stays open through cross-version live acceptance and the
+  patch release. `AD-29` remains an explicitly separate loader finding.
