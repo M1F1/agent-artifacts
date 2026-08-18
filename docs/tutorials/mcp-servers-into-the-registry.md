@@ -151,13 +151,15 @@ explains why; the rest of the section is in the order to do it.
 
 ### 5.1 Authored first, then vendored
 
-There is **no way to select individual files** out of `--path`. It takes a directory and copies it
-whole: no `--include`, no `--exclude`, no file list. `VendorOptions` carries an identity, a URL, a ref
-and one path, and nothing else. Two consequences:
+`--path` names **one directory or one file**, and there is no way to select a subset of a directory:
+no `--include`, no `--exclude`, no file list. `VendorOptions` carries an identity, a URL, a ref and
+one path, and nothing else. Three consequences:
 
-- **The upstream directory is the unit.** Give each server its own directory holding what you want
-  copied and nothing else. A loose `server.py` at a repository root cannot be vendored at all —
-  `error: the requested subtree path is not a directory`, which is `AD-11`.
+- **A directory is the unit when you take a directory.** Give each server its own directory holding
+  what you want copied and nothing else, or accept that its unused neighbours are copied too.
+- **A single file is re-rooted under its basename.** `--path servers/<name>/server.py` yields
+  `payload/server.py` alone. This closed `AD-11`; the sentence that used to stand here — that a loose
+  file cannot be vendored at all — described the behaviour before that repair.
 - **You cannot trim the copy afterwards.** `provenance.json` records a digest of what was taken, and
   `registry audit` recomputes it from the package on disk.
 
