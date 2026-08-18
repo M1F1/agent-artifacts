@@ -181,6 +181,20 @@ file to own: it appends its block below the `source` line. Confirm the second `l
 `-rw-r--r--` with no `->` arrow, then run setup again. If your dotfiles tool re-creates the link on
 its next run, exclude `.zshrc` from it, or the managed block disappears with the link.
 
+To keep the current contents in the new file instead of loading them through `source`, copy first
+and remove the link second:
+
+```bash
+REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && cp -p "$REAL" ~/.zshrc.real && rm ~/.zshrc && mv ~/.zshrc.real ~/.zshrc && diff "$REAL" ~/.zshrc && ls -l ~/.zshrc
+```
+
+The order matters. Copying onto `~/.zshrc` while it is still a link writes *through* the link, into
+the dotfiles file itself — `cp` refuses that as copying a file onto itself. Copying to a neighbour
+name, deleting the link, then renaming, leaves a real file whose content is byte-identical to what
+you had; the `diff` prints nothing when that holds. The cost of this variant is that the dotfiles
+copy stops being live: later edits there no longer reach your shell, and the managed block lands
+only in the new `~/.zshrc`.
+
 The Keychain item itself is written by `macos-keychain.store@1`, which plans
 `/usr/bin/security add-generic-password -U -a <account> -s <service> -w` and lets `security` prompt.
 **The secret goes from the keyboard into the Keychain; AART never holds it.**
