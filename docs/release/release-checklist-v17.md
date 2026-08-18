@@ -75,6 +75,6 @@ Confirm schema freeze v17 has the same protocol values and schema-input digests 
 
 ## Residues shipped open
 
-After this repair closes `AD-28`, 57 findings remain open: one `major`, two `high`, 33 `medium`, and
-21 `low`. `AD-29` is the only open adoption id introduced by this repair and is medium. No known
-high-severity adoption problem may remain at publication.
+Fifty-seven findings remain open: one `major`, two `high`, 33 `medium`, and 21 `low`. `AD-29` is the
+only open adoption id introduced by this repair and is medium. No known high-severity adoption
+problem may remain at publication.
