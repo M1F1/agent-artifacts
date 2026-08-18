@@ -386,3 +386,27 @@ dispositions.
   focused mypy, docs-check and diff whitespace checks are green. `AD-04` is closed on corrected
   evidence; released-regression `AD-28` stays open through cross-version live acceptance and the
   patch release. `AD-29` remains an explicitly separate loader finding.
+
+### 08:24 CEST — wheel-installed and cross-version live acceptance green; `AD-28` closed
+
+- Prepared patch release `2.7.1` and contract v17 at checkpoint `fbc2a0c`. V17 retains every v16
+  protocol number and every normative schema-input digest; only the freeze's release version
+  changes. Release/version/adoption verification passed 37 tests and 17 subtests.
+- Built the stamped `agent_artifacts-2.7.1-py3-none-any.whl`, installed it with `pip --no-deps`, and
+  confirmed `agent-artifacts 2.7.1`. Checkpoint digest:
+  `sha256:66295bcdd539a300c7d0ee3635342bdf8d0c442c5ca57c7eb969279d5eaa4950`.
+- Fresh isolated HOME/project/data/cache acceptance installed the same MCP artifact at project and
+  user scope. It wrote only `.tabnine/agent/settings.json` and
+  `~/.tabnine/agent/settings.json`, both under `mcpServers`; both standalone files stayed absent.
+  Repeated install and user update returned `no-op/current`, both statuses were current, and either
+  scope uninstalled without touching the other.
+- Downloaded the real public 2.7.0 and 2.6.1 release wheels and matched them to GitHub's asset
+  digests (`6673ae24…` and `33337df5…`). With 2.7.0, installed project and user entries into the
+  standalone files. The 2.7.1 updates exited 1/conflict at both scopes, named exact scope-correct
+  uninstall/install commands, left both target and installation-state hashes unchanged, and wrote
+  no settings file. Executing the remediation independently removed the old entries, wrote the
+  restored files and ended both scopes current.
+- The 2.6.1 control installed a project entry into settings. A 2.7.1 update returned
+  `no-op/current`; its state and settings bytes remained identical, proving the restored target
+  needs no migration from the last working release. Live root:
+  `/tmp/aart-271-live-fbc2a0c.RqjrTx`. `AD-28` is closed; `AD-29` remains medium and separate.
