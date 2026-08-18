@@ -172,8 +172,13 @@ ls -l ~/.zshrc
 ```
 
 ```bash
-REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && rm ~/.zshrc && printf 'source %s\n' "$REAL" > ~/.zshrc && ls -l ~/.zshrc
+[ -L ~/.zshrc ] && REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && rm ~/.zshrc && printf 'source %s\n' "$REAL" > ~/.zshrc && ls -l ~/.zshrc || echo "not a symlink: nothing was changed"
 ```
+
+**The `[ -L ~/.zshrc ]` guard is not decoration.** Without it, on a file that is not a link,
+`realpath` resolves to that same file: `rm` then deletes your real `~/.zshrc` and what replaces it
+is a file that sources itself, so the shell recurses on startup and the original contents are gone.
+The guard makes the command a no-op in exactly that case.
 
 `rm` deletes the link, never the file it pointed at. What replaces it is a real file that still
 loads your dotfiles copy, so nothing of your own configuration is lost and setup now has a regular
@@ -185,7 +190,7 @@ To keep the current contents in the new file instead of loading them through `so
 and remove the link second:
 
 ```bash
-REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && cp -p "$REAL" ~/.zshrc.real && rm ~/.zshrc && mv ~/.zshrc.real ~/.zshrc && diff "$REAL" ~/.zshrc && ls -l ~/.zshrc
+[ -L ~/.zshrc ] && REAL="$(python3 -c 'import os;print(os.path.realpath(os.path.expanduser("~/.zshrc")))')" && cp -p "$REAL" ~/.zshrc.real && rm ~/.zshrc && mv ~/.zshrc.real ~/.zshrc && diff "$REAL" ~/.zshrc && ls -l ~/.zshrc || echo "not a symlink: nothing was changed"
 ```
 
 The order matters. Copying onto `~/.zshrc` while it is still a link writes *through* the link, into
@@ -194,6 +199,10 @@ name, deleting the link, then renaming, leaves a real file whose content is byte
 you had; the `diff` prints nothing when that holds. The cost of this variant is that the dotfiles
 copy stops being live: later edits there no longer reach your shell, and the managed block lands
 only in the new `~/.zshrc`.
+
+Whichever variant you use, removing the link configures nothing by itself. The refusal stopped the
+recipe before its first effect, so there is no image, no Keychain item and no block — run
+`marketplace setup` again, then restart the harness from a terminal that shows the variables.
 
 The Keychain item itself is written by `macos-keychain.store@1`, which plans
 `/usr/bin/security add-generic-password -U -a <account> -s <service> -w` and lets `security` prompt.
