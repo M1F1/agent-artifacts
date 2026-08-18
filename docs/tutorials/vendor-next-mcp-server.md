@@ -135,7 +135,40 @@ written out separately in each one. Nothing in AART compares them, which is `AD-
 of difference produces a server that starts, authenticates as nobody, and reports success at every
 layer.
 
-### 2.3 The descriptor names its variables in `env`
+### 2.3 Where the variables actually come from
+
+No separate file is created and nothing is `source`d. `shell.env-from-keychain@1` edits the file its
+own `with.file` names — normally `~/.zshrc` — and owns exactly one sentinel-delimited block inside it.
+The block below is what the module really produces, rendered by calling `managed_block` directly:
+
+```sh
+# >>> aart setup: mcp/<NAME>@tabnine >>>
+export ATLASSIAN_API_TOKEN="$(/usr/bin/security find-generic-password -a default -s aart/mcp/<NAME> -w 2>/dev/null)"
+# <<< aart setup: mcp/<NAME>@tabnine <<<
+```
+
+Read it in order, because every line of it matters:
+
+- **The marker is `<type>/<name>@<profile>`**, so one artifact owns one block per profile, and a
+  re-run replaces its own block instead of appending a second one. `receipt undo` finds the block by
+  the same marker.
+- **The value is not stored in the file.** The file stores a *lookup*: every new shell runs `security`
+  and reads the Keychain. Rotating the credential means replacing the Keychain item, and no shell file
+  changes.
+- **`2>/dev/null` swallows the failure.** A denied Keychain prompt or a missing item produces an
+  **empty** variable, not an absent one and not an error. The server then starts with an empty
+  credential and reports success, which is the shape of `AD-31`.
+- **Only a login shell reads it.** An app launched from Dock or Spotlight never sourced `~/.zshrc`, so
+  it has none of these variables. Restart the harness from a terminal where `printenv` shows them.
+- **A symlinked `~/.zshrc` refuses the whole step** — the normal result of keeping dotfiles in a
+  repository. The refusal is correct and arrives late, after the image build and the credential
+  prompts (`AD-26`). Check `ls -l ~/.zshrc` before running setup.
+
+The Keychain item itself is written by `macos-keychain.store@1`, which plans
+`/usr/bin/security add-generic-password -U -a <account> -s <service> -w` and lets `security` prompt.
+**The secret goes from the keyboard into the Keychain; AART never holds it.**
+
+### 2.4 The descriptor names its variables in `env`
 
 ```json
 "server": {
