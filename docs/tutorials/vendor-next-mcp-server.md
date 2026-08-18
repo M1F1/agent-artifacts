@@ -161,8 +161,12 @@ Read it in order, because every line of it matters:
 - **Only a login shell reads it.** An app launched from Dock or Spotlight never sourced `~/.zshrc`, so
   it has none of these variables. Restart the harness from a terminal where `printenv` shows them.
 - **A symlinked `~/.zshrc` refuses the whole step** — the normal result of keeping dotfiles in a
-  repository. The refusal is correct and arrives late, after the image build and the credential
-  prompts (`AD-26`). Check `ls -l ~/.zshrc` before running setup.
+  repository. The refusal is `refusing to edit symlink: <path>`, reported as a missing prerequisite,
+  and it lands **before** any input is collected and before the first effect: nothing is built,
+  nothing is typed, nothing is written (`AD-26`, closed). The plan does not predict it, because
+  planning never touches the filesystem, so it appears only when you apply. Check `ls -l ~/.zshrc`
+  first; if it is a link, either point the step's `with.file` at a real file, or make `~/.zshrc` a
+  real file that `source`s the copy in the dotfiles repository.
 
 The Keychain item itself is written by `macos-keychain.store@1`, which plans
 `/usr/bin/security add-generic-password -U -a <account> -s <service> -w` and lets `security` prompt.
