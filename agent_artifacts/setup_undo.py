@@ -104,6 +104,8 @@ def _subject(receipt: Mapping[str, object]) -> str:
 
 
 def _disposition(receipt: Mapping[str, object]) -> tuple[str, str]:
+    if receipt.get("setup_disposition") == "compensated":
+        return KEEPS, "the failed setup already compensated this step"
     module = str(receipt.get("module", ""))
 
     if module == "macos-keychain.store@1":

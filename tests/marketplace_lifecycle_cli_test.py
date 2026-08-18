@@ -22,6 +22,7 @@ from agent_artifacts.consumer.model import (
     ConsumerReview,
     ConsumerReviewItem,
     ConsumerSetupDeclaration,
+    ConsumerSetupFailure,
     ConsumerSetupQueue,
     ConsumerTerminalItem,
 )
@@ -534,6 +535,50 @@ class LifecycleRequestMappingTests(unittest.TestCase):
 
 
 class SetupAuthorizationTests(unittest.TestCase):
+    def test_install_and_update_exit_on_the_payload_not_an_unauthorizable_setup_queue(self) -> None:
+        failure = ConsumerSetupFailure(
+            f"{COORDINATE}#claude/project",
+            "setup from unverified requires explicit source authorization",
+        )
+        for action in ("install", "update"):
+            with self.subTest(action=action):
+                outcome = ConsumerOutcome(
+                    action,  # type: ignore[arg-type]
+                    (
+                        ConsumerTerminalItem(
+                            f"{COORDINATE}#claude/project",
+                            "changed" if action == "install" else "current",
+                            "payload succeeded",
+                            setup_status="pending",
+                        ),
+                    ),
+                )
+                service = _StubService(
+                    review=_review(action),
+                    outcome=outcome,
+                    queue=ConsumerSetupQueue((), (failure,)),
+                )
+                names = ["team/skill/code-review"] if action == "install" else []
+
+                code, output = _run(
+                    [
+                        "marketplace",
+                        action,
+                        *names,
+                        "--profile",
+                        "claude",
+                        "--json",
+                        "--yes",
+                    ],
+                    service,
+                )
+
+                self.assertEqual(code, 0, output)
+                payload = _payload(output)
+                self.assertTrue(payload["ok"])
+                self.assertEqual(len(payload["setup"]["planning_failures"]), 1)
+                self.assertNotIn("finalize_setup_queue", service.calls)
+
     def test_setup_never_authorizes_untrusted_capabilities_implicitly(self) -> None:
         service = _StubService(review=_review(), outcome=_outcome())
 

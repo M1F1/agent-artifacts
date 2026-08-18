@@ -1055,6 +1055,10 @@ def _apply_effect(
 
 
 def _rollback_receipt(receipt: Mapping[str, object], runtime: SetupRuntime) -> bool:
+    # Failure receipts retain already-compensated steps as audit evidence for `receipt show`.
+    # Replaying one would undo someone else's later change, so it is already terminal here.
+    if receipt.get("setup_disposition") == "compensated":
+        return True
     module = receipt.get("module")
     if module == "macos-keychain.store@1" and receipt.get("replaced") is True:
         return False

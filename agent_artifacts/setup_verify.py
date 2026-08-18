@@ -98,6 +98,11 @@ def plan_verification(record: SetupStateRecord) -> Tuple[Claim, ...]:
 
     claims: list[Claim] = []
     for index, step in enumerate(record.receipt, start=1):
+        # A failed persistence run keeps compensated steps to explain what happened. They no
+        # longer assert that an effect is present in the world, so verification asks nothing
+        # about their former target.
+        if step.get("setup_disposition") == "compensated":
+            continue
         module = str(step.get("module", ""))
         claims.extend(_claims_for_step(index, module, step))
     # Asked of every record, including one with no steps: a record written before `RR-10A` may

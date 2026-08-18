@@ -689,21 +689,59 @@ def finalize_setup(
     applied = _bound_record(plan, apply_setup_plan(plan.legacy_plan, runtime, consent=consent))
     persisted = ports.persist_setup(plan, applied, expected_record=plan.previous_record)
     if isinstance(persisted, Err):
+        persistence_detail = "; ".join(item.message for item in persisted.diagnostics)
         recovery = rollback_record(applied, runtime) if applied.receipt else applied
         status = (
             SetupExecutionStatus.ROLLBACK_INCOMPLETE
             if recovery.status == "rollback_incomplete"
             else SetupExecutionStatus.FAILED
         )
+        if status is SetupExecutionStatus.FAILED:
+            detail = (
+                f"setup state persistence failed: {persistence_detail}; "
+                "applied effects were compensated"
+            )
+            # A compensated receipt is evidence of what happened, not a second undo recipe.
+            # Keep every step for `receipt show`, mark it explicitly, and teach the receipt
+            # readers below to make no live-world claim from it.
+            failure_record = replace(
+                recovery,
+                status="apply_failed_rolled_back",
+                detail=detail,
+                exit_status=1,
+                rollback_command="",
+                receipt=tuple(
+                    {**dict(receipt), "setup_disposition": "compensated"}
+                    for receipt in applied.receipt
+                ),
+            )
+        else:
+            detail = (
+                f"setup state persistence failed: {persistence_detail}; "
+                "effect rollback was incomplete"
+            )
+            failure_record = replace(recovery, detail=detail, exit_status=1)
+
+        # The original failure may be a transient write error. After compensation, make one
+        # best-effort write of the failure evidence through the same transactional adapter. If
+        # the storage failure persists we still return the original specific cause, plus the
+        # reason the receipt could not be retained.
+        failure_persisted = ports.persist_setup(
+            plan,
+            failure_record,
+            expected_record=plan.previous_record,
+        )
+        state_written = isinstance(failure_persisted, Ok)
+        if isinstance(failure_persisted, Err):
+            receipt_detail = "; ".join(item.message for item in failure_persisted.diagnostics)
+            detail += f"; failure receipt was not persisted: {receipt_detail}"
         return Ok(
             _outcome(
                 plan,
                 status,
-                "setup state persistence failed; applied effects were compensated"
-                if status is SetupExecutionStatus.FAILED
-                else "setup state persistence failed and effect rollback was incomplete",
-                state_written=False,
-                record=_bound_record(plan, recovery),
+                detail,
+                state_written=state_written,
+                record=_bound_record(plan, failure_record),
             )
         )
     return Ok(

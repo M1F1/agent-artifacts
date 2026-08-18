@@ -1,0 +1,42 @@
+# Company adoption repair progress
+
+Chronological execution record for the repair brief in
+[`adoption-stream-repair-brief.md`](adoption-stream-repair-brief.md). The
+[`residue-register.md`](residue-register.md) remains the authoritative record of finding
+dispositions.
+
+## 2026-08-18
+
+### 02:25 CEST — baseline
+
+- Started from clean branch `stream/company-adoption` at `6c85451`.
+- Confirmed all 27 findings, `AD-01` through `AD-27`, are `open` in the residue register.
+- Confirmed the fast documentation gate passes: `python3 scripts/docs_check.py`.
+- Began with the setup lifecycle cluster `AD-27`, `AD-25`, and `AD-23`, following the repair
+  brief's user-impact order.
+
+### 02:47 CEST — `AD-27` and `AD-23` closed
+
+- `AD-27`: setup persistence now accepts the setup-reference digest captured by Review and moves
+  it to the newly installed object. The regression changes package bytes at the same version,
+  reproduces the installation state written by an update, and runs setup twice afterwards.
+- `AD-23`: install and update now report the payload transaction in their exit code. An
+  unauthorizable setup queue remains visible as pending work but no longer turns a successful
+  payload operation into exit `1`; the explicit setup command still owns setup failure.
+- Targeted verification passed:
+  `python3 -m unittest tests.marketplace_lifecycle_cli_test.SetupAuthorizationTests.test_install_and_update_exit_on_the_payload_not_an_unauthorizable_setup_queue tests.canonical_setup_application_test.CanonicalSetupApplicationTest.test_setup_moves_a_superseded_reference_and_succeeds_again_after_object_update`.
+- No matching caveat was present in the adoption tutorial; its second-run warning at line 151 is
+  a recipe idempotence rule, not either repaired lifecycle defect.
+
+### 03:03 CEST — `AD-25` closed
+
+- Setup finalization now carries the storage adapter's exact failure into the outcome instead of
+  replacing it with a generic sentence.
+- After compensating effects, it makes one best-effort transactional write of a failure receipt.
+  Compensated steps remain visible for audit but are explicitly marked so verification makes no
+  live-world claim and undo does not replay them. A second persistent write failure is also named.
+- The regression injects a one-shot storage failure, proves the managed file was compensated,
+  and reads the persisted failure through the shared `receipt show` service.
+- Targeted cluster verification passed: `python3 -m pytest -q
+  tests/canonical_setup_application_test.py tests/setup_undo_test.py tests/setup_verify_test.py
+  tests/marketplace_lifecycle_cli_test.py` — 74 tests and 16 subtests.

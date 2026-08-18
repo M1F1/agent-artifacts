@@ -619,9 +619,14 @@ def _lifecycle(request: Request, action: str) -> int:
         payload["setup"] = setup_payload
         # `LAF-52`: the counts stay, at the end, after the content they used to replace.
         lines += render_setup_payload(setup_payload)
-    payload["ok"] = outcome.session_status != "failed" and setup_ok
+    # Install and update report the payload transaction they were asked to perform. Their
+    # parsers intentionally carry none of the flags that can authorize a setup queue, so a
+    # planning refusal here is pending follow-up work rather than a retroactive payload failure.
+    # The explicit setup command still owns (and reports) the queue's terminal verdict.
+    setup_controls_exit = action == "setup"
+    payload["ok"] = outcome.session_status != "failed" and (setup_ok or not setup_controls_exit)
     _emit(request, operation, payload, lines)
-    if outcome.session_status in {"failed", "partial"} or not setup_ok:
+    if outcome.session_status in {"failed", "partial"} or (setup_controls_exit and not setup_ok):
         return _common.ERROR
     return _common.OK
 
