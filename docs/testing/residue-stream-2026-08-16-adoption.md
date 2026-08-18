@@ -16,6 +16,9 @@ Rules for this stream, same as every other:
   that says what is open. This file says where the finding came from; the register says its state.
 - Nothing is repaired in the same pass that records it.
 
+The repair work is briefed separately in [`adoption-stream-repair-brief.md`](adoption-stream-repair-brief.md), which groups every open
+`AD-*` into clusters and says which order to take them in.
+
 ## Findings
 
 | ID | Severity | Raised | What was seen |
