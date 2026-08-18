@@ -176,3 +176,46 @@ dispositions.
   subtests. The company tutorial and MCP porting tutorial no longer carry the location caveat.
 - Every `AD-01` through `AD-27` row is now `closed`; full quality, live acceptance, and release
   validation remain before publication.
+
+### 04:04 CEST — full quality gate green
+
+- `make quality` passed all nine repository gates: format-check, lint, typecheck, unit,
+  integration, validate/version, coverage, packaging-check, and docs-check.
+- Unit discovery passed 1,596 tests; the separate E2E discovery passed 46 tests. Coverage is
+  83.19% over 26,477 statements. The zero-dependency wheel packaging check built and validated
+  `agent_artifacts-2.6.1-py3-none-any.whl`.
+- No regression or gate bypass was required. The next phase is a wheel-installed live acceptance
+  walk in fresh repositories/HOME directories, followed by the new release contract and release
+  process rather than reusing the already-published `2.6.1` evidence.
+
+### 04:16 CEST — release series and contract selected
+
+- Selected stable `2.7.0` and release contract v16. This is a minor release because the stream adds
+  public `registry collection`, `discover`, `vendor-batch`, and `publish` commands, a registry-init
+  reporting option, and a setup recipe capability; reusing the immutable 2.6.1/v15 evidence would
+  have misclassified the boundary.
+- Synchronized the three executable version sources, the README 3×3 installation matrix, and its
+  regression. Added v16 compatibility, checklist, and GitHub release documents; v15 remains
+  untouched as historical evidence. The current release documents now record the setup-text,
+  shared-memory downgrade, runtime-extension rename, and Tabnine target migration boundaries.
+- Updated the changelog and moved the residue register's checked-document pointers from the old
+  release documents to v16. Schema freeze generation, focused release-contract verification, and
+  live acceptance are next.
+
+### 04:28 CEST — v16 verified; Tabnine upgrade path made fail-closed
+
+- Generated schema freeze v16. It retains every v15 protocol number and changes exactly one
+  normative input, `agent_artifacts/setup.py`, which owns the setup recipe and persistence changes.
+  Version check, docs check, release/version tests (37 tests + 17 subtests), Ruff, and focused mypy
+  are green.
+- While checking the release note's Tabnine migration claim, found that a generic update could write
+  a new profile destination and replace its state record without transactionally removing an old
+  destination. That would orphan the old settings entry, so the claimed automatic move was false.
+- Update planning now detects any recorded effect locator absent from the replacement record and
+  returns a conflict with exact `marketplace uninstall` then `marketplace install` commands. It
+  performs no write. The canonical regression installs into a legacy MCP target, proves update
+  refuses without touching either target, removes the old target through its recorded ownership,
+  and installs into the current target.
+- Lifecycle, Tabnine MCP, and shared-memory verification passed: 49 tests. Focused mypy, Ruff,
+  docs-check, and diff whitespace checks also pass. v16 upgrade notes now state the proven
+  fail-closed uninstall/reinstall route rather than the disproved automatic update claim.

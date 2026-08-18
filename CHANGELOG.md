@@ -3,6 +3,49 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.7.0 — 2026-08-18
+
+The company-adoption stream closes all 27 `AD` findings. This is a minor release because it adds
+public maintainer commands and a reporting option, and extends setup recipe v2 with a new input
+kind. Protocol version numbers and persisted document shapes remain unchanged; schema freeze v16
+records the changed implementations.
+
+### Added
+
+- The README has a tested 3×3 no-clone install matrix for `pip`, `pipx`, and `uv tool`, plus one
+  company-registry path from first source through Tabnine install.
+- Registry maintainers can author collections, conservatively discover candidates, finalize an
+  explicit batch-vendoring manifest, vendor a single loose file, and review then publish lock,
+  index, audit evidence, and one Git commit through `registry collection`, `discover`,
+  `vendor-batch`, and `publish`.
+- `registry init --usage-reporting-repository OWNER/REPOSITORY` activates the reporting templates.
+  Finalized CLI and TUI actions explain unusable routes; interactive CLI reporting retains both
+  consents while JSON and non-interactive modes remain inert.
+- Setup recipe v2 accepts reviewed, echoed `text` inputs through `shell.env-from-input@1`; secrets
+  remain Keychain-only. Packages using this addition must require AART 2.7.0 or later.
+
+### Fixed
+
+- Source freshness is an origin/revision/snapshot comparison rather than an age guess. Automatic
+  mode synchronizes before projection; manual mode reports `not-synchronized` separately from
+  `could-not-check`.
+- Tabnine MCP installs use the documented `.tabnine/mcp_servers.json` project and user targets.
+  Distinct named memories can share one instruction file and be removed independently.
+- Setup install/update exit status, policy projection, manual routes, Keychain context, target
+  preflight, persistence diagnostics, compensation receipts, and same-version recipe updates now
+  preserve their reviewed lifecycle contracts.
+- Registry initialization, discovery, vendoring, batch finalization, collections, lock/build, and
+  publish diagnostics now name concrete repairs and keep preview runs inert.
+- The live runtime-requirements key is `aart.runtime-requirements`; the retired
+  `com.m1f1.runtime-requirements` spelling fails with an exact migration diagnostic.
+
+### Known defects shipped open
+
+Fifty-six unrelated findings remain open: one `major`, two `high`, 32 `medium`, and 21 `low`.
+`LAF-15` is the major gap (`security scan` has no producer for its canonical envelope);
+`LAF-85` and `LAF-101` are the two high register/audit uncertainties. The adoption stream introduces
+no known open finding; the residue register remains authoritative.
+
 ## 2.6.1 — 2026-08-16
 
 Fifteen recorded defects stop happening. Nothing is added: no command, no flag, no field, no schema,

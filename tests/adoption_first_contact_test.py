@@ -15,9 +15,9 @@ class ReadmeAdoptionTest(unittest.TestCase):
             with self.subTest(installer=installer):
                 self.assertGreaterEqual(_README.count(installer), 3)
         for source in (
-            "./agent_artifacts-2.6.1-py3-none-any.whl",
-            "releases/download/v2.6.1/agent_artifacts-2.6.1-py3-none-any.whl",
-            "git+https://github.com/M1F1/agent-artifacts.git@v2.6.1",
+            "./agent_artifacts-2.7.0-py3-none-any.whl",
+            "releases/download/v2.7.0/agent_artifacts-2.7.0-py3-none-any.whl",
+            "git+https://github.com/M1F1/agent-artifacts.git@v2.7.0",
         ):
             with self.subTest(source=source):
                 self.assertGreaterEqual(_README.count(source), 3)

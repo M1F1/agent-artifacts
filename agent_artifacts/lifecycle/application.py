@@ -22,6 +22,7 @@ from agent_artifacts.installation.application import (
 )
 from agent_artifacts.installation.model import (
     InstallLocation,
+    InstallPlan,
     InstallRequest,
     InstallStatus,
     LinkStatus,
@@ -814,6 +815,59 @@ def _terminal_update(
     )
 
 
+def _retired_effect_update(
+    record: InstallationRecord,
+    install: InstallPlan,
+) -> UpdatePlan | None:
+    """Refuse an update that cannot transactionally retire a recorded destination.
+
+    Install plans replace the record and write their current effects atomically, but they do not
+    remove effects absent from the replacement. Silently continuing would leave the old bytes on
+    disk after their ownership proof disappeared from state. A profile target migration (including
+    Tabnine's project MCP correction in 2.7.0) must therefore use the already-atomic uninstall and
+    install boundaries explicitly.
+    """
+
+    replacement = next(
+        (item for item in install.replacement_state.installations if item.key == record.key),
+        None,
+    )
+    if replacement is None:
+        return _terminal_update(
+            record,
+            LifecycleStatus.FAILED,
+            "replacement installation record is unavailable",
+        )
+    replacement_locators = {effect.locator for effect in replacement.effects}
+    retired = tuple(
+        sorted(
+            effect.destination
+            for effect in record.effects
+            if effect.locator not in replacement_locators
+        )
+    )
+    if not retired:
+        return None
+    scope = " --scope user" if record.scope == "user" else ""
+    coordinate = str(record.coordinate)
+    detail = (
+        "update would orphan recorded effects at "
+        + ", ".join(retired)
+        + "; migrate transactionally with `aart marketplace uninstall "
+        + coordinate
+        + " --profile "
+        + record.profile
+        + scope
+        + " --yes`, then `aart marketplace install "
+        + coordinate
+        + " --profile "
+        + record.profile
+        + scope
+        + " --yes`"
+    )
+    return _terminal_update(record, LifecycleStatus.CONFLICT, detail)
+
+
 def prepare_update(
     record: InstallationRecord,
     catalog: MarketplaceCatalog,
@@ -905,6 +959,9 @@ def prepare_update(
         )
         detail = "; ".join(item.message for item in diagnostics)
         return Ok(_terminal_update(record, status, detail))
+    retired_effect = _retired_effect_update(record, install.value)
+    if retired_effect is not None:
+        return Ok(retired_effect)
     return Ok(
         UpdatePlan(
             record,
