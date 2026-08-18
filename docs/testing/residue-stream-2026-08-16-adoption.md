@@ -61,6 +61,8 @@ The repair work is briefed separately in [`adoption-stream-repair-brief.md`](ado
 | `AD-26` | high | `2026-08-17`, running setup on an MCP server | A symlinked `~/.zshrc` — the normal result of keeping dotfiles in a repository — makes the managed-block step impossible. The refusal is correct; the timing is not. Planning is a pure function with no filesystem access, by design, so the review lists `~/.zshrc` as the target of a write that cannot succeed, and nothing stats it before the first effect. The reader pays for the image build and types two credentials blind before reaching a step one `lstat` would have ruled out. There is no follow option and no alternative target. |
 
 | `AD-27` | high | `2026-08-17`, iterating on a setup recipe | An artifact's setup succeeds exactly once. Any change to the package bytes leaves the object-store `setup` reference pointing at the superseded digest, and persistence requires it to match, so every later run applies its effects, fails, and compensates — for good. The version is not part of the check, so re-vendoring at the same `1.0.0` trips it just as surely as a bump. No command recovers it: `receipt undo` finds no record, and uninstall plus install leaves both the stale reference and an orphaned state file behind. |
+| `AD-30` | high | `2026-08-18`, wiring a setup-collected secret into an MCP server | An MCP descriptor's `${VAR}` is copied into the harness file as those literal characters. The hook path twenty lines away substitutes `${SCRIPT_DIR}`; the MCP path substitutes nothing. A recipe can collect a secret and a descriptor has no way to name it |
+| `AD-31` | high | `2026-08-18`, the same install | Install, setup and the recipe's own verify step all reported success on a server running with the strings `ATLASSIAN_USERNAME` and `ATLASSIAN_API_TOKEN` as its credentials. Confluence answered anonymously and made it look configured; Jira returned 401 |
 
 ## Notes on `AD-01`
 
@@ -1508,3 +1510,88 @@ An update that correctly determined there was nothing to do returns a failure co
 nor `update` declares `--authorize-untrusted-source`, so on any source below `registry-reviewed`
 every one of these commands exits non-zero for the whole time an artifact's setup is pending — which
 is from installation until setup is authorized, the exact window an adoption script runs in.
+
+## Notes on `AD-30` and `AD-31`
+
+### How it looked from the outside
+
+Two days of `disconnected` in Tabnine, chased through four wrong hypotheses in order: the image tag,
+the settings file, the environment inheritance, and the flag shape. The server had been starting the
+whole time. It was authenticating as nobody.
+
+### What the descriptor said
+
+The vendored `payload/mcp.json` carried the shape every MCP example uses:
+
+```json
+"env": {
+  "ATLASSIAN_USERNAME":  "${ATLASSIAN_USERNAME_EMAIL}",
+  "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+}
+```
+
+`installation/application.py:395-407` reads `descriptor["server"]` and hands it to the merge as the
+value under `mcpServers.<name>`. Nothing between the registry and `.tabnine/agent/settings.json`
+touches it. So those braces reach the harness intact, and whether they ever become a credential is
+the harness's business. Tabnine's is not to expand them.
+
+Twenty lines below, `:424-427`, the hook path builds its entry and **does** substitute — it replaces
+`${SCRIPT_DIR}` in `command` with the resolved scripts directory. One projection interpolates and
+its neighbour does not, in the same function, for the same reason an author would expect both to.
+
+### What the recipe had, and could not give
+
+The setup recipe did its half correctly. It prompted for the token, put it in the Keychain under
+`aart/mcp/company-atlassian/api-token`, and wrote a shell block exporting `ATLASSIAN_USERNAME_EMAIL`
+and `ATLASSIAN_API_TOKEN`.
+
+The descriptor asked for `ATLASSIAN_USERNAME`.
+
+Nothing compares those two vocabularies, because nothing models them as meeting. The recipe is
+validated against the module table; the descriptor is validated as JSON. The name that has to match
+between them is checked by neither, and a mismatch is not an error anywhere — it is an empty string
+at runtime, inside a container, days later.
+
+### Why it looked like it worked
+
+The final hand-tuned entry passed the credentials as flags:
+
+```
+"--username", "ATLASSIAN_USERNAME",
+"--api-token", "ATLASSIAN_API_TOKEN",
+```
+
+— the variable *names*, unexpanded and undecorated, as literal argument values. The image's
+validation is a presence check on the flags, so it accepted them and started.
+
+Confluence worked. Jira did not.
+
+That asymmetry is the whole finding. A company Confluence commonly serves open spaces to anonymous
+readers, because being readable is what it is for; a company Jira does not, because its contents are
+records about people. One product answered, and answering read as configured.
+
+Proven by substituting deliberate nonsense — `--username nikt --api-token bzdura` — and observing no
+change in Confluence. The credential fields had no effect on the outcome, which is the definition of
+not being used.
+
+### What AART reported while this was true
+
+`marketplace install`: `changed`. Setup: applied. The recipe's `verify-command` step: passed — it
+verifies the setup's own effects, which were all genuinely correct. The Keychain entry was real. The
+shell exports were real. Every stage was telling the truth about its own scope, and no stage owned
+the question *can the thing we just installed do its job*.
+
+The operator's only signal was one word in the harness, `disconnected` — the same word produced by a
+missing image, a stopped Docker daemon, an unexpanded variable and a bad credential. It carries no
+information, and it is the only thing the person gets.
+
+### Asked for
+
+`AD-30`: the descriptor needs a way to name a value the recipe collects, and the two vocabularies
+need to be checked against each other at build or vendor time, when the author is still there. If
+verbatim copying stays, then a `${...}` in an MCP descriptor should at minimum be surfaced in the
+install review as *this harness must expand this; AART will not*.
+
+`AD-31`: something has to test the installed server before the operator is told it is configured.
+The recipe already has a `verify-command` module — it is pointed at the setup's effects rather than
+at the artifact's purpose.
