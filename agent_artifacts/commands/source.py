@@ -46,6 +46,7 @@ from agent_artifacts.sources.model import (
 )
 from agent_artifacts.sources.runtime import (
     discard_configured_source,
+    observe_configured_source,
     resubscribe_configured_source,
     sync_configured_source,
 )
@@ -103,7 +104,7 @@ def _emit_error(request: Request, operation: str, result: Err) -> int:
     return _common.ERROR
 
 
-def _source_health(
+def _cached_source_health(
     source: ConfiguredSource,
     runtime: ConfiguredRuntime,
     *,
@@ -122,9 +123,25 @@ def _source_health(
 
 def _health_by_alias(runtime: ConfiguredRuntime, *, now: int) -> dict[SourceAlias, SourceHealth]:
     return {
-        source.alias: _source_health(source, runtime, now=now)
+        source.alias: _cached_source_health(source, runtime, now=now)
         for source in runtime.loaded.user_configuration.sources
     }
+
+
+def _source_health(
+    source: ConfiguredSource,
+    runtime: ConfiguredRuntime,
+    *,
+    now: int,
+) -> SourceHealth:
+    """Apply effective sync policy before reporting origin freshness."""
+
+    return observe_configured_source(
+        source,
+        data_root=runtime.paths.data_root,
+        mode=runtime.loaded.effective.configuration.sync.mode,
+        observed_at_epoch_seconds=now,
+    )
 
 
 def _source_data(
@@ -689,6 +706,7 @@ def _health(request: Request) -> int:
                 "age_seconds": (
                     None if current is None else max(0, now - current.published_at_epoch_seconds)
                 ),
+                "diagnostics": [diagnostic_to_data(item) for item in health.diagnostics],
             }
         )
     payload = {
@@ -696,6 +714,7 @@ def _health(request: Request) -> int:
         "ok": not degraded,
         "operation": _HEALTH_OPERATION,
         "max_age_seconds": runtime.value.loaded.effective.configuration.sync.max_age_seconds,
+        "sync_mode": runtime.value.loaded.effective.configuration.sync.mode.value,
         "sources": items,
     }
     if request.json:

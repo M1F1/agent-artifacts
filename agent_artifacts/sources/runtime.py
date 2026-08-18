@@ -11,14 +11,16 @@ from agent_artifacts.application.sources import (
     SourceDiscardOutcome,
     SourceDiscardPorts,
     SourceDiscardRequest,
+    SourceFreshnessRequest,
     SourceSyncPorts,
     SourceSyncRequest,
     adopt_source_identity,
+    check_source_freshness,
     discard_source,
     sync_source,
 )
-from agent_artifacts.configuration.model import ConfiguredSource
-from agent_artifacts.domain.result import Result
+from agent_artifacts.configuration.model import ConfiguredSource, SyncMode
+from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.io.source_store import (
     acquire_source_lock,
     discard_source_store,
@@ -35,12 +37,18 @@ from agent_artifacts.runtime_contract import EXECUTABLE_CAPABILITIES, EXECUTABLE
 from .git import acquire_git_snapshot
 from .local import read_local_snapshot
 from .model import (
+    CurrentSourceRequest,
+    HealthStatus,
     SnapshotLimits,
+    SourceHealth,
     SourceIdentityTransition,
     SourceSyncOutcome,
     SourceValidationRequest,
+    SyncDisposition,
     SyncFallback,
     ValidatedSourceCandidate,
+    source_instance_id,
+    source_store_paths,
 )
 from .validation import validate_configured_source_candidate
 
@@ -129,6 +137,7 @@ def sync_configured_source(
     *,
     data_root: str,
     observed_at_epoch_seconds: int | None = None,
+    fallback: SyncFallback = SyncFallback.REQUIRE_FRESH,
     offline: bool = False,
     timeout_seconds: int = DEFAULT_SOURCE_SYNC_TIMEOUT_SECONDS,
     limits: SnapshotLimits | None = None,
@@ -151,7 +160,7 @@ def sync_configured_source(
             executable_version,
             available_capabilities,
             observed,
-            SyncFallback.REQUIRE_FRESH,
+            fallback,
             offline,
             timeout_seconds,
             SnapshotLimits() if limits is None else limits,
@@ -162,9 +171,101 @@ def sync_configured_source(
     )
 
 
+def check_configured_source_freshness(
+    source: ConfiguredSource,
+    *,
+    data_root: str,
+    observed_at_epoch_seconds: int | None = None,
+    timeout_seconds: int = DEFAULT_SOURCE_SYNC_TIMEOUT_SECONDS,
+    limits: SnapshotLimits | None = None,
+    lock_timeout_seconds: float = 30.0,
+    lock_stale_after_seconds: int = 300,
+    executable_version: SemVer = EXECUTABLE_VERSION,
+    available_capabilities: tuple[Capability, ...] = EXECUTABLE_CAPABILITIES,
+) -> SourceHealth:
+    """Compare one managed snapshot with its origin without publishing a new pointer."""
+
+    observed = int(time.time()) if observed_at_epoch_seconds is None else observed_at_epoch_seconds
+    return check_source_freshness(
+        SourceFreshnessRequest(
+            source,
+            data_root,
+            executable_version,
+            available_capabilities,
+            observed,
+            timeout_seconds,
+            SnapshotLimits() if limits is None else limits,
+            lock_timeout_seconds,
+            lock_stale_after_seconds,
+        ),
+        source_sync_ports(source),
+    )
+
+
+def observe_configured_source(
+    source: ConfiguredSource,
+    *,
+    data_root: str,
+    mode: SyncMode,
+    observed_at_epoch_seconds: int | None = None,
+) -> SourceHealth:
+    """Apply the configured read policy: auto publishes, manual only compares."""
+
+    observed = int(time.time()) if observed_at_epoch_seconds is None else observed_at_epoch_seconds
+    if mode is SyncMode.MANUAL or not source.enabled:
+        return check_configured_source_freshness(
+            source,
+            data_root=data_root,
+            observed_at_epoch_seconds=observed,
+        )
+    synchronized = sync_configured_source(
+        source,
+        data_root=data_root,
+        observed_at_epoch_seconds=observed,
+        fallback=SyncFallback.ALLOW_LAST_KNOWN_GOOD,
+    )
+    if isinstance(synchronized, Ok):
+        current = synchronized.value.current
+        age = max(0, observed - current.published_at_epoch_seconds)
+        if synchronized.value.disposition is SyncDisposition.RETAINED:
+            return SourceHealth(
+                HealthStatus.CHECK_UNAVAILABLE,
+                age,
+                current,
+                synchronized.value.diagnostics,
+            )
+        return SourceHealth(
+            HealthStatus.HEALTHY,
+            age,
+            current,
+            synchronized.value.diagnostics,
+        )
+    paths = source_store_paths(data_root, source_instance_id(source))
+    loaded = read_current_source(CurrentSourceRequest(paths, source.alias))
+    cached_current = None if isinstance(loaded, Err) else loaded.value
+    cached_age = (
+        None
+        if cached_current is None
+        else max(0, observed - cached_current.published_at_epoch_seconds)
+    )
+    diagnostics = (
+        synchronized.diagnostics
+        if isinstance(loaded, Ok)
+        else (*loaded.diagnostics, *synchronized.diagnostics)
+    )
+    return SourceHealth(
+        HealthStatus.CHECK_UNAVAILABLE,
+        cached_age,
+        cached_current,
+        diagnostics,
+    )
+
+
 __all__ = [
     "DEFAULT_SOURCE_SYNC_TIMEOUT_SECONDS",
+    "check_configured_source_freshness",
     "discard_configured_source",
+    "observe_configured_source",
     "resubscribe_configured_source",
     "source_sync_ports",
     "sync_configured_source",

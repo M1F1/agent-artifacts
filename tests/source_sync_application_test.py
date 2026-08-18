@@ -6,9 +6,11 @@ from dataclasses import replace
 from agent_artifacts.application.sources import (
     SourceDiscardPorts,
     SourceDiscardRequest,
+    SourceFreshnessRequest,
     SourceStatusRequest,
     SourceSyncPorts,
     SourceSyncRequest,
+    check_source_freshness,
     discard_source,
     sync_source,
 )
@@ -28,6 +30,7 @@ from agent_artifacts.protocol.semver import parse_semver
 from agent_artifacts.sources.model import (
     CurrentSource,
     CurrentSourceRequest,
+    HealthStatus,
     SourceLockLease,
     SourcePublishReceipt,
     SyncDisposition,
@@ -143,6 +146,21 @@ def _request(source: ConfiguredSource, *, fallback=SyncFallback.REQUIRE_FRESH, o
     )
 
 
+def _freshness_request(
+    source: ConfiguredSource,
+    *,
+    observed_at_epoch_seconds: int = 100,
+) -> SourceFreshnessRequest:
+    return SourceFreshnessRequest(
+        source=source,
+        data_root="/managed/data",
+        executable_version=_unwrap(parse_semver("1.0.0")),
+        available_capabilities=(_unwrap(parse_capability("artifact-manifest-v1")),),
+        observed_at_epoch_seconds=observed_at_epoch_seconds,
+        timeout_seconds=30,
+    )
+
+
 class SourceSyncApplicationTest(unittest.TestCase):
     def setUp(self) -> None:
         self.local = ConfiguredSource(
@@ -172,6 +190,62 @@ class SourceSyncApplicationTest(unittest.TestCase):
                     ["lock", "current", acquisition_event, "validate", "publish", "release"],
                 )
                 self.assertEqual(len(fake.publishes), 1)
+
+    def test_freshness_compares_origin_evidence_without_publishing(self) -> None:
+        origin = _candidate(self.git, b"new")
+        published = _current(_candidate(self.git, b"old"))
+        fake = _FakePorts(origin, published)
+
+        health = check_source_freshness(_freshness_request(self.git), fake.ports())
+
+        self.assertIs(health.status, HealthStatus.NOT_SYNCHRONIZED)
+        self.assertEqual(health.current, published)
+        self.assertEqual(
+            fake.events,
+            ["lock", "current", "git", "validate", "release"],
+        )
+        self.assertEqual(fake.publishes, [])
+
+    def test_freshness_is_current_when_old_publication_bytes_still_match_origin(self) -> None:
+        origin = _candidate(self.git)
+        published = replace(_current(origin), published_at_epoch_seconds=1)
+        fake = _FakePorts(origin, published)
+
+        health = check_source_freshness(
+            _freshness_request(self.git, observed_at_epoch_seconds=10_000),
+            fake.ports(),
+        )
+
+        self.assertIs(health.status, HealthStatus.HEALTHY)
+        self.assertEqual(health.age_seconds, 9_999)
+
+    def test_freshness_failure_is_distinct_from_a_known_origin_mismatch(self) -> None:
+        origin = _candidate(self.git)
+        fake = _FakePorts(origin, _current(origin))
+        fake.candidate_result = _failure("source-unavailable")
+
+        health = check_source_freshness(_freshness_request(self.git), fake.ports())
+
+        self.assertIs(health.status, HealthStatus.CHECK_UNAVAILABLE)
+        self.assertEqual(health.diagnostics[0].code.value, "source-unavailable")
+
+    def test_sync_after_a_mismatch_then_sync_again_is_current_and_unchanged(self) -> None:
+        origin = _candidate(self.git, b"new")
+        fake = _FakePorts(origin, _current(_candidate(self.git, b"old")))
+        before = check_source_freshness(_freshness_request(self.git), fake.ports())
+        self.assertIs(before.status, HealthStatus.NOT_SYNCHRONIZED)
+
+        fake.events.clear()
+        first = sync_source(_request(self.git), fake.ports())
+        self.assertIsInstance(first, Ok)
+        assert isinstance(first, Ok)
+        self.assertIs(first.value.disposition, SyncDisposition.PUBLISHED)
+
+        fake.current_result = Ok(first.value.current)
+        second = sync_source(_request(self.git), fake.ports())
+        self.assertIsInstance(second, Ok)
+        assert isinstance(second, Ok)
+        self.assertIs(second.value.disposition, SyncDisposition.UNCHANGED)
 
     def test_fetch_or_validation_failure_can_explicitly_use_last_known_good(self) -> None:
         candidate = _candidate(self.git, b"new")

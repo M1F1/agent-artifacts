@@ -912,7 +912,6 @@ def _runtime_source_stage_context(
         finalize_source_management,
         finalize_source_removal,
     )
-    from .application.sources import SourceStatusRequest, source_status
     from .configuration.paths import Platform, resolve_config_paths
     from .configuration.policy import RuntimeOverrides
     from .io.config_cas import checked_config_writer
@@ -921,8 +920,7 @@ def _runtime_source_stage_context(
         recover_configuration,
         write_configuration,
     )
-    from .io.source_store import read_current_source
-    from .sources.model import CurrentSourceRequest, source_instance_id, source_store_paths
+    from .sources.runtime import observe_configured_source
 
     platform = Platform.DARWIN if sys.platform == "darwin" else Platform.LINUX
     home = os.path.abspath(user_home or os.path.expanduser("~"))
@@ -950,14 +948,11 @@ def _runtime_source_stage_context(
     now = int(time.time())
     health = {}
     for source in configuration.sources:
-        store_paths = source_store_paths(paths.data_root, source_instance_id(source))
-        health[source.alias] = source_status(
-            SourceStatusRequest(
-                CurrentSourceRequest(store_paths, source.alias),
-                now,
-                configuration.sync.max_age_seconds,
-            ),
-            read_current_source,
+        health[source.alias] = observe_configured_source(
+            source,
+            data_root=paths.data_root,
+            mode=loaded.value.effective.configuration.sync.mode,
+            observed_at_epoch_seconds=now,
         )
     projected = build_source_stage(
         configuration,

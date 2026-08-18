@@ -132,6 +132,7 @@ def _list(request: Request) -> int:
     catalog = load_read_only_marketplace(
         runtime.value.loaded.effective,
         data_root=runtime.value.paths.data_root,
+        observe_freshness=not request.offline,
     )
     if isinstance(catalog, Err):
         return _emit_error(request, catalog)
@@ -281,6 +282,7 @@ def _health(request: Request) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
+        observe_freshness=True,
         refresh_sources=True,
         offline=request.offline,
     )
@@ -490,6 +492,8 @@ def _lifecycle(request: Request, action: str) -> int:
     service = load_local_consumer_service(
         project=request.project,
         user_home=request.user_home,
+        observe_freshness=True,
+        offline=request.offline,
         # Neither of these is a content operation: one removes what the manifest records, the other
         # reports it.  Requiring an enabled source here would refuse the exact exit `source remove`
         # tells operators to take.

@@ -621,7 +621,7 @@ Review consumer action
   Scope: project
   Requested mode: copy
   Review digest: sha256:1ea04e2e…
-  Source freshness: company is healthy; snapshot published 7s ago
+  Source freshness: company is healthy; origin matched; snapshot published 7s ago
   - company/skill/release-evidence@1.0.0#tabnine/project
     trust/security: local; unknown (not-scanned)
     digests: manifest=sha256:cf9ac726…; object=sha256:6a944c55…

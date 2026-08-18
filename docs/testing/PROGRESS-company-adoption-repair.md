@@ -74,3 +74,21 @@ dispositions.
   projection, canonical setup application, setup review, and registry command boundaries.
 - Ruff, focused mypy, and the documentation gate pass. The company tutorial contains no caveat
   matching these three repaired diagnostic defects.
+- Checkpoint commit: `b0fc533` (`Repair adoption path diagnostics`).
+
+### 02:57 CEST — `AD-16` closed
+
+- Source freshness now compares validated origin identity, revision, and snapshot digest. Age is
+  still reported but no longer decides whether a source is current.
+- Effective `sync.mode` now changes behavior: `auto` synchronizes before source-bearing entry
+  points project their data; `manual` performs the same comparison without publishing.
+- The TUI and marketplace vocabulary separately expose `not-synchronized` (comparison completed
+  and differed) and `could-not-check` (comparison could not complete).
+- A new design note records the policy, lock boundary, failure semantics, and entry points. The
+  company tutorial's review example now says that `healthy` is based on an origin match.
+- Source, marketplace, and source-facing TUI verification passed: 326 tests and 117 subtests.
+  Focused mypy, Ruff, and the documentation gate also pass.
+- The first complete unit gate exposed two diagnostic tests whose cold-source fixture still used
+  the default `auto` mode and therefore now synchronized successfully. Pinning those scenarios to
+  `manual` preserves their intended never-synchronized condition. The full gate then passed all
+  1,572 tests; full-package mypy also passes across 167 modules.

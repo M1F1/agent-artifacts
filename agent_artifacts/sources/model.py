@@ -237,6 +237,8 @@ class HealthStatus(str, Enum):
     MISSING = "missing"
     HEALTHY = "healthy"
     STALE = "stale"
+    NOT_SYNCHRONIZED = "not-synchronized"
+    CHECK_UNAVAILABLE = "could-not-check"
     DEGRADED = "degraded"
 
 
