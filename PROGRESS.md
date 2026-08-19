@@ -3877,3 +3877,27 @@ again, and the screen said `configured`.
   here for it to grant from. The author's name is now spelled in full.
 - **Gates.** Nine quality gates green on the bumped tree; eleven release checks green except
   `repository-dirty`, which is the uncommitted tree itself.
+
+### 2026-08-19 — `2.8.3` published
+
+- **Merged.** PR #104 into `origin/main` as `9b6a075`, both CI matrices green on 3.10 and 3.14.
+- **Release check.** All eleven gates passed on the merged commit.
+- **Tag.** Annotated `v2.8.3` on `9b6a075`, accepted by `version.py check-tag`.
+- **Wheel.** `agent_artifacts-2.8.3-py3-none-any.whl`, 575,894 bytes,
+  `sha256:f91644a0f6025a3ee393657dd7be7bee34f0ae42a2ceefbbcc28dad33bbb9092`. The asset downloaded
+  from the published release is byte-identical to the local build, compared with `cmp` rather than
+  by digest alone.
+- **Install matrix, 9/9**, against isolated `PIPX_HOME`, `PIPX_BIN_DIR`, `UV_TOOL_DIR` and
+  `UV_TOOL_BIN_DIR`; the operator's own lists were read afterwards and are unchanged — `pipx` still
+  holds `2.6.1`, `uv tool list` still empty.
+- **The reminder was rendered from the shipped artifact**, not the working tree: the release wheel
+  installed into a venv outside the repository, `agent_artifacts.__file__` printed to prove which
+  copy answered, and the closing screen carrying `Next step`, `source ~/.zshrc` on its own line and
+  the new-terminal alternative. The path printed as `~/.zshrc` from a receipt holding the absolute
+  path, which is the whole of `AD-37`.
+- **The Docker measurement was repeated on a clean probe** rather than recalled, because the
+  operator asked again what becomes of the image. Two throwaway builds under one tag: the tag moves
+  to the new image, the old id is absent from `docker image inspect` **and** from the dangling list,
+  and `docker image rm <tag>` reports `Untagged` then `Deleted` because the tag was the last
+  reference. So there is nothing to clean up and nothing to restore, and removing the tag is the one
+  action that breaks the server — which is what the shipped note now says.
