@@ -3833,3 +3833,18 @@ again, and the screen said `configured`.
 - **The assertion is over the rendered output**, not the command list: `WizardSurfaceTest` fails if
   any line of the wizard output is a fragment of a command. A fold is only visible in the
   rendering, which is why the earlier tests passed while the screen was wrong.
+
+### 2026-08-19 — `2.8.2` published
+
+- **Merged.** PR #102 into `origin/main` as `99af72b`, both CI matrices green on 3.10 and 3.14.
+- **Release check.** All eleven gates passed on the merged commit.
+- **Tag.** Annotated `v2.8.2` on `99af72b`, accepted by `version.py check-tag`.
+- **Wheel.** `agent_artifacts-2.8.2-py3-none-any.whl`, 574,533 bytes,
+  `sha256:89f10d43ad442ccd36c2da10b810eb6db04421df15f8b974092adddeeb6f71b7`. The asset downloaded
+  from the published release has the same digest and byte count.
+- **Install matrix, 9/9**, against isolated `PIPX_HOME` and `UV_TOOL_DIR`; the operator's own tool
+  lists were read afterwards and are unchanged.
+- **The wizard output was read from the shipped artifact**, not the working tree: `Recovery` with
+  its command whole on one line, and two `Warning` blocks, rendered from the wheel installed out of
+  the release URL with `agent_artifacts.__file__` printed to prove which copy answered. That
+  rendering is the whole of `AD-36`, so reading it anywhere else would prove nothing.
