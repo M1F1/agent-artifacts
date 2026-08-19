@@ -282,7 +282,13 @@ class SetupSecurityTests(unittest.TestCase):
             self.assertEqual(rolled.status, "rollback_incomplete")
             self.assertEqual(rolled.receipt, configured.receipt)
             self.assertEqual(rolled.rollback_command, configured.rollback_command)
-            self.assertIn("remove it manually", recovery_messages(rolled)[0])
+            note = recovery_messages(rolled)[0]
+            # `image` on its own reads as anything; the note names Docker and the image,
+            # and says who removes it, because rollback deliberately does not (`AD-38`).
+            self.assertIn("Docker image", note)
+            self.assertIn(image, note)
+            self.assertIn("Rollback leaves it", note)
+            self.assertIn("docker image rm", note)
 
 
 if __name__ == "__main__":

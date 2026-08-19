@@ -275,6 +275,14 @@ class AppliedBuildTest(unittest.TestCase):
         rolled = rollback_record(record, self._runtime(docker))
         self.assertEqual(rolled.status, "skipped")
         self.assertEqual(docker.removed, ["aart/mcp/atlassian:1.4.0"])
+        note = str(record.receipt[0]["recovery"])
+        # This branch used to read "Rollback removes this tag, which only this run created",
+        # which names neither Docker nor the tag — the same defect the sibling branch had, left
+        # standing on the branch an ordinary first install actually reaches (`AD-38`).
+        self.assertIn("Docker image tag", note)
+        self.assertIn("aart/mcp/atlassian:1.4.0", note)
+        self.assertIn("docker image rm", note)
+        self.assertIn("do not remove this tag by hand", note)
 
     def test_rollback_leaves_a_tag_that_existed_before_the_run(self) -> None:
         docker = _Docker(preexisting=True)
