@@ -1,4 +1,4 @@
-# AART v18 compatibility matrix — 2.8.0 and 2.8.1
+# AART v18 compatibility matrix — 2.8.0, 2.8.1 and 2.8.2
 
 Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
 after it.
@@ -135,3 +135,25 @@ schema inputs.
 |---|---|---|
 | `AD-35` — an existing Keychain item is kept and nothing says so | `closed` | the skip path measures, records and prints; the item is left as found |
 | `AD-34` — a truncated secret passes every check | `open` | the ceiling stands; only the silence is fixed |
+
+## 2.8.2 — the advisory reaches the surface people use
+
+AART `2.8.2` is a patch over `2.8.1`. No receipt field is added or renamed. What changes is that the
+wizard reads the fields `2.8.0` and `2.8.1` wrote, which until now only the JSON command path did
+(`AD-36`).
+
+| Boundary | Supported in 2.8.2 | Change from 2.8.1 | Gate |
+|---|---|---|---|
+| Protocol versions | unchanged | none | schema freeze v18 |
+| Persisted schemas | unchanged | none | install-state tests |
+| Keychain receipt fields | unchanged | none | `setup_runtime` tests |
+| `--json` `warnings` array | `key`, `detail`, `commands` | none | `setup_render` tests |
+| `render_setup_outcome` | new optional `advisories` argument | additive, defaults to empty | `setup_runtime` and review tests |
+
+Schema freeze v18 for `2.8.2` differs from the `2.8.1` freeze in `release_version` alone.
+
+## 2.8.2 residues
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-36` — the advisory was read by one surface, and not the one people use | `closed` | both surfaces render one shared body; five tests assert the wizard output |

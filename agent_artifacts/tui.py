@@ -87,6 +87,7 @@ from .reporting.projection import (
     usage_reports_by_registry_from_consumer,
 )
 from .setup import (
+    advisory_messages,
     project_setup_review,
     recovery_messages,
     render_setup_outcome,
@@ -677,6 +678,10 @@ def _canonical_setup_run(
                 )
             ),
             recovery=() if item.record is None else recovery_messages(item.record),
+            # The wizard is how setup is normally run, and it read no advisory at all: the
+            # measurement happened, the receipt carried it, and this surface printed nothing
+            # (`AD-36`).
+            advisories=() if item.record is None else advisory_messages(item.record),
             manual=None
             if setup_plan is None
             else project_setup_review(setup_plan.legacy_plan).manual,
