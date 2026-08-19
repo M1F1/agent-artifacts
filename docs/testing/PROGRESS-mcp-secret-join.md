@@ -57,6 +57,13 @@ produced. Finding dispositions remain authoritative in
   `pip` anywhere on this machine — `ensurepip` fails in `$HOME` as well as in a temporary root — so
   a fresh `PIPX_HOME` failed until pipx was pointed at Python 3.11. Nothing to do with the wheel.
 
+### One gap the release itself left
+
+The README install matrix still named `v2.7.1` after the tag was pushed, and the test guarding it
+pinned the same literal — so a stale matrix passed while a moved one failed, which is backwards.
+The post-release documentation takes the version from `agent_artifacts.__version__`, so the next
+release fails its own unit gate if the README is forgotten.
+
 ### Shipped open, knowingly
 
 Sixty-six findings remain open: one `major`, five `high`, 39 `medium`, and 21 `low`. This release
