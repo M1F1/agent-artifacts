@@ -310,9 +310,13 @@ def _warning_lines(rows: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[st
             lines += field_block((("what", detail),), indent=2, width=width)
         commands = [str(command) for command in row.get("commands") or ()]
         if commands:
-            lines += ("  set the value by hand with:",)
+            lines += ("  copy the token to the clipboard, then run:",)
             # Commands are never wrapped: a wrapped command is a command that cannot be copied.
             lines += tuple(f"    {command}" for command in commands)
+            # The last step nobody remembers. A server inherits its environment once, at start,
+            # so a corrected Keychain and a reloaded shell still leave it authenticating as
+            # nobody until it is restarted (`AD-31`).
+            lines += ("  then restart the agent harness, or the server keeps what it started with",)
     return lines
 
 

@@ -228,16 +228,25 @@ def _stored_secret_length(service: str, account: str) -> Optional[int]:
     return counted // 2 if counted % 2 == 0 else None
 
 
-def _manual_keychain_commands(service: str, account: str) -> tuple[str, ...]:
-    """The two commands that set the value by hand, and the one that proves the length."""
+def _manual_keychain_commands(service: str, account: str, shell_file: str = "") -> tuple[str, ...]:
+    """One line that stores the secret whole and puts it in the environment.
 
-    quoted_service, quoted_account = shlex.quote(service), shlex.quote(account)
-    return (
-        f"/usr/bin/security add-generic-password -U -a {quoted_account} -s {quoted_service} "
-        '-w "$(pbpaste)"',
-        f"/usr/bin/security find-generic-password -a {quoted_account} -s {quoted_service} -w "
-        "| wc -c  # one more than the stored bytes: -w adds a newline",
+    One, not three.  A remedy split across lines is one the operator half-applies, and a long
+    line is one they repair by hand after their terminal folds it.  Storing the secret alone
+    changes nothing a running shell can see — the managed block is read when a shell starts — so
+    the reload is joined here rather than left as a step to remember (`AD-31`).
+
+    `-w` with a value takes it from argv, where no ceiling exists.  Bare `-w` would hand the
+    terminal to `getpass(3)` and its 128-byte buffer, which is the defect being worked around.
+    """
+
+    store = (
+        f"/usr/bin/security add-generic-password -U -a {shlex.quote(account)} "
+        f'-s {shlex.quote(service)} -w "$(pbpaste)"'
     )
+    if shell_file:
+        store += f" && source {shlex.quote(shell_file)}"
+    return (store,)
 
 
 def _actual_tool_exists(tool: str) -> bool:
@@ -417,9 +426,13 @@ def _keychain_receipt(
         "replaced": replaced,
         "service": service,
         "account": account,
+        # `-w` with no value hands the terminal to `getpass(3)` and its 128-byte buffer, so the
+        # old advice sent the operator into the very ceiling this step warns about (`AD-34`).
+        # `-w "$(pbpaste)"` is the same tool taking the value from argv, where no ceiling exists.
         "recovery": (
-            "Re-enter the prior Keychain value with /usr/bin/security "
-            f"add-generic-password -U -a {account!r} -s {service!r} -w."
+            "Copy the prior value to the clipboard, then restore it with /usr/bin/security "
+            f"add-generic-password -U -a {shlex.quote(account)} -s {shlex.quote(service)} "
+            '-w "$(pbpaste)".'
             if replaced
             else ""
         ),

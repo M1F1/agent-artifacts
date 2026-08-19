@@ -175,9 +175,14 @@ class SetupRuntimeTests(unittest.TestCase):
         self.assertEqual(keychain["stored_length"], 128)
         self.assertIs(keychain["truncation_suspected"], True)
         self.assertIn("only its first 128 bytes", keychain["truncation_detail"])
+        # One command, not a sequence: a remedy split across lines is one that gets half-applied.
         commands = tuple(keychain["remediation_commands"])
-        self.assertTrue(any("add-generic-password" in one and "pbpaste" in one for one in commands))
-        self.assertTrue(any("wc -c" in one for one in commands))
+        self.assertEqual(len(commands), 1)
+        self.assertIn("add-generic-password", commands[0])
+        self.assertIn('-w "$(pbpaste)"', commands[0])
+        # Bare `-w` is the prompt that truncates; the remedy must never send them back into it.
+        self.assertNotIn('-w"', commands[0].replace('-w "$(pbpaste)"', ""))
+        self.assertNotRegex(commands[0].replace('-w "$(pbpaste)"', ""), r"-w\s*$")
         # The warning has to reach the person before they paste, not only after.
         self.assertTrue(any("at most 128 bytes" in one for one in prompts))
 
@@ -333,6 +338,30 @@ class StoredSecretLengthTest(unittest.TestCase):
     def test_either_count_failing_leaves_the_length_unknown(self):
         self.assertIsNone(self._measure(printed=None, hex_form=1)[0])
         self.assertIsNone(self._measure(printed=129, hex_form=None)[0])
+
+
+class RemediationCommandTest(unittest.TestCase):
+    """The remedy is one line, and it ends where the operator's problem actually ends."""
+
+    def test_without_a_shell_file_it_only_stores(self):
+        (command,) = setup_runtime._manual_keychain_commands("svc", "acct")
+
+        self.assertTrue(command.startswith("/usr/bin/security add-generic-password -U "))
+        self.assertNotIn("source", command)
+
+    def test_with_a_shell_file_it_stores_and_reloads_in_one_line(self):
+        (command,) = setup_runtime._manual_keychain_commands("svc", "acct", "/Users/x/.zshrc")
+
+        self.assertEqual(command.count("&&"), 1)
+        self.assertTrue(command.endswith("&& source /Users/x/.zshrc"))
+        self.assertNotIn("\n", command)
+
+    def test_values_needing_quotes_survive_as_values(self):
+        (command,) = setup_runtime._manual_keychain_commands("a b", "x;rm -rf /", "/tmp/f g")
+
+        self.assertIn("-a 'x;rm -rf /'", command)
+        self.assertIn("-s 'a b'", command)
+        self.assertIn("source '/tmp/f g'", command)
 
 
 if __name__ == "__main__":

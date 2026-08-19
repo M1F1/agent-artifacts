@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -591,17 +592,41 @@ def _setup_warnings(outcome) -> list[dict]:
         record = item.record
         if record is None:
             continue
+        # The step that stores the secret runs before the step that exports it, so the file to
+        # reload is not known when the Keychain receipt is written. It is known here, where the
+        # whole run is in hand.
+        shell_file = _shell_file_of(record.receipt)
         for receipt in record.receipt:
             if not receipt.get("truncation_suspected"):
                 continue
+            commands = [str(one) for one in receipt.get("remediation_commands", ())]
+            if shell_file:
+                reload_shell = f" && source {shlex.quote(shell_file)}"
+                commands = [
+                    one if one.endswith(reload_shell) else one + reload_shell for one in commands
+                ]
             warnings.append(
                 {
                     "key": f"{item.coordinate}#{item.profile}/{item.scope}",
                     "detail": str(receipt.get("truncation_detail", "")),
-                    "commands": [str(one) for one in receipt.get("remediation_commands", ())],
+                    "commands": commands,
                 }
             )
     return warnings
+
+
+_SHELL_MODULES = ("shell.env-from-keychain@1", "shell.env-from-input@1")
+
+
+def _shell_file_of(receipts) -> str:
+    """The file whose managed block puts the secret in the environment, if this run wrote one."""
+
+    for receipt in receipts:
+        if receipt.get("module") in _SHELL_MODULES:
+            path = receipt.get("path")
+            if isinstance(path, str) and path:
+                return path
+    return ""
 
 
 def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
