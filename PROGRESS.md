@@ -3767,3 +3767,28 @@ The overnight run's fourteen branches were merged into `main` and pushed, and `m
 - **What ships open is stated, not rounded down.** Fifty-seven, one `major` and two `high`, and the
   release notes name four: `LAF-15`, the garbage-collection cluster, `LAF-85`, and `LAF-101` — the
   last of which is the register admitting it is itself incomplete.
+
+### 2026-08-19 — `2.8.1` prepared
+
+`2.8.0` shipped a warning for a Keychain secret cut at the prompt. Reading it on the reporter's
+machine showed the warning could not fire there: every run was finding the item **already present**,
+and that path returns before the prompt, before the measurement, and before any receipt field beyond
+`created: false`. `AD-35`.
+
+- **The defect is a silence, not a miscalculation.** The run says `configured`, which is true about
+  the configuration and says nothing about the value. Finding the item already there is the normal
+  outcome of every run after the first, so a rotated credential is never re-read and never
+  mentioned.
+- **Two smaller findings from the same reading.** The reload printed the operator's home directory
+  in full — always read from the run's own receipt, never hardcoded, but it did not read that way —
+  and `truncation_detail` named one of the two things the field now carries.
+- **Measured, not asserted.** `wc -c` on a 128-byte stored value returns **129**: `security -w`
+  prints a trailing newline that is not part of the secret. The probe subtracts it and reports 128,
+  which is the ceiling, which fires the warning. Confirmed against a throwaway item holding a
+  non-secret value, deleted after.
+- **Version.** `2.8.1` in `pyproject.toml` and `agent_artifacts/__init__.py` via
+  `scripts/version.py set --write`; `scripts/release.py` at `EXPECTED_VERSION = "2.8.1"` and
+  `RELEASE_CONTRACT_VERSION = 18`, unchanged.
+- **Why patch, and why the contract does not move.** The v18 freeze differs from the `2.8.0` freeze
+  in `release_version` alone — no protocol number and no input digest — verified by comparing the
+  two files. The changed modules are outside the frozen inputs.
