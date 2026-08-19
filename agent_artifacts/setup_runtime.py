@@ -228,13 +228,41 @@ def _stored_secret_length(service: str, account: str) -> Optional[int]:
     return counted // 2 if counted % 2 == 0 else None
 
 
+def home_relative(path: str, home: str = "") -> str:
+    """`~/.zshrc`, not `/Users/someone/.zshrc`.
+
+    This path is printed for a person to copy.  Spelling out their home directory is noise, and
+    it reads like a value the tool baked in rather than one it found (`AD-35`).
+
+    `~` is left unquoted, because a quoted tilde is a literal one and the shell would look for a
+    directory named `~`.  Anything needing quotes is quoted after the first slash, where quoting
+    costs nothing.
+    """
+
+    root = (home or os.path.expanduser("~")).rstrip("/")
+    if not root or not path.startswith(root + "/"):
+        return shlex.quote(path)
+    return f"~/{shlex.quote(path[len(root) + 1 :])}"
+
+
+def shell_reload_suffix(shell_file: str, home: str = "") -> str:
+    """The ` && source ~/.zshrc` tail, or nothing when this run wrote no shell file.
+
+    Storing the secret alone changes nothing a running shell can see — the managed block is read
+    when a shell starts — so the reload is joined to the command rather than left as a step to
+    remember (`AD-31`).
+    """
+
+    if not shell_file:
+        return ""
+    return f" && source {home_relative(shell_file, home)}"
+
+
 def _manual_keychain_commands(service: str, account: str, shell_file: str = "") -> tuple[str, ...]:
     """One line that stores the secret whole and puts it in the environment.
 
     One, not three.  A remedy split across lines is one the operator half-applies, and a long
-    line is one they repair by hand after their terminal folds it.  Storing the secret alone
-    changes nothing a running shell can see — the managed block is read when a shell starts — so
-    the reload is joined here rather than left as a step to remember (`AD-31`).
+    line is one they repair by hand after their terminal folds it.
 
     `-w` with a value takes it from argv, where no ceiling exists.  Bare `-w` would hand the
     terminal to `getpass(3)` and its 128-byte buffer, which is the defect being worked around.
@@ -244,9 +272,7 @@ def _manual_keychain_commands(service: str, account: str, shell_file: str = "") 
         f"/usr/bin/security add-generic-password -U -a {shlex.quote(account)} "
         f'-s {shlex.quote(service)} -w "$(pbpaste)"'
     )
-    if shell_file:
-        store += f" && source {shlex.quote(shell_file)}"
-    return (store,)
+    return (store + shell_reload_suffix(shell_file),)
 
 
 def _actual_tool_exists(tool: str) -> bool:
@@ -439,6 +465,54 @@ def _keychain_receipt(
     }
 
 
+def _advise(
+    receipt: dict,
+    service: str,
+    account: str,
+    runtime: SetupRuntime,
+    *,
+    kept_existing: bool,
+) -> dict:
+    """Say what the Keychain actually holds now, and how to change it by hand.
+
+    Two findings, one voice.  Both end in the same place — the stored secret is not the one the
+    server needs — and both are fixed by the same command, so they are reported together instead
+    of as two mechanisms the operator has to learn.
+
+    *Kept existing* is the common case and used to be silent.  A run that finds an item already
+    there leaves it alone and says "configured"; if the credential was rotated since, nothing
+    updated it and nothing said so (`AD-35`).
+
+    *Truncated* is the ceiling case.  The value is never read back into this process:
+    `secret_length` counts it in a pipe between two children.  A stored length of exactly the
+    ceiling is the signature of a truncated paste — it can also be a secret that is genuinely that
+    long, so this warns and never fails.
+    """
+
+    notes: list[str] = []
+    if kept_existing:
+        receipt["existing_secret_kept"] = True
+        notes.append(
+            "the Keychain already had a value for this account, so this run kept it and never "
+            "asked for a new one; if the credential was rotated since, nothing here changed it"
+        )
+    stored = runtime.secret_length(service, account)
+    if stored is not None:
+        receipt["stored_length"] = stored
+        if stored == _PROMPT_CEILING:
+            receipt["truncation_suspected"] = True
+            notes.append(
+                f"what is stored is exactly {_PROMPT_CEILING} bytes, the point where the Keychain "
+                f"prompt cuts a paste; if what was pasted there was longer, only its first "
+                f"{_PROMPT_CEILING} bytes were kept"
+            )
+    if not notes:
+        return receipt
+    receipt["advisory"] = " — and ".join(notes)
+    receipt["remediation_commands"] = _manual_keychain_commands(service, account)
+    return receipt
+
+
 def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, bool]:
     service = str(effect.config["service"])
     account = str(effect.config["account"])
@@ -454,9 +528,8 @@ def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
     exists = runtime.process(find_argv, env=env, cwd=None, timeout=30, capture=True).returncode == 0
     replace_existing = bool(effect.config.get("replace_existing", False))
     if exists and not replace_existing:
-        return _keychain_receipt(
-            effect.module, service, account, created=False, replaced=False
-        ), False
+        receipt = _keychain_receipt(effect.module, service, account, created=False, replaced=False)
+        return _advise(receipt, service, account, runtime, kept_existing=True), False
     runtime.write_prompt(
         f"Setup input: {effect.summary}\n"
         f"  The tool asks twice and keeps at most {_PROMPT_CEILING} bytes; anything longer is cut "
@@ -535,21 +608,7 @@ def _keychain_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, b
         created=not exists,
         replaced=exists,
     )
-    # The value is never read back into this process: `secret_length` counts it in a pipe between
-    # two children.  A stored length of exactly the ceiling is the signature of a truncated paste
-    # — it can also be a secret that is genuinely that long, so this warns and never fails.
-    stored = runtime.secret_length(service, account)
-    if stored is not None:
-        receipt["stored_length"] = stored
-        if stored == _PROMPT_CEILING:
-            receipt["truncation_suspected"] = True
-            receipt["truncation_detail"] = (
-                f"the stored secret is exactly {_PROMPT_CEILING} bytes, the ceiling this prompt "
-                "truncates at; if what you pasted was longer, only its first "
-                f"{_PROMPT_CEILING} bytes are in the Keychain"
-            )
-            receipt["remediation_commands"] = _manual_keychain_commands(service, account)
-    return receipt, True
+    return _advise(receipt, service, account, runtime, kept_existing=False), True
 
 
 def _managed_block_apply(effect: SetupEffect) -> tuple[dict, bool]:

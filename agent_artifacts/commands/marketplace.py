@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +86,7 @@ from agent_artifacts.setup_render import (
     render_undo_payload,
     render_verification_payload,
 )
+from agent_artifacts.setup_runtime import shell_reload_suffix
 from agent_artifacts.store.model import ObjectReadRequest
 
 from ._configured_runtime import load_runtime_configuration
@@ -583,8 +583,9 @@ def _setup_plan_payload(plan) -> dict:
 def _setup_warnings(outcome) -> list[dict]:
     """Advisory findings a completed run recorded, carried to the surface the operator reads.
 
-    A truncated Keychain secret configures cleanly and fails much later, at the server, as one
-    word in a harness UI (`AD-34`). The receipt knows; nothing read it until here.
+    A secret that is wrong — truncated at the prompt, or simply the one stored months ago and
+    rotated since — configures cleanly and fails much later, at the server, as one word in a
+    harness UI (`AD-34`, `AD-35`). The receipt knows; nothing read it until here.
     """
 
     warnings: list[dict] = []
@@ -596,19 +597,20 @@ def _setup_warnings(outcome) -> list[dict]:
         # reload is not known when the Keychain receipt is written. It is known here, where the
         # whole run is in hand.
         shell_file = _shell_file_of(record.receipt)
+        reload_shell = shell_reload_suffix(shell_file)
         for receipt in record.receipt:
-            if not receipt.get("truncation_suspected"):
+            advisory = str(receipt.get("advisory", ""))
+            if not advisory:
                 continue
             commands = [str(one) for one in receipt.get("remediation_commands", ())]
-            if shell_file:
-                reload_shell = f" && source {shlex.quote(shell_file)}"
+            if reload_shell:
                 commands = [
                     one if one.endswith(reload_shell) else one + reload_shell for one in commands
                 ]
             warnings.append(
                 {
                     "key": f"{item.coordinate}#{item.profile}/{item.scope}",
-                    "detail": str(receipt.get("truncation_detail", "")),
+                    "detail": advisory,
                     "commands": commands,
                 }
             )
