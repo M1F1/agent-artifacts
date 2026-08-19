@@ -3848,3 +3848,32 @@ again, and the screen said `configured`.
   its command whole on one line, and two `Warning` blocks, rendered from the wheel installed out of
   the release URL with `agent_artifacts.__file__` printed to prove which copy answered. That
   rendering is the whole of `AD-36`, so reading it anywhere else would prove nothing.
+
+### 2026-08-19 — `2.8.3` prepared: the reload reminder
+
+- **The scope came from the operator**, and was narrowed by them: no large change, just a reminder
+  whenever a run puts variables into a shell file, with the path parameterised rather than written
+  as `~/.zshrc`. Recorded as `AD-37`.
+- **The path is read, not guessed.** `_shell_files_of` walks the receipt for every step whose module
+  is in `_SHELL_MODULES` and returns each distinct `path` in write order, so a recipe writing to
+  `~/.bash_profile` is named correctly and several shell steps produce several blocks.
+- **The alternative is not decoration.** `.zshrc` is read by interactive shells only — `zsh -lc`
+  skips it — so a harness launched from the GUI never sees the exports no matter how often it is
+  restarted. `source` fixes the terminal you are in; a new terminal fixes what it launches.
+- **It could not be a `source` that AART runs.** A child process cannot alter its parent's
+  environment, so there is nothing to automate here and the reminder is the whole remedy.
+- **The advice existed before as a fragment**, glued to the end of the `security` remediation
+  commands from `AD-34` and `AD-35`. It appeared where a secret was suspected and nowhere else, so a
+  run that wrote variables cleanly said nothing.
+- **The Docker note was wrong and is corrected.** It said the pre-existing tag *is left alone;
+  remove it manually if it is yours*. `docker build --tag` reassigns the tag, and removing it is the
+  one action that breaks the server. Measured twice on Docker 29.5.2 with the containerd
+  snapshotter: the previously tagged image is **deleted**, not left dangling — which also refutes
+  what I had told the operator earlier in the session, and means `LAF-58`'s proposed remedy of
+  recording the previous image id would not enable a restore on this daemon.
+- **Licence.** The repository already shipped MIT — `LICENSE`, `pyproject.toml`, detected by GitHub
+  — and only the README failed to say so. Apache-2.0 was considered for corporate adoption and
+  rejected: its advantage over MIT is the explicit patent grant, and there is no patent portfolio
+  here for it to grant from. The author's name is now spelled in full.
+- **Gates.** Nine quality gates green on the bumped tree; eleven release checks green except
+  `repository-dirty`, which is the uncommitted tree itself.

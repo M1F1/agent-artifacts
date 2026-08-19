@@ -1276,6 +1276,24 @@ def _command_strings(value: object) -> Tuple[str, ...]:
     return tuple(str(one) for one in value)
 
 
+def _shell_files_of(receipts: Sequence[Mapping[str, object]]) -> Tuple[str, ...]:
+    """Every distinct shell file this run put variables in, in the order it wrote them.
+
+    Only the two `shell.env-*` modules qualify, because variables in a shell file are their whole
+    purpose.  `file.managed-block@1` writes content this tool cannot read as exports, so it is
+    left out rather than guessed at.
+    """
+
+    files: list[str] = []
+    for receipt in receipts:
+        if receipt.get("module") not in _SHELL_MODULES:
+            continue
+        path = receipt.get("path")
+        if isinstance(path, str) and path and path not in files:
+            files.append(path)
+    return tuple(files)
+
+
 def advisory_messages(record: SetupStateRecord) -> Tuple[Mapping[str, object], ...]:
     """Advisory findings a completed run recorded, in the shape every surface renders.
 
@@ -1350,6 +1368,57 @@ def _recovery_lines(item: str, *, width: int) -> Tuple[str, ...]:
     return lines + ((f"    {tail}",) if tail else ())
 
 
+def shell_reload_reminder(record: SetupStateRecord) -> Tuple[Mapping[str, object], ...]:
+    """The step a run cannot take for the operator, said once, at the end.
+
+    A setup that writes variables into a shell file has changed nothing a shell already open can
+    see, and no effect can fix that: a child process cannot alter its parent's environment, which
+    is the same reason `cd` is not a program.  What it can do is stop the operator having to
+    remember (`AD-37`).
+
+    The file is not guessed.  It is the `path` of the receipt written by the step that put the
+    variables there, so this holds for any recipe without the recipe saying anything.
+    """
+
+    reminders: list[Mapping[str, object]] = []
+    for shell_file in _shell_files_of(record.receipt):
+        display = home_relative(shell_file)
+        reminders.append(
+            {
+                "file": display,
+                "detail": (
+                    f"this run put variables in {display}, and a shell that is already open "
+                    "does not have them yet"
+                ),
+                "commands": (f"source {display}",),
+                "alternative": (
+                    "or open a new terminal window and start the agent harness from there"
+                ),
+            }
+        )
+    return tuple(reminders)
+
+
+def render_setup_reminders(
+    reminders: Sequence[Mapping[str, object]], *, width: int = CONTENT_MEASURE
+) -> Tuple[str, ...]:
+    """A next step is not a warning, so it does not borrow the word."""
+
+    lines: Tuple[str, ...] = ()
+    for reminder in reminders:
+        detail = str(reminder.get("detail", ""))
+        if not detail:
+            continue
+        lines += ("Next step",)
+        lines += field_block((("what", detail),), indent=2, width=width)
+        # Never wrapped, for the same reason as every other command this tool prints.
+        lines += tuple(f"    {command}" for command in _command_strings(reminder.get("commands")))
+        alternative = str(reminder.get("alternative", ""))
+        if alternative:
+            lines += tuple(f"  {line}" for line in wrap(alternative, width=width - 2))
+    return lines
+
+
 def render_setup_outcome(
     *,
     artifact: str,
@@ -1361,6 +1430,7 @@ def render_setup_outcome(
     rollback_command: str = "",
     recovery: Sequence[str] = (),
     advisories: Sequence[Mapping[str, object]] = (),
+    reminders: Sequence[Mapping[str, object]] = (),
     manual: SetupManualReference | None = None,
     width: int = CONTENT_MEASURE,
 ) -> Tuple[str, ...]:
@@ -1382,6 +1452,7 @@ def render_setup_outcome(
         for item in recovery:
             lines += _recovery_lines(item, width=width)
     lines += render_setup_advisories(advisories, width=width)
+    lines += render_setup_reminders(reminders, width=width)
     if incomplete and manual is not None:
         lines += render_manual_alternative(
             manual, width=width, incomplete=status not in _SETUP_UNSTARTED

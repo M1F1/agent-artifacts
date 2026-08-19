@@ -22,13 +22,13 @@ See the [native source contract](docs/protocol/native-source-v1.md),
 ## Install and quick start
 
 Python 3.10 or later is required. Pick the installer you use and the source you trust; all nine
-commands below were exercised against the published `v2.8.2` artifact or tag.
+commands below are exercised against each published artifact or tag.
 
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|
-| Downloaded wheel | `python -m pip install --no-deps ./agent_artifacts-2.8.2-py3-none-any.whl` | `pipx install ./agent_artifacts-2.8.2-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.8.2-py3-none-any.whl` |
-| GitHub release wheel | `python -m pip install --no-deps https://github.com/M1F1/agent-artifacts/releases/download/v2.8.2/agent_artifacts-2.8.2-py3-none-any.whl` | `pipx install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.2/agent_artifacts-2.8.2-py3-none-any.whl` | `uv tool install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.2/agent_artifacts-2.8.2-py3-none-any.whl` |
-| Tagged Git repository, no clone | `python -m pip install --no-deps "git+https://github.com/M1F1/agent-artifacts.git@v2.8.2"` | `pipx install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.2"` | `uv tool install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.2"` |
+| Downloaded wheel | `python -m pip install --no-deps ./agent_artifacts-2.8.3-py3-none-any.whl` | `pipx install ./agent_artifacts-2.8.3-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.8.3-py3-none-any.whl` |
+| GitHub release wheel | `python -m pip install --no-deps https://github.com/M1F1/agent-artifacts/releases/download/v2.8.3/agent_artifacts-2.8.3-py3-none-any.whl` | `pipx install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.3/agent_artifacts-2.8.3-py3-none-any.whl` | `uv tool install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.3/agent_artifacts-2.8.3-py3-none-any.whl` |
+| Tagged Git repository, no clone | `python -m pip install --no-deps "git+https://github.com/M1F1/agent-artifacts.git@v2.8.3"` | `pipx install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.3"` | `uv tool install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.3"` |
 
 `pipx` and `uv tool` create an isolated tool environment. For a company mirror, replace the
 GitHub host and repository with the reviewed HTTPS URL your normal Git credentials can reach; keep a
@@ -249,3 +249,11 @@ git diff --check
 The historical first live-acceptance record remains in
 [`docs/testing/PROGRESS-live-acceptance.md`](docs/testing/PROGRESS-live-acceptance.md). The new
 remediation run is documented separately and does not rewrite that evidence.
+
+## License
+
+AART is released under the [MIT License](LICENSE). Free for any use, including commercial, with no
+obligation beyond keeping the copyright notice and the warranty disclaimer. The software is provided
+as is, with no warranty and no liability on the author.
+
+Copyright (c) 2026 Michał Filek, with Love from Poland.

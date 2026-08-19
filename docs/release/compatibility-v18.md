@@ -1,4 +1,4 @@
-# AART v18 compatibility matrix — 2.8.0, 2.8.1 and 2.8.2
+# AART v18 compatibility matrix — 2.8.0 through 2.8.3
 
 Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
 after it.
@@ -157,3 +157,29 @@ Schema freeze v18 for `2.8.2` differs from the `2.8.1` freeze in `release_versio
 | Finding | Now | Established by |
 |---|---|---|
 | `AD-36` — the advisory was read by one surface, and not the one people use | `closed` | both surfaces render one shared body; five tests assert the wizard output |
+
+## 2.8.3 — a run that writes variables says the open shell cannot see them
+
+AART `2.8.3` is a patch over `2.8.2`. No receipt field is added or renamed, and no shell step
+behaves differently. What changes is that a run which wrote variables into a shell file ends by
+naming that file and what to do about it (`AD-37`).
+
+| Boundary | Supported in 2.8.3 | Change from 2.8.2 | Gate |
+|---|---|---|---|
+| Protocol versions | unchanged | none | schema freeze v18 |
+| Persisted schemas | unchanged | none | install-state tests |
+| Shell step receipt fields | `module`, `path`, unchanged | none, the reminder reads what is already written | `setup_runtime` tests |
+| `--json` payload | new optional `next_steps` array | additive, absent when no shell file was written | `setup_render` tests |
+| `render_setup_outcome` | new optional `reminders` argument | additive, defaults to empty | `setup_runtime` and review tests |
+
+The reminder is derived, never configured: the path comes from the shell step's own receipt, so a
+recipe that writes to a file other than `~/.zshrc` is named correctly without knowing about this
+release. Several shell steps in one run produce one block per distinct file, in write order.
+
+Schema freeze v18 for `2.8.3` differs from the `2.8.2` freeze in `release_version` alone.
+
+## 2.8.3 residues
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-37` — a run writes variables and never says the open shell cannot see them | `closed` | both surfaces render one shared body; the path comes from the receipt |

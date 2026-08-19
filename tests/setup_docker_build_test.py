@@ -284,7 +284,15 @@ class AppliedBuildTest(unittest.TestCase):
         rolled = rollback_record(record, self._runtime(docker))
         self.assertEqual(rolled.status, "skipped")
         self.assertEqual(docker.removed, [])
-        self.assertIn("left alone", str(record.receipt[0]["recovery"]))
+        note = str(record.receipt[0]["recovery"])
+        # The tag is not "left alone": `docker build --tag` moved it to the image just built.
+        # What is left alone is the rollback, and the note has to say which (`AD-37`).
+        self.assertIn("now points at the image this run built", note)
+        self.assertIn("aart/mcp/atlassian:1.4.0", note)
+        # `docker image rm <tag>` deletes the image the server runs from when the tag is its last
+        # reference, so the note must never invite it.
+        self.assertNotIn("remove it manually", note)
+        self.assertIn("do not remove this tag", note)
 
     def test_a_missing_docker_tool_is_a_prerequisite_not_a_build_failure(self) -> None:
         runtime = SetupRuntime(

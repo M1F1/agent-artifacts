@@ -3,6 +3,34 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.3 — 2026-08-19
+
+Setup writes variables into a shell file, prints `configured`, and stops. The shell it was launched
+from still holds the environment it started with, and so does every process that shell goes on to
+spawn — the agent harness among them (`AD-37`). A child process cannot alter its parent's
+environment; what was missing is that nobody said so.
+
+### Fixed
+
+- A run that wrote variables into a shell file ends with a `Next step` block naming that file, the
+  `source` command, and the alternative of opening a new terminal and starting the harness there.
+  The alternative matters: `.zshrc` is read by interactive shells only, so a harness launched from
+  the GUI never sees the exports regardless of how many times it is restarted.
+- The path comes from the shell step's own receipt, so a recipe writing somewhere other than
+  `~/.zshrc` is named correctly. Several shell steps produce one block per distinct file, in write
+  order. It prints as `~/.zshrc`, not the operator's home directory in full.
+- The advice used to exist only glued to the end of a `security` remediation command, so it appeared
+  where a secret was suspected and nowhere else.
+- The Docker build step's recovery note no longer says the pre-existing tag is left alone and should
+  be removed by hand. `docker build --tag` reassigns the tag, and removing it breaks the server.
+  Measured on Docker 29.5.2 with the containerd snapshotter: the previously tagged image is deleted,
+  not left dangling, so nothing can restore the old binding.
+
+### Documentation
+
+- The README states the licence: MIT, free for any use including commercial, with no warranty and no
+  liability on the author.
+
 ## 2.8.2 — 2026-08-19
 
 The advisory `2.8.0` and `2.8.1` added was read by one surface, and not the one people use. Setup

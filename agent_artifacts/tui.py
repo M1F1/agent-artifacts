@@ -92,6 +92,7 @@ from .setup import (
     recovery_messages,
     render_setup_outcome,
     render_setup_review,
+    shell_reload_reminder,
 )
 from .sources.model import SourceIdentityTransition, SourceSyncOutcome
 from .tui_failures import (
@@ -682,6 +683,7 @@ def _canonical_setup_run(
             # measurement happened, the receipt carried it, and this surface printed nothing
             # (`AD-36`).
             advisories=() if item.record is None else advisory_messages(item.record),
+            reminders=() if item.record is None else shell_reload_reminder(item.record),
             manual=None
             if setup_plan is None
             else project_setup_review(setup_plan.legacy_plan).manual,

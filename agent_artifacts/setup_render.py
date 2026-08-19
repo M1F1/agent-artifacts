@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence, Tuple
 
-from agent_artifacts.setup import public_text, render_setup_advisories
+from agent_artifacts.setup import public_text, render_setup_advisories, render_setup_reminders
 from agent_artifacts.tui_layout import CONTENT_MEASURE, field_block, wrap
 
 __all__ = [
@@ -347,4 +347,9 @@ def render_setup_payload(
             f", configured={_text(payload.get('configured'), fallback='0')}"
             f", incomplete={_text(payload.get('incomplete'), fallback='0')}"
         )
-    return lines + (summary,) + _warning_lines(_rows(payload, "warnings"), width=width)
+    return (
+        lines
+        + (summary,)
+        + _warning_lines(_rows(payload, "warnings"), width=width)
+        + render_setup_reminders(_rows(payload, "next_steps"), width=width)
+    )

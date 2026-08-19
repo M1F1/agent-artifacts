@@ -1,4 +1,4 @@
-# AART v18 release checklist and evidence — 2.8.0, 2.8.1 and 2.8.2
+# AART v18 release checklist and evidence — 2.8.0 through 2.8.3
 
 Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
 record and is left as written: a dated record is not edited to agree with today. **To verify the
@@ -161,3 +161,33 @@ which this patch does not alter.
 
 Steps 1–8 above are repeated unchanged for `2.8.2`, with `v2.8.2` as the tag and
 [`github-release-v2.8.2.md`](github-release-v2.8.2.md) as the release body.
+
+## 2.8.3 change gate
+
+`2.8.3` ships under this same v18 contract. The finding is `AD-37`, and this release closes it.
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-37` — a run writes variables and never says the open shell cannot see them | `closed` | both surfaces render one shared body; the path comes from the receipt |
+
+- A run that wrote variables into a shell file ends with a `Next step` block naming that file. The
+  path is read from the shell step's own receipt, not guessed and not configured, so a recipe
+  writing somewhere other than `~/.zshrc` is named correctly.
+- The path prints as `~/.zshrc`, through the same `home_relative` the remediation commands use, with
+  the tilde left unquoted so the shell still expands it.
+- The `source` command prints unwrapped on its own line, for the reason `AD-36` established: a
+  folded command has to be repaired by hand before it can be run.
+- The alternative — open a new terminal window and start the harness there — prints beside it,
+  because it is the one that also reaches a harness launched from the GUI, which never reads
+  `.zshrc` at all.
+- Several shell steps in one run produce one block per distinct file, in write order. Asserted by
+  `SeveralShellFilesTest`.
+- Both surfaces render through one body: the wizard through `render_setup_outcome`, the JSON path
+  through a `next_steps` payload row. This is the drift `AD-36` demonstrated, closed by construction
+  rather than by a second implementation.
+
+Sixty-six findings remain open, unchanged by this patch: one `major`, five `high`, 39 `medium`, and
+21 `low`. `AD-30`, `AD-31` and `AD-34` remain open for the reasons already stated.
+
+Steps 1–8 above are repeated unchanged for `2.8.3`, with `v2.8.3` as the tag and
+[`github-release-v2.8.3.md`](github-release-v2.8.3.md) as the release body.
