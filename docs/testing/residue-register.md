@@ -48,7 +48,6 @@ and a disposition one of them claims must be the disposition recorded here (`DOC
 - checked: `docs/design/*.md`
 - checked: `docs/release/compatibility-v18.md`
 - checked: `docs/release/release-checklist-v18.md`
-- checked: `docs/release/github-release-v2.8.0.md`
 
 **How a document states a disposition.** In one table cell, holding one word in backticks and
 nothing else, beside the finding it is about — the shape `compatibility-v14.md` already uses:
