@@ -3,6 +3,27 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.2 — 2026-08-19
+
+The advisory `2.8.0` and `2.8.1` added was read by one surface, and not the one people use. Setup
+run through the wizard printed `configured` and nothing else: the measurement happened, the receipt
+carried it, and `tui.py` read only the `recovery` field (`AD-36`). Reported from a real run in which
+the value was replaced, truncated to 128 bytes again, and never mentioned.
+
+### Fixed
+
+- The wizard prints the advisory. `advisory_messages` and `render_setup_advisories` live in
+  `setup.py` beside `recovery_messages`, both surfaces call them, and the JSON renderer renders
+  through the same body, so the two cannot drift.
+- A recovery note carries its command on its own line, never wrapped. It is sanitised per segment,
+  because `public_text` flattens line breaks and would erase the split before it could be read.
+- A replaced Keychain value says so: *This account already had a value in the Keychain and this run
+  replaced it.* The note used to read as an instruction to type something, when it is the undo for
+  something already done.
+
+Protocol versions, persisted schemas, commands, flags and the setup recipe language do not change.
+No receipt field is added or renamed.
+
 ## 2.8.1 — 2026-08-19
 
 Setup now says something about a Keychain item it left alone. Finding the item already there is the

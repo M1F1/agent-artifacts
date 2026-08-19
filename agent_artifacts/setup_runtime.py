@@ -24,6 +24,7 @@ from .setup import (
     retry_command,
     rollback_command,
     rollback_managed_block,
+    shell_reload_suffix,
 )
 
 
@@ -228,36 +229,6 @@ def _stored_secret_length(service: str, account: str) -> Optional[int]:
     return counted // 2 if counted % 2 == 0 else None
 
 
-def home_relative(path: str, home: str = "") -> str:
-    """`~/.zshrc`, not `/Users/someone/.zshrc`.
-
-    This path is printed for a person to copy.  Spelling out their home directory is noise, and
-    it reads like a value the tool baked in rather than one it found (`AD-35`).
-
-    `~` is left unquoted, because a quoted tilde is a literal one and the shell would look for a
-    directory named `~`.  Anything needing quotes is quoted after the first slash, where quoting
-    costs nothing.
-    """
-
-    root = (home or os.path.expanduser("~")).rstrip("/")
-    if not root or not path.startswith(root + "/"):
-        return shlex.quote(path)
-    return f"~/{shlex.quote(path[len(root) + 1 :])}"
-
-
-def shell_reload_suffix(shell_file: str, home: str = "") -> str:
-    """The ` && source ~/.zshrc` tail, or nothing when this run wrote no shell file.
-
-    Storing the secret alone changes nothing a running shell can see — the managed block is read
-    when a shell starts — so the reload is joined to the command rather than left as a step to
-    remember (`AD-31`).
-    """
-
-    if not shell_file:
-        return ""
-    return f" && source {home_relative(shell_file, home)}"
-
-
 def _manual_keychain_commands(service: str, account: str, shell_file: str = "") -> tuple[str, ...]:
     """One line that stores the secret whole and puts it in the environment.
 
@@ -452,13 +423,19 @@ def _keychain_receipt(
         "replaced": replaced,
         "service": service,
         "account": account,
+        # Two things the old note did not say: that the account already had a value, and where
+        # the command ends.  It read as advice to type something, when it is the undo for
+        # something already done, and it was folded across three lines by the prose wrapper
+        # (`AD-36`).  The command is on its own line, printed whole.
+        #
         # `-w` with no value hands the terminal to `getpass(3)` and its 128-byte buffer, so the
-        # old advice sent the operator into the very ceiling this step warns about (`AD-34`).
+        # older advice sent the operator into the very ceiling this step warns about (`AD-34`).
         # `-w "$(pbpaste)"` is the same tool taking the value from argv, where no ceiling exists.
         "recovery": (
-            "Copy the prior value to the clipboard, then restore it with /usr/bin/security "
-            f"add-generic-password -U -a {shlex.quote(account)} -s {shlex.quote(service)} "
-            '-w "$(pbpaste)".'
+            "This account already had a value in the Keychain and this run replaced it. To put "
+            "the prior value back, copy it to the clipboard and run:\n"
+            f"/usr/bin/security add-generic-password -U -a {shlex.quote(account)} "
+            f'-s {shlex.quote(service)} -w "$(pbpaste)"'
             if replaced
             else ""
         ),

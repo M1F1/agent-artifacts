@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence, Tuple
 
-from agent_artifacts.setup import public_text
+from agent_artifacts.setup import public_text, render_setup_advisories
 from agent_artifacts.tui_layout import CONTENT_MEASURE, field_block, wrap
 
 __all__ = [
@@ -296,27 +296,20 @@ def _item_lines(items: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[str,
 def _warning_lines(rows: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[str, ...]:
     """Print warnings last, because the operator reads the end of the run, not its middle.
 
-    A warning is not a failure: the run configured what it was asked to. It is printed after the
-    summary so that the commands it carries are the final thing on screen, ready to copy.
+    The body is `render_setup_advisories`, shared with the wizard: one implementation, so the two
+    surfaces cannot drift into saying different things about the same receipt (`AD-36`). Here each
+    row is headed by the artifact it belongs to, because this payload can carry several.
     """
 
     if not rows:
         return ()
     lines: Tuple[str, ...] = ("", "Warnings")
     for row in rows:
-        lines += wrap(f"{_text(row.get('key'), fallback='unknown artifact')}", width=width)
-        detail = _text(row.get("detail"))
-        if detail:
-            lines += field_block((("what", detail),), indent=2, width=width)
-        commands = [str(command) for command in row.get("commands") or ()]
-        if commands:
-            lines += ("  to replace what is stored: copy the token to the clipboard, then run:",)
-            # Commands are never wrapped: a wrapped command is a command that cannot be copied.
-            lines += tuple(f"    {command}" for command in commands)
-            # The last step nobody remembers. A server inherits its environment once, at start,
-            # so a corrected Keychain and a reloaded shell still leave it authenticating as
-            # nobody until it is restarted (`AD-31`).
-            lines += ("  then restart the agent harness, or the server keeps what it started with",)
+        lines += render_setup_advisories(
+            (row,),
+            width=width,
+            heading=_text(row.get("key"), fallback="unknown artifact"),
+        )
     return lines
 
 

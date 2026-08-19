@@ -3811,3 +3811,25 @@ and that path returns before the prompt, before the measurement, and before any 
 - **The README claim is restored now, not at tag time.** Before publication it said the nine
   commands *are exercised against each published artifact*, because they could not yet have been
   exercised against this one. `LAF-74` is the reason that distinction is written down.
+
+### 2026-08-19 — `2.8.2` prepared
+
+The operator ran setup and pasted the output. It showed the defect `2.8.1` was supposed to have
+covered, still happening and still unmentioned: the value was replaced, truncated to 128 bytes
+again, and the screen said `configured`.
+
+- **The measurement was never the problem.** The receipt carried `stored_length` and `advisory`.
+  `commands/marketplace.py` was the only reader; the wizard renders through
+  `render_setup_outcome`, which reads `recovery` and nothing else. `grep advisory tui.py` returned
+  no hit. `AD-36`.
+- **Two more defects in the same pasted output**, both reported rather than inferred: the recovery
+  command was folded across three lines with the continuation unindented, and nothing said the
+  Keychain entry already existed.
+- **The fold survived the first fix attempt.** Splitting the recovery note on a newline changed
+  nothing, because `public_text` replaces line breaks with spaces before the split is read. Caught
+  by rendering the output rather than by reading the code.
+- **Both surfaces now render one body.** `advisory_messages` and `render_setup_advisories` sit
+  beside `recovery_messages` in `setup.py`; `setup_render` delegates to them.
+- **The assertion is over the rendered output**, not the command list: `WizardSurfaceTest` fails if
+  any line of the wizard output is a fragment of a command. A fold is only visible in the
+  rendering, which is why the earlier tests passed while the screen was wrong.

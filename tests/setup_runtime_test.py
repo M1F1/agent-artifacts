@@ -6,10 +6,19 @@ import os
 import pathlib
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from agent_artifacts import setup_runtime
 from agent_artifacts.model import SetupQueueItem
-from agent_artifacts.setup import parse_installer, plan_setup, render_setup_review
+from agent_artifacts.setup import (
+    advisory_messages,
+    home_relative,
+    parse_installer,
+    plan_setup,
+    recovery_messages,
+    render_setup_outcome,
+    render_setup_review,
+)
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
 from tests.setup_fixtures import recipe
 
@@ -433,11 +442,11 @@ class RemediationCommandTest(unittest.TestCase):
         self.assertNotIn(home, command)
 
     def test_a_shell_file_outside_the_home_directory_stays_absolute(self):
-        self.assertEqual(setup_runtime.home_relative("/etc/zshrc", "/Users/someone"), "/etc/zshrc")
+        self.assertEqual(home_relative("/etc/zshrc", "/Users/someone"), "/etc/zshrc")
 
     def test_a_tilde_path_needing_quotes_keeps_the_tilde_expandable(self):
         # A quoted `~` is a literal one: the shell would look for a directory named `~`.
-        rendered = setup_runtime.home_relative("/Users/someone/my shell/.zshrc", "/Users/someone")
+        rendered = home_relative("/Users/someone/my shell/.zshrc", "/Users/someone")
 
         self.assertEqual(rendered, "~/'my shell/.zshrc'")
 
@@ -451,3 +460,87 @@ class RemediationCommandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WizardSurfaceTest(unittest.TestCase):
+    """What the receipt records has to reach the surface the operator actually runs.
+
+    `AD-34` and `AD-35` were both read by one command path. The wizard is how setup is normally
+    run, and it printed none of it: the measurement happened, the receipt carried it, and the
+    screen said `configured` (`AD-36`).
+    """
+
+    def _record(self, *, replaced: bool, length: int):
+        runtime = SimpleNamespace(secret_length=lambda _service, _account: length)
+        keychain = setup_runtime._advise(
+            setup_runtime._keychain_receipt(
+                "macos-keychain.store@1",
+                "aart/mcp/atlassian/api-token",
+                "atlassian",
+                created=not replaced,
+                replaced=replaced,
+            ),
+            "aart/mcp/atlassian/api-token",
+            "atlassian",
+            runtime,
+            kept_existing=False,
+        )
+        home = os.path.expanduser("~")
+        shell = {"module": "shell.env-from-keychain@1", "path": os.path.join(home, ".zshrc")}
+        return SimpleNamespace(receipt=[keychain, shell])
+
+    def _rendered(self, record) -> str:
+        return "\n".join(
+            render_setup_outcome(
+                artifact="mcp/atlassian",
+                profile="claude",
+                scope="user",
+                status="configured",
+                detail="Setup configured",
+                recovery=recovery_messages(record),
+                advisories=advisory_messages(record),
+            )
+        )
+
+    def test_the_wizard_prints_the_truncation_warning_it_used_to_drop(self):
+        rendered = self._rendered(self._record(replaced=True, length=128))
+
+        self.assertIn("Warning", rendered)
+        self.assertIn("exactly 128 bytes", rendered)
+
+    def test_a_replaced_value_says_the_account_already_had_one(self):
+        rendered = self._rendered(self._record(replaced=True, length=40))
+
+        self.assertIn("already had a value in the Keychain", rendered)
+        self.assertIn("this run replaced it", rendered)
+
+    def test_every_command_survives_on_one_line(self):
+        """A command folded across three lines is repaired by hand before it can be run."""
+
+        rendered = self._rendered(self._record(replaced=True, length=128))
+        commands = [line for line in rendered.split("\n") if "add-generic-password" in line]
+
+        self.assertEqual(len(commands), 2)
+        for command in commands:
+            self.assertTrue(command.startswith("    /usr/bin/security "), command)
+            self.assertIn('-w "$(pbpaste)"', command)
+        # The defect was a fold, so the assertion that matters is that no line is a fragment of
+        # one: a continuation arrives without the tool that starts the command.
+        for line in rendered.split("\n"):
+            stripped = line.strip()
+            self.assertFalse(
+                stripped.startswith(("add-generic-password", "-w ", '"$(pbpaste)"', "-s aart")),
+                line,
+            )
+
+    def test_the_reload_is_a_tilde_on_every_surface(self):
+        rendered = self._rendered(self._record(replaced=True, length=128))
+
+        self.assertIn("&& source ~/.zshrc", rendered)
+        self.assertNotIn(os.path.expanduser("~") + "/.zshrc", rendered)
+
+    def test_a_healthy_run_prints_no_warning_at_all(self):
+        rendered = self._rendered(self._record(replaced=False, length=40))
+
+        self.assertNotIn("Warning", rendered)
+        self.assertNotIn("to replace what is stored", rendered)

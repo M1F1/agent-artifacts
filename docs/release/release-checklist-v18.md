@@ -1,4 +1,4 @@
-# AART v18 release checklist and evidence — 2.8.0 and 2.8.1
+# AART v18 release checklist and evidence — 2.8.0, 2.8.1 and 2.8.2
 
 Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
 record and is left as written: a dated record is not edited to agree with today. **To verify the
@@ -141,3 +141,23 @@ Steps 1–8 above are repeated unchanged for `2.8.1`, with `v2.8.1` as the tag a
 Sixty-six findings remain open: one `major`, five `high`, 39 `medium`, and 21 `low` — the set
 `2.8.0` shipped, unchanged. `AD-30`, `AD-31` and `AD-34` remain open for the reason stated above,
 which this patch does not alter.
+
+## 2.8.2 change gate
+
+`2.8.2` ships under this same v18 contract. The finding is `AD-36`, and this release closes it.
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-36` — the advisory was read by one surface, and not the one people use | `closed` | both surfaces render one shared body; five tests assert the wizard output |
+
+- The wizard renders the advisory. `advisory_messages` and `render_setup_advisories` are in
+  `setup.py` beside `recovery_messages`; the JSON renderer delegates to the same body, so the two
+  surfaces cannot drift.
+- No rendered line is a fragment of a command. Asserted over the whole wizard output, not over the
+  command list alone, because the defect was a fold and a fold is only visible in the rendering.
+- A recovery note is sanitised per segment, so `public_text` still flattens author-controlled text
+  and the one structural split survives.
+- A replaced Keychain value states that the account already had one.
+
+Steps 1–8 above are repeated unchanged for `2.8.2`, with `v2.8.2` as the tag and
+[`github-release-v2.8.2.md`](github-release-v2.8.2.md) as the release body.

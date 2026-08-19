@@ -1224,6 +1224,132 @@ def render_manual_alternative(
     )
 
 
+def home_relative(path: str, home: str = "") -> str:
+    """`~/.zshrc`, not `/Users/someone/.zshrc`.
+
+    This path is printed for a person to copy.  Spelling out their home directory is noise, and it
+    reads like a value the tool baked in rather than one it found (`AD-35`).
+
+    `~` is left unquoted, because a quoted tilde is a literal one and the shell would look for a
+    directory named `~`.  Anything needing quotes is quoted after the first slash, where quoting
+    costs nothing.
+    """
+
+    root = (home or os.path.expanduser("~")).rstrip("/")
+    if not root or not path.startswith(root + "/"):
+        return shlex.quote(path)
+    return f"~/{shlex.quote(path[len(root) + 1 :])}"
+
+
+def shell_reload_suffix(shell_file: str, home: str = "") -> str:
+    """The ` && source ~/.zshrc` tail, or nothing when this run wrote no shell file.
+
+    Storing the secret alone changes nothing a running shell can see — the managed block is read
+    when a shell starts — so the reload is joined to the command rather than left as a step to
+    remember (`AD-31`).
+    """
+
+    if not shell_file:
+        return ""
+    return f" && source {home_relative(shell_file, home)}"
+
+
+_SHELL_MODULES = ("shell.env-from-keychain@1", "shell.env-from-input@1")
+
+
+def _shell_file_of(receipts: Sequence[Mapping[str, object]]) -> str:
+    """The file whose managed block puts the secret in the environment, if this run wrote one."""
+
+    for receipt in receipts:
+        if receipt.get("module") in _SHELL_MODULES:
+            path = receipt.get("path")
+            if isinstance(path, str) and path:
+                return path
+    return ""
+
+
+def _command_strings(value: object) -> Tuple[str, ...]:
+    """Commands out of an untyped receipt field, narrowed once instead of at each reader."""
+
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        return ()
+    return tuple(str(one) for one in value)
+
+
+def advisory_messages(record: SetupStateRecord) -> Tuple[Mapping[str, object], ...]:
+    """Advisory findings a completed run recorded, in the shape every surface renders.
+
+    The sibling of `recovery_messages`, and it exists for the same reason: a receipt field that no
+    surface reads is a fact the run established and threw away.  `AD-34`'s warning was read by the
+    JSON command path alone, so an operator who ran setup through the wizard — which is how it is
+    normally run — saw nothing at all (`AD-36`).
+    """
+
+    shell_file = _shell_file_of(record.receipt)
+    reload_shell = shell_reload_suffix(shell_file)
+    messages: list[Mapping[str, object]] = []
+    for receipt in record.receipt:
+        detail = receipt.get("advisory")
+        if not isinstance(detail, str) or not detail.strip():
+            continue
+        commands = list(_command_strings(receipt.get("remediation_commands")))
+        if reload_shell:
+            commands = [
+                one if one.endswith(reload_shell) else one + reload_shell for one in commands
+            ]
+        messages.append({"detail": redact_text(detail.strip()), "commands": tuple(commands)})
+    return tuple(messages)
+
+
+def render_setup_advisories(
+    advisories: Sequence[Mapping[str, object]],
+    *,
+    width: int = CONTENT_MEASURE,
+    heading: str = "Warning",
+) -> Tuple[str, ...]:
+    """Print advisories last, because the operator reads the end of a run, not its middle.
+
+    An advisory is not a failure: the run configured what it was asked to.  It is printed after
+    everything else so that the command it carries is the last thing on screen, ready to copy.
+    """
+
+    lines: Tuple[str, ...] = ()
+    for advisory in advisories:
+        detail = str(advisory.get("detail", ""))
+        commands = _command_strings(advisory.get("commands"))
+        if not detail and not commands:
+            continue
+        lines += (heading,)
+        if detail:
+            lines += field_block((("what", detail),), indent=2, width=width)
+        if commands:
+            lines += ("  to replace what is stored: copy the token to the clipboard, then run:",)
+            # Commands are never wrapped: a wrapped command is a command that cannot be copied.
+            lines += tuple(f"    {command}" for command in commands)
+            # The last step nobody remembers. A server inherits its environment once, at start, so
+            # a corrected Keychain and a reloaded shell still leave it authenticating as nobody
+            # until it is restarted (`AD-31`).
+            lines += ("  then restart the agent harness, or the server keeps what it started with",)
+    return lines
+
+
+def _recovery_lines(item: str, *, width: int) -> Tuple[str, ...]:
+    """Prose wrapped and indented; a command on its own line, printed whole.
+
+    `wrap` collapses embedded newlines, which is right for prose and wrong for the one part of a
+    recovery note the operator has to copy.  A command folded across three lines is repaired by
+    hand before it can be run, and its continuation arrives with no indent at all (`AD-36`).
+    """
+
+    prose, _, command = item.partition("\n")
+    lines = tuple(f"  {line}" for line in wrap(public_text(prose), width=width - 2))
+    # Sanitised per segment rather than whole, because `public_text` flattens line breaks and
+    # would erase the split before it could be read.  Each segment is still sanitised, and there
+    # is still only one split: a recovery note is at most one sentence and one command.
+    tail = public_text(command).strip()
+    return lines + ((f"    {tail}",) if tail else ())
+
+
 def render_setup_outcome(
     *,
     artifact: str,
@@ -1234,6 +1360,7 @@ def render_setup_outcome(
     retry_command: str = "",
     rollback_command: str = "",
     recovery: Sequence[str] = (),
+    advisories: Sequence[Mapping[str, object]] = (),
     manual: SetupManualReference | None = None,
     width: int = CONTENT_MEASURE,
 ) -> Tuple[str, ...]:
@@ -1253,7 +1380,8 @@ def render_setup_outcome(
     if recovery:
         lines += ("Recovery",)
         for item in recovery:
-            lines += wrap(f"  {public_text(redact_text(item))}", width=width)
+            lines += _recovery_lines(item, width=width)
+    lines += render_setup_advisories(advisories, width=width)
     if incomplete and manual is not None:
         lines += render_manual_alternative(
             manual, width=width, incomplete=status not in _SETUP_UNSTARTED
