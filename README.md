@@ -250,10 +250,58 @@ The historical first live-acceptance record remains in
 [`docs/testing/PROGRESS-live-acceptance.md`](docs/testing/PROGRESS-live-acceptance.md). The new
 remediation run is documented separately and does not rewrite that evidence.
 
+## Development dependencies and what `make quality` runs
+
+**The installed runtime has no dependencies.** `dependencies = []` in `pyproject.toml`, standard
+library only — that is a design rule, not an accident, and the gates below exist partly to keep it
+true. Everything in this section is developer and CI tooling that a user of `aart` never installs.
+
+```sh
+pip install -e ".[dev]"
+```
+
+| Package | Constraint | Used for |
+|---|---|---|
+| `ruff` | `>=0.6` | formatting and linting — the `format-check` and `lint` gates |
+| `mypy` | `>=1.11` | the `typecheck` gate |
+| `coverage` | `>=7.6` | the `coverage` gate, branch coverage with `fail_under = 82` |
+| `setuptools` | `>=61` | the editable install and the `build-system` backend. Named explicitly because newer Python versions no longer bundle it in `venv`/`ensurepip` |
+| `wheel` | `>=0.44` | present in the environment for `pip wheel --no-build-isolation`, which the `packaging-check` gate uses so the build fetches nothing |
+
+Tests are **stdlib `unittest`** — there is no test-runner dependency. The wheel is built by
+`scripts/build_wheel.py`, also stdlib, so the offline release path needs neither `setuptools` nor
+`build`.
+
+### The nine gates
+
+`make quality` runs all nine through `scripts/quality.py`, each in a temporary cache directory with
+`PYTHONDONTWRITEBYTECODE=1`, and stops at the first failure. Run one on its own with
+`make <gate>`.
+
+| Gate | Command | Depends on |
+|---|---|---|
+| `format-check` | `ruff format --check agent_artifacts tests scripts` | `ruff` |
+| `lint` | `ruff check agent_artifacts tests scripts` | `ruff` |
+| `typecheck` | `mypy` | `mypy` |
+| `unit` | `unittest discover -s tests -p "*_test.py"` | stdlib |
+| `integration` | `unittest discover -s tests -p "*e2e_test.py"` — drives the real CLI over real trees | stdlib |
+| `validate` | `scripts/validate.py`, then `scripts/version.py check` | stdlib |
+| `coverage` | `coverage run --branch --source=agent_artifacts` over the unit suite, then `coverage report` | `coverage` |
+| `packaging-check` | `scripts/packaging_check.py` — builds the wheel and inspects it | stdlib |
+| `docs-check` | `scripts/docs_check.py` | stdlib |
+
+Four of the nine — `unit`, `integration`, `validate`, `docs-check` — need nothing installed beyond
+Python itself. A release additionally runs eleven checks in `scripts/release.py`, which require a
+local clone of the reference registry:
+
+```sh
+make release-check REGISTRY=/path/to/agent-artifacts-registry
+```
+
 ## License
 
 AART is released under the [MIT License](LICENSE). Free for any use, including commercial, with no
 obligation beyond keeping the copyright notice and the warranty disclaimer. The software is provided
 as is, with no warranty and no liability on the author.
 
-Copyright (c) 2026 Michał Filek, with Love from Poland.
+Copyright (c) 2026 Michał Filek. From Poland with <3
