@@ -768,8 +768,15 @@ def _docker_build_apply(
         "context_digest": f"sha256:{digest}",
         "image_id": identified.stdout.strip() if identified.returncode == 0 else "",
         "preexisting": preexisting,
+        # The old note said the tag was "left alone", which is false: `docker build --tag` moves
+        # it to the image just built.  What is left alone is the *undo*.  It also invited
+        # `docker image rm <tag>` — measured `2026-08-19` to delete the image itself when the tag
+        # is its last reference, which is the image the server runs from (`AD-37`).
         "recovery": (
-            "The tag existed before this run and is left alone; remove it manually if it is yours."
+            f"Docker image tag {tag} pointed at another image before this run and now points at "
+            "the image this run built. The earlier image was not recorded and no longer exists, "
+            "so nothing can restore that binding. There is nothing to do unless you are undoing "
+            "this setup, and do not remove this tag: the server runs from it."
             if preexisting
             else "Rollback removes this tag, which only this run created."
         ),

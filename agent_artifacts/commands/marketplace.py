@@ -84,6 +84,7 @@ from agent_artifacts.setup import (
     advisory_messages,
     project_setup_review,
     render_setup_review,
+    shell_reload_reminder,
 )
 from agent_artifacts.setup_render import (
     render_receipt_payload,
@@ -611,6 +612,25 @@ def _setup_warnings(outcome) -> list[dict]:
     return warnings
 
 
+def _setup_reminders(outcome) -> list[dict]:
+    """The reload a run cannot perform, carried the same way the advisories are (`AD-37`)."""
+
+    reminders: list[dict] = []
+    for item in outcome.items:
+        if item.record is None:
+            continue
+        for reminder in shell_reload_reminder(item.record):
+            reminders.append(
+                {
+                    "key": f"{item.coordinate}#{item.profile}/{item.scope}",
+                    "detail": str(reminder.get("detail", "")),
+                    "commands": list(_command_strings(reminder.get("commands"))),
+                    "alternative": str(reminder.get("alternative", "")),
+                }
+            )
+    return reminders
+
+
 def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
     payload: dict = {
         "planned": [_setup_plan_payload(plan) for plan in queue.plans],
@@ -637,6 +657,9 @@ def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
         warnings = _setup_warnings(outcome)
         if warnings:
             payload["warnings"] = warnings
+        reminders = _setup_reminders(outcome)
+        if reminders:
+            payload["next_steps"] = reminders
     return payload
 
 

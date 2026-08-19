@@ -18,6 +18,7 @@ from agent_artifacts.setup import (
     recovery_messages,
     render_setup_outcome,
     render_setup_review,
+    shell_reload_reminder,
 )
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
 from tests.setup_fixtures import recipe
@@ -544,3 +545,99 @@ class WizardSurfaceTest(unittest.TestCase):
 
         self.assertNotIn("Warning", rendered)
         self.assertNotIn("to replace what is stored", rendered)
+
+
+class ShellReloadReminderTest(unittest.TestCase):
+    """A run that writes variables into a shell file says so, every time.
+
+    No effect can source that file — a child process cannot alter its parent's environment — so
+    the most a run can do is stop the operator having to remember (`AD-37`).
+    """
+
+    def _record(self, *, with_shell: bool):
+        receipt = [{"module": "macos-keychain.store@1", "created": True, "replaced": False}]
+        if with_shell:
+            receipt.append(
+                {
+                    "module": "shell.env-from-keychain@1",
+                    "path": os.path.join(os.path.expanduser("~"), ".zshrc"),
+                }
+            )
+        return SimpleNamespace(receipt=receipt)
+
+    def test_a_run_that_wrote_a_shell_file_names_it_and_the_command(self):
+        (reminder,) = shell_reload_reminder(self._record(with_shell=True))
+
+        self.assertEqual(reminder["file"], "~/.zshrc")
+        self.assertEqual(tuple(reminder["commands"]), ("source ~/.zshrc",))
+        self.assertIn("already open does not have them yet", str(reminder["detail"]))
+        self.assertIn("new terminal window", str(reminder["alternative"]))
+
+    def test_a_run_that_wrote_no_shell_file_says_nothing(self):
+        self.assertEqual(shell_reload_reminder(self._record(with_shell=False)), ())
+
+    def test_the_reminder_does_not_wait_for_a_warning(self):
+        """The whole point: it fires on a healthy run, where no advisory exists."""
+
+        record = self._record(with_shell=True)
+        rendered = "\n".join(
+            render_setup_outcome(
+                artifact="mcp/atlassian",
+                profile="claude",
+                scope="user",
+                status="configured",
+                detail="Setup configured",
+                advisories=advisory_messages(record),
+                reminders=shell_reload_reminder(record),
+            )
+        )
+
+        self.assertNotIn("Warning", rendered)
+        self.assertIn("Next step", rendered)
+        self.assertIn("    source ~/.zshrc", rendered.split("\n"))
+
+    def test_the_file_comes_from_the_receipt_not_from_a_guess(self):
+        record = SimpleNamespace(
+            receipt=[{"module": "shell.env-from-input@1", "path": "/etc/profile.d/aart.sh"}]
+        )
+
+        (reminder,) = shell_reload_reminder(record)
+
+        self.assertEqual(reminder["file"], "/etc/profile.d/aart.sh")
+
+
+class DockerTagNoteTest(unittest.TestCase):
+    """The note used to claim the tag was untouched and to invite removing it."""
+
+    def test_the_note_states_what_the_build_did_and_offers_no_destructive_command(self):
+        note = (
+            "Docker image tag aart/mcp/atlassian:1.0.0 pointed at another image before this run "
+            "and now points at the image this run built. The earlier image was not recorded and "
+            "no longer exists, so nothing can restore that binding. There is nothing to do "
+            "unless you are undoing this setup, and do not remove this tag: the server runs "
+            "from it."
+        )
+        source = pathlib.Path("agent_artifacts/setup_runtime.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("is left alone; remove it manually", source)
+        self.assertIn("do not remove this tag", source)
+        self.assertIn("now points at", note)
+
+
+class SeveralShellFilesTest(unittest.TestCase):
+    """A run that writes two shell files reminds about both, once each."""
+
+    def test_each_distinct_file_gets_its_own_reminder(self):
+        record = SimpleNamespace(
+            receipt=[
+                {"module": "shell.env-from-keychain@1", "path": "/tmp/one/.zshrc"},
+                {"module": "shell.env-from-input@1", "path": "/tmp/two/.bashrc"},
+                {"module": "shell.env-from-keychain@1", "path": "/tmp/one/.zshrc"},
+            ]
+        )
+
+        reminders = shell_reload_reminder(record)
+
+        self.assertEqual(
+            [str(one["file"]) for one in reminders], ["/tmp/one/.zshrc", "/tmp/two/.bashrc"]
+        )
