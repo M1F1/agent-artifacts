@@ -21,10 +21,8 @@ See the [native source contract](docs/protocol/native-source-v1.md),
 
 ## Install and quick start
 
-Python 3.10 or later is required. Pick the installer you use and the source you trust. The `pip`
-and `pipx` commands below were exercised against the published `v2.8.0` artifact and tag. The `uv`
-column carries the same three sources and was last exercised at `v2.7.1`, because `uv` was absent
-from the release host.
+Python 3.10 or later is required. Pick the installer you use and the source you trust; all nine
+commands below were exercised against the published `v2.8.0` artifact or tag.
 
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|

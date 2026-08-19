@@ -49,10 +49,14 @@ produced. Finding dispositions remain authoritative in
 - Published the non-draft, non-prerelease release
   [`v2.8.0`](https://github.com/M1F1/agent-artifacts/releases/tag/v2.8.0). Downloaded the asset into
   a fresh directory; its digest equals the tagged build exactly.
-- Installation matrix: **6 of 9 cells exercised**, all passing `agent-artifacts 2.8.0` — `pip` and
-  `pipx` against the downloaded wheel, the release URL, and the tagged Git URL. The three `uv tool`
-  cells were **not run**: `uv` is absent from this host. The README states that boundary rather
-  than implying the whole matrix was re-run.
+- Installation matrix, first pass: **6 of 9 cells**, all passing `agent-artifacts 2.8.0` — `pip`
+  and `pipx` against the downloaded wheel, the release URL, and the tagged Git URL. The three
+  `uv tool` cells could not run because `uv` was absent from this host, and the README said so
+  rather than implying the whole matrix had been re-run.
+- Installation matrix, closed the same day: `uv 0.12.5` installed from `homebrew-core` — a package
+  manager rather than a piped installer script — and the three remaining cells passed against the
+  published artifact and tag in an isolated `UV_TOOL_DIR`, which was removed afterwards. Matrix
+  result: **9/9 pass**, and the README states the whole matrix again.
 - One host defect met and dismissed as unrelated: Homebrew `python@3.14` cannot create a venv with
   `pip` anywhere on this machine — `ensurepip` fails in `$HOME` as well as in a temporary root — so
   a fresh `PIPX_HOME` failed until pipx was pointed at Python 3.11. Nothing to do with the wheel.
