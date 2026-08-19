@@ -22,7 +22,7 @@ See the [native source contract](docs/protocol/native-source-v1.md),
 ## Install and quick start
 
 Python 3.10 or later is required. Pick the installer you use and the source you trust; all nine
-commands below are exercised against each published artifact or tag.
+commands below were exercised against the published `v2.8.2` artifact or tag.
 
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|
