@@ -61,6 +61,12 @@ The repair work is briefed separately in [`adoption-stream-repair-brief.md`](ado
 | `AD-26` | high | `2026-08-17`, running setup on an MCP server | A symlinked `~/.zshrc` — the normal result of keeping dotfiles in a repository — makes the managed-block step impossible. The refusal is correct; the timing is not. Planning is a pure function with no filesystem access, by design, so the review lists `~/.zshrc` as the target of a write that cannot succeed, and nothing stats it before the first effect. The reader pays for the image build and types two credentials blind before reaching a step one `lstat` would have ruled out. There is no follow option and no alternative target. |
 
 | `AD-27` | high | `2026-08-17`, iterating on a setup recipe | An artifact's setup succeeds exactly once. Any change to the package bytes leaves the object-store `setup` reference pointing at the superseded digest, and persistence requires it to match, so every later run applies its effects, fails, and compensates — for good. The version is not part of the check, so re-vendoring at the same `1.0.0` trips it just as surely as a bump. No command recovers it: `receipt undo` finds no record, and uninstall plus install leaves both the stale reference and an orphaned state file behind. |
+| `AD-30` | high | `2026-08-18`, wiring a setup-collected secret into an MCP server | An MCP descriptor's `${VAR}` is copied into the harness file as those literal characters. The hook path twenty lines away substitutes `${SCRIPT_DIR}`; the MCP path substitutes nothing. A recipe can collect a secret and a descriptor has no way to name it |
+| `AD-31` | high | `2026-08-18`, the same install | Install, setup and the recipe's own verify step all reported success on a server running with the strings `ATLASSIAN_USERNAME` and `ATLASSIAN_API_TOKEN` as its credentials. Confluence answered anonymously and made it look configured; Jira returned 401 |
+
+| `AD-32` | medium | `2026-08-18`, defining the Keychain entries for the Atlassian MCP server | A setup recipe can carry the link a reader needs and nothing ever shows it. `inputs[].help_url` and the recipe-level `help_urls` are parsed, single-line checked and HTTPS-validated by `setup.py:563-615`, stored on `SetupInstaller` (`model.py:89`, `:106`) — and then read by nothing. Measured `2026-08-18`: `help_url` occurs in exactly two modules of the package, the model and the parser, and `.help_url`/`.help_urls` attribute reads outside the parser number **zero**. No renderer, no review output, no prompt, no `--json` payload, no generated `SETUP.md`. Both shipped recipes declare them — `mcp/github-docker` names three URLs including where to create the token, `mcp/atlassian` names the API-token page as the input's own `help_url` — so the data is authored, validated, published in the registry, and invisible at every consumer surface. It matters most at the one moment `AD-24` already describes: the Keychain step hands the terminal to `security`, which asks `password data for new item:` twice with no context, and the field designed to say *here is where you get this value* is the field that is dead. The raiser looked for the Atlassian ID link while filling the Keychain and concluded it was missing; it is present in the recipe and unreachable from the flow Widened `2026-08-18` while probing a fresh recipe: `help_urls` is not optional — a setup v2 installer omitting it is refused outright with `invalid setup installer for mcp/<name>: missing field(s): help_urls`. So the protocol **compels** every recipe author to supply the link, validates it, publishes it, and then shows it to nobody. |
+| `AD-33` | medium | `2026-08-18`, narrowing a vendored MCP package to the one file it uses | A vendored copy's taken subtree is fixed at the first vendor and no command narrows it. `registry revendor` accepts only `KIND NAME` — there is no `--path` — and `plan_artifact_revendor` re-takes `vendored.path`, the path recorded then (`registry_commands/planning.py:1046`); it also refuses outright when the acquisition's url or ref differ from the recorded pair (`:1023-1026`), so *where the bytes come from* is equally frozen. The other direction is closed too: `registry vendor` is create-only, refusing any package whose `artifact.json` exists (`:824`) and sending a vendored one to `revendor` (`:196-208`). A package that took a whole directory to use one file from it — `server.py` used, `launcher.sh` and upstream's `README.md` shipped and dead — therefore has no supported way to drop the two. The only route is to delete `artifact.json`, `provenance.json` and the taken files and vendor again with `--path <file>`, which does not move the provenance chain but discards it. Two edges on that route, both verified `2026-08-18`: authored `payload/` and `setup/` files do **not** block the second vendor — only `artifact.json` does, and the code says so deliberately (`:822-823`) — so the maintainer's wrapper survives; but any taken file left on disk sits inside `_ALLOWED_AUTHORED_ROOTS` (`registry_maintenance/vendoring.py:100`) and is recorded by that vendor as **authored**, quietly reclassifying upstream bytes as this registry's own work. Vendoring a single file is itself supported — that is `AD-11`, closed — which is what makes the absence of a re-take path visible: the capability exists, and the copy that needs it cannot reach it |
+| `AD-34` | high | `2026-08-18`, a token that arrives shorter than it left | The Keychain step stores whatever the terminal hands it and nothing measures the result. `macos-keychain.store@1` runs `security add-generic-password -U -a <account> -s <service> -w` and lets `security` own the terminal; the tool prompts **twice** and compares the two entries. A value longer than the tty's canonical input buffer is truncated identically on both pastes, so the comparison passes and the short value is stored silently. What AART verifies afterwards is existence only — `_keychain_apply` re-runs `find-generic-password` without `-w` and reads the exit code (`setup_runtime.py:367-397`), deliberately, because reading the value back would pull the secret into AART's process. Measured `2026-08-18` on a throwaway service: a pipe into the prompt is refused outright (`passwords don't match`), the same 3000-character value passed as `-w <value>` stores whole, and the interactive path is the only one the recipe uses. The shell block then exports the truncated value with `2>/dev/null`, the server authenticates as nobody, and the operator sees `disconnected` — the same word four other causes produce. Compounds `AD-31`; the reporter met it as *the variable is shorter than the token I pasted* Sharpened `2026-08-18` by measurement on the reporter's machine: the real token is **193** characters and the stored value is **128** — exactly `_PASSWORD_LEN` in `pwd.h` ("max length, not counting NULL"), the cap `getpass(3)` applies. That `security` is the caller is not inferred from the number: `nm -u /usr/bin/security` lists `_getpass` among its imports, and the binary carries the two prompt strings the operator sees (`password data for new item: `, `retype password for new item: `). `getpass` is declared deprecated in `unistd.h` for exactly this reason — it returns a pointer into a fixed static buffer and discards the rest without an error. So this is not an edge case reachable by unusually long secrets: **an Atlassian API token cannot be stored through this recipe at all**, and every run of it produced the first 128 characters and reported success. The tension is real rather than an oversight — passing `-w <value>` would put the secret in AART's own argv, which the design refuses — but a stored length of exactly 128 is a signature that costs nothing to notice, and nothing notices it. Two remedies were measured `2026-08-18` and neither is blocked by anything technical. The cheap one: compare the stored length after a successful add and warn at exactly 128 — it does not fix the truncation, it ends the silence. The real one: write the item without `security` at all, through `SecKeychainAddGenericPassword` in the Security framework, reachable from the standard library with `ctypes` — a probe stored and read back **3000** characters, status 0, with the value never entering `argv`; and Python's own `getpass` shares only the name with `getpass(3)`, reading `/dev/tty` with `termios` echo-off into a string that grows, so the remaining ceiling is the terminal's line buffer rather than 128. The cost is the design rule itself: today the secret goes keyboard → `security` → Keychain and AART sees only an exit code; that route puts it in AART's own memory as a Python string that cannot be reliably zeroed. Left undecided on purpose — the trade is the maintainer's to make, not the implementer's. Partly addressed `2026-08-19`: the step now warns before the prompt that the ceiling exists, measures the stored length through a `security`→`wc` pipe the parent never reads, and ends the run with copy-ready commands when the length is exactly 128 (`setup_runtime.py`, `commands/marketplace.py`, `setup_render.py`, three tests). What landed is the end of the silence, not the end of the ceiling: a 193-byte token still cannot pass through this prompt, and the maintainer deliberately left the `ctypes` route undecided because its price is the rule that AART never holds the secret. Corrected at the `2.8.0` release gate, before publication: the first measurement counted what `security -w` **printed**, which is not what is stored. `-w` prints any value that is not printable ASCII as hex and marks it in no way, so a 128-byte UTF-8 secret measured **256**; and a password of nothing but hex digits prints literally, so halving whatever looked like hex would have reported a 128-character hex token as 64 and lost the warning outright. Measured `2026-08-19` against throwaway items holding non-secret values: `-g` writes `password: 0x` before the hex form and quotes the plain form, so the shape now comes from a `grep -c` on that marker and the length from `wc -c` on `-w` — two counts that each return a number and never the value. Six print forms measure to the byte: ASCII at 93 and at 128, UTF-8 at 64 and at 128 bytes, 128 hex digits, and 128 bytes ending in a tab. An odd hex count returns no measurement rather than a guess. |
 
 ## Notes on `AD-01`
 
@@ -1508,3 +1514,88 @@ An update that correctly determined there was nothing to do returns a failure co
 nor `update` declares `--authorize-untrusted-source`, so on any source below `registry-reviewed`
 every one of these commands exits non-zero for the whole time an artifact's setup is pending — which
 is from installation until setup is authorized, the exact window an adoption script runs in.
+
+## Notes on `AD-30` and `AD-31`
+
+### How it looked from the outside
+
+Two days of `disconnected` in Tabnine, chased through four wrong hypotheses in order: the image tag,
+the settings file, the environment inheritance, and the flag shape. The server had been starting the
+whole time. It was authenticating as nobody.
+
+### What the descriptor said
+
+The vendored `payload/mcp.json` carried the shape every MCP example uses:
+
+```json
+"env": {
+  "ATLASSIAN_USERNAME":  "${ATLASSIAN_USERNAME_EMAIL}",
+  "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+}
+```
+
+`installation/application.py:395-407` reads `descriptor["server"]` and hands it to the merge as the
+value under `mcpServers.<name>`. Nothing between the registry and `.tabnine/agent/settings.json`
+touches it. So those braces reach the harness intact, and whether they ever become a credential is
+the harness's business. Tabnine's is not to expand them.
+
+Twenty lines below, `:424-427`, the hook path builds its entry and **does** substitute — it replaces
+`${SCRIPT_DIR}` in `command` with the resolved scripts directory. One projection interpolates and
+its neighbour does not, in the same function, for the same reason an author would expect both to.
+
+### What the recipe had, and could not give
+
+The setup recipe did its half correctly. It prompted for the token, put it in the Keychain under
+`aart/mcp/company-atlassian/api-token`, and wrote a shell block exporting `ATLASSIAN_USERNAME_EMAIL`
+and `ATLASSIAN_API_TOKEN`.
+
+The descriptor asked for `ATLASSIAN_USERNAME`.
+
+Nothing compares those two vocabularies, because nothing models them as meeting. The recipe is
+validated against the module table; the descriptor is validated as JSON. The name that has to match
+between them is checked by neither, and a mismatch is not an error anywhere — it is an empty string
+at runtime, inside a container, days later.
+
+### Why it looked like it worked
+
+The final hand-tuned entry passed the credentials as flags:
+
+```
+"--username", "ATLASSIAN_USERNAME",
+"--api-token", "ATLASSIAN_API_TOKEN",
+```
+
+— the variable *names*, unexpanded and undecorated, as literal argument values. The image's
+validation is a presence check on the flags, so it accepted them and started.
+
+Confluence worked. Jira did not.
+
+That asymmetry is the whole finding. A company Confluence commonly serves open spaces to anonymous
+readers, because being readable is what it is for; a company Jira does not, because its contents are
+records about people. One product answered, and answering read as configured.
+
+Proven by substituting deliberate nonsense — `--username nikt --api-token bzdura` — and observing no
+change in Confluence. The credential fields had no effect on the outcome, which is the definition of
+not being used.
+
+### What AART reported while this was true
+
+`marketplace install`: `changed`. Setup: applied. The recipe's `verify-command` step: passed — it
+verifies the setup's own effects, which were all genuinely correct. The Keychain entry was real. The
+shell exports were real. Every stage was telling the truth about its own scope, and no stage owned
+the question *can the thing we just installed do its job*.
+
+The operator's only signal was one word in the harness, `disconnected` — the same word produced by a
+missing image, a stopped Docker daemon, an unexpanded variable and a bad credential. It carries no
+information, and it is the only thing the person gets.
+
+### Asked for
+
+`AD-30`: the descriptor needs a way to name a value the recipe collects, and the two vocabularies
+need to be checked against each other at build or vendor time, when the author is still there. If
+verbatim copying stays, then a `${...}` in an MCP descriptor should at minimum be surfaced in the
+install review as *this harness must expand this; AART will not*.
+
+`AD-31`: something has to test the installed server before the operator is told it is configured.
+The recipe already has a `verify-command` module — it is pointed at the setup's effects rather than
+at the artifact's purpose.

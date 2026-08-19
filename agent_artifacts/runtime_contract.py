@@ -5,7 +5,7 @@ from __future__ import annotations
 from agent_artifacts.protocol.capabilities import Capability
 from agent_artifacts.protocol.semver import SemVer
 
-EXECUTABLE_VERSION = SemVer(2, 7, 1)
+EXECUTABLE_VERSION = SemVer(2, 8, 0)
 EXECUTABLE_CAPABILITIES = tuple(
     Capability(value)
     for value in (

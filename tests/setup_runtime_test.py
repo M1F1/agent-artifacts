@@ -7,6 +7,7 @@ import pathlib
 import tempfile
 import unittest
 
+from agent_artifacts import setup_runtime
 from agent_artifacts.model import SetupQueueItem
 from agent_artifacts.setup import parse_installer, plan_setup, render_setup_review
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
@@ -154,6 +155,60 @@ class SetupRuntimeTests(unittest.TestCase):
             self.assertEqual(prompts, [])
             self.assertEqual(real.read_text(encoding="utf-8"), "owned by dotfiles\n")
 
+    def test_a_secret_stored_at_the_prompt_ceiling_is_reported_with_a_way_to_fix_it(self):
+        fake = FakeProcess()
+        prompts: list[str] = []
+        with tempfile.TemporaryDirectory() as home:
+            runtime = SetupRuntime(
+                process=fake,
+                platform="darwin",
+                environ={},
+                write_prompt=prompts.append,
+                # 128 is `_PASSWORD_LEN`: what `getpass(3)` keeps and `security` inherits.
+                secret_length=lambda _service, _account: 128,
+            )
+
+            result = apply_setup_plan(_plan(home), runtime, consent=lambda _effect: True)
+
+        self.assertEqual(result.status, "configured")
+        keychain = next(r for r in result.receipt if r["module"] == "macos-keychain.store@1")
+        self.assertEqual(keychain["stored_length"], 128)
+        self.assertIs(keychain["truncation_suspected"], True)
+        self.assertIn("only its first 128 bytes", keychain["truncation_detail"])
+        commands = tuple(keychain["remediation_commands"])
+        self.assertTrue(any("add-generic-password" in one and "pbpaste" in one for one in commands))
+        self.assertTrue(any("wc -c" in one for one in commands))
+        # The warning has to reach the person before they paste, not only after.
+        self.assertTrue(any("at most 128 bytes" in one for one in prompts))
+
+    def test_a_secret_shorter_than_the_ceiling_raises_nothing(self):
+        fake = FakeProcess()
+        with tempfile.TemporaryDirectory() as home:
+            runtime = SetupRuntime(
+                process=fake,
+                platform="darwin",
+                environ={},
+                secret_length=lambda _service, _account: 93,
+            )
+
+            result = apply_setup_plan(_plan(home), runtime, consent=lambda _effect: True)
+
+        keychain = next(r for r in result.receipt if r["module"] == "macos-keychain.store@1")
+        self.assertEqual(keychain["stored_length"], 93)
+        self.assertNotIn("truncation_suspected", keychain)
+
+    def test_an_unmeasurable_secret_leaves_the_receipt_silent_rather_than_guessing(self):
+        fake = FakeProcess()
+        with tempfile.TemporaryDirectory() as home:
+            # The default probe returns None: no measurement is not the same claim as no problem.
+            runtime = SetupRuntime(process=fake, platform="darwin", environ={})
+
+            result = apply_setup_plan(_plan(home), runtime, consent=lambda _effect: True)
+
+        keychain = next(r for r in result.receipt if r["module"] == "macos-keychain.store@1")
+        self.assertNotIn("stored_length", keychain)
+        self.assertNotIn("truncation_suspected", keychain)
+
     def test_keychain_prompt_argv_never_contains_secret_and_shell_stores_lookup_only(self):
         canary = "aart-secret-canary-123"
         fake = FakeProcess()
@@ -236,6 +291,48 @@ class SetupRuntimeTests(unittest.TestCase):
 
             self.assertEqual(result.status, "unsupported")
             self.assertEqual(fake.calls, [])
+
+
+class StoredSecretLengthTest(unittest.TestCase):
+    """`security -w` prints hex for anything but printable ASCII, and says so only under `-g`."""
+
+    def _measure(self, printed, hex_form):
+        """Answer the two child pipelines without running them, recording what they were asked."""
+
+        asked: list[tuple[str, ...]] = []
+
+        def fake_count(producer, counter, **_options):
+            asked.append(tuple(producer))
+            return printed if "-w" in producer else hex_form
+
+        original = setup_runtime._piped_count
+        setup_runtime._piped_count = fake_count
+        try:
+            return setup_runtime._stored_secret_length("svc", "acct"), asked
+        finally:
+            setup_runtime._piped_count = original
+
+    def test_a_printable_value_is_as_long_as_it_printed(self):
+        # `wc -c` counts the trailing newline `-w` adds, which is not part of what is stored.
+        measured, asked = self._measure(printed=94, hex_form=0)
+
+        self.assertEqual(measured, 93)
+        self.assertTrue(any("-g" in producer for producer in asked))
+
+    def test_a_hex_dump_is_half_as_long_as_it_printed(self):
+        # 128 stored bytes print as 256 hex characters; reading them as 256 would lose the warning.
+        self.assertEqual(self._measure(printed=257, hex_form=1)[0], setup_runtime._PROMPT_CEILING)
+
+    def test_a_value_of_only_hex_digits_is_not_a_hex_dump(self):
+        # `-g` quotes it, so it is 128 printable characters and warns, rather than halving to 64.
+        self.assertEqual(self._measure(printed=129, hex_form=0)[0], setup_runtime._PROMPT_CEILING)
+
+    def test_an_odd_hex_count_is_refused_rather_than_guessed(self):
+        self.assertIsNone(self._measure(printed=100, hex_form=1)[0])
+
+    def test_either_count_failing_leaves_the_length_unknown(self):
+        self.assertIsNone(self._measure(printed=None, hex_form=1)[0])
+        self.assertIsNone(self._measure(printed=129, hex_form=None)[0])
 
 
 if __name__ == "__main__":

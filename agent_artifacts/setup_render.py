@@ -293,6 +293,29 @@ def _item_lines(items: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[str,
     return lines
 
 
+def _warning_lines(rows: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[str, ...]:
+    """Print warnings last, because the operator reads the end of the run, not its middle.
+
+    A warning is not a failure: the run configured what it was asked to. It is printed after the
+    summary so that the commands it carries are the final thing on screen, ready to copy.
+    """
+
+    if not rows:
+        return ()
+    lines: Tuple[str, ...] = ("", "Warnings")
+    for row in rows:
+        lines += wrap(f"{_text(row.get('key'), fallback='unknown artifact')}", width=width)
+        detail = _text(row.get("detail"))
+        if detail:
+            lines += field_block((("what", detail),), indent=2, width=width)
+        commands = [str(command) for command in row.get("commands") or ()]
+        if commands:
+            lines += ("  set the value by hand with:",)
+            # Commands are never wrapped: a wrapped command is a command that cannot be copied.
+            lines += tuple(f"    {command}" for command in commands)
+    return lines
+
+
 def render_setup_payload(
     payload: Mapping[str, Any],
     *,
@@ -327,4 +350,4 @@ def render_setup_payload(
             f", configured={_text(payload.get('configured'), fallback='0')}"
             f", incomplete={_text(payload.get('incomplete'), fallback='0')}"
         )
-    return lines + (summary,)
+    return lines + (summary,) + _warning_lines(_rows(payload, "warnings"), width=width)

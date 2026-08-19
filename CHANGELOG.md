@@ -3,6 +3,51 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.0 — 2026-08-19
+
+Setup now says when a Keychain secret was truncated at the prompt. `security` reads its prompt
+through `getpass(3)`, whose buffer is 128 bytes, and it asks twice — so two identically truncated
+pastes agree with each other and the short value is stored without an error (`AD-34`). This is a
+minor release because the setup `--json` payload gains an optional `warnings` array and the runtime
+gains a public seam. Protocol versions, persisted schemas, commands, flags, registry documents and
+the setup recipe language do not change; schema freeze v18 has the same protocol values and
+normative input digests as v17.
+
+### Added
+
+- The Keychain step warns before the prompt that the tool asks twice, keeps at most 128 bytes, and
+  that this run will measure what was stored.
+- A successful add records `stored_length` in its receipt. At exactly 128 it also records
+  `truncation_suspected`, `truncation_detail` and `remediation_commands`.
+- The run ends with a `Warnings` block after the summary carrying two copy-ready commands: one that
+  sets the value from the clipboard, one that proves its length. Commands are never wrapped.
+- `aart marketplace install --json` gains an optional top-level `warnings` array, present only when
+  a warning fired.
+- `SetupRuntime.secret_length` is a new seam, inert by default so no test run reaches a real
+  Keychain. `production_runtime()` wires the real probe.
+
+The measurement never holds the secret. `security` writes into a pipe that only `wc` reads, AART
+closes its own copy of the read end, and AART reads the count. It takes two counts, not one:
+`security -w` prints a value that is not printable ASCII as hex, with nothing marking it as hex,
+and a password made only of hex digits prints literally — so `-g`, which writes `password: 0x` for
+the hex form and a quoted string otherwise, is counted by `grep` to tell the two apart. A failed or
+unavailable measurement leaves the receipt silent, because no measurement is not the same claim as
+no problem.
+
+### Upgrading from 2.7.1
+
+Upgrade normally. No installation record, state document, harness file or recipe changes, and no
+setup step needs re-running. A secret stored by an earlier version is not re-measured; to check one,
+run the `find-generic-password … | wc -c` command the warning prints. A consumer that rejects
+unknown top-level JSON keys should be updated before it meets `warnings`.
+
+### Known defects shipped open
+
+Sixty-six findings remain open: one `major`, five `high`, 39 `medium`, and 21 `low`. The ceiling
+itself is Apple's and is unchanged — a 193-byte Atlassian token still cannot pass through this
+prompt, so `AD-34` stays open and this release ends its silence rather than its cause. `AD-30` and
+`AD-31`, the other two sides of the same credential join, also remain open.
+
 ## 2.7.1 — 2026-08-18
 
 This patch restores the Tabnine MCP target used by the company build after 2.7.0 replaced measured
