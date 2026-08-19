@@ -1,4 +1,9 @@
-# AART 2.8.0 release checklist and evidence
+# AART v18 release checklist and evidence — 2.8.0 and 2.8.1
+
+Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
+record and is left as written: a dated record is not edited to agree with today. **To verify the
+current release, read the 2.8.1 sections and substitute `v2.8.1` for `v2.8.0` in the commands
+below.**
 
 This minor release ends a silence in the macOS Keychain setup step: a secret cut at the prompt was
 stored and reported as success. It now warns before the prompt, measures what was stored, and ends

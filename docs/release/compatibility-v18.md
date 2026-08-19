@@ -1,4 +1,7 @@
-# AART 2.8.0 compatibility matrix
+# AART v18 compatibility matrix — 2.8.0 and 2.8.1
+
+Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
+after it.
 
 AART `2.8.0` is a minor release over `2.7.1`. It ends a silence: a macOS Keychain setup step that
 stored a truncated secret and reported success now says so. This is a minor rather than a patch
