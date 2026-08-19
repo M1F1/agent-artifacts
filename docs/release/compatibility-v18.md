@@ -1,4 +1,7 @@
-# AART 2.8.0 compatibility matrix
+# AART v18 compatibility matrix — 2.8.0 and 2.8.1
+
+Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
+after it.
 
 AART `2.8.0` is a minor release over `2.7.1`. It ends a silence: a macOS Keychain setup step that
 stored a truncated secret and reported success now says so. This is a minor rather than a patch
@@ -94,3 +97,41 @@ inputs, and `setup.py`, which is inside them, is untouched.
 | `AD-32` — recipe help links are parsed, validated and rendered nowhere | `open` | unchanged by this release |
 | `AD-33` — a vendored copy's taken subtree cannot be narrowed | `open` | unchanged by this release |
 | `AD-29` — a partial profile override replaces the whole builtin record | `open` | unchanged by this release |
+
+## 2.8.1 — the same contract, one path further
+
+AART `2.8.1` is a patch over `2.8.0`. It reaches the case `2.8.0` could not: a Keychain step whose
+item already exists returns before the prompt and before the measurement, so the run that finds a
+rotated or truncated value says `configured` and nothing else. That path now measures and reports.
+
+| Boundary | Supported in 2.8.1 | Change from 2.8.0 | Gate |
+|---|---|---|---|
+| Protocol versions | unchanged | none | schema freeze v18 |
+| Persisted schemas | unchanged | none | install-state tests |
+| Commands and flags | unchanged | none | CLI tests |
+| Setup recipe language | unchanged | none | recipe parser tests |
+| `--json` `warnings` array | `key`, `detail`, `commands` | none | `setup_render` and marketplace tests |
+| Keychain receipt fields | `stored_length`, `truncation_suspected`, `existing_secret_kept`, `advisory`, `remediation_commands` | `truncation_detail` renamed to `advisory`; two fields added | `setup_runtime` tests |
+| `SetupRuntime.secret_length` | unchanged, inert by default | none | `setup_runtime` tests |
+
+The rename is safe across versions because nothing reads the field by name from a stored record.
+`_setup_warnings` reads the outcome of the run executing in the same process; a record written by
+`2.8.0` is parsed by `2.8.1` with `truncation_detail` preserved and unread, exactly as
+`parse_setup_state` preserves any key it does not know.
+
+Downgrading to `2.8.0` loses the advisory on the kept-existing path: the older executable finds the
+item, keeps it, and reports success without measuring it.
+
+## 2.8.1 schema-freeze comparison
+
+Schema freeze v18 for `2.8.1` retains every protocol number and every normative input digest of the
+`2.8.0` freeze, byte for byte. Only `release_version` changes, from `2.8.0` to `2.8.1`. The changed
+modules — `setup_runtime.py`, `commands/marketplace.py`, `setup_render.py` — are outside the frozen
+schema inputs.
+
+## 2.8.1 residues
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-35` — an existing Keychain item is kept and nothing says so | `closed` | the skip path measures, records and prints; the item is left as found |
+| `AD-34` — a truncated secret passes every check | `open` | the ceiling stands; only the silence is fixed |

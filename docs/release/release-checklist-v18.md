@@ -1,4 +1,9 @@
-# AART 2.8.0 release checklist and evidence
+# AART v18 release checklist and evidence — 2.8.0 and 2.8.1
+
+Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
+record and is left as written: a dated record is not edited to agree with today. **To verify the
+current release, read the 2.8.1 sections and substitute `v2.8.1` for `v2.8.0` in the commands
+below.**
 
 This minor release ends a silence in the macOS Keychain setup step: a secret cut at the prompt was
 stored and reported as success. It now warns before the prompt, measures what was stored, and ends
@@ -104,3 +109,35 @@ price is the rule that AART never holds the secret. Shipping the warning now is 
 operator than holding it until the whole join is repaired, because today the only signal is one
 word in a harness UI. The rule is not dropped: it returns as the gate on the release that closes
 the join.
+
+## 2.8.1 change gate
+
+`2.8.1` ships under this same v18 contract. The finding is `AD-35` in
+[`residue-register.md`](../testing/residue-register.md), and this release closes it.
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-35` — an existing Keychain item is kept and nothing says so | `closed` | the skip path measures, records and prints; the item is left as found |
+
+- A Keychain step that finds its item already present **measures it** and records
+  `existing_secret_kept`, `stored_length`, an `advisory` and `remediation_commands`.
+- The measurement on that path uses the same `security`→`wc` pipe: no AART process captures the
+  value and no AART argv carries it.
+- **An advisory is not a change.** No `add-generic-password` runs on the skip path, and the
+  pre-prompt ceiling warning is not printed for a prompt that never happens. Both are asserted by
+  `tests/setup_runtime_test.py::SetupRuntimeTests::test_an_existing_secret_is_reported_rather_than_passed_over_in_silence`.
+- Kept-existing and truncated-at-128 produce **one** advisory and **one** command, because one
+  command fixes both.
+- The reload prints `~/.zshrc`. The tilde is unquoted so the shell expands it; a path needing quotes
+  is quoted after the first slash, and a path outside the home directory stays absolute.
+- The receipt field `truncation_detail` is renamed `advisory`. `truncation_suspected` and
+  `stored_length` keep their meaning, and the `--json` `warnings` array keeps its shape.
+
+Steps 1–8 above are repeated unchanged for `2.8.1`, with `v2.8.1` as the tag and
+[`github-release-v2.8.1.md`](github-release-v2.8.1.md) as the release body.
+
+## 2.8.1 residues shipped open
+
+Sixty-six findings remain open: one `major`, five `high`, 39 `medium`, and 21 `low` — the set
+`2.8.0` shipped, unchanged. `AD-30`, `AD-31` and `AD-34` remain open for the reason stated above,
+which this patch does not alter.

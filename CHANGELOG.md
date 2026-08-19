@@ -3,6 +3,31 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.1 — 2026-08-19
+
+Setup now says something about a Keychain item it left alone. Finding the item already there is the
+normal outcome of every run after the first, and that path measured nothing and reported nothing:
+if the credential was rotated since it was stored, the run said `configured` and the server kept
+authenticating with the old value (`AD-35`). The reload command also printed the operator's home
+directory in full, which reads like a path the tool baked in.
+
+### Changed
+
+- A Keychain step that keeps an existing item now measures it and records `existing_secret_kept`,
+  `stored_length`, an `advisory` and `remediation_commands` — the same command that fixes a
+  truncated paste replaces a rotated one, so both findings are reported as one.
+- The receipt field `truncation_detail` is now `advisory`, because it carries both findings.
+  `truncation_suspected` and `stored_length` keep their meaning.
+- The reload in the printed command is `~/.zshrc`, not the absolute path. The tilde is left
+  unquoted so the shell still expands it; anything needing quotes is quoted after the first slash.
+- The commands header reads `to replace what is stored:`, which is true whether the value was
+  truncated or simply old.
+
+Nothing is written on this path. An advisory is not a change: the run still leaves the existing
+item exactly as it found it, and the pre-prompt warning is not printed for a prompt that never
+happens. Protocol versions, persisted schemas, commands, flags and the setup recipe language do
+not change.
+
 ## 2.8.0 — 2026-08-19
 
 Setup now says when a Keychain secret was truncated at the prompt. `security` reads its prompt
