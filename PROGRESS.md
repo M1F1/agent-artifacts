@@ -3792,3 +3792,22 @@ and that path returns before the prompt, before the measurement, and before any 
 - **Why patch, and why the contract does not move.** The v18 freeze differs from the `2.8.0` freeze
   in `release_version` alone — no protocol number and no input digest — verified by comparing the
   two files. The changed modules are outside the frozen inputs.
+
+### 2026-08-19 — `2.8.1` published
+
+- **Merged.** PR #100 into `origin/main` as `36bea2c`, both CI matrices green on 3.10 and 3.14.
+- **Release check.** All eleven gates passed on the merged commit against a clean
+  `agent-artifacts-registry` checkout.
+- **Tag.** Annotated `v2.8.1` on `36bea2c`, object `2402452`, accepted by `version.py check-tag`.
+- **Wheel.** `agent_artifacts-2.8.1-py3-none-any.whl`, 573,404 bytes,
+  `sha256:181471751ca79eca628368a0cc28bfa124c89d41c7c6add85ec44f464b465778`. The asset downloaded
+  from the published release has the same digest and the same byte count.
+- **Install matrix, 9/9.** `pip`, `pipx` and `uv` against the local wheel, the release URL and the
+  tag; each reports `agent-artifacts 2.8.1`. Run against isolated `PIPX_HOME` and `UV_TOOL_DIR` so
+  the operator's own tool lists were not touched, and confirmed unchanged after.
+- **The shipped behaviour was read from the shipped artifact**, not the working tree: the advisory
+  and the `~/.zshrc` reload were rendered from the wheel installed out of the release URL, with
+  `agent_artifacts.__file__` printed to prove which copy answered.
+- **The README claim is restored now, not at tag time.** Before publication it said the nine
+  commands *are exercised against each published artifact*, because they could not yet have been
+  exercised against this one. `LAF-74` is the reason that distinction is written down.
