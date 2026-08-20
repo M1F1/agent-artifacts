@@ -3923,3 +3923,25 @@ again, and the screen said `configured`.
 - **Licence and dependencies stated.** The repository already shipped MIT and the README never said
   so; it also documented no dependency at all, runtime or development. Both now on the page, with
   each dev package named against the gate that consumes it.
+
+### 2026-08-20 — `2.8.4` published
+
+- **Merged.** PR #108 into `origin/main` as `d439b47`, both CI matrices green on 3.10 and 3.14.
+- **Release check.** All eleven gates passed on the merged commit.
+- **Tag.** Annotated `v2.8.4` on `d439b47`, accepted by `version.py check-tag`.
+- **Wheel.** `agent_artifacts-2.8.4-py3-none-any.whl`, 577,103 bytes,
+  `sha256:f441708af014be6b89ea08feeeda532141ebe7257dac88d0000201f450bbc512`. The published asset is
+  byte-identical to the local build, compared with `cmp`.
+- **Install matrix, 9/9**, on isolated `PIPX_HOME`, `PIPX_BIN_DIR`, `UV_TOOL_DIR` and
+  `UV_TOOL_BIN_DIR`.
+- **The operator's own install was upgraded**, and needed a detour worth recording. `pipx install
+  --force` recreated the venv rather than reusing it, and pipx's default interpreter on this machine
+  is Homebrew `python@3.14`, which fails with *`platform.mac_ver()` returned an empty value*. `pipx`
+  also ignores `--python` when `--force` is passed, so the working route is `uninstall` followed by
+  `install --python <pyenv 3.11>`. Verified afterwards against the installed package itself: the
+  string `Rollback removes this tag, which only this run created` occurs zero times and the
+  replacement once.
+- **`AD-39` shipped open**, named in the release notes and in the checklist's change gate rather
+  than left to be discovered. The remedy is known — hoist the reminder out of the per-item loop and
+  render it once per run — and was deferred on the maintainer's instruction to get `AD-38` onto
+  their machine first.
