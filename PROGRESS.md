@@ -3901,3 +3901,25 @@ again, and the screen said `configured`.
   and `docker image rm <tag>` reports `Untagged` then `Deleted` because the tag was the last
   reference. So there is nothing to clean up and nothing to restore, and removing the tag is the one
   action that breaks the server — which is what the shipped note now says.
+
+### 2026-08-20 — `2.8.4` prepared: the branch a first install reaches
+
+- **The 2.8.3 fix was half a fix.** `_docker_build_apply` writes a different note per branch of one
+  conditional. `2.8.3` rewrote `preexisting=True` and left the `else`, which is the ordinary first
+  install: no image on the machine, the run builds one. The reporter hit it on a normal install one
+  release later, which is how it was found — not by re-reading the diff.
+- **The sibling module had it too.** `docker.pull@1` said *Image may be shared; remove it manually*
+  — no Docker, no image name. Found by sweeping every `recovery` string rather than fixing the one
+  that was reported, because one branch of a pair being wrong makes the pair suspect.
+- **The two notes say opposite things about rollback, correctly.** A built tag is removed
+  (`_rollback_receipt` runs `docker image rm`); a pulled image is left (`return False`, on purpose,
+  because it can back other containers). Stating both stopped the notes reading as one rule.
+- **`AD-39` found by rendering, not by testing.** The maintainer asked whether several MCP setups in
+  one selection had been exercised. The two-item queue test covers stop, retry, rollback and
+  per-item outcomes, but is one artifact across two profiles and asserts nothing about the closing
+  screen. Rendering a three-artifact selection showed the `2.8.3` reminder printed three times: the
+  de-duplication in `_shell_files_of` is per receipt, and the queue repeats across receipts. Shipped
+  open, named in the release notes, left for its own change at the maintainer's direction.
+- **Licence and dependencies stated.** The repository already shipped MIT and the README never said
+  so; it also documented no dependency at all, runtime or development. Both now on the page, with
+  each dev package named against the gate that consumes it.

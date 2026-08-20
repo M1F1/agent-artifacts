@@ -3,6 +3,33 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.4 — 2026-08-20
+
+`2.8.3` fixed one of the two branches that produce the Docker recovery note, and left the branch an
+ordinary first install reaches (`AD-38`).
+
+### Fixed
+
+- Both Docker recovery notes open with `Docker image …` and carry the tag or image they are about.
+  The branch for a tag this run created used to read *Rollback removes this tag, which only this run
+  created*, naming neither Docker nor the tag — the same defect the sibling branch had, left
+  standing on the common path.
+- The note says rollback removes the tag with `docker image rm`, that this also deletes the image
+  when no other tag refers to it, and not to remove the tag by hand because the server runs from it.
+- `docker.pull@1` had it too. It now says rollback **leaves** the image — `_rollback_receipt`
+  returns `False` for a pulled image on purpose, because it can back other containers — and that
+  removal is the operator's, after checking nothing else uses it.
+
+### Documentation
+
+- The README states the development dependencies and what each of the nine quality gates runs. The
+  installed runtime still has none: standard library only.
+
+### Known defects shipped open
+
+- `AD-39`: a run configuring several artifacts prints the `2.8.3` reload reminder once per artifact.
+  Noise rather than wrong advice, recorded and left for its own change.
+
 ## 2.8.3 — 2026-08-19
 
 Setup writes variables into a shell file, prints `configured`, and stops. The shell it was launched
