@@ -1,4 +1,4 @@
-# AART v18 release checklist and evidence — 2.8.0 through 2.8.3
+# AART v18 release checklist and evidence — 2.8.0 through 2.8.4
 
 Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
 record and is left as written: a dated record is not edited to agree with today. **To verify the
@@ -191,3 +191,29 @@ Sixty-six findings remain open, unchanged by this patch: one `major`, five `high
 
 Steps 1–8 above are repeated unchanged for `2.8.3`, with `v2.8.3` as the tag and
 [`github-release-v2.8.3.md`](github-release-v2.8.3.md) as the release body.
+
+## 2.8.4 change gate
+
+`2.8.4` ships under this same v18 contract. The finding is `AD-38`, and this release closes it.
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-38` — the Docker note was repaired on the branch nobody reaches first | `closed` | both branches and both modules name Docker and carry the tag or image |
+| `AD-39` — the reload reminder repeats once per artifact in one run | `open` | shipped open, named in the release notes, left for its own change |
+
+- Both `docker.build@1` branches name Docker and the tag. `2.8.3` rewrote only the branch for a
+  pre-existing tag; the branch for a tag the run created is the ordinary first install and said
+  neither word.
+- `docker.pull@1` names Docker and the image, and says rollback **leaves** it. That is what happens:
+  `_rollback_receipt` returns `False` for a pulled image on purpose.
+- Neither note was believed until it was rendered through `render_setup_outcome`, which is the habit
+  `AD-36` established.
+- `tests/setup_security_test.py` pinned `remove it manually` as a literal and now asserts the
+  properties, the same repair `2.8.3` made to `tests/setup_docker_build_test.py`.
+
+Sixty-six findings remain open, unchanged by this patch: one `major`, five `high`, 39 `medium`, and
+21 `low`. `AD-30`, `AD-31` and `AD-34` remain open for the reasons already stated. `AD-39` is new,
+`low`, and shipped open.
+
+Steps 1–8 above are repeated unchanged for `2.8.4`, with `v2.8.4` as the tag and
+[`github-release-v2.8.4.md`](github-release-v2.8.4.md) as the release body.

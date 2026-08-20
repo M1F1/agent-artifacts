@@ -1,4 +1,4 @@
-# AART v18 compatibility matrix — 2.8.0 through 2.8.3
+# AART v18 compatibility matrix — 2.8.0 through 2.8.4
 
 Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
 after it.
@@ -183,3 +183,29 @@ Schema freeze v18 for `2.8.3` differs from the `2.8.2` freeze in `release_versio
 | Finding | Now | Established by |
 |---|---|---|
 | `AD-37` — a run writes variables and never says the open shell cannot see them | `closed` | both surfaces render one shared body; the path comes from the receipt |
+
+## 2.8.4 — the Docker note on the branch a first install reaches
+
+AART `2.8.4` is a patch over `2.8.3`. No receipt field is added or renamed and no step behaves
+differently. Two `recovery` strings change text (`AD-38`).
+
+| Boundary | Supported in 2.8.4 | Change from 2.8.3 | Gate |
+|---|---|---|---|
+| Protocol versions | unchanged | none | schema freeze v18 |
+| Persisted schemas | unchanged | none | install-state tests |
+| `docker.build@1` receipt fields | `tag`, `context_digest`, `image_id`, `preexisting`, `recovery` | none; only the text of `recovery` | `setup_docker_build` tests |
+| `docker.pull@1` receipt fields | `image`, `preexisting`, `recovery` | none; only the text of `recovery` | `setup_security` tests |
+| Rollback behaviour | unchanged | none — a built tag is removed, a pulled image is left | `setup_docker_build` tests |
+
+A consumer that matched either note by substring will not match it any more. Nothing in AART does;
+the two tests that did are the ones this change rewrote, from pinned literals to assertions on the
+properties.
+
+Schema freeze v18 for `2.8.4` differs from the `2.8.3` freeze in `release_version` alone.
+
+## 2.8.4 residues
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-38` — the Docker note was repaired on the branch nobody reaches first | `closed` | both branches and both modules name Docker; rendered before being believed |
+| `AD-39` — the reload reminder repeats once per artifact in one run | `open` | shipped open on purpose and named in the release notes |
