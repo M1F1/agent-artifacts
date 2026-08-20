@@ -704,7 +704,16 @@ def _docker_apply(effect: SetupEffect, runtime: SetupRuntime) -> tuple[dict, boo
         "module": effect.module,
         "image": effect.target,
         "preexisting": False,
-        "recovery": "Image may be shared; remove it manually only after checking other users.",
+        # Names Docker and the image for the same reason the build note does: `tag` and
+        # `image` on their own read as anything (`AD-38`).  Unlike the build path, rollback
+        # genuinely leaves this one — a pulled image can back other containers — so the note
+        # says who removes it and when, rather than implying the run will.
+        "recovery": (
+            f"Docker image {effect.target} was pulled by this run and was not on this "
+            "machine before. Rollback leaves it, because an image can be shared by other "
+            "containers and nothing removes one automatically. Remove it by hand with "
+            "`docker image rm` only after checking that nothing else uses it."
+        ),
     }, True
 
 
@@ -778,7 +787,13 @@ def _docker_build_apply(
             "so nothing can restore that binding. There is nothing to do unless you are undoing "
             "this setup, and do not remove this tag: the server runs from it."
             if preexisting
-            else "Rollback removes this tag, which only this run created."
+            else (
+                f"Docker image tag {tag} did not exist before this run and this run "
+                "created it. Rollback removes it with `docker image rm`, which also "
+                "deletes the image itself when no other tag refers to it. There is "
+                "nothing to do unless you are undoing this setup, and do not remove this "
+                "tag by hand: the server runs from it."
+            )
         ),
     }, True
 
