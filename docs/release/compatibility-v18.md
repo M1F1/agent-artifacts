@@ -1,4 +1,4 @@
-# AART v18 compatibility matrix — 2.8.0 through 2.8.4
+# AART v18 compatibility matrix — 2.8.0 through 2.8.5
 
 Two releases ship under contract v18. The 2.8.0 record below is left as written; 2.8.1 is recorded
 after it.
@@ -208,4 +208,63 @@ Schema freeze v18 for `2.8.4` differs from the `2.8.3` freeze in `release_versio
 | Finding | Now | Established by |
 |---|---|---|
 | `AD-38` — the Docker note was repaired on the branch nobody reaches first | `closed` | both branches and both modules name Docker; rendered before being believed |
-| `AD-39` — the reload reminder repeats once per artifact in one run | `open` | shipped open on purpose and named in the release notes |
+| `AD-39` — the reload reminder repeats once per artifact in one run | `open` at `2.8.4` | shipped open on purpose and named in the release notes; closed afterwards by its own change |
+
+## 2.8.5 — one shape for a queue, on both surfaces
+
+`2.8.5` is a rendering change. No protocol version moves, no receipt field is
+added or renamed, no step behaves differently, and nothing about what a run *does* changes
+(`AD-39`, `AD-40`, `AD-41`, `AD-42`).
+
+| Boundary | Supported | Change from 2.8.4 | Gate |
+|---|---|---|---|
+| Protocol versions | unchanged | none | schema freeze v18 |
+| Persisted schemas | unchanged | none | install-state tests |
+| Receipt fields | unchanged | none | `setup_runtime` tests |
+| `--json` `setup.items[]` | `key`, `status`, `detail`, plus new `coordinate`, `profile`, `scope`, `successful`, `retry`, `recovery` | additive; `key` keeps its exact spelling | `marketplace_lifecycle_cli` tests |
+| `--json` `setup.next_steps[]` | `detail`, `commands`, `alternative` | **`key` removed**, and the array now holds one row per distinct shell file for the whole run rather than one per artifact | `setup_render` tests |
+| `setup_banner` | new | a rule naming artifact, profile, scope and `setup n/N` | review tests |
+| `render_run_summary` | new | the run's tally, what is not configured, and the reload reminder | review tests |
+| `render_setup_outcome` | `reminders` argument still accepted | the header is a rule rather than the sentence `Setup outcome: …`; `retry` and `rollback` are headed and printed whole instead of wrapped as aligned values | review tests |
+| `marketplace setup` text output | same fields, same counts line | each item opens with the rule; the run summary closes the report | `setup_render` tests |
+| `marketplace setup` stderr | new | one `START` rule per item, printed before that item's prompts | `marketplace_lifecycle_cli` tests |
+
+Three consequences are worth stating plainly.
+
+**`key` is still in the payload and is no longer in the text.** A machine reading `--json` sees
+exactly what it saw. A person reading the text sees `coordinate@profile (scope)`, which is how the
+wizard has always named an artifact; two spellings of one identity on two surfaces was a
+difference the operator had to translate.
+
+**A command is never folded.** `retry` and `rollback` leave the aligned field block and are
+printed whole on their own line, past the content measure when they are longer than it. A folded
+command is pasted broken, which is the defect `AD-34` and `AD-35` closed for the Keychain command
+and which the retry was still being printed through.
+
+**The `START` rule goes to stderr, never to stdout.** stdout carries one JSON document and
+nothing else may enter it, which is the rule the runtime's own prompts already follow. Walked:
+`marketplace setup --json` for three artifacts, and the captured stdout parses whole.
+
+Schema freeze v18 for `2.8.5` differs from the `2.8.4` freeze in `release_version` and in one
+input, `agent_artifacts/setup.py`, where the renderers this release adds live. Every protocol
+version is identical.
+
+## 2.8.5 residues
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-39` — the reload reminder repeats once per artifact in one run | `closed` | one row for the run on both surfaces, aggregated over every receipt |
+| `AD-40` — a queue prints one wall of text and never says whose turn it is | `closed` | a rule per item at `START` and at `SUMMARY`, on both surfaces |
+| `AD-41` — fifty tests were imported by nobody and run by nothing | `closed` | the five function-style modules are collected; 1624 tests at `v2.8.4` to 1692 here |
+| `AD-42` — the recovery note never reached the command line | `closed` | `recovery` and `retry` travel in the payload and are rendered by the same body |
+| `AD-43` — a recovery note's path is folded mid-word and is not home-relative | `open` | shipped open; found by the walk this release was held for, and older than it |
+| `AD-44` — every declared input is prompted before the run finds the item needs nothing | `open` | shipped open; reproduces on `2.8.4` |
+| `AD-45` — an unexplained usage-report projection warning on every command-line setup run | `open` | shipped open; reproduces on `2.8.4` |
+| `AD-46` — a retry is offered for a failure the same command cannot fix | `open` | shipped open; the retry is what this release puts on the command line |
+| `AD-47` — `registry init` and `registry validate` disagree about what a registry workspace is | `open` | shipped open; reproduces on `2.8.4` |
+| `AD-48` — outside a terminal the `START` rule continues the previous prompt's line | `open` | shipped open; introduced by this release's rule, cosmetic and only when piped |
+
+The six `open` rows were all found by the live walk recorded in
+[`PROGRESS-live-acceptance-v14.md`](../testing/PROGRESS-live-acceptance-v14.md). Four of them
+reproduce on the released `2.8.4` wheel and are older than this release; two exist only where this
+release puts new text, and neither changes what a run does.

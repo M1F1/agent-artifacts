@@ -21,6 +21,7 @@ from agent_artifacts.setup_receipt import (
     read_setup_record,
     setup_state_file,
 )
+from tests.function_cases import function_test_case
 
 DATA_ROOT = "/data"
 
@@ -218,3 +219,8 @@ def test_a_file_holding_no_single_bound_record_is_refused() -> None:
 
     assert _codes(empty) == {RECEIPT_INVALID.value}
     assert _codes(malformed) == {RECEIPT_INVALID.value}
+
+
+# Collected by `unittest discover`, which sees `TestCase` subclasses and nothing
+# else; without this the functions above are imported and never run (`AD-41`).
+SetupReceiptTests = function_test_case(globals(), name="SetupReceiptTests")

@@ -90,9 +90,12 @@ from .setup import (
     advisory_messages,
     project_setup_review,
     recovery_messages,
+    render_run_summary,
     render_setup_outcome,
     render_setup_review,
-    shell_reload_reminder,
+    run_reload_reminders,
+    setup_banner,
+    setup_retry_command,
 )
 from .sources.model import SourceIdentityTransition, SourceSyncOutcome
 from .tui_failures import (
@@ -653,16 +656,32 @@ def _canonical_setup_run(
         decision = _read_line(read, "Approve this exact effect? [y/N]: ")
         return decision is not None and decision.strip().lower() in ("y", "yes")
 
-    setup_outcome = service.finalize_setup_queue(queue, consent=consent)
+    def announce(position: int, total: int, plan) -> None:
+        """Say whose setup is starting, before anything asks the operator for anything.
+
+        Everything between here and the item's own summary — approval prompts, and `security`
+        taking the terminal to ask for a password twice while naming nothing — carries no
+        artifact identity at all, and effect numbering restarts at 1 for each item, which reads
+        as a glitch rather than as a boundary (`AD-40`).
+        """
+
+        write("")
+        for line in setup_banner(
+            artifact=str(plan.request.coordinate),
+            profile=plan.request.profile,
+            scope=plan.request.scope,
+            phase="START",
+            position=position,
+            total=total,
+        ):
+            write(line)
+
+    setup_outcome = service.finalize_setup_queue(queue, consent=consent, on_item_start=announce)
     plan_by_key = {
         f"{plan.request.coordinate}#{plan.request.profile}/{plan.request.scope}": plan
         for plan in queue.plans
     }
-    write(
-        f"Setup outcome: configured={setup_outcome.configured}, "
-        f"incomplete={setup_outcome.incomplete}."
-    )
-    for item in setup_outcome.items:
+    for position, item in enumerate(setup_outcome.items, start=1):
         setup_plan = plan_by_key.get(f"{item.coordinate}#{item.profile}/{item.scope}")
         for line in render_setup_outcome(
             artifact=str(item.coordinate),
@@ -673,9 +692,8 @@ def _canonical_setup_run(
             retry_command=(
                 ""
                 if item.successful
-                else (
-                    f"aart marketplace setup {item.coordinate} --profile {item.profile} "
-                    f"--scope {item.scope} --yes --approve-setup-effects"
+                else setup_retry_command(
+                    coordinate=str(item.coordinate), profile=item.profile, scope=item.scope
                 )
             ),
             recovery=() if item.record is None else recovery_messages(item.record),
@@ -683,12 +701,37 @@ def _canonical_setup_run(
             # measurement happened, the receipt carried it, and this surface printed nothing
             # (`AD-36`).
             advisories=() if item.record is None else advisory_messages(item.record),
-            reminders=() if item.record is None else shell_reload_reminder(item.record),
+            # The reload reminder is not here any more: it is a fact about the machine, not about
+            # this artifact, and one per item is how it stopped being read (`AD-39`).
             manual=None
             if setup_plan is None
             else project_setup_review(setup_plan.legacy_plan).manual,
+            position=position,
+            total=len(setup_outcome.items),
         ):
             write(line)
+    for line in render_run_summary(
+        tuple(
+            {
+                "artifact": str(item.coordinate),
+                "profile": item.profile,
+                "scope": item.scope,
+                "status": item.setup_status.value,
+                "detail": item.detail,
+                "successful": item.successful,
+                "retry_command": (
+                    ""
+                    if item.successful
+                    else setup_retry_command(
+                        coordinate=str(item.coordinate), profile=item.profile, scope=item.scope
+                    )
+                ),
+            }
+            for item in setup_outcome.items
+        ),
+        reminders=run_reload_reminders(tuple(item.record for item in setup_outcome.items)),
+    ):
+        write(line)
     reported_states: List[SetupReportState] = []
     for item in setup_outcome.items:
         key = f"{item.coordinate}#{item.profile}/{item.scope}"

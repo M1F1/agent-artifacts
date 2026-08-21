@@ -792,8 +792,16 @@ def execute_setup_queue(
     *,
     consent: Consent,
     stop_on_failure: bool = False,
+    on_item_start: Callable[[int, int, CanonicalSetupPlan], None] | None = None,
 ) -> SetupQueueOutcome:
-    """Execute reviewed items sequentially and emit one payload/setup outcome per item."""
+    """Execute reviewed items sequentially and emit one payload/setup outcome per item.
+
+    ``on_item_start`` is called with ``(position, total, plan)`` immediately before an item runs,
+    and never for an item the queue skipped after stopping.  It exists because everything this
+    loop emits is item-scoped except the boundary between items, which nothing emitted at all: a
+    caller that prompts for consent had no moment at which to say whose setup was beginning
+    (`AD-40`).
+    """
 
     if len(plans) != len(reviewed_digests):
         raise ValueError("each setup plan requires one reviewed digest")
@@ -810,6 +818,8 @@ def execute_setup_queue(
                 )
             )
             continue
+        if on_item_start is not None:
+            on_item_start(len(items) + 1, len(plans), plan)
         result = finalize_setup(
             plan,
             reviewed,

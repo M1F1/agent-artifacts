@@ -3,6 +3,50 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## 2.8.5 — 2026-08-21
+
+Install three MCP servers in one selection and `2.8.4` prints one wall of text: the same approval
+prompts for every item, effect numbering restarting at `1` each time, `security` taking the terminal
+to ask for a password while naming no artifact, and the reload reminder repeated once per artifact
+(`AD-39`, `AD-40`). The command line had the same gap wider — it printed its whole report after the
+run, and dropped the recovery note and the retry command entirely (`AD-42`).
+
+### Fixed
+
+- **Every setup in a queue has a boundary.** Each item opens with a rule naming artifact, profile,
+  scope and `setup n/N`, printed before anything asks the operator for anything, and closes with the
+  same rule over its outcome. The password request now has an owner. On the command line the opening
+  rule goes to stderr, where the runtime's own prompts already go, so stdout stays one JSON document.
+- **The reload reminder is printed once for the run**, not once per artifact. Three servers writing
+  exports to `~/.zshrc` need the shell reloaded once. The `--json` row loses its `key`: it named an
+  artifact for a fact about the machine, which is what made it repeat.
+- **The recovery note and the retry command reach `aart marketplace setup`.** Everything `2.8.4` was
+  released to fix — the note that names the Docker image, the tag, and what a rollback would and
+  would not remove — was visible only in the wizard. `--json` `setup.items[]` now carry `coordinate`,
+  `profile`, `scope`, `successful`, `retry` and `recovery` beside the unchanged `key`.
+- **A command is never folded.** `retry` and `rollback` are printed whole on their own line rather
+  than wrapped as aligned values. A folded command is pasted broken.
+- **A run ends with what the run did**: how many were selected, how many are configured, and which
+  are not, with the command that repeats each one.
+- **Fifty tests that had never run now run.** Five test modules are written as bare module-level
+  functions, which `unittest`'s loader does not collect, so the suite reported `OK` over 1624 tests
+  while fifty written ones never executed — over the payload renderer, the receipt and verification.
+  All fifty pass. The suite is 1692.
+
+### Known defects shipped open
+
+Six, all found by the live walk this release was held for and recorded in
+`docs/testing/PROGRESS-live-acceptance-v14.md`. Four of them reproduce on `2.8.4` and are older than
+this release.
+
+- `AD-43`: a recovery note's absolute path is folded mid-word and is not shortened to `~`. The
+  protection against folding is for commands, and a path is not one.
+- `AD-44`: a run asks for every declared input before discovering the item is already configured.
+- `AD-45`: an unexplained *usage report projection failed* warning on command-line setup runs.
+- `AD-46`: a retry is offered for a failure the same command cannot fix.
+- `AD-47`: `registry init` and `registry validate` disagree about what a registry workspace is.
+- `AD-48`: outside a terminal the opening rule continues the previous prompt's line.
+
 ## 2.8.4 — 2026-08-20
 
 `2.8.3` fixed one of the two branches that produce the Docker recovery note, and left the branch an

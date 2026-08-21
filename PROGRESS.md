@@ -3945,3 +3945,32 @@ again, and the screen said `configured`.
   than left to be discovered. The remedy is known — hoist the reminder out of the per-item loop and
   render it once per run — and was deferred on the maintainer's instruction to get `AD-38` onto
   their machine first.
+
+### 2026-08-21 — `2.8.5` prepared: one shape for a queue, on both surfaces
+
+- **`AD-39` was the small one and it opened the others.** Hoisting the reload reminder out of the
+  per-item loop meant touching the `--json` path too, and changing `_setup_reminders` there showed
+  that `setup_render_test.py`'s pinned assertion could not have failed either way. Five test modules
+  are written as bare module-level functions, which `unittest`'s loader does not collect: **fifty
+  tests, imported by nobody and run by nothing** (`AD-41`), over the payload renderer, the receipt
+  and verification. Measured on both trees rather than asserted — 1624 tests at `v2.8.4`, 1692 here.
+- **The two surfaces were then written out side by side**, which is what found `AD-42`:
+  `recovery_messages` had exactly one caller, so everything `2.8.4` was released to fix was
+  invisible to anyone running `aart marketplace setup`. That is `AD-36` again, one release later
+  and in the other direction, and both times a receipt field with one reader was the shape of it.
+- **The fix is the level, not new logic.** `run_reload_reminders` hands every receipt in the run to
+  the same `_shell_files_of` that already returned each distinct file once. The payload row loses
+  its `key`: it named an artifact for a fact about the machine, which is what made it repeat.
+- **Walked before believed, on both wheels.** `PROGRESS-live-acceptance-v14.md`: eleven scenarios
+  over three artifacts selected together, each claim seen **false on a wheel built from `v2.8.4` and
+  true on a wheel built from this branch**, same sandbox, same commands. The counterfactual was
+  rebuilt from the tag rather than recalled from the register.
+- **The wizard was reached without curses**, through the documented plain-text fallback under
+  `TERM=dumb`, which is the path that calls `_canonical_setup_run` — the same function the curses
+  front-end calls after teardown. No secret was typed: every input in the walk fixture is declared
+  `text`.
+- **The walk found six things and repaired none of them** (`AD-43`..`AD-48`), which is the rule.
+  Four reproduce on the released `2.8.4` and are older than this release. The one worth naming is
+  `AD-43`: a recovery note's absolute path is folded mid-word, because the protection against
+  folding was written for **commands** and a path is not one — two lines below a reminder that
+  prints `~/.zshrc`, on the same screen.

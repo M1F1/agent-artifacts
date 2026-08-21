@@ -31,7 +31,7 @@ from .model import (
     SetupStep,
 )
 from .redaction import redact_text
-from .tui_layout import CONTENT_MEASURE, field_block, wrap
+from .tui_layout import CONTENT_MEASURE, field_block, measure, wrap
 
 _TOP_FIELDS = {
     "schema_version",
@@ -1380,23 +1380,40 @@ def shell_reload_reminder(record: SetupStateRecord) -> Tuple[Mapping[str, object
     variables there, so this holds for any recipe without the recipe saying anything.
     """
 
-    reminders: list[Mapping[str, object]] = []
-    for shell_file in _shell_files_of(record.receipt):
-        display = home_relative(shell_file)
-        reminders.append(
-            {
-                "file": display,
-                "detail": (
-                    f"this run put variables in {display}, and a shell that is already open "
-                    "does not have them yet"
-                ),
-                "commands": (f"source {display}",),
-                "alternative": (
-                    "or open a new terminal window and start the agent harness from there"
-                ),
-            }
-        )
-    return tuple(reminders)
+    return _reminders_for(_shell_files_of(record.receipt))
+
+
+def _reminders_for(shell_files: Sequence[str]) -> Tuple[Mapping[str, object], ...]:
+    return tuple(
+        {
+            "file": display,
+            "detail": (
+                f"this run put variables in {display}, and a shell that is already open "
+                "does not have them yet"
+            ),
+            "commands": (f"source {display}",),
+            "alternative": "or open a new terminal window and start the agent harness from there",
+        }
+        for display in (home_relative(shell_file) for shell_file in shell_files)
+    )
+
+
+def run_reload_reminders(
+    records: Sequence[Optional[SetupStateRecord]],
+) -> Tuple[Mapping[str, object], ...]:
+    """The same reminder, once for the run instead of once per artifact (`AD-39`).
+
+    `_shell_files_of` already returns each distinct file once, in write order, so the whole fix
+    is to hand it every receipt in the run rather than one item's.  Reloading a shell is a fact
+    about the machine, not about an artifact: three servers writing to `~/.zshrc` need the
+    command run once, and printing it three times is how the instruction stopped being read.
+    """
+
+    receipts: list[Mapping[str, object]] = []
+    for record in records:
+        if record is not None:
+            receipts.extend(record.receipt)
+    return _reminders_for(_shell_files_of(tuple(receipts)))
 
 
 def render_setup_reminders(
@@ -1419,6 +1436,131 @@ def render_setup_reminders(
     return lines
 
 
+def render_recovery_notes(notes: Sequence[str], *, width: int = CONTENT_MEASURE) -> Tuple[str, ...]:
+    """The `Recovery` block, written once so that both surfaces print the same thing.
+
+    Each note is one sentence and, sometimes, one command, and the command is the part that must
+    not be folded — `_recovery_lines` is what knows that. A second implementation on the other
+    surface is a second place for the fold to come back (`AD-42`).
+    """
+
+    if not notes:
+        return ()
+    lines: Tuple[str, ...] = ("Recovery",)
+    for note in notes:
+        lines += _recovery_lines(note, width=width)
+    return lines
+
+
+def setup_retry_command(*, coordinate: str, profile: str, scope: str) -> str:
+    """The one command that repeats exactly this item, written once for both surfaces.
+
+    Both the wizard and the `--json` path print a retry, and a retry assembled twice is two
+    commands that drift — the flags that authorize a setup queue are the whole difference between
+    one that runs and one that refuses (`AD-36`).
+    """
+
+    return (
+        f"aart marketplace setup {coordinate} --profile {profile} "
+        f"--scope {scope} --yes --approve-setup-effects"
+    )
+
+
+_BANNER_MINIMUM_RULE = 6
+"""Fewer dashes than this around a label is not a rule, so the banner changes shape instead."""
+
+
+def setup_banner(
+    *,
+    phase: str,
+    artifact: str = "",
+    profile: str = "",
+    scope: str = "",
+    position: int = 0,
+    total: int = 0,
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """A rule that says which setup this is and whether it is opening or closing.
+
+    A queue prints the same shapes for every item — effects, prompts, a `security` password
+    request that names nothing — so without a boundary the run is one wall of text and the
+    operator cannot tell whose credential is being asked for (`AD-40`).  The profile is part of
+    the label rather than decoration: the queue is an artifacts x profiles product, so one MCP
+    server selected for two harnesses is two items whose labels would otherwise be identical.
+    The version is deliberately absent — a coordinate carries one, and two cannot be queued.
+    """
+
+    parts = []
+    if artifact:
+        subject = f"{artifact}@{profile}" if profile else artifact
+        parts.append(f"{subject} ({scope})" if scope else subject)
+    if total > 0:
+        parts.append(f"setup {position}/{total}")
+    parts.append(phase)
+    label = f" {' — '.join(parts)} "
+    bound = measure(width, bound=CONTENT_MEASURE)
+    fill = bound - len(label)
+    if fill >= _BANNER_MINIMUM_RULE:
+        left = fill // 2
+        return (f"{'-' * left}{label}{'-' * (fill - left)}",)
+    # Too narrow to hold the label inside a rule. The words are the point and the rule is the
+    # decoration, so the rule is what gives way; nothing here is ever truncated to fit. The
+    # separator degrades with it, because a wrapped line ending in a dangling em dash reads as
+    # damage rather than as a boundary.
+    return wrap(", ".join(parts), width=bound) + ("-" * bound,)
+
+
+def render_run_summary(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    reminders: Sequence[Mapping[str, object]] = (),
+    width: int = CONTENT_MEASURE,
+) -> Tuple[str, ...]:
+    """What the whole run did, once, after the per-item blocks that stay exactly as they were.
+
+    Per-item output answers "what happened to this artifact".  It cannot answer "what happened
+    to the run", and a queue of six prints six blocks in which the one that failed is somewhere
+    in the middle.  Two facts are run-scoped rather than item-scoped and belong only here: the
+    tally, and reloading a shell file, which is a property of the machine and was printed once
+    per artifact before (`AD-39`).
+    """
+
+    if not rows:
+        return ()
+    total = len(rows)
+    done = sum(1 for row in rows if bool(row.get("successful")))
+    # The blank belongs to the block, not to the caller: two surfaces spacing it themselves is
+    # two surfaces spacing it differently.
+    lines: Tuple[str, ...] = ("",) + setup_banner(phase="RUN SUMMARY", width=width)
+    lines += field_block(
+        (("selected", str(total)), ("configured", str(done)), ("incomplete", str(total - done))),
+        indent=2,
+        width=width,
+    )
+    incomplete = tuple(row for row in rows if not bool(row.get("successful")))
+    if incomplete:
+        lines += ("Not configured",)
+        for row in incomplete:
+            heading = f"{row.get('artifact', '')}@{row.get('profile', '')} ({row.get('scope', '')})"
+            lines += tuple(f"  {line}" for line in wrap(public_text(heading), width=width - 2))
+            # Redacted here as well as in the per-item block. This summary repeats a detail that
+            # was already printed once, and a repeat is a second chance to print a credential.
+            lines += field_block(
+                (
+                    ("status", public_text(str(row.get("status", "")))),
+                    ("why", public_text(redact_text(str(row.get("detail", ""))))),
+                ),
+                indent=4,
+                width=width,
+            )
+            retry = public_text(redact_text(str(row.get("retry_command", ""))))
+            if retry:
+                # Never wrapped, for the same reason as every other command this tool prints.
+                lines += (f"    {retry}",)
+    lines += render_setup_reminders(reminders, width=width)
+    return lines
+
+
 def render_setup_outcome(
     *,
     artifact: str,
@@ -1432,25 +1574,39 @@ def render_setup_outcome(
     advisories: Sequence[Mapping[str, object]] = (),
     reminders: Sequence[Mapping[str, object]] = (),
     manual: SetupManualReference | None = None,
+    position: int = 0,
+    total: int = 0,
     width: int = CONTENT_MEASURE,
 ) -> Tuple[str, ...]:
-    """Render one post-payload setup result as a bounded, redacted terminal record."""
+    """Render one post-payload setup result as a bounded, redacted terminal record.
+
+    The heading is a rule rather than a sentence so that it closes the item visibly.  A queue
+    prints these back to back, and a line that reads like prose does not separate one artifact's
+    output from the next one's (`AD-40`).
+    """
 
     incomplete = status not in _SETUP_COMPLETE
-    lines = wrap(f"Setup outcome: {artifact}@{profile} ({scope})", width=width)
-    fields: list[tuple[str, str]] = [
-        ("status", public_text(status)),
-        ("details", public_text(redact_text(detail))),
-    ]
-    if retry_command:
-        fields.append(("retry", public_text(redact_text(retry_command))))
-    if rollback_command:
-        fields.append(("rollback", public_text(redact_text(rollback_command))))
-    lines += field_block(tuple(fields), indent=2, width=width)
-    if recovery:
-        lines += ("Recovery",)
-        for item in recovery:
-            lines += _recovery_lines(item, width=width)
+    lines: Tuple[str, ...] = setup_banner(
+        artifact=artifact,
+        profile=profile,
+        scope=scope,
+        phase="SUMMARY",
+        position=position,
+        total=total,
+        width=width,
+    )
+    lines += field_block(
+        (("status", public_text(status)), ("details", public_text(redact_text(detail)))),
+        indent=2,
+        width=width,
+    )
+    # Commands are headed and then printed whole on their own line, never as an aligned value: a
+    # field block wraps, and a folded command is pasted broken. This is the same fold `AD-34` and
+    # `AD-35` were opened about, and the retry was still being printed through it.
+    for label, command in (("retry", retry_command), ("rollback", rollback_command)):
+        if command:
+            lines += (f"  {label}", f"    {public_text(redact_text(command))}")
+    lines += render_recovery_notes(recovery, width=width)
     lines += render_setup_advisories(advisories, width=width)
     lines += render_setup_reminders(reminders, width=width)
     if incomplete and manual is not None:

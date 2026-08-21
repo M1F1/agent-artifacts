@@ -29,6 +29,7 @@ from agent_artifacts.setup_verify import (
     verify_claims,
 )
 from agent_artifacts.setup_verify_probes import command_accepted, orphan_run_directories
+from tests.function_cases import function_test_case
 
 BLOCK = (
     "# >>> aart setup: mcp/x@claude >>>\nexport TOKEN_LOOKUP=1\n# <<< aart setup: mcp/x@claude <<<"
@@ -409,3 +410,8 @@ def test_the_payload_counts_each_status_once() -> None:
     # it — a path with nothing to report says that it checked (`LAF-45`).
     assert (payload["true"], payload["false"], payload["unknown"]) == (2, 1, 1)
     assert len(payload["claims"]) == 4
+
+
+# Collected by `unittest discover`, which sees `TestCase` subclasses and nothing
+# else; without this the functions above are imported and never run (`AD-41`).
+SetupVerifyTests = function_test_case(globals(), name="SetupVerifyTests")

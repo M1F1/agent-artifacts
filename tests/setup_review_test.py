@@ -12,11 +12,15 @@ from agent_artifacts.setup import (
     parse_installer,
     plan_setup,
     project_setup_review,
+    render_run_summary,
     render_setup_outcome,
     render_setup_review,
+    setup_banner,
 )
 from agent_artifacts.tui_layout import CONTENT_MEASURE
 from tests.setup_fixtures import recipe
+
+RETRY = "aart marketplace setup mcp/atlassian --profile tabnine --scope project"
 
 
 def installer(**changes: object):
@@ -163,15 +167,22 @@ class SetupReviewProjectionTests(unittest.TestCase):
                 scope="project",
                 status="cancelled",
                 detail="setup api_token=do-not-render was cancelled",
-                retry_command="aart marketplace setup mcp/atlassian --profile tabnine --scope project",
+                retry_command=RETRY,
                 recovery=("Remove only a file created by this run.",),
                 manual=reference,
                 width=width,
             )
 
-            self.assertTrue(all(len(line) <= min(width, CONTENT_MEASURE) for line in rendered))
+            # Every line is bounded except the command, which is printed whole on purpose: a
+            # folded command is pasted broken, which is the defect `AD-34` and `AD-35` closed.
+            prose = [line for line in rendered if not line.strip().startswith("aart ")]
+            self.assertTrue(all(len(line) <= min(width, CONTENT_MEASURE) for line in prose))
+            self.assertIn("    " + RETRY, rendered)
             text = "\n".join(rendered)
-            self.assertIn("Setup outcome", text)
+            # The block opens with a rule that names the item, not with a sentence: a queue
+            # prints these back to back and prose does not separate one item from the next.
+            self.assertIn("mcp/atlassian@tabnine (project)", text)
+            self.assertIn("SUMMARY", text)
             self.assertIn("Manual alternative", text)
             self.assertIn("mcp/atlassian/SETUP.md", text)
             self.assertNotIn("do-not-render", text)
@@ -245,3 +256,131 @@ class SetupReviewProjectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupBoundaryTests(unittest.TestCase):
+    """`AD-40`. A queue of six printed one wall of text with nothing saying whose turn it was.
+
+    Every shape the run prints — effects, approval prompts, the `security` password request that
+    names no artifact at all — is identical from item to item, and effect numbering restarts at 1
+    for each, which reads as a glitch rather than as a boundary. The operator could not tell which
+    server they were being asked to give a credential to.
+    """
+
+    def test_the_banner_is_one_rule_of_exactly_the_measure(self):
+        (line,) = setup_banner(
+            artifact="registry/mcp/alation@0.9.1",
+            profile="claude",
+            scope="user",
+            phase="START",
+            position=2,
+            total=3,
+        )
+
+        self.assertEqual(len(line), CONTENT_MEASURE)
+        self.assertIn("registry/mcp/alation@0.9.1@claude (user)", line)
+        self.assertIn("setup 2/3", line)
+        self.assertIn("START", line)
+        self.assertTrue(line.startswith("-") and line.endswith("-"), line)
+
+    def test_a_narrow_terminal_drops_the_rule_and_keeps_every_word(self):
+        """The rule is decoration and the words are the point, so the rule gives way first."""
+
+        for width in (20, 32, 40, 60, 80, 100, 200):
+            lines = setup_banner(
+                artifact="registry/mcp/github-docker@1.0.0",
+                profile="claude",
+                scope="project",
+                phase="SUMMARY",
+                position=1,
+                total=2,
+                width=width,
+            )
+            bound = min(width, CONTENT_MEASURE)
+
+            for line in lines:
+                self.assertLessEqual(len(line), bound, (width, line))
+            if width < 40:
+                # A column count smaller than the identity itself is the one case where the
+                # identity breaks across lines, exactly as every other wrapped value in this
+                # tool does. Nothing is dropped; it is only folded.
+                continue
+            text = " ".join(lines)
+            for word in ("registry/mcp/github-docker@1.0.0@claude", "(project)", "1/2", "SUMMARY"):
+                self.assertIn(word, text, width)
+
+    def test_one_artifact_selected_for_two_harnesses_gets_two_distinct_banners(self):
+        """The queue is an artifacts x profiles product, so the profile is identity, not decor."""
+
+        first = setup_banner(
+            artifact="mcp/atlassian", profile="claude", scope="user", phase="START"
+        )
+        second = setup_banner(
+            artifact="mcp/atlassian", profile="cursor", scope="user", phase="START"
+        )
+
+        self.assertNotEqual(first, second)
+
+    def test_the_run_summary_tallies_the_run_and_names_only_what_failed(self):
+        rendered = "\n".join(render_run_summary(_ROWS))
+
+        self.assertIn("RUN SUMMARY", rendered)
+        self.assertIn("selected    3", rendered)
+        self.assertIn("configured  2", rendered)
+        self.assertIn("incomplete  1", rendered)
+        self.assertIn("Not configured", rendered)
+        self.assertIn("mcp/alation@claude (user)", rendered)
+        # The two that worked are counted, not repeated: the summary exists to find the one that
+        # did not, in a run whose per-item blocks have already scrolled past.
+        self.assertNotIn("mcp/atlassian@claude (user)", rendered)
+
+    def test_the_run_summary_redacts_the_detail_it_repeats(self):
+        """A repeat is a second chance to print a credential, so it is redacted twice."""
+
+        rendered = "\n".join(render_run_summary(_ROWS))
+
+        self.assertNotIn("do-not-render", rendered)
+        self.assertIn("[redacted]", rendered)
+
+    def test_the_retry_command_is_printed_whole_on_one_line(self):
+        lines = render_run_summary(_ROWS)
+
+        self.assertIn("    " + _RETRY, lines)
+
+    def test_a_run_with_no_items_prints_no_summary(self):
+        self.assertEqual(render_run_summary(()), ())
+
+
+_RETRY = (
+    "aart marketplace setup mcp/alation --profile claude --scope user --yes --approve-setup-effects"
+)
+
+_ROWS = (
+    {
+        "artifact": "mcp/atlassian",
+        "profile": "claude",
+        "scope": "user",
+        "status": "configured",
+        "detail": "Setup configured",
+        "successful": True,
+        "retry_command": "",
+    },
+    {
+        "artifact": "mcp/alation",
+        "profile": "claude",
+        "scope": "user",
+        "status": "apply-failed-rolled-back",
+        "detail": "setup api_token=do-not-render was rejected by the server",
+        "successful": False,
+        "retry_command": _RETRY,
+    },
+    {
+        "artifact": "mcp/github-docker",
+        "profile": "claude",
+        "scope": "user",
+        "status": "already-configured",
+        "detail": "Setup already configured",
+        "successful": True,
+        "retry_command": "",
+    },
+)

@@ -14,7 +14,14 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence, Tuple
 
-from agent_artifacts.setup import public_text, render_setup_advisories, render_setup_reminders
+from agent_artifacts.setup import (
+    public_text,
+    render_recovery_notes,
+    render_run_summary,
+    render_setup_advisories,
+    render_setup_reminders,
+    setup_banner,
+)
 from agent_artifacts.tui_layout import CONTENT_MEASURE, field_block, wrap
 
 __all__ = [
@@ -280,16 +287,40 @@ def _failure_lines(failures: Sequence[Mapping[str, Any]], *, width: int) -> Tupl
 
 
 def _item_lines(items: Sequence[Mapping[str, Any]], *, width: int) -> Tuple[str, ...]:
+    """One block per item, opened by the same rule the wizard opens it with (`AD-40`).
+
+    This used to be a sentence — `Setup configured: coord#profile/scope` — and a sentence does
+    not separate one item's output from the next one's when several are printed back to back.
+    The identity is written the way the wizard writes it, because two spellings of one artifact
+    on two surfaces is a difference the operator has to translate.
+    """
+
     lines: Tuple[str, ...] = ()
-    for item in items:
-        lines += wrap(
-            f"Setup {_text(item.get('status'), fallback='unknown')}: "
-            f"{_text(item.get('key'), fallback='unknown artifact')}",
+    for position, item in enumerate(items, start=1):
+        lines += ("",)
+        lines += setup_banner(
+            artifact=_text(item.get("coordinate")) or _text(item.get("key"), fallback="unknown"),
+            profile=_text(item.get("profile")),
+            scope=_text(item.get("scope")),
+            phase="SUMMARY",
+            position=position,
+            total=len(items),
             width=width,
         )
+        fields = [("status", _text(item.get("status"), fallback="unknown"))]
         detail = _text(item.get("detail"))
         if detail:
-            lines += field_block((("details", detail),), indent=2, width=width)
+            fields.append(("details", detail))
+        lines += field_block(tuple(fields), indent=2, width=width)
+        retry = _text(item.get("retry"))
+        if retry:
+            # Headed, then printed whole: exactly as `render_setup_outcome` prints it.
+            lines += ("  retry", "    " + retry)
+        recovery = item.get("recovery")
+        if isinstance(recovery, list):
+            # Not through `_text`: it flattens line breaks, and the break is what separates a
+            # note's prose from the command inside it. `_recovery_lines` sanitises per segment.
+            lines += render_recovery_notes([str(note) for note in recovery], width=width)
     return lines
 
 
@@ -347,9 +378,30 @@ def render_setup_payload(
             f", configured={_text(payload.get('configured'), fallback='0')}"
             f", incomplete={_text(payload.get('incomplete'), fallback='0')}"
         )
-    return (
-        lines
-        + (summary,)
-        + _warning_lines(_rows(payload, "warnings"), width=width)
-        + render_setup_reminders(_rows(payload, "next_steps"), width=width)
+    # The run summary closes both surfaces, and the reminder closes the run summary. An item can
+    # scroll away; the last block is the one an operator is certain to have in front of them.
+    reminders = _rows(payload, "next_steps")
+    closing = render_run_summary(_summary_rows(items), reminders=reminders, width=width)
+    if not closing:
+        # No item ran — a planning-only report. The reminder, if any, still belongs at the end.
+        closing = render_setup_reminders(reminders, width=width)
+    return lines + (summary,) + _warning_lines(_rows(payload, "warnings"), width=width) + closing
+
+
+def _summary_rows(items: Sequence[Mapping[str, Any]]) -> Tuple[Mapping[str, Any], ...]:
+    """The payload's items in the shape `render_run_summary` reads, which is the wizard's shape."""
+
+    return tuple(
+        {
+            "artifact": _text(item.get("coordinate")) or _text(item.get("key"), fallback="unknown"),
+            "profile": _text(item.get("profile")),
+            "scope": _text(item.get("scope")),
+            "status": _text(item.get("status"), fallback="unknown"),
+            "detail": _text(item.get("detail")),
+            # A payload written before this field existed carries no verdict, and the safe
+            # reading of "no verdict" is the one that puts the item in front of the operator.
+            "successful": bool(item.get("successful", False)),
+            "retry_command": _text(item.get("retry")),
+        }
+        for item in items
     )
