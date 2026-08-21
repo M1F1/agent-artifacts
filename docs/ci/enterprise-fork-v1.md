@@ -99,14 +99,35 @@ tracks and moves the difference into generated files, where a difference belongs
 tag, a detached commit stamps that commit. The tool records the shape it was run from; it does not
 have an opinion about whether you should pin. §4 is where that decision lives.
 
+**You do not need a checkout to get a stamp.** Install AART the ordinary way, from a Git URL:
+
+```bash
+pipx install "git+https://ghe.example.test/platform/agent-artifacts.git@main"
+```
+
+```bash
+uv tool install "git+https://ghe.example.test/platform/agent-artifacts.git@main"
+```
+
+PEP 610 makes every installer record what it fetched, in a `direct_url.json` beside the package —
+the URL, the revision asked for, and the commit it resolved to. `registry init` reads that when
+there is no checkout, so a `pipx` install of `@main` stamps exactly what a clone of `main` would.
+`pip install`, `pipx` and `uv` were all walked and all write the same record.
+
+The checkout is asked first, so `pip install -e` and a plain working copy still win — they are the
+truth about the tree that will actually run, and a working copy may sit on a branch the installer
+never heard of.
+
 Three things it will not do:
 
 - **An origin with no host is not stamped.** `/srv/mirrors/agent-artifacts` and `../aart` are
   places a runner cannot fetch from, so they are treated as no answer.
-- **AART installed from a wheel has no checkout to read.** The workflows keep the shipped defaults
-  and the command says so, rather than guessing. Being *inside* a repository does not count
-  either: a tool unpacked under a home directory that is itself in Git would otherwise stamp
-  someone's dotfiles, so the repository's top level has to be exactly where the package lives.
+- **A wheel from a package index is not stamped.** An index states a version, not a place to clone
+  from, so there is nothing to record and inventing something would send CI where nobody asked.
+  That gap is `LAF-122` in the residue register.
+- **Being *inside* a repository does not count.** A tool unpacked under a home directory that is
+  itself in Git would otherwise stamp someone's dotfiles, so the repository's top level has to be
+  exactly where the package lives.
 - **A cross-host fetch is not derived.** The stamp names `owner/name` and lets
   `github.server_url` supply the host, which is right while the tool and the registry share an
   instance. When they do not, set `AART_TOOL_URL`.

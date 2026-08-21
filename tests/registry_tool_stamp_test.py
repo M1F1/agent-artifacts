@@ -20,7 +20,7 @@ import tempfile
 import unittest
 
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.io.tool_origin import discover_tool_origin
+from agent_artifacts.io.tool_origin import discover_tool_origin, origin_from_direct_url
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
@@ -168,6 +168,54 @@ class DiscoveryTest(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
         self.assertIsNone(discover_tool_origin(root))
         self.assertIsNone(discover_tool_origin(os.path.join(root, "absent")))
+
+
+class InstalledDistributionTest(unittest.TestCase):
+    """`pipx install git+https://.../agent-artifacts.git@main` has to stamp too.
+
+    An ordinary install has no checkout to read, but PEP 610 requires the installer to record
+    where it fetched from.  `pip`, `pipx` and `uv` all write the same `direct_url.json`, walked on
+    2026-08-21 against real `uv tool install` and `pipx install` runs.
+    """
+
+    def test_a_git_install_stamps_what_was_asked_for(self) -> None:
+        origin = origin_from_direct_url(
+            '{"url": "https://ghe.example.test/platform/agent-artifacts.git",'
+            ' "vcs_info": {"vcs": "git", "requested_revision": "main", "commit_id": "abc123"}}'
+        )
+        self.assertEqual(origin, ToolOrigin(repository="platform/agent-artifacts", ref="main"))
+
+    def test_without_a_requested_revision_the_commit_is_the_honest_answer(self) -> None:
+        """`pip install git+https://host/o/n.git` records no revision, only what it resolved to."""
+
+        origin = origin_from_direct_url(
+            '{"url": "git+ssh://git@ghe.example.test:2222/platform/aart.git",'
+            ' "vcs_info": {"vcs": "git", "commit_id": "deadbeef"}}'
+        )
+        self.assertEqual(origin, ToolOrigin(repository="platform/aart", ref="deadbeef"))
+
+    def test_a_wheel_from_an_index_is_not_stamped(self) -> None:
+        """An index states a version, not a place to clone; inventing one is `LAF-122`."""
+
+        self.assertIsNone(
+            origin_from_direct_url(
+                '{"url": "https://nexus.test/agent_artifacts-2.8.5-py3-none-any.whl",'
+                ' "archive_info": {"hash": "sha256=abc"}}'
+            )
+        )
+
+    def test_an_install_from_a_local_directory_names_no_host(self) -> None:
+        self.assertIsNone(
+            origin_from_direct_url(
+                '{"url": "file:///Users/someone/code/agent-artifacts",'
+                ' "vcs_info": {"vcs": "git", "requested_revision": "main"}}'
+            )
+        )
+
+    def test_a_record_that_is_absent_or_unreadable_answers_nothing(self) -> None:
+        for text in (None, "", "not json", "[]", '{"url": 7, "vcs_info": {"vcs": "git"}}'):
+            with self.subTest(text=text):
+                self.assertIsNone(origin_from_direct_url(text))
 
 
 class PlannedWorkspaceTest(unittest.TestCase):

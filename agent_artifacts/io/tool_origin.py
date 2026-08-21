@@ -12,14 +12,21 @@ current ref, and `registry init` stamps them into the file it generates.  The fo
 byte-identical to the repository it tracks, and the difference lives in generated files where it
 belongs.
 
-Everything here is best effort.  AART installed from a wheel has no checkout to read, and an
-origin that names a directory on someone's laptop is worse than no answer at all -- a runner
-cannot clone it.  Both cases return `None`, the templates keep their shipped defaults, and the
-review says so.
+Two places answer.  A checkout answers directly.  An install done by `pip`, `pipx` or `uv` from
+a Git URL answers through `direct_url.json`, the record PEP 610 requires every installer to leave
+beside the package: it carries the URL, the revision that was asked for, and the commit it
+resolved to.  That is the same pair a checkout gives, so `pipx install
+git+https://.../agent-artifacts.git@main` stamps what a clone of that branch would.
+
+Everything here is best effort.  A wheel from a package index carries no Git origin at all, and an
+origin naming a directory on somebody's laptop is worse than no answer -- a runner cannot clone
+it.  Both return `None`, the templates keep their shipped defaults, and the review says so.
 """
 
 from __future__ import annotations
 
+import importlib.metadata
+import json
 import os
 import pathlib
 import re
@@ -36,6 +43,7 @@ _HTTP_ORIGIN = re.compile(
 )
 _SSH_ORIGIN = re.compile(r"^(?:[^@/\s]+@)?[^/@:\s]+:(?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
 _TIMEOUT_SECONDS = 10.0
+DISTRIBUTION = "agent-artifacts"
 
 
 def _git(root: str, *arguments: str) -> str | None:
@@ -80,10 +88,7 @@ def package_root() -> str:
     return str(pathlib.Path(__file__).resolve().parents[2])
 
 
-def discover_tool_origin(root: str | None = None) -> ToolOrigin | None:
-    """Read the running AART's own origin and ref, or `None` when there is nothing to read."""
-
-    tree = os.path.abspath(root if root is not None else package_root())
+def _origin_from_checkout(tree: str) -> ToolOrigin | None:
     if not os.path.isdir(tree):
         return None
     # Being *inside* a checkout is not the same as being one.  AART unpacked under a home
@@ -108,4 +113,57 @@ def discover_tool_origin(root: str | None = None) -> ToolOrigin | None:
         return None
 
 
-__all__ = ["discover_tool_origin", "package_root"]
+def origin_from_direct_url(text: str | None) -> ToolOrigin | None:
+    """Read an install done from a Git URL, the way `pipx install git+https://...@main` is.
+
+    A wheel pulled from a package index has no `vcs_info` and is not stamped: an index states a
+    version, not a place to clone from, and inventing one would send CI somewhere nobody asked
+    for.  That gap is `LAF-122`.
+    """
+
+    if text is None:
+        return None
+    try:
+        record = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    vcs = record.get("vcs_info")
+    url = record.get("url")
+    if not isinstance(vcs, dict) or vcs.get("vcs") != "git" or not isinstance(url, str):
+        return None
+    repository = _repository_of(url[4:] if url.startswith("git+") else url)
+    # What was asked for, not what it resolved to: a branch stays a branch, exactly as a checkout
+    # on a branch stamps that branch.  The commit answers only when nothing was asked.
+    ref = vcs.get("requested_revision") or vcs.get("commit_id")
+    if repository is None or not isinstance(ref, str):
+        return None
+    try:
+        return ToolOrigin(repository=repository, ref=ref)
+    except ValueError:
+        return None
+
+
+def _installed_direct_url() -> str | None:
+    """The PEP 610 record `pip`, `pipx` and `uv` all leave beside an installed distribution."""
+
+    try:
+        return importlib.metadata.distribution(DISTRIBUTION).read_text("direct_url.json")
+    except (importlib.metadata.PackageNotFoundError, OSError):
+        return None
+
+
+def discover_tool_origin(root: str | None = None) -> ToolOrigin | None:
+    """Read the running AART's own origin and ref, or `None` when there is nothing to read.
+
+    The checkout is asked first because it is the truth about the tree that will actually run --
+    an editable install points back at it, and a working copy may sit on a branch the installer
+    never heard of.  The installer's record answers for every ordinary install.
+    """
+
+    tree = os.path.abspath(root if root is not None else package_root())
+    return _origin_from_checkout(tree) or origin_from_direct_url(_installed_direct_url())
+
+
+__all__ = ["DISTRIBUTION", "discover_tool_origin", "origin_from_direct_url", "package_root"]
