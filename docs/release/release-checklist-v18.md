@@ -1,4 +1,4 @@
-# AART v18 release checklist and evidence — 2.8.0 through 2.8.4
+# AART v18 release checklist and evidence — 2.8.0 through 2.8.5
 
 Two releases ship under contract v18. Everything from here to *2.8.1 change gate* is the 2.8.0
 record and is left as written: a dated record is not edited to agree with today. **To verify the
@@ -199,7 +199,7 @@ Steps 1–8 above are repeated unchanged for `2.8.3`, with `v2.8.3` as the tag a
 | Finding | Now | Established by |
 |---|---|---|
 | `AD-38` — the Docker note was repaired on the branch nobody reaches first | `closed` | both branches and both modules name Docker and carry the tag or image |
-| `AD-39` — the reload reminder repeats once per artifact in one run | `open` | shipped open, named in the release notes, left for its own change |
+| `AD-39` — the reload reminder repeats once per artifact in one run | `open` at `2.8.4` | shipped open, named in the release notes, left for its own change; closed afterwards by its own change |
 
 - Both `docker.build@1` branches name Docker and the tag. `2.8.3` rewrote only the branch for a
   pre-existing tag; the branch for a tag the run created is the ordinary first install and said
@@ -217,3 +217,48 @@ Sixty-six findings remain open, unchanged by this patch: one `major`, five `high
 
 Steps 1–8 above are repeated unchanged for `2.8.4`, with `v2.8.4` as the tag and
 [`github-release-v2.8.4.md`](github-release-v2.8.4.md) as the release body.
+
+## 2.8.5 change gate
+
+`2.8.5` ships under this same v18 contract. The findings are `AD-39`, `AD-40`, `AD-41` and `AD-42`,
+and this release closes all four.
+
+| Finding | Now | Established by |
+|---|---|---|
+| `AD-39` — the reload reminder repeats once per artifact in one run | `closed` | one row for the run on both surfaces, aggregated over every receipt |
+| `AD-40` — a queue prints one wall of text and never says whose turn it is | `closed` | a rule per item at `START` and at `SUMMARY`, on both surfaces |
+| `AD-41` — fifty tests were imported by nobody and run by nothing | `closed` | the five function-style modules are collected; 1624 tests at `v2.8.4`, 1692 here |
+| `AD-42` — the recovery note never reached the command line | `closed` | `recovery` and `retry` travel in the payload and are rendered by the same body |
+
+- The reload reminder is rendered once per **run**, after the run summary. `run_reload_reminders`
+  hands every receipt in the run to the same `_shell_files_of` that already returned each distinct
+  file once: the de-duplication was correct and was applied one level too low. The payload row loses
+  its `key`, because it named an artifact for a fact about the machine.
+- Every item opens with a `START` rule and closes with a `SUMMARY` rule, naming artifact, profile,
+  scope and `setup n/N`. On the command line the `START` rule goes to **stderr**; stdout carries one
+  JSON document and nothing else enters it.
+- `retry` and `rollback` are printed whole on their own line and are never folded. A folded command
+  is pasted broken, which is what `AD-34` and `AD-35` closed for the Keychain command and what the
+  retry was still being printed through.
+- The five function-style test modules are collected by `tests/function_cases.py`. The functions
+  themselves are unchanged; the loader is what was missing.
+- No protocol version, persisted schema, receipt field, command, flag or recipe-language construct
+  changes. Schema freeze v18 differs from the `2.8.4` freeze in `release_version` and in one input,
+  `agent_artifacts/setup.py`.
+
+### Live acceptance
+
+Recorded in [`PROGRESS-live-acceptance-v14.md`](../testing/PROGRESS-live-acceptance-v14.md). Eleven
+scenarios, both surfaces, over three artifacts selected together — the shape the two findings were
+reported from and the shape no test covered. Every claim was observed **false on a wheel built from
+`v2.8.4` and true on a wheel built from this branch**, in the same sandbox with the same commands.
+The wizard was reached through its documented plain-text fallback under `TERM=dumb`; the curses
+screen stays human-gated, and no secret was typed — every input in the fixture is declared `text`.
+
+Seventy-two findings remain not closed after this release: one `major`, five `high`, 41 `medium`
+and 25 `low`. That is 67 before this release, minus `AD-39`, plus the six the live walk found —
+`AD-43` through `AD-48`, all shipped open and named in the release notes. `AD-30`, `AD-31` and
+`AD-34` remain open for the reasons already stated.
+
+Steps 1–8 above are repeated unchanged for `2.8.5`, with `v2.8.5` as the tag and
+[`github-release-v2.8.5.md`](github-release-v2.8.5.md) as the release body.
