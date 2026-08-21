@@ -33,8 +33,8 @@ So both executables were walked over the same fixture:
 
 | Field | Value |
 |---|---|
-| AART commit under test | the tree that became `<COMMIT>` (`feat/mark-where-each-setup-starts-and-ends`); no source file was edited between the build and the commit |
-| Wheel | `agent_artifacts-2.8.4-py3-none-any.whl`, 581 642 bytes, **built locally** — no release carries this change |
+| AART commit under test | `5174147` — the wheel was built from the working tree that became that commit, and rebuilding from the commit afterwards reproduces the **same sha256**, so the record names a commit rather than a branch (`LAF-121`) |
+| Wheel | `agent_artifacts-2.8.4-py3-none-any.whl`, 581 642 bytes, **built locally** — no release carries this change, and the version string is still `2.8.4` because the bump is the next commit |
 | Wheel sha256 | `c8065fde91aec54ec5b94d6bc482a34dc0f88c3417dbb147c96c6d1ad491e90b` |
 | Comparison executable | `d439b47` (tag `v2.8.4`), built the same way, 577 066 bytes, `90922839c5e6e8edb0289c1c8c186f6b47677eacf80bc41e8547661a86102aa1` |
 | `aart --version` | `agent-artifacts 2.8.4` from both — the version is not what distinguishes them |
