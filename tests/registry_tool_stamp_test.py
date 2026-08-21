@@ -135,6 +135,32 @@ class DiscoveryTest(unittest.TestCase):
         self.assertIsNone(self._repository("/srv/mirrors/agent-artifacts"))
         self.assertIsNone(self._repository("../agent-artifacts"))
 
+    def test_a_tool_that_merely_sits_inside_a_checkout_is_not_that_checkout(self) -> None:
+        """AART unpacked under a home directory that is itself a repository is not that repository.
+
+        Without this the stamp answers with someone's dotfiles, and every registry created there
+        sends its CI to clone a tree that has no `agent_artifacts` package in it.
+        """
+
+        root = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        subprocess.run(("git", "init", "-q", str(root)), check=True)
+        subprocess.run(
+            (
+                "git",
+                "-C",
+                str(root),
+                "remote",
+                "add",
+                "origin",
+                "https://host.test/me/dotfiles.git",
+            ),
+            check=True,
+        )
+        nested = root / ".local" / "lib"
+        nested.mkdir(parents=True)
+        self.assertIsNone(discover_tool_origin(str(nested)))
+
     def test_a_tree_that_is_not_a_checkout_answers_nothing(self) -> None:
         """AART installed from a wheel has no origin to read, and must say so rather than guess."""
 

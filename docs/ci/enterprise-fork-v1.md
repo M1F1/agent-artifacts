@@ -104,7 +104,9 @@ Three things it will not do:
 - **An origin with no host is not stamped.** `/srv/mirrors/agent-artifacts` and `../aart` are
   places a runner cannot fetch from, so they are treated as no answer.
 - **AART installed from a wheel has no checkout to read.** The workflows keep the shipped defaults
-  and the command says so, rather than guessing.
+  and the command says so, rather than guessing. Being *inside* a repository does not count
+  either: a tool unpacked under a home directory that is itself in Git would otherwise stamp
+  someone's dotfiles, so the repository's top level has to be exactly where the package lives.
 - **A cross-host fetch is not derived.** The stamp names `owner/name` and lets
   `github.server_url` supply the host, which is right while the tool and the registry share an
   instance. When they do not, set `AART_TOOL_URL`.

@@ -86,7 +86,13 @@ def discover_tool_origin(root: str | None = None) -> ToolOrigin | None:
     tree = os.path.abspath(root if root is not None else package_root())
     if not os.path.isdir(tree):
         return None
-    if _git(tree, "rev-parse", "--is-inside-work-tree") != "true":
+    # Being *inside* a checkout is not the same as being one.  AART unpacked under a home
+    # directory that is itself a Git repository would otherwise answer with that repository --
+    # someone's dotfiles -- and every registry created there would send its CI to clone a tree
+    # with no `agent_artifacts` package in it.  The tool has to be the repository, not a file in
+    # one, so the top level must be exactly where the package lives.
+    toplevel = _git(tree, "rev-parse", "--show-toplevel")
+    if toplevel is None or os.path.realpath(toplevel) != os.path.realpath(tree):
         return None
     origin = _git(tree, "remote", "get-url", "origin")
     repository = None if origin is None else _repository_of(origin)
