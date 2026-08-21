@@ -13,14 +13,18 @@ import pathlib
 import re
 import unittest
 
+from agent_artifacts.registry_commands.templates import REGISTRY_CI_WORKFLOW
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "docs" / "ci" / "enterprise-fork-v1.md"
-TEMPLATE = ROOT / "docs" / "ci" / "templates" / "registry-quality.yml"
 ACTION = ROOT / ".github" / "actions" / "aart" / "action.yml"
 WORKFLOWS = (
     ROOT / ".github" / "workflows" / "validate.yml",
     ROOT / ".github" / "workflows" / "release.yml",
 )
+# The registry's workflow has one home: the bytes `registry init` writes.  A second copy under
+# docs/ would rot, and `plan_registry_init` refuses a template whose content has drifted.
+TEMPLATE_TEXT = REGISTRY_CI_WORKFLOW.decode("utf-8")
 _VARIABLE = re.compile(r"vars\.(AART_[A-Z0-9_]+)")
 
 
@@ -31,17 +35,17 @@ def _read(path: pathlib.Path) -> str:
 class VariablesAreDocumentedTest(unittest.TestCase):
     def test_every_variable_a_workflow_reads_is_on_the_page(self) -> None:
         page = _read(PAGE)
-        for path in (*WORKFLOWS, TEMPLATE):
-            for name in sorted(set(_VARIABLE.findall(_read(path)))):
+        sources = [(str(path.relative_to(ROOT)), _read(path)) for path in WORKFLOWS]
+        sources.append(("registry init's emitted workflow", TEMPLATE_TEXT))
+        for label, body in sources:
+            for name in sorted(set(_VARIABLE.findall(body))):
                 self.assertIn(
-                    name,
-                    page,
-                    f"{path.relative_to(ROOT)} reads {name}, which the fork page does not list",
+                    name, page, f"{label} reads {name}, which the fork page does not list"
                 )
 
     def test_the_page_lists_no_variable_that_nothing_reads(self) -> None:
-        used = set()
-        for path in (*WORKFLOWS, TEMPLATE):
+        used = set(_VARIABLE.findall(TEMPLATE_TEXT))
+        for path in WORKFLOWS:
             used.update(_VARIABLE.findall(_read(path)))
         listed = set(re.findall(r"`(AART_[A-Z0-9_]+)`", _read(PAGE)))
         self.assertEqual(
@@ -81,7 +85,7 @@ class ToolNeedsNoPackagingTest(unittest.TestCase):
     """The registry gates run from a source tree.  That is the whole portability story."""
 
     def test_the_registry_template_installs_nothing(self) -> None:
-        template = _read(TEMPLATE)
+        template = TEMPLATE_TEXT
         self.assertIn("PYTHONPATH=", template)
         self.assertIn("-m agent_artifacts", template)
         self.assertNotIn("pip install", template)
@@ -90,27 +94,25 @@ class ToolNeedsNoPackagingTest(unittest.TestCase):
     def test_the_template_keeps_one_marketplace_action(self) -> None:
         """`uses:` cannot be a variable, so each one is a hand edit on an instance that lacks it."""
 
-        uses = re.findall(r"^\s*uses:\s*(\S+)", _read(TEMPLATE), re.M)
+        uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", TEMPLATE_TEXT, re.M)
         self.assertEqual(uses, ["actions/checkout@v4"], "template grew a marketplace dependency")
 
     def test_both_resolvers_check_the_package_before_trusting_the_tree(self) -> None:
-        for path in (TEMPLATE, ACTION):
-            body = _read(path)
+        for body in (TEMPLATE_TEXT, _read(ACTION)):
             self.assertIn("agent_artifacts/__main__.py", body)
             self.assertIn('echo "$bin" >> "$GITHUB_PATH"', body)
 
     def test_a_commit_sha_falls_back_from_the_shallow_clone(self) -> None:
         """`--depth 1 --branch` rejects a sha, and a sha is what an operator pins with."""
 
-        for path in (TEMPLATE, ACTION):
-            body = _read(path)
+        for body in (TEMPLATE_TEXT, _read(ACTION)):
             self.assertIn("--depth 1 --branch", body)
             self.assertIn("checkout --quiet", body)
 
 
 class RegistryGatesAreCompleteTest(unittest.TestCase):
     def test_the_template_runs_every_registry_gate(self) -> None:
-        template = _read(TEMPLATE)
+        template = TEMPLATE_TEXT
         for gate in (
             "aart registry format --source . --check",
             "aart registry validate --source . --strict --frozen",
@@ -122,7 +124,7 @@ class RegistryGatesAreCompleteTest(unittest.TestCase):
             self.assertIn(gate, template)
 
     def test_both_compatibility_ends_are_exercised(self) -> None:
-        self.assertIn("compatibility: [minimum, latest]", _read(TEMPLATE))
+        self.assertIn("compatibility: [minimum, latest]", TEMPLATE_TEXT)
 
 
 if __name__ == "__main__":

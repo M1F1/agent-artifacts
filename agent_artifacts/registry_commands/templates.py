@@ -18,6 +18,16 @@ htmlcov/
 usage-dashboard/
 """
 
+# Every knob is a repository variable, and every default reproduces the public run, so a registry
+# created inside a company is configured by settings rather than by editing this file.  That
+# matters more here than it looks: `plan_registry_init` refuses to overwrite a template whose
+# content differs, so a hand-edited workflow puts a registry permanently out of step with
+# `registry init`.  Configuration therefore has to live in variables, not in edits.
+#
+# The tool is resolved without pip, an index, or a build backend.  AART has no runtime
+# dependencies and ships `agent_artifacts/__main__.py`, so a source tree plus PYTHONPATH is a
+# working installation — which is what lets these gates run on a private runner with no egress.
+# `docs/ci/enterprise-fork-v1.md` lists the variables.
 REGISTRY_CI_WORKFLOW = b"""name: AART registry quality
 on:
   pull_request:
@@ -28,23 +38,41 @@ permissions:
 jobs:
   registry-quality:
     strategy:
+      fail-fast: false
       matrix:
         compatibility: [minimum, latest]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.AART_REPOSITORY || 'M1F1/agent-artifacts' }}
-          ref: ${{ vars.AART_REF || 'main' }}
-          path: .aart-tool
-          persist-credentials: false
-      - run: python -m pip install --no-deps ./.aart-tool
+      - name: Provide AART
+        env:
+          TOOL_PATH: ${{ vars.AART_TOOL_PATH }}
+          TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}
+          TOOL_REF: ${{ vars.AART_REF || 'main' }}
+          PY: ${{ vars.AART_PYTHON || 'python3' }}
+        run: |
+          set -euo pipefail
+          tool="$TOOL_PATH"
+          if [ -z "$tool" ]; then
+            tool="$RUNNER_TEMP/aart-tool"
+            rm -rf "$tool"
+            git clone --quiet --depth 1 --branch "$TOOL_REF" "$TOOL_URL" "$tool" 2>/dev/null \\
+              || { rm -rf "$tool"
+                   git clone --quiet "$TOOL_URL" "$tool"
+                   git -C "$tool" -c advice.detachedHead=false checkout --quiet "$TOOL_REF"; }
+          fi
+          test -f "$tool/agent_artifacts/__main__.py" \\
+            || { echo "aart: no agent_artifacts package under '$tool'" >&2; exit 2; }
+          bin="$RUNNER_TEMP/aart-bin"
+          mkdir -p "$bin"
+          printf '#!/usr/bin/env bash\\nexec env PYTHONPATH=%s %s -m agent_artifacts "$@"\\n' \\
+            "$tool" "$PY" > "$bin/aart"
+          chmod +x "$bin/aart"
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "AART: $("$bin/aart" --version)  from $tool"
       - run: aart registry format --source . --check
       - run: aart registry validate --source . --strict --frozen
       - run: aart registry lock --source . --check

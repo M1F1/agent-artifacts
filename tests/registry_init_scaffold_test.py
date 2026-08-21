@@ -146,9 +146,16 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertIn(b"minimum", workflow)
         self.assertIn(b"latest", workflow)
         self.assertIn(b"validate --source . --strict --frozen", workflow)
-        self.assertIn(b"pip install --no-deps ./.aart-tool", workflow)
+        # The tool is resolved from a source tree, not installed: AART has no runtime
+        # dependencies and ships __main__.py, so the gates run on a private runner that can
+        # reach no package index at all.
+        self.assertNotIn(b"pip install", workflow)
+        self.assertIn(b"PYTHONPATH=", workflow)
+        self.assertIn(b"-m agent_artifacts", workflow)
         self.assertIn(b"vars.AART_REPOSITORY", workflow)
-        self.assertEqual(workflow.count(b"persist-credentials: false"), 2)
+        # One checkout now — the registry's own — and it still persists no credential.  The tool
+        # is cloned without one, because AART carries no credential of its own.
+        self.assertEqual(workflow.count(b"persist-credentials: false"), 1)
         self.assertNotIn(b"git push", workflow)
         issue_form = files[".github/ISSUE_TEMPLATE/usage-report.yml"]
         self.assertIn(b"id: report", issue_form)
