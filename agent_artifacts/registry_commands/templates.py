@@ -18,41 +18,23 @@ htmlcov/
 usage-dashboard/
 """
 
-# Every knob is a repository variable, and every default reproduces the public run, so a registry
-# created inside a company is configured by settings rather than by editing this file.  That
-# matters more here than it looks: `plan_registry_init` refuses to overwrite a template whose
-# content differs, so a hand-edited workflow puts a registry permanently out of step with
-# `registry init`.  Configuration therefore has to live in variables, not in edits.
+# Every knob below is a repository variable, and every default reproduces the public github.com
+# run, so a registry created inside a company is configured by settings rather than by editing the
+# file.  That matters more than it looks: `plan_registry_init` refuses to overwrite a template
+# whose content differs, so a hand-edited workflow puts a registry permanently out of step with
+# the command that manages it.  `docs/ci/enterprise-fork-v1.md` lists the variables.
 #
-# The tool is resolved without pip, an index, or a build backend.  AART has no runtime
-# dependencies and ships `agent_artifacts/__main__.py`, so a source tree plus PYTHONPATH is a
-# working installation — which is what lets these gates run on a private runner with no egress.
-# `docs/ci/enterprise-fork-v1.md` lists the variables.
-REGISTRY_CI_WORKFLOW = b"""name: AART registry quality
-on:
-  pull_request:
-  push:
-    branches: [main]
-permissions:
-  contents: read
-jobs:
-  registry-quality:
-    strategy:
-      fail-fast: false
-      matrix:
-        compatibility: [minimum, latest]
-    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
-    container: ${{ vars.AART_CI_IMAGE }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Provide AART
+# The three workflows share one way of reaching the tool, kept here so they cannot drift apart.
+# AART has no runtime dependencies and ships `agent_artifacts/__main__.py`, so a source tree plus
+# PYTHONPATH is a working installation - no pip, no package index, and no build backend.  That is
+# what lets these run on a private runner with no egress.
+_PROVIDE_AART = b"""      - name: Provide AART
         env:
           TOOL_PATH: ${{ vars.AART_TOOL_PATH }}
           TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}
           TOOL_REF: ${{ vars.AART_REF || 'main' }}
           PY: ${{ vars.AART_PYTHON || 'python3' }}
+          GH_HOST_OVERRIDE: ${{ vars.AART_GH_HOST }}
         run: |
           set -euo pipefail
           tool="$TOOL_PATH"
@@ -72,14 +54,46 @@ jobs:
             "$tool" "$PY" > "$bin/aart"
           chmod +x "$bin/aart"
           echo "$bin" >> "$GITHUB_PATH"
+          # `gh` defaults to github.com, which on an Enterprise instance is the wrong server and a
+          # silent one.  Derive the host from the instance the job is already running on.
+          echo "GH_HOST=${GH_HOST_OVERRIDE:-${GITHUB_SERVER_URL#https://}}" >> "$GITHUB_ENV"
           echo "AART: $("$bin/aart" --version)  from $tool"
-      - run: aart registry format --source . --check
+"""
+
+_RUNS_ON = b"""    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
+"""
+
+REGISTRY_CI_WORKFLOW = (
+    b"""name: AART registry quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  registry-quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        compatibility: [minimum, latest]
+"""
+    + _RUNS_ON
+    + b"""    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+"""
+    + _PROVIDE_AART
+    + b"""      - run: aart registry format --source . --check
       - run: aart registry validate --source . --strict --frozen
       - run: aart registry lock --source . --check
       - run: aart registry build --source . --check
       - run: aart registry audit --source .
       - run: aart registry test --source . --compatibility ${{ matrix.compatibility }}
 """
+)
 
 USAGE_REPORT_ISSUE_FORM = b"""name: AART redacted usage report
 description: Share one voluntary, bounded AART session result with this registry.
@@ -99,7 +113,8 @@ body:
       required: true
 """
 
-USAGE_REPORT_VALIDATE_WORKFLOW = b"""name: Validate AART usage report
+USAGE_REPORT_VALIDATE_WORKFLOW = (
+    b"""name: Validate AART usage report
 on:
   issues:
     types: [opened, edited, reopened]
@@ -109,19 +124,12 @@ permissions:
 jobs:
   validate:
     if: startsWith(github.event.issue.title, 'AART usage report:')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.AART_REPOSITORY || 'M1F1/agent-artifacts' }}
-          ref: ${{ vars.AART_REF || 'main' }}
-          path: .aart-tool
-          persist-credentials: false
-      - run: python -m pip install --no-deps ./.aart-tool
-      - name: Read issue body as untrusted data
+"""
+    + _RUNS_ON
+    + b"""    steps:
+"""
+    + _PROVIDE_AART
+    + b"""      - name: Read issue body as untrusted data
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -148,8 +156,14 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body 'AART rejected this report because it did not match the bounded redacted schema.'
           gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason not-planned
 """
+)
 
-USAGE_REPORT_DASHBOARD_WORKFLOW = b"""name: Build AART usage dashboard
+# Pages is the one piece an Enterprise instance may simply not offer.  Deployment is therefore its
+# own job, gated by a variable: set `AART_PAGES` to `false` and the dashboard is still built and
+# still validated, it is just not published.  A job-level `if` is used rather than a step-level one
+# because the `github-pages` environment belongs to the job that deploys.
+USAGE_REPORT_DASHBOARD_WORKFLOW = (
+    b"""name: Build AART usage dashboard
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -164,33 +178,32 @@ concurrency:
   cancel-in-progress: true
 jobs:
   aggregate:
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.AART_REPOSITORY || 'M1F1/agent-artifacts' }}
-          ref: ${{ vars.AART_REF || 'main' }}
-          path: .aart-tool
-          persist-credentials: false
-      - run: python -m pip install --no-deps ./.aart-tool
-      - name: Export only validated report bodies and server timestamps
+"""
+    + _RUNS_ON
+    + b"""    steps:
+"""
+    + _PROVIDE_AART
+    + b"""      - name: Export only validated report bodies and server timestamps
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh issue list --repo "$GITHUB_REPOSITORY" --label usage-report --state all --limit 10000 --json body,createdAt > usage-issues.json
       - run: aart reporting aggregate usage-issues.json --output usage-dashboard
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: usage-dashboard
+  deploy:
+    needs: aggregate
+    if: vars.AART_PAGES != 'false'
+"""
+    + _RUNS_ON
+    + b"""    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
 """
+)
 
 REPORTING_TEMPLATES = (
     (".github/ISSUE_TEMPLATE/usage-report.yml", USAGE_REPORT_ISSUE_FORM),

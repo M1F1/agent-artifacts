@@ -45,8 +45,10 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 
 ## 3. Variables a registry sets
 
-`aart registry init` writes `.github/workflows/aart-registry.yml` itself, already parameterised.
-A registry created inside the company is configured by setting these; the file is not edited.
+`aart registry init` writes **three** workflows itself, all already parameterised — the quality
+gate `aart-registry.yml`, and the usage-reporting pair `aart-usage-validate.yml` and
+`aart-usage-dashboard.yml`. A registry created inside the company is configured by setting these
+variables; the files are not edited.
 
 **Editing that file is worse than it looks.** `registry init` refuses to overwrite a template whose
 content differs from the one it ships, so a hand-edited workflow puts the registry permanently out
@@ -61,6 +63,12 @@ of step with the command that manages it. Configuration belongs in variables.
 | `AART_RUNNER` | `["ubuntu-latest"]` | As above |
 | `AART_CI_IMAGE` | unset | As above |
 | `AART_PYTHON` | `python3` | As above |
+| `AART_PAGES` | unset | Set to `false` where the instance offers no GitHub Pages. The usage dashboard is still built and still validated; only its publication is skipped |
+
+All three workflows share one `Provide AART` step, so they cannot drift apart. That step also sets
+`GH_HOST` from `GITHUB_SERVER_URL`, because `gh issue list --repo owner/name` otherwise talks to
+github.com — from inside an Enterprise instance that is the wrong server, and it fails quietly
+rather than loudly.
 
 If the AART fork is private and the runner holds no credential for it, use `AART_TOOL_PATH` and
 bake the tree into the image. AART carries no credentials of its own and this workflow invents
@@ -94,6 +102,10 @@ variable can redirect where an action comes from. Two consequences:
 2. **An instance without the bundled actions needs `run:` steps instead.** The registry workflow is
    already down to one action, `actions/checkout`, which can be replaced with a plain `git clone`
    using `${{ github.server_url }}` and `${{ github.token }}`.
+3. **The dashboard's Pages actions are the least portable thing here.** `upload-pages-artifact` and
+   `deploy-pages` need Pages, and Pages needs an instance that offers it. `AART_PAGES=false` is the
+   escape. `configure-pages` was dropped: it computes a base path for static-site generators, and
+   `aart reporting aggregate` writes plain files that do not need one.
 
 The rule this leads to: **the fewer `uses:` lines a workflow has, the more portable it is.** That
 is why the registry workflow resolves AART with a dozen lines of `bash` rather than an action, even
@@ -133,8 +145,10 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
 - The composite action in `.github/actions/aart/`: the same two routes, plus the commit-sha
   fallback to a full clone, plus both refusals — no input given, and a path with no package under
   it.
+- A registry scaffolded from scratch by the shipped code, and its three emitted workflows read
+  back and parsed.
 
-**Not walked: any of it on a GitHub Enterprise Server instance, or on a self-hosted runner.** Two
+**Not walked: any of it on a GitHub Enterprise Server instance, or on a self-hosted runner.** Four
 claims are therefore unverified and should be checked on the first real run:
 
 1. That `container: ${{ vars.AART_CI_IMAGE }}` with the variable unset means *no container* rather
@@ -142,3 +156,9 @@ claims are therefore unverified and should be checked on the first real run:
    usually already runs in the intended image.
 2. That your instance carries `actions/checkout@v4`, `actions/setup-python@v5`, and
    `actions/upload-artifact@v4` for the release job.
+3. That splitting the dashboard into `aggregate` and `deploy` jobs still deploys, and that dropping
+   `configure-pages` changes nothing for a static output. Both follow GitHub's own documented
+   two-job Pages pattern, but neither was run.
+4. That `GH_HOST` derived from `GITHUB_SERVER_URL` is what your `gh` expects. The derivation strips
+   `https://` and nothing else, so an instance served on a path or a non-default port needs
+   `AART_GH_HOST` set explicitly.

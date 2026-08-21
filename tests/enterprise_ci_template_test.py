@@ -13,7 +13,11 @@ import pathlib
 import re
 import unittest
 
-from agent_artifacts.registry_commands.templates import REGISTRY_CI_WORKFLOW
+from agent_artifacts.registry_commands.templates import (
+    REGISTRY_CI_WORKFLOW,
+    USAGE_REPORT_DASHBOARD_WORKFLOW,
+    USAGE_REPORT_VALIDATE_WORKFLOW,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "docs" / "ci" / "enterprise-fork-v1.md"
@@ -25,6 +29,13 @@ WORKFLOWS = (
 # The registry's workflow has one home: the bytes `registry init` writes.  A second copy under
 # docs/ would rot, and `plan_registry_init` refuses a template whose content has drifted.
 TEMPLATE_TEXT = REGISTRY_CI_WORKFLOW.decode("utf-8")
+# `registry init` writes three workflows.  Portability that stops at the quality gate leaves the
+# usage-reporting half reaching github.com from inside an Enterprise instance.
+EMITTED = {
+    "registry quality": TEMPLATE_TEXT,
+    "usage validate": USAGE_REPORT_VALIDATE_WORKFLOW.decode("utf-8"),
+    "usage dashboard": USAGE_REPORT_DASHBOARD_WORKFLOW.decode("utf-8"),
+}
 _VARIABLE = re.compile(r"vars\.(AART_[A-Z0-9_]+)")
 
 
@@ -36,7 +47,9 @@ class VariablesAreDocumentedTest(unittest.TestCase):
     def test_every_variable_a_workflow_reads_is_on_the_page(self) -> None:
         page = _read(PAGE)
         sources = [(str(path.relative_to(ROOT)), _read(path)) for path in WORKFLOWS]
-        sources.append(("registry init's emitted workflow", TEMPLATE_TEXT))
+        sources.extend(
+            (f"registry init's {label} workflow", body) for label, body in EMITTED.items()
+        )
         for label, body in sources:
             for name in sorted(set(_VARIABLE.findall(body))):
                 self.assertIn(
@@ -44,7 +57,9 @@ class VariablesAreDocumentedTest(unittest.TestCase):
                 )
 
     def test_the_page_lists_no_variable_that_nothing_reads(self) -> None:
-        used = set(_VARIABLE.findall(TEMPLATE_TEXT))
+        used: set[str] = set()
+        for body in EMITTED.values():
+            used.update(_VARIABLE.findall(body))
         for path in WORKFLOWS:
             used.update(_VARIABLE.findall(_read(path)))
         listed = set(re.findall(r"`(AART_[A-Z0-9_]+)`", _read(PAGE)))
@@ -108,6 +123,39 @@ class ToolNeedsNoPackagingTest(unittest.TestCase):
         for body in (TEMPLATE_TEXT, _read(ACTION)):
             self.assertIn("--depth 1 --branch", body)
             self.assertIn("checkout --quiet", body)
+
+
+class EveryEmittedWorkflowIsPortableTest(unittest.TestCase):
+    """All three, not just the quality gate."""
+
+    def test_none_of_them_installs_the_tool(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertNotIn("pip install", body, label)
+            self.assertNotIn("setup-python", body, label)
+            self.assertIn("PYTHONPATH=", body, label)
+
+    def test_none_of_them_pins_a_hosted_runner(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertNotIn("runs-on: ubuntu-latest", body, label)
+            self.assertIn("fromJSON(vars.AART_RUNNER", body, label)
+
+    def test_gh_is_pointed_at_the_instance_the_job_runs_on(self) -> None:
+        """`gh --repo owner/name` defaults to github.com, which on GHES is the wrong server."""
+
+        for label, body in EMITTED.items():
+            if "gh issue" not in body and "gh label" not in body:
+                continue
+            self.assertIn("GH_HOST=${GH_HOST_OVERRIDE:-${GITHUB_SERVER_URL#https://}}", body, label)
+
+    def test_pages_deployment_can_be_switched_off(self) -> None:
+        """An Enterprise instance may not offer Pages; the dashboard must still be built."""
+
+        dashboard = EMITTED["usage dashboard"]
+        self.assertIn("if: vars.AART_PAGES != 'false'", dashboard)
+        self.assertIn("aart reporting aggregate", dashboard)
+        # The build and the publication are separate jobs, so the gate can skip one and keep the
+        # other, and so the github-pages environment belongs only to the job that deploys.
+        self.assertIn("needs: aggregate", dashboard)
 
 
 class RegistryGatesAreCompleteTest(unittest.TestCase):
