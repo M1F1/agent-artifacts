@@ -12,9 +12,11 @@ import io
 import json
 import unittest
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from unittest import mock
 
 from agent_artifacts import cli
+from agent_artifacts.commands import marketplace
 from agent_artifacts.configuration.model import ReportingMode, SourceKind
 from agent_artifacts.consumer.model import (
     ConsumerActionRequest,
@@ -830,6 +832,107 @@ class ConfigurationGateTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["diagnostics"][0]["code"], "no-source-configured")
+
+
+class SetupQueueBoundaryOnTheCommandLineTest(unittest.TestCase):
+    """`AD-40` on the non-interactive surface, where the gap was wider than in the wizard.
+
+    This path prints its whole report after the run. While the run happens the terminal carries
+    only `security` asking for a password twice while naming nothing and `Setup input:` asking
+    for a value, so several servers in one command is an unlabelled sequence of credential
+    prompts and there is no way to tell whose is whose.
+    """
+
+    def _plan(self, coordinate: str):
+        return SimpleNamespace(
+            request=SimpleNamespace(coordinate=coordinate, profile="claude", scope="user")
+        )
+
+    def _finished(self):
+        return SimpleNamespace(
+            configured=2,
+            incomplete=0,
+            items=[
+                SimpleNamespace(
+                    coordinate=coordinate,
+                    profile="claude",
+                    scope="user",
+                    setup_status=SimpleNamespace(value="configured"),
+                    detail="Setup configured",
+                    successful=True,
+                    record=None,
+                )
+                for coordinate in ("mcp/atlassian", "mcp/alation")
+            ],
+        )
+
+    def _service(self, queue, outcome, seen):
+        def finalize_setup_queue(the_queue, *, consent, on_item_start=None):
+            for position, plan in enumerate(the_queue.plans, start=1):
+                if on_item_start is not None:
+                    on_item_start(position, len(the_queue.plans), plan)
+            seen.append(consent)
+            return outcome
+
+        return SimpleNamespace(
+            setup_queue=lambda *_args, **_kwargs: queue,
+            finalize_setup_queue=finalize_setup_queue,
+        )
+
+    def test_each_setup_announces_itself_on_stderr_before_anything_asks_for_a_secret(self) -> None:
+        queue = SimpleNamespace(
+            plans=[self._plan("mcp/atlassian"), self._plan("mcp/alation")], failures=()
+        )
+        request = SimpleNamespace(
+            yes=True,
+            approve_setup_effects=True,
+            authorize_untrusted_source=False,
+            authorize_custom_entrypoint=False,
+        )
+        stdout, stderr = io.StringIO(), io.StringIO()
+
+        with (
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+            # The plan projection has its own tests; what this one measures is the boundary.
+            mock.patch.object(marketplace, "_setup_plan_payload", lambda _plan: {}),
+        ):
+            payload, ok = marketplace._run_setup_queue(
+                request, self._service(queue, self._finished(), []), object(), object()
+            )
+
+        self.assertTrue(ok)
+        announced = stderr.getvalue()
+        self.assertIn("mcp/atlassian@claude (user) — setup 1/2 — START", announced)
+        self.assertIn("mcp/alation@claude (user) — setup 2/2 — START", announced)
+        # stdout carries one JSON document and nothing else may enter it.
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_the_payload_carries_the_identity_the_report_needs_to_name_an_artifact(self) -> None:
+        queue = SimpleNamespace(plans=[self._plan("mcp/atlassian")], failures=())
+        request = SimpleNamespace(
+            yes=True,
+            approve_setup_effects=True,
+            authorize_untrusted_source=False,
+            authorize_custom_entrypoint=False,
+        )
+
+        with (
+            contextlib.redirect_stderr(io.StringIO()),
+            mock.patch.object(marketplace, "_setup_plan_payload", lambda _plan: {}),
+        ):
+            payload, _ = marketplace._run_setup_queue(
+                request, self._service(queue, self._finished(), []), object(), object()
+            )
+
+        item = payload["items"][0]
+        self.assertEqual(item["key"], "mcp/atlassian#claude/user")
+        self.assertEqual(item["coordinate"], "mcp/atlassian")
+        self.assertEqual(item["profile"], "claude")
+        self.assertEqual(item["scope"], "user")
+        self.assertTrue(item["successful"])
+        self.assertEqual(item["retry"], "")
+        self.assertEqual(item["recovery"], [])
 
 
 if __name__ == "__main__":  # pragma: no cover - unittest entry point

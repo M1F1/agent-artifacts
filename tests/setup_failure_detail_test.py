@@ -7,6 +7,7 @@ shows a consumer the transfer line and never the exit code.
 from __future__ import annotations
 
 from agent_artifacts.setup_runtime import failure_detail
+from tests.function_cases import function_test_case
 
 BUILDKIT_HEAD = "#1 [internal] load build definition\n#1 transferring dockerfile: 117B done\n"
 BUILDKIT_TAIL = (
@@ -62,3 +63,8 @@ def test_a_tiny_limit_still_keeps_the_end() -> None:
 
     assert "exit code: 3" in detail
     assert len(detail) <= 40
+
+
+# Collected by `unittest discover`, which sees `TestCase` subclasses and nothing
+# else; without this the functions above are imported and never run (`AD-41`).
+SetupFailureDetailTests = function_test_case(globals(), name="SetupFailureDetailTests")

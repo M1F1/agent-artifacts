@@ -420,7 +420,13 @@ class TuiConsumerTextTest(unittest.TestCase):
             self.assertIn("Review setup queue", rendered)
             self.assertIn("Setup review:", rendered)
             self.assertNotIn(" -> ", rendered)
-            self.assertIn("Setup outcome: configured=1, incomplete=0", rendered)
+            # The item is bounded by its own rules, and the run is tallied once at the end.
+            self.assertIn("setup 1/1 — START", rendered)
+            self.assertIn("setup 1/1 — SUMMARY", rendered)
+            self.assertIn("RUN SUMMARY", rendered)
+            self.assertIn("selected    1", rendered)
+            self.assertIn("configured  1", rendered)
+            self.assertIn("incomplete  0", rendered)
             self.assertTrue((fixture.project / ".setup-config").exists())
 
     def test_canonical_decline_repeats_v2_manual_route_after_the_payload_is_installed(self) -> None:
@@ -505,7 +511,8 @@ class TuiConsumerTextTest(unittest.TestCase):
         self.assertEqual(code, 1)
         rendered = "\n".join(writes)
         self.assertIn("Payload outcome: installed", rendered)
-        self.assertIn("Setup outcome", rendered)
+        self.assertIn("registry/skill/review@1.0.0@claude (project)", rendered)
+        self.assertIn("SUMMARY", rendered)
         self.assertIn("Manual alternative", rendered)
         self.assertIn("SETUP.md", rendered)
         self.assertIn("No setup effect has run.", rendered)

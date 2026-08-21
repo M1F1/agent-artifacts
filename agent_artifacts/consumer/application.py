@@ -51,7 +51,11 @@ from agent_artifacts.setup_engine.application import (
     execute_setup_queue,
     prepare_setup_attempt,
 )
-from agent_artifacts.setup_engine.model import SetupQueueOutcome, SetupRequest
+from agent_artifacts.setup_engine.model import (
+    CanonicalSetupPlan,
+    SetupQueueOutcome,
+    SetupRequest,
+)
 from agent_artifacts.setup_runtime import SetupRuntime, production_runtime
 from agent_artifacts.store.model import ObjectReadRequest, ReferenceIndex, ReferenceReadRequest
 from agent_artifacts.tui_marketplace import (
@@ -832,6 +836,7 @@ class ConsumerApplicationService:
         consent: Consent,
         stop_on_failure: bool = False,
         runtime: SetupRuntime | None = None,
+        on_item_start: Callable[[int, int, CanonicalSetupPlan], None] | None = None,
     ) -> SetupQueueOutcome:
         return execute_setup_queue(
             queue.plans,
@@ -842,6 +847,7 @@ class ConsumerApplicationService:
             production_runtime() if runtime is None else runtime,
             consent=consent,
             stop_on_failure=stop_on_failure,
+            on_item_start=on_item_start,
         )
 
 

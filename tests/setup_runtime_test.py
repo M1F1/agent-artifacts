@@ -18,6 +18,7 @@ from agent_artifacts.setup import (
     recovery_messages,
     render_setup_outcome,
     render_setup_review,
+    run_reload_reminders,
     shell_reload_reminder,
 )
 from agent_artifacts.setup_runtime import ProcessResult, SetupRuntime, apply_setup_plan
@@ -641,3 +642,46 @@ class SeveralShellFilesTest(unittest.TestCase):
         self.assertEqual(
             [str(one["file"]) for one in reminders], ["/tmp/one/.zshrc", "/tmp/two/.bashrc"]
         )
+
+
+class RunReloadRemindersTest(unittest.TestCase):
+    """`AD-39`. The reminder is a fact about the machine, so the run prints it once.
+
+    Reloading a shell file is not a property of an artifact. Three servers appending exports to
+    `~/.zshrc` need `source ~/.zshrc` run once, and printing the same three-line block after each
+    of them is how the instruction stopped being read at all. This was introduced in 2.8.3 by the
+    per-item call and found by rendering a three-server selection rather than by reading code.
+    """
+
+    def _record(self, path):
+        return SimpleNamespace(receipt=[{"module": "shell.env-from-keychain@1", "path": path}])
+
+    def test_three_artifacts_writing_one_file_produce_one_reminder(self):
+        records = [self._record("/tmp/one/.zshrc") for _ in range(3)]
+
+        reminders = run_reload_reminders(records)
+
+        self.assertEqual([str(one["file"]) for one in reminders], ["/tmp/one/.zshrc"])
+
+    def test_two_files_across_a_run_keep_one_reminder_each_in_write_order(self):
+        records = [
+            self._record("/tmp/one/.zshrc"),
+            self._record("/tmp/two/.bashrc"),
+            self._record("/tmp/one/.zshrc"),
+        ]
+
+        reminders = run_reload_reminders(records)
+
+        self.assertEqual(
+            [str(one["file"]) for one in reminders], ["/tmp/one/.zshrc", "/tmp/two/.bashrc"]
+        )
+
+    def test_an_item_that_never_ran_carries_no_record_and_is_skipped(self):
+        """A queue item that failed to plan has `record=None`, and the run still summarizes."""
+
+        reminders = run_reload_reminders([None, self._record("/tmp/one/.zshrc"), None])
+
+        self.assertEqual([str(one["file"]) for one in reminders], ["/tmp/one/.zshrc"])
+
+    def test_a_run_that_wrote_no_shell_file_says_nothing(self):
+        self.assertEqual(run_reload_reminders([None, SimpleNamespace(receipt=[])]), ())

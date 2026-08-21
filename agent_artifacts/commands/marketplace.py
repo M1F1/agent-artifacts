@@ -83,8 +83,11 @@ from agent_artifacts.setup import (
     _command_strings,
     advisory_messages,
     project_setup_review,
+    recovery_messages,
     render_setup_review,
-    shell_reload_reminder,
+    run_reload_reminders,
+    setup_banner,
+    setup_retry_command,
 )
 from agent_artifacts.setup_render import (
     render_receipt_payload,
@@ -613,22 +616,22 @@ def _setup_warnings(outcome) -> list[dict]:
 
 
 def _setup_reminders(outcome) -> list[dict]:
-    """The reload a run cannot perform, carried the same way the advisories are (`AD-37`)."""
+    """The reload a run cannot perform, carried the same way the advisories are (`AD-37`).
 
-    reminders: list[dict] = []
-    for item in outcome.items:
-        if item.record is None:
-            continue
-        for reminder in shell_reload_reminder(item.record):
-            reminders.append(
-                {
-                    "key": f"{item.coordinate}#{item.profile}/{item.scope}",
-                    "detail": str(reminder.get("detail", "")),
-                    "commands": list(_command_strings(reminder.get("commands"))),
-                    "alternative": str(reminder.get("alternative", "")),
-                }
-            )
-    return reminders
+    Once for the run, not once per artifact (`AD-39`).  Three servers writing exports to
+    `~/.zshrc` need the shell reloaded once, and the row carries no artifact key because the
+    reminder is a fact about the machine — the key said it belonged to one item, which is how
+    the same instruction came to be printed three times and read none.
+    """
+
+    return [
+        {
+            "detail": str(reminder.get("detail", "")),
+            "commands": list(_command_strings(reminder.get("commands"))),
+            "alternative": str(reminder.get("alternative", "")),
+        }
+        for reminder in run_reload_reminders(tuple(item.record for item in outcome.items))
+    ]
 
 
 def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
@@ -649,8 +652,30 @@ def _setup_payload(queue: ConsumerSetupQueue, outcome=None) -> dict:
         payload["items"] = [
             {
                 "key": f"{item.coordinate}#{item.profile}/{item.scope}",
+                # The three parts beside the key, because a renderer that has to split a string
+                # to name an artifact is one that will name it differently from the other
+                # surface. Additive: `key` stays exactly as it was for whatever reads it.
+                "coordinate": str(item.coordinate),
+                "profile": item.profile,
+                "scope": item.scope,
                 "status": item.setup_status.value,
                 "detail": item.detail,
+                "successful": item.successful,
+                "retry": (
+                    ""
+                    if item.successful
+                    else setup_retry_command(
+                        coordinate=str(item.coordinate), profile=item.profile, scope=item.scope
+                    )
+                ),
+                # `AD-42`: the wizard printed these and this path dropped them, so the note that
+                # says what a rollback would do to a Docker image — the whole of `AD-38` — was
+                # invisible to anyone running setup from the command line.
+                "recovery": (
+                    []
+                    if item.record is None
+                    else [str(one) for one in recovery_messages(item.record)]
+                ),
             }
             for item in outcome.items
         ]
@@ -682,7 +707,33 @@ def _run_setup_queue(
     # Consent is a decision, not a prompt: each reviewed effect is approved only when the caller
     # passed --approve-setup-effects.  A declined effect leaves installed payloads untouched.
     approved = request.approve_setup_effects
-    setup_outcome = service.finalize_setup_queue(queue, consent=lambda _effect: approved)
+
+    def announce(position: int, total: int, plan) -> None:
+        """Say whose setup is starting, on the stream the prompts already use.
+
+        This path prints its whole report after the run, so while the run is happening the only
+        thing on the terminal is `security` asking for a password twice while naming nothing
+        (`AD-24`, `AD-32`) and `Setup input:` asking for a value. With several servers selected
+        that is an unlabelled sequence of credential prompts, and the wrong token typed into the
+        right-looking one is a credential handed to the wrong server (`AD-40`).
+
+        stderr, because stdout carries one JSON document and nothing else may enter it — the
+        same rule the runtime's own prompts follow.
+        """
+
+        for line in setup_banner(
+            artifact=str(plan.request.coordinate),
+            profile=plan.request.profile,
+            scope=plan.request.scope,
+            phase="START",
+            position=position,
+            total=total,
+        ):
+            print(line, file=sys.stderr, flush=True)
+
+    setup_outcome = service.finalize_setup_queue(
+        queue, consent=lambda _effect: approved, on_item_start=announce
+    )
     return (
         _setup_payload(queue, setup_outcome),
         not queue.failures and setup_outcome.incomplete == 0,

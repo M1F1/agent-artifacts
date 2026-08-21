@@ -10,6 +10,7 @@ from __future__ import annotations
 from agent_artifacts.model import SetupStateRecord
 from agent_artifacts.setup_receipt import ReceiptLocation
 from agent_artifacts.setup_render import receipt_payload, render_receipt_payload
+from tests.function_cases import function_test_case
 
 LOCATION = ReceiptLocation(
     coordinate="registry-a/mcp/github-docker",
@@ -140,3 +141,8 @@ def test_a_credential_shaped_detail_in_a_step_is_redacted() -> None:
 
     assert "realsecretvalue" not in text
     assert "[redacted]" in text
+
+
+# Collected by `unittest discover`, which sees `TestCase` subclasses and nothing
+# else; without this the functions above are imported and never run (`AD-41`).
+SetupReceiptShowTests = function_test_case(globals(), name="SetupReceiptShowTests")
