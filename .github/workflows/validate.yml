@@ -1,5 +1,10 @@
 name: quality
 
+# Portable to a GitHub Enterprise Server fork by setting repository variables only.
+# Every default below reproduces the public github.com run exactly, so an unconfigured fork
+# behaves the way this repository always has.  See docs/ci/enterprise-fork-v1.md for the
+# variable list and for the two things a variable cannot express.
+
 on:
   push:
   pull_request:
@@ -10,22 +15,32 @@ permissions:
 jobs:
   quality:
     name: quality (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    # A company image already carries an interpreter.  Leave AART_CI_IMAGE unset and this line
+    # is inert; set it and pin AART_PYTHON_VERSIONS to one entry, because one image is one Python.
+    container: ${{ vars.AART_CI_IMAGE }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.14"]
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
+    env:
+      # The tool's own gates need ruff, mypy and coverage.  That is the one place this repository
+      # needs a package index; the registry gates need none.  Point this at an internal mirror.
+      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
+        # Skipped when a container image is in use: it downloads an interpreter from github.com,
+        # which is the first step to fail on a runner with no egress.
+        if: vars.AART_CI_IMAGE == ''
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install developer quality tools
-        run: python -m pip install --disable-pip-version-check -e ".[dev]"
+        run: ${{ vars.AART_PYTHON || 'python' }} -m pip install --disable-pip-version-check -e ".[dev]"
 
       - name: Run canonical quality gates
-        run: make quality
+        run: make quality PYTHON=${{ vars.AART_PYTHON || 'python' }}

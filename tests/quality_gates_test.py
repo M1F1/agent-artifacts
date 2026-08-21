@@ -44,7 +44,14 @@ class QualitySurfaceTest(unittest.TestCase):
 
     def test_ci_delegates_to_quality_on_minimum_and_latest_python(self):
         workflow = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
-        self.assertIn('python-version: ["3.10", "3.14"]', workflow)
+        # The matrix is a repository variable so an Enterprise fork can retarget it without
+        # editing YAML, but the *default* is what this repository runs, and it must stay the
+        # minimum and the latest supported Python.  Asserting the whole expression keeps both
+        # halves honest: a fork that sets nothing gets exactly the run this file always had.
+        self.assertIn(
+            'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
+            workflow,
+        )
         self.assertIn("run: make quality", workflow)
         self.assertNotIn("unittest discover", workflow)
         self.assertNotIn("ast.walk", workflow)

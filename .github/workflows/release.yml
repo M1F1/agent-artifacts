@@ -7,6 +7,9 @@ name: release
 # `scripts/version.py check-tag` is the real gate: it rejects any tag that does not match the
 # source version the release contract governs, so the pattern below stays deliberately broad
 # rather than pinning one release and silently building nothing for the next.
+#
+# Portable to a GitHub Enterprise Server fork by setting repository variables only; every default
+# reproduces the public github.com run.  See docs/ci/enterprise-fork-v1.md.
 on:
   push:
     tags:
@@ -19,31 +22,41 @@ permissions:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: "3.10"
-          - python-version: "3.14"
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
+    env:
+      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: vars.AART_CI_IMAGE == ''
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install developer quality tools
-        run: python -m pip install --disable-pip-version-check -e ".[dev]"
+        run: ${{ vars.AART_PYTHON || 'python' }} -m pip install --disable-pip-version-check -e ".[dev]"
 
       - name: Run canonical quality gates
-        run: make quality
+        run: make quality PYTHON=${{ vars.AART_PYTHON || 'python' }}
 
   release:
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
+    env:
+      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      # The release checklist reconciles against a real registry checkout.  A fork points this at
+      # the registry it actually publishes, which is not this project's reference registry.
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL || 'https://github.com/M1F1/agent-artifacts-registry.git' }}
+      # `gh` talks to github.com unless told otherwise; on GHES it needs the instance hostname.
+      GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,12 +64,13 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
+        if: vars.AART_CI_IMAGE == ''
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
 
-      - name: Clone approved public reference registry
-        run: git clone --depth 1 https://github.com/M1F1/agent-artifacts-registry.git "$RUNNER_TEMP/reference-registry"
+      - name: Clone approved reference registry
+        run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
 
       - name: Prove the tagged source was merged into main
         env:
@@ -67,12 +81,12 @@ jobs:
           git merge-base --is-ancestor "$TAG_COMMIT" origin/main
 
       - name: Run stable release checklist
-        run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry"
+        run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry" PYTHON=${{ vars.AART_PYTHON || 'python' }}
 
       - name: Verify source version and release tag
         env:
           TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: python scripts/version.py check-tag "$TAG"
+        run: ${{ vars.AART_PYTHON || 'python' }} scripts/version.py check-tag "$TAG"
 
       - name: Verify reviewed release notes
         env:
@@ -80,10 +94,10 @@ jobs:
         run: test -s "docs/release/github-release-${TAG}.md"
 
       - name: Inject commit
-        run: python scripts/inject_commit.py
+        run: ${{ vars.AART_PYTHON || 'python' }} scripts/inject_commit.py
 
       - name: Build wheel
-        run: python scripts/build_wheel.py
+        run: ${{ vars.AART_PYTHON || 'python' }} scripts/build_wheel.py
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4

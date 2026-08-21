@@ -9,8 +9,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_tag_workflow_repeats_quality_and_reference_registry_release_check(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-        self.assertIn('python-version: "3.10"', workflow)
-        self.assertIn('python-version: "3.14"', workflow)
+        # The matrix and the reference registry are repository variables so an Enterprise fork
+        # retargets them without editing YAML.  The defaults are what this repository releases
+        # with, so they are what this test pins.
+        self.assertIn(
+            'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
+            workflow,
+        )
         self.assertIn('pip install --disable-pip-version-check -e ".[dev]"', workflow)
         self.assertIn("make quality", workflow)
         self.assertIn("M1F1/agent-artifacts-registry.git", workflow)
