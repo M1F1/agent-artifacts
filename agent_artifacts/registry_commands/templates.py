@@ -1,5 +1,9 @@
 """Byte-stable templates emitted by registry initialization."""
 
+from __future__ import annotations
+
+from agent_artifacts.registry_commands.model import ToolOrigin
+
 REGISTRY_GITIGNORE = b""".agent-artifacts/
 .agent-artifacts-bak/
 .claude/
@@ -210,3 +214,53 @@ REPORTING_TEMPLATES = (
     (".github/workflows/aart-usage-dashboard.yml", USAGE_REPORT_DASHBOARD_WORKFLOW),
     (".github/workflows/aart-usage-validate.yml", USAGE_REPORT_VALIDATE_WORKFLOW),
 )
+
+
+# The two lines a stamp replaces.  Kept as named constants rather than matched by regex: a stamp
+# that silently found nothing to replace would emit a workflow pointing at the wrong fork, and the
+# only way to notice would be a red CI run weeks later, so the substitution asserts instead.
+_UNSTAMPED_URL = (
+    b"          TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git',"
+    b" github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}\n"
+)
+_UNSTAMPED_REF = b"          TOOL_REF: ${{ vars.AART_REF || 'main' }}\n"
+
+
+def stamp_tool_origin(workflow: bytes, origin: ToolOrigin | None) -> bytes:
+    """Replace the shipped defaults with what the AART writing this file knows about itself.
+
+    Only the fallback literals move.  `vars.AART_TOOL_URL`, `vars.AART_REPOSITORY` and
+    `vars.AART_REF` still win when set, so a stamped registry can still be retargeted from the
+    settings page without touching the file.
+    """
+
+    if origin is None:
+        return workflow
+    body = workflow
+    if origin.url is not None:
+        replacement = (
+            b"          TOOL_URL: ${{ vars.AART_TOOL_URL || '"
+            + origin.url.encode("utf-8")
+            + b"' }}\n"
+        )
+        body = _replace_once(body, _UNSTAMPED_URL, replacement)
+    elif origin.repository is not None:
+        replacement = (
+            b"          TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git',"
+            b" github.server_url, vars.AART_REPOSITORY || '"
+            + origin.repository.encode("utf-8")
+            + b"') }}\n"
+        )
+        body = _replace_once(body, _UNSTAMPED_URL, replacement)
+    if origin.ref is not None:
+        replacement = (
+            b"          TOOL_REF: ${{ vars.AART_REF || '" + origin.ref.encode("utf-8") + b"' }}\n"
+        )
+        body = _replace_once(body, _UNSTAMPED_REF, replacement)
+    return body
+
+
+def _replace_once(body: bytes, old: bytes, new: bytes) -> bytes:
+    if body.count(old) != 1:
+        raise ValueError("registry workflow template no longer carries the line a stamp replaces")
+    return body.replace(old, new)

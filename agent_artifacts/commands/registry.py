@@ -31,12 +31,13 @@ from agent_artifacts.domain.diagnostics import (
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.io.registry_workspace import FilesystemRegistryWorkspace
+from agent_artifacts.io.tool_origin import discover_tool_origin
 from agent_artifacts.model import Request
 from agent_artifacts.protocol.native_tree import SnapshotEntryKind, SourceSnapshot
 from agent_artifacts.protocol.registry_models import RegistryManifest
 from agent_artifacts.protocol.registry_schema import parse_registry_manifest
 from agent_artifacts.protocol.semver import SemVer, parse_semver
-from agent_artifacts.registry_commands.model import RegistryQualityReport
+from agent_artifacts.registry_commands.model import RegistryQualityReport, ToolOrigin
 from agent_artifacts.registry_commands.planning import (
     audit_registry_workspace,
     test_registry_compatibility,
@@ -234,6 +235,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 source_id=request.source_id,
                 display_name=request.display_name,
                 usage_reporting_repository=request.usage_reporting_repository,
+                tool_origin=_tool_origin(request) if action is CurationAction.INIT else None,
                 # `RS-02`: only `init` declares a compatibility window, and only `init` reads one
                 # back, so every other action arrives here with both unset.  The substitute has to
                 # be the window of the AART that is running -- literals bound a registry to the
@@ -245,6 +247,27 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
         )
     except ValueError as error:
         return _error(str(error), _READ_THE_ACTIONS)
+
+
+def _tool_origin(request: Request) -> ToolOrigin | None:
+    """Resolve the AART stamp: what the maintainer stated, then what the checkout says.
+
+    A stated flag wins over discovery even when only one half is stated, because the two halves
+    answer separate questions -- *which repository* and *which ref* -- and a maintainer who states
+    one and not the other means the checkout to answer the rest.
+    """
+
+    if request.no_aart_stamp:
+        return None
+    discovered = discover_tool_origin()
+    repository = request.aart_repository or (None if discovered is None else discovered.repository)
+    ref = request.aart_ref or (None if discovered is None else discovered.ref)
+    if repository is None and ref is None:
+        return None
+    try:
+        return ToolOrigin(repository=repository, ref=ref)
+    except ValueError:
+        return None
 
 
 def _run_curation(request: Request, action: CurationAction) -> int:

@@ -41,6 +41,17 @@ def _one_safe_line(value: object) -> bool:
     )
 
 
+def _yaml_safe_literal(value: object) -> bool:
+    """Safe to paste between single quotes in a generated workflow.
+
+    The stamp is written into YAML this command generates, so a value carrying a quote, a brace or
+    a newline would not merely look wrong -- it would change what the workflow runs.  Git refs and
+    URLs never need those characters, so refusing them costs nothing real.
+    """
+
+    return _one_safe_line(value) and not any(character in str(value) for character in "'\"${}\\")
+
+
 class RegistryOperation(str, Enum):
     INIT = "init"
     SCAFFOLD = "scaffold"
@@ -70,12 +81,51 @@ class WorkspaceChangeKind(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class ToolOrigin:
+    """Where the AART that runs `registry init` came from, stamped into the workflows it writes.
+
+    Without this, a registry created inside a company points its CI at `M1F1/agent-artifacts` --
+    the literal shipped in the template -- and someone has to hand-edit either the registry or the
+    fork.  Editing the fork is the worse of the two: it puts a permanent conflict on the line every
+    later sync from upstream touches.  So the tool records what it knows about itself, once, in the
+    file it generates, and the fork stays byte-identical to the repository it tracks.
+
+    Every field is a *default*.  `AART_TOOL_PATH`, `AART_REPOSITORY`, `AART_TOOL_URL` and
+    `AART_REF` still override it, so a stamp is a starting point rather than a decision that
+    cannot be revisited.
+    """
+
+    repository: str | None = None
+    url: str | None = None
+    ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            (self.repository is not None and _REPOSITORY_RE.fullmatch(self.repository) is None)
+            or (self.url is not None and not _yaml_safe_literal(self.url))
+            or (self.ref is not None and not _yaml_safe_literal(self.ref))
+            or (self.repository is None and self.url is None and self.ref is None)
+        ):
+            raise ValueError("tool origin stamp is invalid")
+
+    @property
+    def described(self) -> str:
+        """One line naming the stamp, for the review a maintainer reads before writing."""
+
+        where = self.url or self.repository or "the shipped default"
+        return f"{where}@{self.ref}" if self.ref is not None else where
+
+
+@dataclass(frozen=True, slots=True)
 class RegistryInitOptions:
     registry_id: str
     display_name: str
     minimum_aart: SemVer
     maximum_aart_exclusive: SemVer
     usage_reporting_repository: str | None = None
+    # What the AART writing this registry knows about where it came from.  `None` means it could
+    # not tell, and the templates keep the defaults this project ships.
+    tool_origin: ToolOrigin | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -88,6 +138,7 @@ class RegistryInitOptions:
                 self.usage_reporting_repository is not None
                 and _REPOSITORY_RE.fullmatch(self.usage_reporting_repository) is None
             )
+            or (self.tool_origin is not None and not isinstance(self.tool_origin, ToolOrigin))
         ):
             raise ValueError("registry init options are invalid")
 

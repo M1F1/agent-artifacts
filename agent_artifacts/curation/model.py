@@ -11,6 +11,7 @@ from typing import Literal
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.protocol.hashing import json_digest
 from agent_artifacts.protocol.json import JsonArray, JsonObject
+from agent_artifacts.registry_commands.model import ToolOrigin
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -94,6 +95,9 @@ class CurationRequest:
     usage_reporting_repository: str | None = None
     minimum_version: str = DEFAULT_MINIMUM_AART
     maximum_version: str = DEFAULT_MAXIMUM_AART
+    # Only `init` reads this, the same way only `init` reads the compatibility window: it is the
+    # one action that writes the workflows the stamp lands in.
+    tool_origin: ToolOrigin | None = None
 
     def __post_init__(self) -> None:
         if (

@@ -50,9 +50,9 @@ gate `aart-registry.yml`, and the usage-reporting pair `aart-usage-validate.yml`
 `aart-usage-dashboard.yml`. A registry created inside the company is configured by setting these
 variables; the files are not edited.
 
-**Editing that file is worse than it looks.** `registry init` refuses to overwrite a template whose
-content differs from the one it ships, so a hand-edited workflow puts the registry permanently out
-of step with the command that manages it. Configuration belongs in variables.
+**You do not set most of these by hand.** `registry init` stamps what the AART running it knows
+about itself into the three workflows it writes — see §3.1. The variables below stay available to
+override the stamp, which is what makes a stamped registry retargetable without editing a file.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -70,6 +70,56 @@ All three workflows share one `Provide AART` step, so they cannot drift apart. T
 github.com — from inside an Enterprise instance that is the wrong server, and it fails quietly
 rather than loudly.
 
+### 3.1 The stamp
+
+The two defaults in that table you would otherwise have to change — `AART_REPOSITORY` and
+`AART_REF` — are written for you. `registry init` reads the origin and the current ref of the AART
+checkout it is running from, and puts them in the generated workflows:
+
+```
+TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'platform/agent-artifacts') }}
+TOOL_REF: ${{ vars.AART_REF || 'main' }}
+```
+
+The command says out loud what it wrote, so the value is read at the moment it is chosen rather
+than found later in a red run:
+
+```
+warning: CI workflows stamped to fetch AART from platform/agent-artifacts@main; set the
+AART_TOOL_PATH, AART_REPOSITORY or AART_REF repository variable to override without editing the
+files
+```
+
+**Why the tool answers this and not you.** The alternative is editing the literal inside your fork
+of this repository. That line would then conflict on every later sync from upstream — permanently,
+on the one line nobody wants to resolve by hand. Stamping keeps the fork byte-identical to what it
+tracks and moves the difference into generated files, where a difference belongs.
+
+**What it stamps is what the checkout is on.** A branch stamps a branch, a detached tag stamps that
+tag, a detached commit stamps that commit. The tool records the shape it was run from; it does not
+have an opinion about whether you should pin. §4 is where that decision lives.
+
+Three things it will not do:
+
+- **An origin with no host is not stamped.** `/srv/mirrors/agent-artifacts` and `../aart` are
+  places a runner cannot fetch from, so they are treated as no answer.
+- **AART installed from a wheel has no checkout to read.** The workflows keep the shipped defaults
+  and the command says so, rather than guessing.
+- **A cross-host fetch is not derived.** The stamp names `owner/name` and lets
+  `github.server_url` supply the host, which is right while the tool and the registry share an
+  instance. When they do not, set `AART_TOOL_URL`.
+
+| Flag | What it does |
+|---|---|
+| `--aart-repository OWNER/REPOSITORY` | State the repository instead of reading it |
+| `--aart-ref REF` | State the tag, branch or commit instead of reading it |
+| `--no-aart-stamp` | Write the shipped defaults and configure the registry with variables |
+
+**A stamped file is still a generated file.** `registry init` refuses to overwrite a template whose
+content differs from what it would write, so hand-editing a stamped workflow puts the registry out
+of step with the command that manages it. Use the variables, or re-run `init` on an empty
+workspace.
+
 If the AART fork is private and the runner holds no credential for it, use `AART_TOOL_PATH` and
 bake the tree into the image. AART carries no credentials of its own and this workflow invents
 none; a clone succeeds only where the runner could already clone.
@@ -78,16 +128,33 @@ none; a clone succeeds only where the runner could already clone.
 
 They are unrelated and easy to conflate.
 
-- **`AART_REF`** chooses *which AART* runs the gates. The shipped default is `main`.
+- **`AART_REF`**, and the stamp behind it, choose *which AART build* runs the gates.
 - **`--compatibility minimum|latest`** chooses which end of *the registry's own declared
   compatibility window* is exercised. Both ends always run; that is the matrix.
 
-`main` as a default means a registry's CI can turn red with no change to the registry, because
-something moved in the tool. For a company registry, prefer pinning `AART_REF` to a release tag and
-moving it deliberately. This project has been bitten from the other side too: a registry ran an
-AART three releases behind for weeks while a merged pull request titled *Move the CI pin* had moved
-it to the wrong version. The `Provide AART` step prints the version that answered, and that printed
-line is what a reviewer should read.
+They are not two settings of one thing. `--latest-version` defaults to the version of the AART that
+is executing, on purpose — a frozen default would test a release that is not there. So "latest"
+already means *whatever ran*, and `AART_REF` is what decides what ran.
+
+The deliberate-upgrade decision you might expect the pin to carry is carried somewhere else: the
+window in `aart-registry.json`. `registry init` writes `min_inclusive` as the AART that created the
+registry and `max_exclusive` as the next major. An AART past that ceiling fails the `latest` check
+until someone edits the registry — which is the decision, recorded in a diff, in the registry's own
+repository.
+
+**The window is a version range, not a promise about behaviour.** A 2.9.0 that changes what
+`registry lock` writes turns a registry's CI red with no change to the registry and no help from
+the ceiling. `required_capabilities` catches a missing feature; nothing catches a changed one. So:
+
+- **Stamp a branch** when you want the gates to follow the tool, and accept that upstream can turn
+  a registry red. The ceiling still stops a major.
+- **Stamp a tag**, or set `AART_REF` to one, when a registry's CI must only change when someone
+  changes it.
+
+This project has been bitten from the pinned side too: a registry ran an AART three releases behind
+for weeks while a merged pull request titled *Move the CI pin* had moved it to the wrong version.
+The `Provide AART` step prints the version that answered, and that printed line is what a reviewer
+should read.
 
 ## 5. What a variable cannot express
 

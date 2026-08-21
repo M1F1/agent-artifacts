@@ -13,10 +13,12 @@ import pathlib
 import re
 import unittest
 
+from agent_artifacts.registry_commands.model import ToolOrigin
 from agent_artifacts.registry_commands.templates import (
     REGISTRY_CI_WORKFLOW,
     USAGE_REPORT_DASHBOARD_WORKFLOW,
     USAGE_REPORT_VALIDATE_WORKFLOW,
+    stamp_tool_origin,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -31,10 +33,21 @@ WORKFLOWS = (
 TEMPLATE_TEXT = REGISTRY_CI_WORKFLOW.decode("utf-8")
 # `registry init` writes three workflows.  Portability that stops at the quality gate leaves the
 # usage-reporting half reaching github.com from inside an Enterprise instance.
+_SHIPPED = {
+    "registry quality": REGISTRY_CI_WORKFLOW,
+    "usage validate": USAGE_REPORT_VALIDATE_WORKFLOW,
+    "usage dashboard": USAGE_REPORT_DASHBOARD_WORKFLOW,
+}
+# A registry created inside a company gets a stamped copy, not this one, and it is the stamped
+# copy that has to keep every promise below.  Both forms are checked so a change that only holds
+# for the shipped default cannot pass.
+_STAMP = ToolOrigin(repository="platform/agent-artifacts", ref="v9.9.9")
 EMITTED = {
-    "registry quality": TEMPLATE_TEXT,
-    "usage validate": USAGE_REPORT_VALIDATE_WORKFLOW.decode("utf-8"),
-    "usage dashboard": USAGE_REPORT_DASHBOARD_WORKFLOW.decode("utf-8"),
+    **{label: body.decode("utf-8") for label, body in _SHIPPED.items()},
+    **{
+        f"{label} (stamped)": stamp_tool_origin(body, _STAMP).decode("utf-8")
+        for label, body in _SHIPPED.items()
+    },
 }
 _VARIABLE = re.compile(r"vars\.(AART_[A-Z0-9_]+)")
 
@@ -173,6 +186,24 @@ class RegistryGatesAreCompleteTest(unittest.TestCase):
 
     def test_both_compatibility_ends_are_exercised(self) -> None:
         self.assertIn("compatibility: [minimum, latest]", TEMPLATE_TEXT)
+
+
+class StampingChangesOnlyTheDefaultsTest(unittest.TestCase):
+    """`registry init` rewrites two fallback literals, and nothing else about the file."""
+
+    def test_a_stamp_adds_no_marketplace_action(self) -> None:
+        stamped = EMITTED["registry quality (stamped)"]
+        uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", stamped, re.M)
+        self.assertEqual(uses, ["actions/checkout@v4"])
+
+    def test_a_stamp_changes_exactly_two_lines(self) -> None:
+        for label, body in _SHIPPED.items():
+            before = body.decode("utf-8").splitlines()
+            after = EMITTED[f"{label} (stamped)"].splitlines()
+            self.assertEqual(len(before), len(after), label)
+            moved = [line for old, line in zip(before, after, strict=False) if old != line]
+            self.assertEqual(len(moved), 2, f"{label}: {moved}")
+            self.assertTrue(all("TOOL_URL:" in line or "TOOL_REF:" in line for line in moved))
 
 
 if __name__ == "__main__":

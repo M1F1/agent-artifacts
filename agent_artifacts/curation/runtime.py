@@ -428,19 +428,36 @@ class LocalCurationService:
                 minimum.value,
                 maximum.value,
                 request.usage_reporting_repository,
+                request.tool_origin,
             )
         except ValueError as error:
             return _error(str(error))
         planned = prepare_registry_init(options, output=self.workspace)
         if isinstance(planned, Err):
             return planned
-        warnings = (
+        warnings: tuple[str, ...] = (
             ()
             if request.usage_reporting_repository is not None
             else (
                 "usage reporting templates are inert because no destination was advertised; "
                 "re-run init with --usage-reporting-repository OWNER/REPOSITORY to enable "
                 "prompt-only registry routing",
+            )
+        )
+        # A stamp is written once and read by CI for as long as the registry lives, so it is said
+        # out loud here rather than discovered later in a red run.  Both outcomes are reported:
+        # silence about a default would read as a stamp that worked.
+        warnings += (
+            (
+                f"CI workflows stamped to fetch AART from {request.tool_origin.described}; "
+                "set the AART_TOOL_PATH, AART_REPOSITORY or AART_REF repository variable to "
+                "override without editing the files",
+            )
+            if request.tool_origin is not None
+            else (
+                "CI workflows keep the shipped AART defaults because this tool could not read "
+                "its own checkout; set the AART_REPOSITORY and AART_REF repository variables on "
+                "the registry, or re-run init from a clone of your fork",
             )
         )
         return Ok(self._workspace_review(request, planned.value, warnings=warnings))
