@@ -8,9 +8,13 @@ editable or development install has no release to name.
 fork's release CI sends every registry created from it to that fork.  That is what makes the
 delivery route stop mattering -- a wheel carries its own origin whether it arrives from a release
 URL, an internal index, ``pipx``, or a file on a laptop.
+
+The commit is deliberately *not* here: ``_commit.py`` already records it, and two scripts
+writing the same fact can disagree with nothing to catch them.  ``scripts/inject_build_origin.py``
+still checks the ref against that commit before it writes -- verifying it and storing it twice are
+different things.
 """
 
 REPOSITORY_URL = ""
 REF = ""
-COMMIT = ""
 VERSION = ""

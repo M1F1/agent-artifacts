@@ -238,10 +238,14 @@ def stamp_tool_origin(workflow: bytes, origin: ToolOrigin | None) -> bytes:
         return workflow
     body = workflow
     if origin.url is not None:
+        # Three levels, not two.  A stamped URL that simply replaced the derivation would make
+        # `AART_REPOSITORY` a silent no-op -- someone would set it, nothing would happen, and the
+        # workflow would give no hint why.  An unset variable is falsy, so this falls through:
+        # explicit URL, then explicit repository on this instance, then the URL the wheel knows.
         replacement = (
-            b"          TOOL_URL: ${{ vars.AART_TOOL_URL || '"
-            + origin.url.encode("utf-8")
-            + b"' }}\n"
+            b"          TOOL_URL: ${{ vars.AART_TOOL_URL"
+            b" || (vars.AART_REPOSITORY && format('{0}/{1}.git', github.server_url,"
+            b" vars.AART_REPOSITORY)) || '" + origin.url.encode("utf-8") + b"' }}\n"
         )
         body = _replace_once(body, _UNSTAMPED_URL, replacement)
     elif origin.repository is not None:

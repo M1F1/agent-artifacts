@@ -145,6 +145,10 @@ Four things it will not do:
 - **A wheel built outside a release, from an opaque URL, carries nothing.** It has no
   `_build_origin`, no Git record and no release path, so there is nothing to read and `init`
   refuses instead of defaulting.
+- **A wheel can only stamp a tag, and a tag can move.** `LAF-122` stays open on two counts: how
+  you installed silently decides whether a registry's CI follows the tool or is frozen (§4 treats
+  that as a deliberate choice), and a deleted or renamed ref leaves every registry that wheel
+  created pointing at nothing.
 - **Being *inside* a repository does not count.** A tool unpacked under a home directory that is
   itself in Git would otherwise stamp someone's dotfiles, so the repository's top level has to be
   exactly where the package lives.

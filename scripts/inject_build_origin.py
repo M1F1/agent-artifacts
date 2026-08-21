@@ -13,7 +13,8 @@ the wheel simply carries no origin, which is the honest answer for a development
 Whenever a ref *is* stated, three things must agree or this refuses to write:
 
 * the ref must be ``v`` + the source version, the same rule ``version.py check-tag`` enforces;
-* the commit must be the one the ref points at;
+* the commit must be the one the ref points at -- checked here, and recorded by
+  ``inject_commit.py`` rather than a second time here;
 * the repository URL must name a host, because a path is not somewhere CI can fetch from.
 
 A wheel that lies about its origin is worse than one that says nothing: the first sends every
@@ -42,6 +43,11 @@ editable or development install has no release to name.
 fork's release CI sends every registry created from it to that fork.  That is what makes the
 delivery route stop mattering -- a wheel carries its own origin whether it arrives from a release
 URL, an internal index, ``pipx``, or a file on a laptop.
+
+The commit is deliberately *not* here: ``_commit.py`` already records it, and two scripts
+writing the same fact can disagree with nothing to catch them.  ``scripts/inject_build_origin.py``
+still checks the ref against that commit before it writes -- verifying it and storing it twice are
+different things.
 """'''
 
 # Same shape the stamp accepts: a scheme with a host, or the ssh short form.  A path is refused.
@@ -78,9 +84,7 @@ def _source_version(root: Path = ROOT) -> str:
     return str(module.read_version(root))
 
 
-def resolve(
-    environ: dict[str, str] | None = None, *, root: Path = ROOT
-) -> tuple[str, str, str, str]:
+def resolve(environ: dict[str, str] | None = None, *, root: Path = ROOT) -> tuple[str, str, str]:
     """Return the origin to stamp: repository URL, ref, commit, version.
 
     All four are empty for a development build.  Anything else is checked before it is returned.
@@ -90,7 +94,7 @@ def resolve(
     url = (env.get("AART_BUILD_REPOSITORY_URL") or "").strip()
     ref = (env.get("AART_BUILD_REF") or "").strip()
     if not ref and not url:
-        return ("", "", "", "")
+        return ("", "", "")
     if not url or not ref:
         raise OriginError("a build origin needs both AART_BUILD_REPOSITORY_URL and AART_BUILD_REF")
     if _HOSTED.match(url) is None:
@@ -104,26 +108,20 @@ def resolve(
     at_ref = _git("rev-parse", f"{ref}^{{commit}}", root=root)
     if at_ref and at_ref != commit:
         raise OriginError(f"ref {ref!r} points at {at_ref}, but this tree is at {commit}")
-    return (url, ref, commit, version)
+    return (url, ref, version)
 
 
-def render(url: str, ref: str, commit: str, version: str) -> str:
-    return (
-        f"{DOCSTRING}\n\n"
-        f'REPOSITORY_URL = "{url}"\n'
-        f'REF = "{ref}"\n'
-        f'COMMIT = "{commit}"\n'
-        f'VERSION = "{version}"\n'
-    )
+def render(url: str, ref: str, version: str) -> str:
+    return f'{DOCSTRING}\n\nREPOSITORY_URL = "{url}"\nREF = "{ref}"\nVERSION = "{version}"\n'
 
 
 def main(argv: tuple[str, ...] | None = None) -> int:
     try:
-        url, ref, commit, version = resolve()
+        url, ref, version = resolve()
     except OriginError as error:
         print(f"inject_build_origin: {error}", file=sys.stderr)
         return 1
-    TARGET.write_text(render(url, ref, commit, version), encoding="utf-8")
+    TARGET.write_text(render(url, ref, version), encoding="utf-8")
     where = f"{url}@{ref}" if url else "no origin (development build)"
     print(f"inject_build_origin: wrote {where} to {TARGET.relative_to(ROOT)}")
     return 0

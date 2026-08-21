@@ -40,8 +40,22 @@ class CommittedSourceTest(unittest.TestCase):
         """A real value here would churn on every commit, exactly as `_commit.py` says."""
 
         text = (ROOT / "agent_artifacts" / "_build_origin.py").read_text(encoding="utf-8")
-        for line in ('REPOSITORY_URL = ""', 'REF = ""', 'COMMIT = ""', 'VERSION = ""'):
+        for line in ('REPOSITORY_URL = ""', 'REF = ""', 'VERSION = ""'):
             self.assertIn(line, text)
+
+    def test_the_commit_is_recorded_once_in_the_package_not_twice(self) -> None:
+        """`_commit.py` owns the sha.  Two scripts writing it could disagree, unnoticed."""
+
+        text = (ROOT / "agent_artifacts" / "_build_origin.py").read_text(encoding="utf-8")
+        self.assertNotIn("COMMIT =", text)
+        self.assertIn("COMMIT =", (ROOT / "agent_artifacts" / "_commit.py").read_text("utf-8"))
+
+    def test_an_unstamped_render_reproduces_the_tracked_file_exactly(self) -> None:
+        """Otherwise a development build leaves a diff, and `packaging-check` would catch it."""
+
+        inject = _load("inject_build_origin")
+        tracked = (ROOT / "agent_artifacts" / "_build_origin.py").read_text(encoding="utf-8")
+        self.assertEqual(inject.render("", "", ""), tracked)
 
     def test_a_development_build_therefore_stamps_nothing(self) -> None:
         self.assertIsNone(origin_from_build())
@@ -79,14 +93,13 @@ class InjectorTest(unittest.TestCase):
     def _resolve(self, **env: str):
         return self.inject.resolve(env, root=self.root)
 
-    def test_a_matching_tag_resolves_to_all_four_values(self) -> None:
-        url, ref, commit, version = self._resolve(
+    def test_a_matching_tag_resolves_to_url_ref_and_version(self) -> None:
+        url, ref, version = self._resolve(
             AART_BUILD_REPOSITORY_URL=COMPANY, AART_BUILD_REF=f"v{self.version}"
         )
         self.assertEqual(url, COMPANY)
         self.assertEqual(ref, f"v{self.version}")
         self.assertEqual(version, self.version)
-        self.assertEqual(len(commit), 40)
 
     def test_a_tag_that_is_not_the_source_version_is_refused(self) -> None:
         """The same rule `version.py check-tag` enforces, applied to what gets baked in."""
@@ -130,10 +143,10 @@ class InjectorTest(unittest.TestCase):
             self._resolve(AART_BUILD_REF=f"v{self.version}")
 
     def test_no_origin_at_all_is_a_development_build_rather_than_a_failure(self) -> None:
-        self.assertEqual(self._resolve(), ("", "", "", ""))
+        self.assertEqual(self._resolve(), ("", "", ""))
 
     def test_what_it_renders_is_importable_and_says_what_was_asked(self) -> None:
-        rendered = self.inject.render(COMPANY, "v2.8.5", "a" * 40, "2.8.5")
+        rendered = self.inject.render(COMPANY, "v2.8.5", "2.8.5")
         namespace: dict[str, object] = {}
         exec(compile(rendered, "_build_origin.py", "exec"), namespace)
         self.assertEqual(namespace["REPOSITORY_URL"], COMPANY)

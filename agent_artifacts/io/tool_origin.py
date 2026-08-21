@@ -202,9 +202,14 @@ def origin_from_build() -> ToolOrigin | None:
     ref = getattr(_build_origin, "REF", "")
     if not isinstance(url, str) or not isinstance(ref, str) or not url or not ref:
         return None
-    repository = _repository_of(url)
     try:
-        return ToolOrigin(repository=repository, url=None if repository else url, ref=ref)
+        # The whole URL, host included.  This one is not guessed: the release job built it from
+        # `github.server_url`, so it is https and it names the instance the fork actually lives
+        # on.  Reducing it to `owner/name` would throw that away and let the *registry's* instance
+        # supply a host instead -- right whenever the two happen to coincide, and silently wrong
+        # when they do not.  The checkout route still reduces, because an origin there may be an
+        # ssh remote that CI cannot use.
+        return ToolOrigin(url=url, ref=ref)
     except ValueError:
         return None
 

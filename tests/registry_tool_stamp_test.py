@@ -96,16 +96,22 @@ class StampTest(unittest.TestCase):
             ):
                 self.assertIn(variable, stamped)
 
-    def test_a_cross_host_url_replaces_the_derivation_rather_than_the_owner(self) -> None:
-        """`github.server_url` is right only while the tool and the registry share an instance."""
+    def test_a_cross_host_url_is_stamped_without_disabling_the_repository_variable(self) -> None:
+        """`github.server_url` is right only while the tool and the registry share an instance.
+
+        A stamped URL therefore has to sit *below* `AART_REPOSITORY` rather than replace it: an
+        operator who sets that variable must still be able to retarget the fetch to their own
+        instance, and a two-level fallback would make the variable a silent no-op.
+        """
 
         origin = ToolOrigin(url="https://ghe.example.test/platform/aart.git", ref="main")
         stamped = stamp_tool_origin(REGISTRY_CI_WORKFLOW, origin).decode("utf-8")
         self.assertIn(
-            "TOOL_URL: ${{ vars.AART_TOOL_URL || 'https://ghe.example.test/platform/aart.git' }}",
+            "TOOL_URL: ${{ vars.AART_TOOL_URL || (vars.AART_REPOSITORY && "
+            "format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY)) "
+            "|| 'https://ghe.example.test/platform/aart.git' }}",
             stamped,
         )
-        self.assertNotIn("github.server_url", stamped)
 
     def test_a_body_with_nothing_to_stamp_is_refused_rather_than_returned(self) -> None:
         """A silent no-op would ship a workflow pointing at the wrong fork, found weeks later."""
@@ -252,34 +258,31 @@ class WheelOriginTest(unittest.TestCase):
     def test_an_unstamped_build_answers_nothing(self) -> None:
         self.assertIsNone(origin_from_build())
 
-    def test_a_stamped_build_answers_repository_and_tag(self) -> None:
-        import agent_artifacts._build_origin as module
+    def test_a_stamped_build_keeps_the_host_the_release_job_knew(self) -> None:
+        """The wheel's URL is authoritative https; reducing it would let a guess supply the host.
 
-        for name, value in (
-            ("REPOSITORY_URL", "https://ghe.example.test/platform/agent-artifacts.git"),
-            ("REF", "v2.8.5"),
-        ):
-            self.addCleanup(setattr, module, name, getattr(module, name))
-            setattr(module, name, value)
-        self.assertEqual(
-            origin_from_build(), ToolOrigin(repository="platform/agent-artifacts", ref="v2.8.5")
-        )
-
-    def test_a_url_that_is_not_owner_and_name_is_kept_whole(self) -> None:
-        """`github.server_url` can only rebuild `owner/name`; anything else must stay a URL.
-
-        A path with more than two segments is not a GitHub repository reference, so splitting it
-        would send CI to a place that does not exist.  The whole URL is stamped instead, which is
-        what `AART_TOOL_URL` means.
+        The release job builds it from its own `github.server_url`, so it names the instance the
+        fork lives on.  Dropping to `owner/name` would make the *registry's* instance supply a
+        host instead -- right whenever the two coincide, silently wrong when they do not.
         """
 
         import agent_artifacts._build_origin as module
 
-        url = "https://ghe.example.test/deep/nest/aart.git"
+        url = "https://ghe.example.test/platform/agent-artifacts.git"
         for name, value in (("REPOSITORY_URL", url), ("REF", "v2.8.5")):
             self.addCleanup(setattr, module, name, getattr(module, name))
             setattr(module, name, value)
         self.assertEqual(origin_from_build(), ToolOrigin(url=url, ref="v2.8.5"))
+
+    def test_a_url_stamp_leaves_the_repository_variable_working(self) -> None:
+        """A two-level fallback would make `AART_REPOSITORY` a silent no-op."""
+
+        url = "https://ghe.example.test/platform/agent-artifacts.git"
+        stamped = stamp_tool_origin(REGISTRY_CI_WORKFLOW, ToolOrigin(url=url, ref="v2.8.5"))
+        text = stamped.decode("utf-8")
+        self.assertIn("vars.AART_TOOL_URL", text)
+        self.assertIn("vars.AART_REPOSITORY && format(", text)
+        self.assertIn(f"|| '{url}' }}}}", text)
 
 
 class PlannedWorkspaceTest(unittest.TestCase):
