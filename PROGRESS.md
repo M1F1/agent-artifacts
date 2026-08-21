@@ -3974,3 +3974,32 @@ again, and the screen said `configured`.
   `AD-43`: a recovery note's absolute path is folded mid-word, because the protection against
   folding was written for **commands** and a path is not one — two lines below a reminder that
   prints `~/.zshrc`, on the same screen.
+
+### 2026-08-21 — `2.8.5` published
+
+- **Merged.** PR #110 into `origin/main` as `526273a`, all four CI jobs green on 3.10 and 3.14.
+- **Release check.** All eleven gates passed on the merged commit, against a clean Registry A
+  checkout that was unchanged afterwards.
+- **Tag.** Annotated `v2.8.5` on `526273a`, accepted by `version.py check-tag`.
+- **Wheel.** `agent_artifacts-2.8.5-py3-none-any.whl`, 581,676 bytes,
+  `sha256:88fc19698954a6c5d2e7c540d94b15fc28842ba982d9806c0e4fed96867c0569`. The published asset was
+  downloaded again and is byte-identical to the local build, compared with `cmp` rather than by
+  digest alone.
+- **Install matrix, 9/9** — `pip`, `pipx` and `uv tool` over the local wheel, the release URL and
+  the tag — against isolated `PIPX_HOME`, `PIPX_BIN_DIR`, `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR`. The
+  operator's own lists were read afterwards and are unchanged: `pipx` still holds `2.8.4`,
+  `uv tool list` still empty.
+- **The queue was rendered from the shipped artifact**, not from the working tree: the release wheel
+  installed into a venv outside the repository, `agent_artifacts.__file__` printed to prove which
+  copy answered, and the three-artifact fixture run through it. Three `START` rules on stderr, a
+  `RUN SUMMARY` on stdout, and **`Next step` occurring exactly once** for two artifacts that both
+  wrote `~/.zshrc` — which is the whole of `AD-39`, measured on the thing that was published.
+- **The counterfactual is preserved rather than described.** `v2.8.4` was rebuilt in its own
+  worktree and walked over the same fixture: the reminder twice, no boundaries anywhere, a retry
+  folded across two lines, and a `--json` payload with neither `recovery` nor `retry`. Both
+  transcripts are what `PROGRESS-live-acceptance-v14.md` reports; neither was recalled.
+- **Six findings shipped open**, named in the release notes and in the checklist's change gate
+  rather than left to be discovered: `AD-43`..`AD-48`. Four of them reproduce on `2.8.4`. `AD-43`
+  is the one to take next — a recovery note's absolute path is folded mid-word two lines below a
+  reminder that prints `~/.zshrc`, because the protection against folding was written for commands
+  and a path is not one.
