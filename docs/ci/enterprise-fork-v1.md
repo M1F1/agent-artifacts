@@ -99,32 +99,52 @@ tracks and moves the difference into generated files, where a difference belongs
 tag, a detached commit stamps that commit. The tool records the shape it was run from; it does not
 have an opinion about whether you should pin. §4 is where that decision lives.
 
-**You do not need a checkout to get a stamp.** Install AART the ordinary way, from a Git URL:
+**The wheel carries its own origin, so how you install stops mattering.** The release job stamps
+`agent_artifacts/_build_origin.py` from its own context, before it builds:
 
-```bash
-pipx install "git+https://ghe.example.test/platform/agent-artifacts.git@main"
+```yaml
+- name: Inject build origin
+  env:
+    AART_BUILD_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+    AART_BUILD_REF: ${{ github.event.release.tag_name || github.ref_name }}
+  run: python scripts/inject_build_origin.py
 ```
 
-```bash
-uv tool install "git+https://ghe.example.test/platform/agent-artifacts.git@main"
-```
+Both values come from the job that is running, so **a fork stamps its own instance and its own
+repository with no edit to the workflow, the script, or the code** — and every later release keeps
+doing it. This is the pattern `scripts/inject_commit.py` already used for the commit sha: the
+tracked file holds empty strings, and only a built wheel carries real ones.
 
-PEP 610 makes every installer record what it fetched, in a `direct_url.json` beside the package —
-the URL, the revision asked for, and the commit it resolved to. `registry init` reads that when
-there is no checkout, so a `pipx` install of `@main` stamps exactly what a clone of `main` would.
-`pip install`, `pipx` and `uv` were all walked and all write the same record.
+The injector refuses rather than guesses. A stated ref must be `v` + the source version — the same
+rule `version.py check-tag` enforces — the commit must be the one that ref points at, and the URL
+must name a host. A wheel that lies about its origin sends every registry built from it to the
+wrong repository; a wheel that says nothing says so out loud.
 
-The checkout is asked first, so `pip install -e` and a plain working copy still win — they are the
-truth about the tree that will actually run, and a working copy may sit on a branch the installer
-never heard of.
+| Where you get AART | Stamped from |
+|---|---|
+| A checkout, or `pip install -e` | the checkout |
+| Release wheel by URL, or downloaded first | the wheel |
+| Internal index (Nexus, PyPI) | the wheel |
+| `pip`, `pipx`, `uv`, from any wheel | the wheel |
+| `pipx install git+https://…@main` | `direct_url.json` |
+| A release wheel built before this existed | its release URL, if installed from one |
+| A wheel built outside a release | nothing — `init` refuses and names the escapes |
 
-Three things it will not do:
+The checkout is asked first because it is the truth about the tree that will actually run, and a
+working copy may sit on a branch no installer heard of. The two `direct_url.json` routes are
+fallbacks below the wheel's own stamp.
+
+**Nothing at all is an error, not a default.** A registry silently pointing at this project's
+repository is the failure the stamp exists to prevent, and it would surface as a clone of the wrong
+fork weeks later on somebody else's instance. `init` stops and names all three escapes.
+
+Four things it will not do:
 
 - **An origin with no host is not stamped.** `/srv/mirrors/agent-artifacts` and `../aart` are
   places a runner cannot fetch from, so they are treated as no answer.
-- **A wheel from a package index is not stamped.** An index states a version, not a place to clone
-  from, so there is nothing to record and inventing something would send CI where nobody asked.
-  That gap is `LAF-122` in the residue register.
+- **A wheel built outside a release, from an opaque URL, carries nothing.** It has no
+  `_build_origin`, no Git record and no release path, so there is nothing to read and `init`
+  refuses instead of defaulting.
 - **Being *inside* a repository does not count.** A tool unpacked under a home directory that is
   itself in Git would otherwise stamp someone's dotfiles, so the repository's top level has to be
   exactly where the package lives.

@@ -201,6 +201,13 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
         )
     if action is CurationAction.COLLECTION and len(request.names) != 1:
         return _error("collection requires an exact collection name", _NAME_THE_ARTIFACT)
+    # Only `init` writes the workflows a stamp lands in, so only `init` has to be able to answer.
+    origin: ToolOrigin | None = None
+    if action is CurationAction.INIT:
+        resolved = _tool_origin(request)
+        if isinstance(resolved, Err):
+            return resolved
+        origin = resolved.value
     try:
         return Ok(
             CurationRequest(
@@ -235,7 +242,7 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
                 source_id=request.source_id,
                 display_name=request.display_name,
                 usage_reporting_repository=request.usage_reporting_repository,
-                tool_origin=_tool_origin(request) if action is CurationAction.INIT else None,
+                tool_origin=origin,
                 # `RS-02`: only `init` declares a compatibility window, and only `init` reads one
                 # back, so every other action arrives here with both unset.  The substitute has to
                 # be the window of the AART that is running -- literals bound a registry to the
@@ -249,25 +256,43 @@ def _curation_request(request: Request, action: CurationAction) -> Result[Curati
         return _error(str(error), _READ_THE_ACTIONS)
 
 
-def _tool_origin(request: Request) -> ToolOrigin | None:
-    """Resolve the AART stamp: what the maintainer stated, then what the checkout says.
+_NAME_THE_TOOL = (
+    "state where registry CI should fetch AART: `aart registry init --source-id SLUG "
+    "--display-name NAME --aart-repository OWNER/REPOSITORY --aart-ref REF`",
+    "or keep this project's defaults and configure the registry with repository variables: "
+    "`aart registry init --source-id SLUG --display-name NAME --no-aart-stamp`",
+    "or install AART from a release wheel or a Git URL, which carry their own origin",
+)
+
+
+def _tool_origin(request: Request) -> Result[ToolOrigin | None]:
+    """Resolve the AART stamp: what the maintainer stated, then what the tool knows about itself.
 
     A stated flag wins over discovery even when only one half is stated, because the two halves
     answer separate questions -- *which repository* and *which ref* -- and a maintainer who states
-    one and not the other means the checkout to answer the rest.
+    one and not the other means the tool to answer the rest.
+
+    Nothing at all is refused rather than defaulted.  The workflows this writes are read by CI for
+    as long as the registry lives, and a registry silently pointing at the repository this project
+    happens to ship is the failure the whole stamp exists to prevent -- one that surfaces as a
+    clone of the wrong fork, weeks later, on somebody else's instance.
     """
 
     if request.no_aart_stamp:
-        return None
+        return Ok(None)
     discovered = discover_tool_origin()
     repository = request.aart_repository or (None if discovered is None else discovered.repository)
+    url = None if discovered is None or repository is not None else discovered.url
     ref = request.aart_ref or (None if discovered is None else discovered.ref)
-    if repository is None and ref is None:
-        return None
+    if repository is None and url is None and ref is None:
+        return _error(
+            "cannot tell which AART a registry's CI should fetch: this build carries no origin",
+            _NAME_THE_TOOL,
+        )
     try:
-        return ToolOrigin(repository=repository, ref=ref)
+        return Ok(ToolOrigin(repository=repository, url=url, ref=ref))
     except ValueError:
-        return None
+        return _error("the stated AART origin is not a usable one", _NAME_THE_TOOL)
 
 
 def _run_curation(request: Request, action: CurationAction) -> int:

@@ -12,15 +12,27 @@ current ref, and `registry init` stamps them into the file it generates.  The fo
 byte-identical to the repository it tracks, and the difference lives in generated files where it
 belongs.
 
-Two places answer.  A checkout answers directly.  An install done by `pip`, `pipx` or `uv` from
-a Git URL answers through `direct_url.json`, the record PEP 610 requires every installer to leave
-beside the package: it carries the URL, the revision that was asked for, and the commit it
-resolved to.  That is the same pair a checkout gives, so `pipx install
-git+https://.../agent-artifacts.git@main` stamps what a clone of that branch would.
+Three places answer, asked in this order.
 
-Everything here is best effort.  A wheel from a package index carries no Git origin at all, and an
-origin naming a directory on somebody's laptop is worse than no answer -- a runner cannot clone
-it.  Both return `None`, the templates keep their shipped defaults, and the review says so.
+A **checkout** answers directly, and is asked first because it is the truth about the tree that
+will actually run: an editable install points back at it, and a working copy may sit on a branch
+no installer ever heard of.
+
+The **wheel** answers through `_build_origin.py`, which the release job stamps with its own
+`github.server_url`, `github.repository` and tag before building.  This is the production route,
+and it is what makes *how the wheel arrived* stop mattering: a release URL, an internal index,
+`pipx`, `uv`, or a file copied onto a laptop all carry the same origin, because the origin is
+inside the wheel.
+
+The **installer's record** answers last, through `direct_url.json` (PEP 610).  A Git install
+carries the URL, the requested revision and the resolved commit.  A wheel installed straight from
+a GitHub or GHES release asset carries a URL whose `/OWNER/REPOSITORY/releases/download/TAG/` path
+names the same two things.  Both are fallbacks: they cover installs made before `_build_origin`
+existed, and wheels fetched from a repository rather than built by its release job.
+
+When none of them answers, this returns `None` and `registry init` refuses rather than quietly
+stamping the repository this project happens to ship.  An origin naming a directory on somebody's
+laptop is treated as no answer, because a runner cannot fetch from it.
 """
 
 from __future__ import annotations
@@ -30,6 +42,7 @@ import json
 import os
 import pathlib
 import re
+from urllib.parse import unquote, urlsplit
 
 from agent_artifacts.domain.result import Err
 from agent_artifacts.io.git import GitProcessRequest, run_git_process
@@ -42,6 +55,12 @@ _HTTP_ORIGIN = re.compile(
     r"^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/@]+@)?[^/@:]+(?::\d+)?/(?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$"
 )
 _SSH_ORIGIN = re.compile(r"^(?:[^@/\s]+@)?[^/@:\s]+:(?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
+# GitHub and GHES use the same release-asset route. Match the meaningful suffix so the parser does
+# not need a hard-coded hostname and therefore works for a company appliance too.
+_RELEASE_ASSET_PATH = re.compile(
+    r"(?:^|/)(?P<owner>[A-Za-z0-9_.-]+)/(?P<name>[A-Za-z0-9_.-]+)/"
+    r"releases/download/(?P<ref>[^/]+)/[^/]+$"
+)
 _TIMEOUT_SECONDS = 10.0
 DISTRIBUTION = "agent-artifacts"
 
@@ -113,12 +132,33 @@ def _origin_from_checkout(tree: str) -> ToolOrigin | None:
         return None
 
 
-def origin_from_direct_url(text: str | None) -> ToolOrigin | None:
-    """Read an install done from a Git URL, the way `pipx install git+https://...@main` is.
+def _origin_from_release_asset(url: str) -> ToolOrigin | None:
+    """Turn GitHub's release-asset URL into the clone target and immutable release tag."""
 
-    A wheel pulled from a package index has no `vcs_info` and is not stamped: an index states a
-    version, not a place to clone from, and inventing one would send CI somewhere nobody asked
-    for.  That gap is `LAF-122`.
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
+        return None
+    match = _RELEASE_ASSET_PATH.search(parsed.path)
+    if match is None:
+        return None
+    repository = f"{unquote(match['owner'])}/{unquote(match['name'])}"
+    ref = unquote(match["ref"])
+    try:
+        return ToolOrigin(repository=repository, ref=ref)
+    except ValueError:
+        return None
+
+
+def origin_from_direct_url(text: str | None) -> ToolOrigin | None:
+    """Read an install done from Git or a GitHub/GHES release wheel URL.
+
+    A release URL names the repository and tag even though PEP 610 classifies the wheel as an
+    archive.  A wheel pulled from a package index still has neither Git provenance nor that route:
+    an index states a version, not a place to clone from, and inventing one would send CI somewhere
+    nobody asked for.  That remaining gap is `LAF-122`.
     """
 
     if text is None:
@@ -131,8 +171,14 @@ def origin_from_direct_url(text: str | None) -> ToolOrigin | None:
         return None
     vcs = record.get("vcs_info")
     url = record.get("url")
-    if not isinstance(vcs, dict) or vcs.get("vcs") != "git" or not isinstance(url, str):
+    if not isinstance(url, str):
         return None
+    if not isinstance(vcs, dict) or vcs.get("vcs") != "git":
+        return (
+            _origin_from_release_asset(url)
+            if isinstance(record.get("archive_info"), dict)
+            else None
+        )
     repository = _repository_of(url[4:] if url.startswith("git+") else url)
     # What was asked for, not what it resolved to: a branch stays a branch, exactly as a checkout
     # on a branch stamps that branch.  The commit answers only when nothing was asked.
@@ -141,6 +187,24 @@ def origin_from_direct_url(text: str | None) -> ToolOrigin | None:
         return None
     try:
         return ToolOrigin(repository=repository, ref=ref)
+    except ValueError:
+        return None
+
+
+def origin_from_build() -> ToolOrigin | None:
+    """Read the origin the release job baked into this wheel."""
+
+    try:
+        from agent_artifacts import _build_origin
+    except ImportError:  # pragma: no cover - the module ships with the package
+        return None
+    url = getattr(_build_origin, "REPOSITORY_URL", "")
+    ref = getattr(_build_origin, "REF", "")
+    if not isinstance(url, str) or not isinstance(ref, str) or not url or not ref:
+        return None
+    repository = _repository_of(url)
+    try:
+        return ToolOrigin(repository=repository, url=None if repository else url, ref=ref)
     except ValueError:
         return None
 
@@ -157,13 +221,22 @@ def _installed_direct_url() -> str | None:
 def discover_tool_origin(root: str | None = None) -> ToolOrigin | None:
     """Read the running AART's own origin and ref, or `None` when there is nothing to read.
 
-    The checkout is asked first because it is the truth about the tree that will actually run --
-    an editable install points back at it, and a working copy may sit on a branch the installer
-    never heard of.  The installer's record answers for every ordinary install.
+    Checkout, then the wheel's own stamp, then the installer's record.  See the module docstring
+    for why that order.
     """
 
     tree = os.path.abspath(root if root is not None else package_root())
-    return _origin_from_checkout(tree) or origin_from_direct_url(_installed_direct_url())
+    return (
+        _origin_from_checkout(tree)
+        or origin_from_build()
+        or origin_from_direct_url(_installed_direct_url())
+    )
 
 
-__all__ = ["DISTRIBUTION", "discover_tool_origin", "origin_from_direct_url", "package_root"]
+__all__ = [
+    "DISTRIBUTION",
+    "discover_tool_origin",
+    "origin_from_build",
+    "origin_from_direct_url",
+    "package_root",
+]

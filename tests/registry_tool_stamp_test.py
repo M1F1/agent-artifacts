@@ -20,7 +20,11 @@ import tempfile
 import unittest
 
 from agent_artifacts.domain.result import Err, Ok
-from agent_artifacts.io.tool_origin import discover_tool_origin, origin_from_direct_url
+from agent_artifacts.io.tool_origin import (
+    discover_tool_origin,
+    origin_from_build,
+    origin_from_direct_url,
+)
 from agent_artifacts.protocol.native_tree import (
     SnapshotEntry,
     SnapshotEntryKind,
@@ -171,11 +175,11 @@ class DiscoveryTest(unittest.TestCase):
 
 
 class InstalledDistributionTest(unittest.TestCase):
-    """`pipx install git+https://.../agent-artifacts.git@main` has to stamp too.
+    """An install carrying enough provenance has to stamp without a checkout.
 
     An ordinary install has no checkout to read, but PEP 610 requires the installer to record
-    where it fetched from.  `pip`, `pipx` and `uv` all write the same `direct_url.json`, walked on
-    2026-08-21 against real `uv tool install` and `pipx install` runs.
+    where it fetched from.  `pip`, `pipx` and `uv` all write the same `direct_url.json`; its Git
+    record answers directly, and GitHub's release-asset route answers for a downloaded wheel.
     """
 
     def test_a_git_install_stamps_what_was_asked_for(self) -> None:
@@ -193,6 +197,30 @@ class InstalledDistributionTest(unittest.TestCase):
             ' "vcs_info": {"vcs": "git", "commit_id": "deadbeef"}}'
         )
         self.assertEqual(origin, ToolOrigin(repository="platform/aart", ref="deadbeef"))
+
+    def test_a_github_release_wheel_stamps_its_repository_and_exact_tag(self) -> None:
+        """The documented wheel install route must work out of the box, not need two flags."""
+
+        origin = origin_from_direct_url(
+            '{"url": "https://github.com/M1F1/agent-artifacts/releases/download/v2.8.5/'
+            'agent_artifacts-2.8.5-py3-none-any.whl", "archive_info": {}}'
+        )
+        self.assertEqual(origin, ToolOrigin(repository="M1F1/agent-artifacts", ref="v2.8.5"))
+
+    def test_a_ghes_release_wheel_stamps_the_company_fork(self) -> None:
+        origin = origin_from_direct_url(
+            '{"url": "https://ghe.company.test/platform/agent-artifacts/releases/'
+            'download/v2.8.5/agent_artifacts-2.8.5-py3-none-any.whl",'
+            ' "archive_info": {"hashes": {"sha256": "abc"}}}'
+        )
+        self.assertEqual(origin, ToolOrigin(repository="platform/agent-artifacts", ref="v2.8.5"))
+
+    def test_an_encoded_release_tag_is_the_ref_git_will_understand(self) -> None:
+        origin = origin_from_direct_url(
+            '{"url": "https://ghe.company.test/platform/aart/releases/download/release%2F2.8/'
+            'aart.whl", "archive_info": {}}'
+        )
+        self.assertEqual(origin, ToolOrigin(repository="platform/aart", ref="release/2.8"))
 
     def test_a_wheel_from_an_index_is_not_stamped(self) -> None:
         """An index states a version, not a place to clone; inventing one is `LAF-122`."""
@@ -218,6 +246,42 @@ class InstalledDistributionTest(unittest.TestCase):
                 self.assertIsNone(origin_from_direct_url(text))
 
 
+class WheelOriginTest(unittest.TestCase):
+    """The wheel's own stamp, which is what makes the delivery route stop mattering."""
+
+    def test_an_unstamped_build_answers_nothing(self) -> None:
+        self.assertIsNone(origin_from_build())
+
+    def test_a_stamped_build_answers_repository_and_tag(self) -> None:
+        import agent_artifacts._build_origin as module
+
+        for name, value in (
+            ("REPOSITORY_URL", "https://ghe.example.test/platform/agent-artifacts.git"),
+            ("REF", "v2.8.5"),
+        ):
+            self.addCleanup(setattr, module, name, getattr(module, name))
+            setattr(module, name, value)
+        self.assertEqual(
+            origin_from_build(), ToolOrigin(repository="platform/agent-artifacts", ref="v2.8.5")
+        )
+
+    def test_a_url_that_is_not_owner_and_name_is_kept_whole(self) -> None:
+        """`github.server_url` can only rebuild `owner/name`; anything else must stay a URL.
+
+        A path with more than two segments is not a GitHub repository reference, so splitting it
+        would send CI to a place that does not exist.  The whole URL is stamped instead, which is
+        what `AART_TOOL_URL` means.
+        """
+
+        import agent_artifacts._build_origin as module
+
+        url = "https://ghe.example.test/deep/nest/aart.git"
+        for name, value in (("REPOSITORY_URL", url), ("REF", "v2.8.5")):
+            self.addCleanup(setattr, module, name, getattr(module, name))
+            setattr(module, name, value)
+        self.assertEqual(origin_from_build(), ToolOrigin(url=url, ref="v2.8.5"))
+
+
 class PlannedWorkspaceTest(unittest.TestCase):
     def _files(self, origin: ToolOrigin | None) -> dict[str, bytes]:
         empty = SourceSnapshot(SnapshotOrigin.LOCAL, ())
@@ -238,6 +302,21 @@ class PlannedWorkspaceTest(unittest.TestCase):
 
     def test_every_emitted_workflow_carries_the_stamp(self) -> None:
         files = self._files(ToolOrigin(repository="platform/agent-artifacts", ref="v2.8.5"))
+        for name in (
+            ".github/workflows/aart-registry.yml",
+            ".github/workflows/aart-usage-validate.yml",
+            ".github/workflows/aart-usage-dashboard.yml",
+        ):
+            self.assertIn(b"vars.AART_REPOSITORY || 'platform/agent-artifacts'", files[name], name)
+            self.assertIn(b"vars.AART_REF || 'v2.8.5'", files[name], name)
+
+    def test_release_wheel_provenance_reaches_every_emitted_workflow(self) -> None:
+        origin = origin_from_direct_url(
+            '{"url": "https://ghe.company.test/platform/agent-artifacts/releases/'
+            'download/v2.8.5/agent_artifacts-2.8.5-py3-none-any.whl", "archive_info": {}}'
+        )
+        self.assertIsNotNone(origin)
+        files = self._files(origin)
         for name in (
             ".github/workflows/aart-registry.yml",
             ".github/workflows/aart-usage-validate.yml",
