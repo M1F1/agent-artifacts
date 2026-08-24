@@ -115,7 +115,12 @@ from .model import (
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
-from .templates import REGISTRY_CI_WORKFLOW, REGISTRY_GITIGNORE, REPORTING_TEMPLATES
+from .templates import (
+    REGISTRY_CI_WORKFLOW,
+    REGISTRY_GITIGNORE,
+    REPORTING_TEMPLATES,
+    render_registry_readme,
+)
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
@@ -506,6 +511,16 @@ def plan_registry_init(
         (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
         *REPORTING_TEMPLATES,
     )
+    # The README is the one generated file a maintainer is meant to edit, so it is written when
+    # absent and left alone otherwise -- never compared, never overwritten.  Managing it would
+    # make the file people are supposed to change the file that puts the registry out of step
+    # with the command that manages it, and a repository created on GitHub with "Add a README"
+    # already has one.
+    readme = (
+        ()
+        if "README.md" in files.value
+        else (("README.md", render_registry_readme(options.registry_id, options.display_name)),)
+    )
     for path, expected in templates:
         existing = files.value.get(path)
         if existing is not None and (
@@ -558,7 +573,7 @@ def plan_registry_init(
         RegistryOperation.INIT,
         snapshot,
         (
-            *((path, content, False) for path, content in templates),
+            *((path, content, False) for path, content in (*templates, *readme)),
             (
                 "aart-registry.json",
                 canonical_json_bytes(registry_manifest_to_json(registry)),

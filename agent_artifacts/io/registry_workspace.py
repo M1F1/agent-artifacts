@@ -30,8 +30,19 @@ from agent_artifacts.registry_commands.planning import project_registry_workspac
 REGISTRY_WORKSPACE_INVALID = DiagnosticCode("registry-workspace-invalid")
 REGISTRY_WORKSPACE_STALE = DiagnosticCode("registry-workspace-stale")
 REGISTRY_WORKSPACE_APPLY_FAILED = DiagnosticCode("registry-workspace-apply-failed")
+# `README.md` is here so the reader can *see* it, which is what lets `registry init` tell an empty
+# checkout from one that already has a README and leave the second alone.  Like `.gitignore` it is
+# visible but not a registry input -- `registry_inputs_digest` covers only the two markers and the
+# artifact roots -- so editing it never makes the lock stale.
 _ROOT_FILES = frozenset(
-    {"aart-registry.json", "aart-source.json", "aart.lock.json", "aart.index.json", ".gitignore"}
+    {
+        "aart-registry.json",
+        "aart-source.json",
+        "aart.lock.json",
+        "aart.index.json",
+        ".gitignore",
+        "README.md",
+    }
 )
 # `security/` holds committed assessment evidence.  The reader has to see it for two reasons: a
 # plan that writes an attestation is verified against a re-read snapshot, and `registry audit` reads

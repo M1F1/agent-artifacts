@@ -30,6 +30,7 @@ from agent_artifacts.registry_commands.planning import (
     project_registry_workspace_plan,
     validate_registry_workspace,
 )
+from agent_artifacts.registry_commands.templates import REGISTRY_CI_WORKFLOW
 from tests.registry_maintenance_fixtures import replace_snapshot_file
 
 
@@ -411,3 +412,122 @@ class RegistryInitScaffoldTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GeneratedRegistryReadmeTest(unittest.TestCase):
+    """The one generated file a maintainer owns: written when absent, never taken back.
+
+    Every other template is managed — `init` refuses a copy whose bytes differ. A README is the
+    file people are meant to edit, and a repository created on GitHub with "Add a README" already
+    has one, so managing it would turn both of those into a refusal.
+    """
+
+    def _init(self, *entries: SnapshotEntry) -> dict[str, bytes]:
+        planned = plan_registry_init(
+            SourceSnapshot(SnapshotOrigin.LOCAL, entries),
+            RegistryInitOptions("company", "Company Registry", SemVer(2, 0, 0), SemVer(3, 0, 0)),
+        )
+        self.assertIsInstance(planned, Ok)
+        return {str(change.path): change.content for change in planned.value.changes}
+
+    @staticmethod
+    def _existing_readme() -> SnapshotEntry:
+        path = parse_relative_path("README.md")
+        assert isinstance(path, Ok)
+        return SnapshotEntry(path.value, SnapshotEntryKind.FILE, b"# mine\n")
+
+    def test_a_registry_without_one_gets_a_readme_naming_itself(self):
+        changes = self._init()
+        self.assertIn("README.md", changes)
+        readme = changes["README.md"].decode("utf-8")
+        self.assertTrue(readme.startswith("# Company Registry\n"))
+        self.assertIn("`company`", readme)
+
+    def test_a_registry_that_already_has_one_keeps_it_untouched(self):
+        self.assertNotIn("README.md", self._init(self._existing_readme()))
+
+    def test_the_readme_teaches_the_fetch_order_the_workflow_actually_uses(self):
+        """A registry is configured from settings, so the file has to say which settings."""
+
+        readme = self._init()["README.md"].decode("utf-8")
+        workflow = REGISTRY_CI_WORKFLOW.decode("utf-8")
+        for name in ("AART_PACKAGE", "AART_WHEEL_URL", "AART_TOOL_PATH", "AART_TOOL_URL"):
+            self.assertIn(name, readme, name)
+            self.assertIn(name, workflow, name)
+        self.assertLess(readme.index("AART_PACKAGE"), readme.index("AART_WHEEL_URL"))
+        self.assertLess(readme.index("AART_WHEEL_URL"), readme.index("AART_TOOL_PATH"))
+        self.assertLess(readme.index("AART_TOOL_PATH"), readme.index("AART_TOOL_URL"))
+
+    def test_an_existing_readme_survives_a_real_init_on_disk(self):
+        """The unit tests above build a snapshot by hand, so they cannot see this failure.
+
+        `registry init` only leaves a README alone if the *workspace reader* reports it, and that
+        reader has its own allowlist. With `README.md` missing from it an existing file is
+        invisible, `init` plans a write, and a maintainer's README is replaced by a generated one.
+        Only a run against a real directory reaches that code.
+        """
+
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            subprocess.run(("git", "init", "-q", str(root)), check=True)
+            (root / "README.md").write_text("# hands off\n", encoding="utf-8")
+            finished = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "agent_artifacts",
+                    "registry",
+                    "init",
+                    "--source",
+                    str(root),
+                    "--source-id",
+                    "company",
+                    "--display-name",
+                    "Company Registry",
+                    "--yes",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(Path(__file__).resolve().parents[1]),
+            )
+            self.assertEqual(finished.returncode, 0, finished.stderr)
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "# hands off\n")
+            self.assertTrue((root / "aart-registry.json").is_file())
+
+    def test_a_real_init_on_an_empty_directory_writes_the_readme(self):
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            subprocess.run(("git", "init", "-q", str(root)), check=True)
+            finished = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "agent_artifacts",
+                    "registry",
+                    "init",
+                    "--source",
+                    str(root),
+                    "--source-id",
+                    "company",
+                    "--display-name",
+                    "Company Registry",
+                    "--yes",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(Path(__file__).resolve().parents[1]),
+            )
+            self.assertEqual(finished.returncode, 0, finished.stderr)
+            written = (root / "README.md").read_text(encoding="utf-8")
+            self.assertTrue(written.startswith("# Company Registry\n"))
+            self.assertIn("AART_PACKAGE", written)

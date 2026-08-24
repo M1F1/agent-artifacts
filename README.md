@@ -168,6 +168,16 @@ to look: [the environment AART gives Git](docs/configuration/git-environment-v1.
 passed, what is dropped, and what to configure instead — `https_proxy` is dropped, and behind a
 proxy that is the whole failure.
 
+`registry init` turns an empty checkout into a registry: the two JSON markers, a `.gitignore`,
+three GitHub workflows, and a `README.md` describing the registry it just made. The README is
+written only when absent — it is the one generated file you own afterwards, and AART never compares
+or overwrites it. The workflows and the JSON are managed: hand-edit one and `init` refuses the
+registry.
+
+The generated workflows need no configuration to run on github.com. To run them inside a company,
+set the variables in [Repository variables](#repository-variables) — no file in the registry
+changes.
+
 ```sh
 # Create a registry
 aart registry init --source . --source-id company --display-name "Company Registry" \
@@ -203,6 +213,59 @@ a copied payload that drifts from its provenance.
 For the complete path, use the [walked company-registry tutorial for Tabnine](docs/tutorials/company-registry-tabnine-v1.md).
 The [vendoring tutorial](docs/tutorials/vendoring-v1.md) covers provenance and re-vendoring, and
 [porting an MCP server](docs/tutorials/mcp-servers-into-the-registry.md) covers setup recipes.
+
+## Repository variables
+
+Every knob in this project's CI, and in the workflows `registry init` writes, is a GitHub
+repository variable with a default that reproduces the public run. **A fork configures itself from
+its settings page and never edits a file.** That matters on sync: an edited literal is a permanent
+conflict on the line every later merge from upstream touches.
+
+Set variables under *Settings → Secrets and variables → Actions → Variables*. Set them on the
+**organisation** where you can: GitHub resolves a repository variable over an organisation one, so
+one organisation variable configures every repository, and any single repository can still
+override it.
+
+### A fork of this repository
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AART_RUNNER` | `["ubuntu-latest"]` | JSON array of runner labels. Must be JSON — `["self-hosted","linux","x64"]`, not a bare word |
+| `AART_CI_IMAGE` | unset | Container image for the jobs. Unset means the runner's own environment |
+| `AART_PYTHON` | `python` | The interpreter's name inside that image |
+| `AART_PYTHON_VERSIONS` | `["3.10", "3.14"]` | JSON array for the quality matrix. Pin to one entry when `AART_CI_IMAGE` is set |
+| `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Internal mirror for `ruff`, `mypy` and `coverage` |
+| `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
+| `AART_REFERENCE_REGISTRY_URL` | this project's registry | The registry the release checklist reconciles against |
+| `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
+
+### A registry created by `aart registry init`
+
+The registry's workflows need AART itself, and **nothing about where it comes from is written into
+the files**. Four ways in; the first variable that is set wins, and they are never combined:
+
+| Order | Variable | Example | How it fetches |
+|---|---|---|---|
+| 1 | `AART_PACKAGE` | `agent-artifacts==2.8.5` | `pip` from `AART_PIP_INDEX_URL` |
+| 2 | `AART_WHEEL_URL` | `https://host/…/agent_artifacts-2.8.5-py3-none-any.whl` | `curl`, then unzip |
+| 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
+| 4 | `AART_TOOL_URL` + `AART_REF` | `https://ghe.corp/platform/agent-artifacts.git`, `v2.8.5` | `git clone` |
+
+The order runs from the most governed supply chain to the least, so migration is additive: stand up
+an internal index later, set `AART_PACKAGE`, and it takes over without unsetting anything. Git is
+last because it carries the only shipped default — an arm below one that is always set would be
+unreachable.
+
+Set none of them and CI reaches `github.com`. Inside a GitHub Enterprise instance that fails on the
+first run, loudly, rather than silently pointing at the wrong tool. Which arm answered is printed by
+the run: `AART: agent-artifacts 2.8.5  via wheel https://…`.
+
+The registry also reads `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON`, `AART_PIP_INDEX_URL`,
+`AART_REPOSITORY`, `AART_GH_HOST`, and `AART_PAGES` — set the last to `false` where the instance
+offers no GitHub Pages, and the usage dashboard is still built and validated, only not published.
+
+[The Enterprise fork contract](docs/ci/enterprise-fork-v1.md) is the full page: every variable, what
+was walked, and what was not.
 
 ## Canonical package
 

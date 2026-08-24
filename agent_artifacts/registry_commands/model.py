@@ -189,6 +189,10 @@ def _managed_path(path: SafeRelativePath) -> bool:
         "aart.lock.json",
         "aart.index.json",
         ".gitignore",
+        # A plan may *write* the README; that is not the same as AART owning it.  `init` writes it
+        # only when it is absent and never compares it afterwards, so this entry permits the one
+        # write rather than claiming the file.
+        "README.md",
         ".github/workflows/aart-registry.yml",
         ".github/ISSUE_TEMPLATE/usage-report.yml",
         ".github/workflows/aart-usage-dashboard.yml",
