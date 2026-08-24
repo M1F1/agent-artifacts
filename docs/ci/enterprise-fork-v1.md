@@ -50,16 +50,18 @@ gate `aart-registry.yml`, and the usage-reporting pair `aart-usage-validate.yml`
 `aart-usage-dashboard.yml`. A registry created inside the company is configured by setting these
 variables; the files are not edited.
 
-**You do not set most of these by hand.** `registry init` stamps what the AART running it knows
-about itself into the three workflows it writes — see §3.1. The variables below stay available to
-override the stamp, which is what makes a stamped registry retargetable without editing a file.
+The first four choose **how AART reaches the runner**, and they are tried in the order listed —
+first one set wins, never combined. §3.1 explains why that order and not another.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AART_TOOL_PATH` | unset | An agent-artifacts tree already on the runner, usually baked into the CI image. **Wins when set, and needs neither git nor the network.** The recommended enterprise route |
+| `AART_PACKAGE` | unset | A requirement for an index: `agent-artifacts==2.8.5`, or a range. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
+| `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | The index `AART_PACKAGE` is fetched from |
+| `AART_WHEEL_URL` | unset | Direct URL of a released wheel, downloaded with `curl` and unzipped. Always a frozen version — a wheel's filename carries it |
+| `AART_TOOL_PATH` | unset | An agent-artifacts tree already on the runner, usually baked into the CI image. Needs neither git nor the network |
 | `AART_REPOSITORY` | `M1F1/agent-artifacts` | `owner/name` of the AART fork. Combined with the instance's own URL, so on GHES this alone points the registry at the internal fork |
 | `AART_TOOL_URL` | derived from `AART_REPOSITORY` | Full Git URL, for when AART does not live on the same instance as the registry |
-| `AART_REF` | `main` | Tag, branch or commit to run the gates with. See §4 |
+| `AART_REF` | `main` | Tag, branch or commit the git arm clones. See §4 |
 | `AART_RUNNER` | `["ubuntu-latest"]` | As above |
 | `AART_CI_IMAGE` | unset | As above |
 | `AART_PYTHON` | `python3` | As above |
@@ -70,112 +72,67 @@ All three workflows share one `Provide AART` step, so they cannot drift apart. T
 github.com — from inside an Enterprise instance that is the wrong server, and it fails quietly
 rather than loudly.
 
-### 3.1 The stamp
+### 3.1 The order the arms are tried in
 
-The two defaults in that table you would otherwise have to change — `AART_REPOSITORY` and
-`AART_REF` — are written for you. `registry init` reads the origin and the current ref of the AART
-checkout it is running from, and puts them in the generated workflows:
+`registry init` writes the same bytes for every registry. It does not detect how the AART running
+it was installed, and it does not write an address into the file. **Where CI fetches AART from is
+a repository variable**, which is what makes the whole page's promise — configure by settings, not
+by editing — true without exception.
 
-```
-TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'platform/agent-artifacts') }}
-TOOL_REF: ${{ vars.AART_REF || 'main' }}
-```
-
-The command says out loud what it wrote, so the value is read at the moment it is chosen rather
-than found later in a red run:
+The one `Provide AART` step offers four ways in. The first variable that is set wins, and they are
+never combined:
 
 ```
-warning: CI workflows stamped to fetch AART from platform/agent-artifacts@main; set the
-AART_TOOL_PATH, AART_REPOSITORY or AART_REF repository variable to override without editing the
-files
+1. AART_PACKAGE     pip install from an index      most governed
+2. AART_WHEEL_URL   curl a released wheel
+3. AART_TOOL_PATH   a tree already on the runner
+4. AART_TOOL_URL    git clone                      least governed
 ```
 
-**Why the tool answers this and not you.** The alternative is editing the literal inside your fork
-of this repository. That line would then conflict on every later sync from upstream — permanently,
-on the one line nobody wants to resolve by hand. Stamping keeps the fork byte-identical to what it
-tracks and moves the difference into generated files, where a difference belongs.
+Two things follow from that order, and both are deliberate.
 
-**What it stamps is what the checkout is on.** A branch stamps a branch, a detached tag stamps that
-tag, a detached commit stamps that commit. The tool records the shape it was run from; it does not
-have an opinion about whether you should pin. §4 is where that decision lives.
+**Maturity first, so migration is additive.** A company that clones the repo today and stands up
+an internal index tomorrow sets `AART_PACKAGE` and it takes over. Nobody has to remember to unset
+`AART_TOOL_URL` first, and a registry created before the index existed picks up the change without
+being regenerated.
 
-**The wheel carries its own origin, so how you install stops mattering.** The release job stamps
-`agent_artifacts/_build_origin.py` from its own context, before it builds:
+**Git last, because it is the only arm with a shipped default.** `AART_TOOL_URL` falls back to a
+literal, so that arm is *always* set. Any arm placed below it would be unreachable. This is the
+one rule in the block that is invisible from reading the YAML, and
+`tests/enterprise_ci_template_test.py` fails if the order is changed.
 
-```yaml
-- name: Inject build origin
-  env:
-    AART_BUILD_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
-    AART_BUILD_REF: ${{ github.event.release.tag_name || github.ref_name }}
-  run: python scripts/inject_build_origin.py
+Set none of them and the registry reaches `github.com`, which an Enterprise instance cannot. That
+is a loud failure in the first run, not a silent one weeks later.
+
+**Set them on the organisation, not the repository.** GitHub resolves repository variables over
+organisation ones, so one organisation variable configures every registry a company has, and a
+single registry can still override it. This is why the value is not written into the file: an
+address in N generated files is N places to edit when the fork moves.
+
+**Which arm answered is printed by the run**, not stored in the file:
+
+```
+AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-artifacts==2.8.5)
 ```
 
-Both values come from the job that is running, so **a fork stamps its own instance and its own
-repository with no edit to the workflow, the script, or the code** — and every later release keeps
-doing it. This is the pattern `scripts/inject_commit.py` already used for the commit sha: the
-tracked file holds empty strings, and only a built wheel carries real ones.
+The cost of keeping this in settings rather than in the file is that `git log` on a registry does
+not say which AART an old run used. The run log does, and every other knob on this page already
+works that way.
 
-The injector refuses rather than guesses. A stated ref must be `v` + the source version — the same
-rule `version.py check-tag` enforces — the commit must be the one that ref points at, and the URL
-must name a host. A wheel that lies about its origin sends every registry built from it to the
-wrong repository; a wheel that says nothing says so out loud.
-
-| Where you get AART | Stamped from |
-|---|---|
-| A checkout, or `pip install -e` | the checkout |
-| Release wheel by URL, or downloaded first | the wheel |
-| Internal index (Nexus, PyPI) | the wheel |
-| `pip`, `pipx`, `uv`, from any wheel | the wheel |
-| `pipx install git+https://…@main` | `direct_url.json` |
-| A release wheel built before this existed | its release URL, if installed from one |
-| A wheel built outside a release | nothing — `init` refuses and names the escapes |
-
-The checkout is asked first because it is the truth about the tree that will actually run, and a
-working copy may sit on a branch no installer heard of. The two `direct_url.json` routes are
-fallbacks below the wheel's own stamp.
-
-**Nothing at all is an error, not a default.** A registry silently pointing at this project's
-repository is the failure the stamp exists to prevent, and it would surface as a clone of the wrong
-fork weeks later on somebody else's instance. `init` stops and names all three escapes.
-
-Four things it will not do:
-
-- **An origin with no host is not stamped.** `/srv/mirrors/agent-artifacts` and `../aart` are
-  places a runner cannot fetch from, so they are treated as no answer.
-- **A wheel built outside a release, from an opaque URL, carries nothing.** It has no
-  `_build_origin`, no Git record and no release path, so there is nothing to read and `init`
-  refuses instead of defaulting.
-- **A wheel can only stamp a tag, and a tag can move.** `LAF-122` stays open on two counts: how
-  you installed silently decides whether a registry's CI follows the tool or is frozen (§4 treats
-  that as a deliberate choice), and a deleted or renamed ref leaves every registry that wheel
-  created pointing at nothing.
-- **Being *inside* a repository does not count.** A tool unpacked under a home directory that is
-  itself in Git would otherwise stamp someone's dotfiles, so the repository's top level has to be
-  exactly where the package lives.
-- **A cross-host fetch is not derived.** The stamp names `owner/name` and lets
-  `github.server_url` supply the host, which is right while the tool and the registry share an
-  instance. When they do not, set `AART_TOOL_URL`.
-
-| Flag | What it does |
-|---|---|
-| `--aart-repository OWNER/REPOSITORY` | State the repository instead of reading it |
-| `--aart-ref REF` | State the tag, branch or commit instead of reading it |
-| `--no-aart-stamp` | Write the shipped defaults and configure the registry with variables |
-
-**A stamped file is still a generated file.** `registry init` refuses to overwrite a template whose
-content differs from what it would write, so hand-editing a stamped workflow puts the registry out
+**A generated file is still a generated file.** `registry init` refuses to overwrite a template
+whose content differs from what it would write, so hand-editing a workflow puts the registry out
 of step with the command that manages it. Use the variables, or re-run `init` on an empty
 workspace.
 
 If the AART fork is private and the runner holds no credential for it, use `AART_TOOL_PATH` and
 bake the tree into the image. AART carries no credentials of its own and this workflow invents
-none; a clone succeeds only where the runner could already clone.
+none; a clone or a download succeeds only where the runner could already reach that host.
 
 ## 4. Two different meanings of "latest"
 
 They are unrelated and easy to conflate.
 
-- **`AART_REF`**, and the stamp behind it, choose *which AART build* runs the gates.
+- **`AART_REF`**, or whichever arm answered ahead of it, chooses *which AART build* runs the gates.
 - **`--compatibility minimum|latest`** chooses which end of *the registry's own declared
   compatibility window* is exercised. Both ends always run; that is the matrix.
 
@@ -256,6 +213,13 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
 - The `Provide AART` step, extracted from the bytes `registry init` actually emits and run with
   `RUNNER_TEMP` and `GITHUB_PATH` set by hand: the baked-path route and the tag clone, then the
   gates through the `aart` shim it puts on PATH.
+- Re-walked on 2026-08-24, after the four arms replaced the stamp. Each arm reached
+  `agent-artifacts 2.8.5` from a different place — a PEP 503 index on disk, a wheel over HTTP, a
+  path, and a clone at `v2.8.5`. Then the cascade, which is the part that can actually fail: all
+  four variables set resolves to the index, and dropping them one at a time walks down to the
+  wheel, the path, and the clone, in that order. All three failure modes exit non-zero and name
+  the cause — an unreachable host (`128`), a path holding no package (`2`), a wheel URL that does
+  not answer (`7`).
 - The composite action in `.github/actions/aart/`: the same two routes, plus the commit-sha
   fallback to a full clone, plus both refusals — no input given, and a path with no package under
   it.

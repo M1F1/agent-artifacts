@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from agent_artifacts.registry_commands.model import ToolOrigin
-
 REGISTRY_GITIGNORE = b""".agent-artifacts/
 .agent-artifacts-bak/
 .claude/
@@ -29,29 +27,50 @@ usage-dashboard/
 # the command that manages it.  `docs/ci/enterprise-fork-v1.md` lists the variables.
 #
 # The three workflows share one way of reaching the tool, kept here so they cannot drift apart.
-# AART has no runtime dependencies and ships `agent_artifacts/__main__.py`, so a source tree plus
-# PYTHONPATH is a working installation - no pip, no package index, and no build backend.  That is
-# what lets these run on a private runner with no egress.
+# AART has no runtime dependencies and ships `agent_artifacts/__main__.py`, so *any* directory
+# holding the package is a working installation: a clone, an unzipped wheel, a `pip --target`
+# directory, or a path baked into a CI image.  Every arm below therefore ends the same way, and
+# none of them needs a build backend.  That is what lets these run on a private runner.
 _PROVIDE_AART = b"""      - name: Provide AART
         env:
+          PACKAGE: ${{ vars.AART_PACKAGE }}
+          WHEEL_URL: ${{ vars.AART_WHEEL_URL }}
           TOOL_PATH: ${{ vars.AART_TOOL_PATH }}
           TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}
           TOOL_REF: ${{ vars.AART_REF || 'main' }}
+          INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
           PY: ${{ vars.AART_PYTHON || 'python3' }}
           GH_HOST_OVERRIDE: ${{ vars.AART_GH_HOST }}
         run: |
           set -euo pipefail
-          tool="$TOOL_PATH"
-          if [ -z "$tool" ]; then
-            tool="$RUNNER_TEMP/aart-tool"
-            rm -rf "$tool"
+          # Four ways in, tried in this order, never combined.  The order runs from the most
+          # governed supply chain to the least, so an organisation that later stands up an index
+          # sets one variable and it takes over -- no stale variable has to be unset first.  Git
+          # is last because it is the only arm carrying a shipped default, and anything below an
+          # arm that is always set would be unreachable.
+          tool="$RUNNER_TEMP/aart-tool"
+          rm -rf "$tool"
+          if [ -n "$PACKAGE" ]; then
+            how="index $INDEX_URL ($PACKAGE)"
+            "$PY" -m pip install --quiet --no-deps --target "$tool" \\
+              --index-url "$INDEX_URL" "$PACKAGE"
+          elif [ -n "$WHEEL_URL" ]; then
+            how="wheel $WHEEL_URL"
+            curl -fsSL "$WHEEL_URL" -o "$RUNNER_TEMP/aart.whl"
+            "$PY" -c 'import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \\
+              "$RUNNER_TEMP/aart.whl" "$tool"
+          elif [ -n "$TOOL_PATH" ]; then
+            how="path $TOOL_PATH"
+            tool="$TOOL_PATH"
+          else
+            how="git $TOOL_URL@$TOOL_REF"
             git clone --quiet --depth 1 --branch "$TOOL_REF" "$TOOL_URL" "$tool" 2>/dev/null \\
               || { rm -rf "$tool"
                    git clone --quiet "$TOOL_URL" "$tool"
                    git -C "$tool" -c advice.detachedHead=false checkout --quiet "$TOOL_REF"; }
           fi
           test -f "$tool/agent_artifacts/__main__.py" \\
-            || { echo "aart: no agent_artifacts package under '$tool'" >&2; exit 2; }
+            || { echo "aart: no agent_artifacts package under '$tool' (via $how)" >&2; exit 2; }
           bin="$RUNNER_TEMP/aart-bin"
           mkdir -p "$bin"
           printf '#!/usr/bin/env bash\\nexec env PYTHONPATH=%s %s -m agent_artifacts "$@"\\n' \\
@@ -61,7 +80,7 @@ _PROVIDE_AART = b"""      - name: Provide AART
           # `gh` defaults to github.com, which on an Enterprise instance is the wrong server and a
           # silent one.  Derive the host from the instance the job is already running on.
           echo "GH_HOST=${GH_HOST_OVERRIDE:-${GITHUB_SERVER_URL#https://}}" >> "$GITHUB_ENV"
-          echo "AART: $("$bin/aart" --version)  from $tool"
+          echo "AART: $("$bin/aart" --version)  via $how"
 """
 
 _RUNS_ON = b"""    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
@@ -214,57 +233,3 @@ REPORTING_TEMPLATES = (
     (".github/workflows/aart-usage-dashboard.yml", USAGE_REPORT_DASHBOARD_WORKFLOW),
     (".github/workflows/aart-usage-validate.yml", USAGE_REPORT_VALIDATE_WORKFLOW),
 )
-
-
-# The two lines a stamp replaces.  Kept as named constants rather than matched by regex: a stamp
-# that silently found nothing to replace would emit a workflow pointing at the wrong fork, and the
-# only way to notice would be a red CI run weeks later, so the substitution asserts instead.
-_UNSTAMPED_URL = (
-    b"          TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git',"
-    b" github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}\n"
-)
-_UNSTAMPED_REF = b"          TOOL_REF: ${{ vars.AART_REF || 'main' }}\n"
-
-
-def stamp_tool_origin(workflow: bytes, origin: ToolOrigin | None) -> bytes:
-    """Replace the shipped defaults with what the AART writing this file knows about itself.
-
-    Only the fallback literals move.  `vars.AART_TOOL_URL`, `vars.AART_REPOSITORY` and
-    `vars.AART_REF` still win when set, so a stamped registry can still be retargeted from the
-    settings page without touching the file.
-    """
-
-    if origin is None:
-        return workflow
-    body = workflow
-    if origin.url is not None:
-        # Three levels, not two.  A stamped URL that simply replaced the derivation would make
-        # `AART_REPOSITORY` a silent no-op -- someone would set it, nothing would happen, and the
-        # workflow would give no hint why.  An unset variable is falsy, so this falls through:
-        # explicit URL, then explicit repository on this instance, then the URL the wheel knows.
-        replacement = (
-            b"          TOOL_URL: ${{ vars.AART_TOOL_URL"
-            b" || (vars.AART_REPOSITORY && format('{0}/{1}.git', github.server_url,"
-            b" vars.AART_REPOSITORY)) || '" + origin.url.encode("utf-8") + b"' }}\n"
-        )
-        body = _replace_once(body, _UNSTAMPED_URL, replacement)
-    elif origin.repository is not None:
-        replacement = (
-            b"          TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git',"
-            b" github.server_url, vars.AART_REPOSITORY || '"
-            + origin.repository.encode("utf-8")
-            + b"') }}\n"
-        )
-        body = _replace_once(body, _UNSTAMPED_URL, replacement)
-    if origin.ref is not None:
-        replacement = (
-            b"          TOOL_REF: ${{ vars.AART_REF || '" + origin.ref.encode("utf-8") + b"' }}\n"
-        )
-        body = _replace_once(body, _UNSTAMPED_REF, replacement)
-    return body
-
-
-def _replace_once(body: bytes, old: bytes, new: bytes) -> bytes:
-    if body.count(old) != 1:
-        raise ValueError("registry workflow template no longer carries the line a stamp replaces")
-    return body.replace(old, new)

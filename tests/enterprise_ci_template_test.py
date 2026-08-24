@@ -13,12 +13,10 @@ import pathlib
 import re
 import unittest
 
-from agent_artifacts.registry_commands.model import ToolOrigin
 from agent_artifacts.registry_commands.templates import (
     REGISTRY_CI_WORKFLOW,
     USAGE_REPORT_DASHBOARD_WORKFLOW,
     USAGE_REPORT_VALIDATE_WORKFLOW,
-    stamp_tool_origin,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -38,17 +36,7 @@ _SHIPPED = {
     "usage validate": USAGE_REPORT_VALIDATE_WORKFLOW,
     "usage dashboard": USAGE_REPORT_DASHBOARD_WORKFLOW,
 }
-# A registry created inside a company gets a stamped copy, not this one, and it is the stamped
-# copy that has to keep every promise below.  Both forms are checked so a change that only holds
-# for the shipped default cannot pass.
-_STAMP = ToolOrigin(repository="platform/agent-artifacts", ref="v9.9.9")
-EMITTED = {
-    **{label: body.decode("utf-8") for label, body in _SHIPPED.items()},
-    **{
-        f"{label} (stamped)": stamp_tool_origin(body, _STAMP).decode("utf-8")
-        for label, body in _SHIPPED.items()
-    },
-}
+EMITTED = {label: body.decode("utf-8") for label, body in _SHIPPED.items()}
 _VARIABLE = re.compile(r"vars\.(AART_[A-Z0-9_]+)")
 
 
@@ -112,12 +100,20 @@ class DefaultsReproduceThePublicRunTest(unittest.TestCase):
 class ToolNeedsNoPackagingTest(unittest.TestCase):
     """The registry gates run from a source tree.  That is the whole portability story."""
 
-    def test_the_registry_template_installs_nothing(self) -> None:
+    def test_the_default_arm_installs_nothing(self) -> None:
+        """Unconfigured, the template still needs no packaging: it clones and sets PYTHONPATH.
+
+        `pip` appears exactly once, inside the arm that exists to use an index, and that arm is
+        unreachable unless somebody sets `AART_PACKAGE`.  So the claim this test has always made
+        survives the four arms: a fork that configures nothing needs no build backend.
+        """
+
         template = TEMPLATE_TEXT
         self.assertIn("PYTHONPATH=", template)
         self.assertIn("-m agent_artifacts", template)
-        self.assertNotIn("pip install", template)
         self.assertNotIn("setup-python", template)
+        self.assertEqual(template.count("pip install"), 1)
+        self.assertIn('if [ -n "$PACKAGE" ]', template.split("pip install")[0][-200:])
 
     def test_the_template_keeps_one_marketplace_action(self) -> None:
         """`uses:` cannot be a variable, so each one is a hand edit on an instance that lacks it."""
@@ -141,11 +137,11 @@ class ToolNeedsNoPackagingTest(unittest.TestCase):
 class EveryEmittedWorkflowIsPortableTest(unittest.TestCase):
     """All three, not just the quality gate."""
 
-    def test_none_of_them_installs_the_tool(self) -> None:
+    def test_none_of_them_needs_packaging_unless_asked_to(self) -> None:
         for label, body in EMITTED.items():
-            self.assertNotIn("pip install", body, label)
             self.assertNotIn("setup-python", body, label)
             self.assertIn("PYTHONPATH=", body, label)
+            self.assertEqual(body.count("pip install"), 1, label)
 
     def test_none_of_them_pins_a_hosted_runner(self) -> None:
         for label, body in EMITTED.items():
@@ -188,22 +184,37 @@ class RegistryGatesAreCompleteTest(unittest.TestCase):
         self.assertIn("compatibility: [minimum, latest]", TEMPLATE_TEXT)
 
 
-class StampingChangesOnlyTheDefaultsTest(unittest.TestCase):
-    """`registry init` rewrites two fallback literals, and nothing else about the file."""
+class EveryFetchArmIsReachableTest(unittest.TestCase):
+    """Four ways in, and an order that has to stay the order the page documents.
 
-    def test_a_stamp_adds_no_marketplace_action(self) -> None:
-        stamped = EMITTED["registry quality (stamped)"]
-        uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", stamped, re.M)
-        self.assertEqual(uses, ["actions/checkout@v4"])
+    The arms are `elif`s, so one that is always set hides every arm below it.  Git carries the
+    only shipped default, which is why it has to be last -- a rule that is invisible in the YAML
+    and would be re-broken by anyone reordering the block for readability.
+    """
 
-    def test_a_stamp_changes_exactly_two_lines(self) -> None:
-        for label, body in _SHIPPED.items():
-            before = body.decode("utf-8").splitlines()
-            after = EMITTED[f"{label} (stamped)"].splitlines()
-            self.assertEqual(len(before), len(after), label)
-            moved = [line for old, line in zip(before, after, strict=False) if old != line]
-            self.assertEqual(len(moved), 2, f"{label}: {moved}")
-            self.assertTrue(all("TOOL_URL:" in line or "TOOL_REF:" in line for line in moved))
+    ARMS = ("PACKAGE", "WHEEL_URL", "TOOL_PATH", "TOOL_URL")
+
+    def test_the_arms_are_tried_from_the_most_governed_supply_chain_to_the_least(self) -> None:
+        for label, body in EMITTED.items():
+            found = [name for name in re.findall(r'\[ -n "\$(\w+)" \]|how="git', body) if name]
+            self.assertEqual(tuple(found) + ("TOOL_URL",), self.ARMS, label)
+
+    def test_only_the_git_arm_carries_a_default(self) -> None:
+        """Every other arm must be empty unless somebody sets it, or it shadows the ones below."""
+
+        for label, body in EMITTED.items():
+            for name in ("AART_PACKAGE", "AART_WHEEL_URL", "AART_TOOL_PATH"):
+                self.assertIn(f"${{{{ vars.{name} }}}}", body, label)
+
+    def test_the_run_log_names_which_arm_answered(self) -> None:
+        """A variable is not in the file, so the run is the only place the truth can appear."""
+
+        for label, body in EMITTED.items():
+            self.assertIn('echo "AART: $("$bin/aart" --version)  via $how"', body, label)
+
+    def test_every_arm_ends_at_the_same_check(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertEqual(body.count('test -f "$tool/agent_artifacts/__main__.py"'), 1, label)
 
 
 if __name__ == "__main__":

@@ -115,12 +115,7 @@ from .model import (
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
-from .templates import (
-    REGISTRY_CI_WORKFLOW,
-    REGISTRY_GITIGNORE,
-    REPORTING_TEMPLATES,
-    stamp_tool_origin,
-)
+from .templates import REGISTRY_CI_WORKFLOW, REGISTRY_GITIGNORE, REPORTING_TEMPLATES
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
@@ -488,10 +483,6 @@ def plan_registry_workspace_files(
     return _plan(operation, snapshot, desired)
 
 
-def _stampable(path: str) -> bool:
-    return path.startswith(".github/workflows/")
-
-
 def plan_registry_init(
     snapshot: SourceSnapshot,
     options: RegistryInitOptions,
@@ -507,16 +498,13 @@ def plan_registry_init(
     } & files.value.keys()
     if occupied:
         return _error("registry init refuses an existing registry workspace", _ALREADY_A_REGISTRY)
-    # Only the three workflows resolve AART, so only they carry a stamp.  The `.gitignore` and
-    # the issue form say nothing about where the tool comes from, and `stamp_tool_origin` refuses
-    # a file with no line to replace rather than quietly returning it unchanged.
-    templates = tuple(
-        (path, stamp_tool_origin(content, options.tool_origin) if _stampable(path) else content)
-        for path, content in (
-            (".gitignore", REGISTRY_GITIGNORE),
-            (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
-            *REPORTING_TEMPLATES,
-        )
+    # Every registry gets byte-identical files.  Where CI fetches AART from is a repository
+    # variable, not something written in here at creation time, so these bytes never have to be
+    # regenerated when a company moves the tool.
+    templates = (
+        (".gitignore", REGISTRY_GITIGNORE),
+        (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
+        *REPORTING_TEMPLATES,
     )
     for path, expected in templates:
         existing = files.value.get(path)

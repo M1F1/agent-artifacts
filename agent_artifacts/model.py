@@ -420,12 +420,6 @@ class Request:
     display_name: Optional[str] = None
     # Optional registry-owned GitHub Issues destination advertised by ``registry init``.
     usage_reporting_repository: Optional[str] = None
-    # Where the registry's CI should fetch AART from.  Unset means ``registry init`` reads the
-    # running tool's own checkout; ``no_aart_stamp`` means it must not, and the emitted workflows
-    # keep the defaults this project ships.
-    aart_repository: Optional[str] = None
-    aart_ref: Optional[str] = None
-    no_aart_stamp: bool = False
     summary: Optional[str] = None
     collection_members: Tuple[str, ...] = ()
     # Discovery emits, and batch vendoring consumes, one reviewable JSON manifest.  The checkout

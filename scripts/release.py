@@ -179,12 +179,6 @@ def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[
             inject.render(inject.current_commit(), inject.current_commit_epoch()),
             encoding="utf-8",
         )
-        # The build origin travels the same way, and for the same reason: a digest that described
-        # a wheel without it would describe a wheel no release ever publishes.
-        origin = _script("inject_build_origin")
-        (source_copy / "agent_artifacts" / "_build_origin.py").write_text(
-            origin.render(*origin.resolve(root=root)), encoding="utf-8"
-        )
         subprocess.run(
             [PYTHON, "scripts/build_wheel.py"],
             cwd=source_copy,

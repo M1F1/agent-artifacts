@@ -633,27 +633,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="VERSION",
         help=f"exclusive maximum AART version (default: {DEFAULT_MAXIMUM_AART})",
     )
-    p_init.add_argument(
-        # The workflows this command writes have to name a repository, and the shipped literal is
-        # this project's.  A fork that edited the literal would carry a conflict on that line
-        # through every later sync from upstream, so the tool stamps what it reads from its own
-        # checkout instead and the fork stays identical to what it tracks.  These two flags are
-        # the escape for the cases a checkout cannot answer: AART installed from a wheel, or a
-        # fork whose CI should fetch a different repository than the one init was run from.
-        "--aart-repository",
-        metavar="OWNER/REPOSITORY",
-        help="stamp this AART repository into the registry's CI (default: read from the checkout)",
-    )
-    p_init.add_argument(
-        "--aart-ref",
-        metavar="REF",
-        help="stamp this AART tag, branch or commit into the registry's CI (default: the checkout's own ref)",
-    )
-    p_init.add_argument(
-        "--no-aart-stamp",
-        action="store_true",
-        help="keep the shipped AART defaults and configure the registry with repository variables",
-    )
     _add_registry_finalize(p_init)
     _add_json(p_init)
 
@@ -1252,9 +1231,6 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_id=getattr(args, "source_id", None),
         display_name=getattr(args, "display_name", None),
         usage_reporting_repository=getattr(args, "usage_reporting_repository", None),
-        aart_repository=getattr(args, "aart_repository", None),
-        aart_ref=getattr(args, "aart_ref", None),
-        no_aart_stamp=bool(getattr(args, "no_aart_stamp", False)),
         summary=getattr(args, "summary", None),
         collection_members=tuple(getattr(args, "collection_members", ()) or ()),
         discovery_checkout=getattr(args, "discovery_checkout", None),

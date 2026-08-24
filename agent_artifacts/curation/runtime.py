@@ -428,7 +428,6 @@ class LocalCurationService:
                 minimum.value,
                 maximum.value,
                 request.usage_reporting_repository,
-                request.tool_origin,
             )
         except ValueError as error:
             return _error(str(error))
@@ -444,21 +443,15 @@ class LocalCurationService:
                 "prompt-only registry routing",
             )
         )
-        # A stamp is written once and read by CI for as long as the registry lives, so it is said
-        # out loud here rather than discovered later in a red run.  Both outcomes are reported:
-        # silence about a default would read as a stamp that worked.
+        # Where CI fetches AART from is a repository variable, not something written into
+        # these files, so the one thing `init` owes the reader is the order those variables are
+        # tried in.  Said once, here, rather than found later in a red run.
         warnings += (
-            (
-                f"CI workflows stamped to fetch AART from {request.tool_origin.described}; "
-                "set the AART_TOOL_PATH, AART_REPOSITORY or AART_REF repository variable to "
-                "override without editing the files",
-            )
-            if request.tool_origin is not None
-            else (
-                "CI workflows keep the shipped AART defaults because this tool could not read "
-                "its own checkout; set the AART_REPOSITORY and AART_REF repository variables on "
-                "the registry, or re-run init from a clone of your fork",
-            )
+            "registry CI resolves AART from repository variables, first one set wins: "
+            "AART_PACKAGE (package index), AART_WHEEL_URL (released wheel), AART_TOOL_PATH "
+            "(already on the runner), then AART_TOOL_URL with AART_REF (git clone). Setting "
+            "none reaches github.com, which an Enterprise instance cannot; set one on the "
+            "registry or on its organisation",
         )
         return Ok(self._workspace_review(request, planned.value, warnings=warnings))
 

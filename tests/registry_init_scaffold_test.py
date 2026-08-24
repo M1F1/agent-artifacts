@@ -146,10 +146,12 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         self.assertIn(b"minimum", workflow)
         self.assertIn(b"latest", workflow)
         self.assertIn(b"validate --source . --strict --frozen", workflow)
-        # The tool is resolved from a source tree, not installed: AART has no runtime
-        # dependencies and ships __main__.py, so the gates run on a private runner that can
-        # reach no package index at all.
-        self.assertNotIn(b"pip install", workflow)
+        # Unconfigured, the tool is resolved from a source tree rather than installed: AART has
+        # no runtime dependencies and ships __main__.py, so the gates run on a private runner
+        # that can reach no package index at all.  `pip` appears once, inside the arm that only
+        # runs when somebody sets AART_PACKAGE to point at one.
+        self.assertEqual(workflow.count(b"pip install"), 1)
+        self.assertIn(b'if [ -n "$PACKAGE" ]', workflow)
         self.assertIn(b"PYTHONPATH=", workflow)
         self.assertIn(b"-m agent_artifacts", workflow)
         self.assertIn(b"vars.AART_REPOSITORY", workflow)
