@@ -277,8 +277,10 @@ The registry also reads `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON`, `AART_PIP
 `AART_REPOSITORY`, `AART_GH_HOST`, and `AART_PAGES` — set the last to `false` where the instance
 offers no GitHub Pages, and the usage dashboard is still built and validated, only not published.
 
-[The Enterprise fork contract](docs/ci/enterprise-fork-v1.md) is the full page: every variable, what
-was walked, and what was not.
+[The Enterprise fork contract](docs/ci/enterprise-fork-v1.md) is the full page. Its runbook is the
+ordered version of everything above — mirror this repository onto the instance, set its variables,
+choose how registries will fetch it, and only then run `registry init` — followed by every
+variable in reference form, what was walked, and what was not.
 
 ## Canonical package
 

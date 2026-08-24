@@ -5,8 +5,132 @@ creates, are built so that a fork on a company GitHub Enterprise Server runs the
 repository variables**, not by rewriting YAML. Every default reproduces the public github.com run,
 so an unconfigured fork behaves exactly as this repository always has.
 
+**The runbook is the ordered version** — mirror the tool, configure it, then create a registry.
+The numbered sections after it are the reference: every variable, and what each one does.
+
 Section 5 names the two things a variable cannot express. Read it before assuming the move is a
 settings change only.
+
+## The runbook, in order
+
+Two repositories, and the order between them is not free: **the tool first, a registry second**. A
+registry's CI fetches AART, so a registry created before AART has a home on the instance has
+nowhere to fetch it from.
+
+Nothing below edits a file in a fork. Every step is a mirror, a variable, or a command.
+
+### Step 1 — Put AART on the instance
+
+A fork through the web UI works where the instance can reach github.com. Where it cannot, mirror:
+
+```bash
+git clone --mirror https://github.com/M1F1/agent-artifacts.git
+```
+
+```bash
+git -C agent-artifacts.git push --mirror https://ghe.corp/platform/agent-artifacts.git
+```
+
+`--mirror` is what carries the **tags**, and tags are load-bearing: the git arm clones `v` followed
+by the pin, so a mirror without tags leaves that arm unable to find any version.
+
+### Step 2 — Configure the fork itself
+
+Set these under **Settings → Secrets and variables → Actions → Variables**, on the **organisation**
+where you can. Section 2 is the full table; on a private runner with no egress the short list is:
+
+| Variable | Set it to |
+|---|---|
+| `AART_RUNNER` | your runner labels, as JSON: `["self-hosted","linux","x64"]` |
+| `AART_PIP_INDEX_URL` | the internal mirror, for `ruff`, `mypy` and `coverage` |
+| `AART_GH_HOST` | the instance hostname, so `gh` does not talk to github.com |
+| `AART_PYTHON_VERSIONS` | one entry, e.g. `["3.11"]`, if you also set `AART_CI_IMAGE` |
+
+### Step 3 — Decide how registries will fetch AART
+
+This is the only design decision on the page, and it is reversible: the arms are ordered so a later,
+more governed answer takes over without unsetting the earlier one. Pick what the instance already
+has.
+
+| You have | Do this once | Registries then set |
+|---|---|---|
+| An internal package index | Publish the wheel to it | `AART_PACKAGE` = `agent-artifacts=={version}` |
+| Releases with attached files | Tag `v2.8.5`; `release.yml` builds the wheel and attaches it | `AART_WHEEL_URL` = `https://ghe.corp/platform/agent-artifacts/releases/download/v{version}/agent_artifacts-{version}-py3-none-any.whl` |
+| A custom runner image | Bake a checkout into it | `AART_TOOL_PATH` = `/opt/aart` |
+| Only the mirrored repository | Nothing — Step 1 is the whole setup | `AART_TOOL_URL` = `https://ghe.corp/platform/agent-artifacts.git` |
+
+The last row always works. It is the row to start on, because it needs nothing that does not exist
+after Step 1, and moving up later is one variable set.
+
+### Step 4 — Prove the fork is green before going further
+
+Run the fork's own `validate` workflow. It is the same nine gates as `make quality`. A red run here
+is a runner or index problem, and every later step would inherit it.
+
+### Step 5 — Install AART on your own machine
+
+You need it locally only to *create* the registry. CI fetches its own copy.
+
+```bash
+pipx install --python python3.11 "git+https://ghe.corp/platform/agent-artifacts@v2.8.5"
+```
+
+Where `pipx` is unavailable, an unzipped wheel is a working installation on its own — Section 1.
+
+### Step 6 — Create the registry
+
+Make an empty repository on the instance, clone it, and run `init` inside the checkout:
+
+```bash
+aart registry init --source . --source-id corp-registry --display-name "Corp Registry" --yes
+```
+
+That writes `.aart-version` with the version you just ran, a generated `README.md`, the three
+workflows, and the JSON markers. Commit them.
+
+### Step 7 — Configure the registry
+
+One variable from Step 3, plus whatever the instance needs. Set them on the **organisation** and
+every registry created later is configured before it exists.
+
+| Variable | When |
+|---|---|
+| one of the four from Step 3 | always — setting none reaches github.com and fails on the first run |
+| `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON` | same reasons as the fork |
+| `AART_PIP_INDEX_URL` | only if you chose `AART_PACKAGE` |
+| `AART_GH_HOST`, `AART_REPOSITORY` | the instance hostname and the tool's path on it |
+| `AART_PAGES` = `false` | the instance offers no GitHub Pages. The dashboard is still built and validated, only not published |
+
+### Step 8 — Make the gates pass once
+
+A fresh registry does not pass its own gates until it has a lock and an index. That is correct, not
+a fault:
+
+```bash
+aart registry lock --source . --yes && aart registry build --source . --yes
+```
+
+Commit, open a pull request, and let CI run it.
+
+### Step 9 — Read one line
+
+The `Provide AART` step ends with the whole answer:
+
+```text
+AART: agent-artifacts 2.8.5  via wheel https://ghe.corp/…  pinned by .aart-version
+```
+
+Which version ran, which arm answered, and whether the pin was honoured. If it says something else,
+these are the three ways it fails, all of them non-zero and named:
+
+| Message | Means |
+|---|---|
+| `no agent_artifacts package under …` | the arm fetched something, but not AART. Wrong URL, wrong path, empty clone |
+| `.aart-version pins X but … provided Y` | the arm works and disagrees with the file. A moved tag, an index that resolved elsewhere, or a CI image with a stale AART baked in |
+| `pin X overridden by AART_REF` | not a failure. Someone set the escape hatch, and the run says so rather than hiding it |
+
+From here, bumping AART is a pull request against `.aart-version` — the gates run on the new version
+before anyone merges it.
 
 ## 1. The fact the whole design rests on
 
