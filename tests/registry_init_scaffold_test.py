@@ -17,7 +17,7 @@ from agent_artifacts.protocol.native_tree import (
 )
 from agent_artifacts.protocol.paths import parse_relative_path
 from agent_artifacts.protocol.registry_schema import parse_registry_manifest
-from agent_artifacts.protocol.semver import SemVer
+from agent_artifacts.protocol.semver import SemVer, parse_semver
 from agent_artifacts.registry_commands.model import (
     ArtifactScaffoldOptions,
     CollectionAuthorOptions,
@@ -31,6 +31,7 @@ from agent_artifacts.registry_commands.planning import (
     validate_registry_workspace,
 )
 from agent_artifacts.registry_commands.templates import REGISTRY_CI_WORKFLOW
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from tests.registry_maintenance_fixtures import replace_snapshot_file
 
 
@@ -446,6 +447,33 @@ class GeneratedRegistryReadmeTest(unittest.TestCase):
     def test_a_registry_that_already_has_one_keeps_it_untouched(self):
         self.assertNotIn("README.md", self._init(self._existing_readme()))
 
+    def test_a_registry_without_one_gets_a_pin_naming_the_running_version(self):
+        changes = self._init()
+        self.assertIn(".aart-version", changes)
+        self.assertEqual(changes[".aart-version"], f"{EXECUTABLE_VERSION}\n".encode("utf-8"))
+
+    def test_a_registry_that_already_has_a_pin_keeps_it(self):
+        """A maintainer bumps this file; `init` re-run must never drag it back to its own version."""
+
+        path = parse_relative_path(".aart-version")
+        assert isinstance(path, Ok)
+        pinned = SnapshotEntry(path.value, SnapshotEntryKind.FILE, b"9.9.9\n")
+        self.assertNotIn(".aart-version", self._init(pinned))
+
+    def test_the_pin_falls_inside_the_window_the_marker_declares(self):
+        """A pin outside `requires_aart` would be a registry contradicting itself on day one."""
+
+        import json
+
+        changes = self._init()
+        window = json.loads(changes["aart-registry.json"])["requires_aart"]
+        pin = parse_semver(changes[".aart-version"].decode("utf-8").strip())
+        self.assertIsInstance(pin, Ok)
+        low = parse_semver(window["min_inclusive"])
+        high = parse_semver(window["max_exclusive"])
+        self.assertFalse(pin.value < low.value, f"{pin.value} is below {low.value}")
+        self.assertTrue(pin.value < high.value, f"{pin.value} is not below {high.value}")
+
     def test_the_readme_teaches_the_fetch_order_the_workflow_actually_uses(self):
         """A registry is configured from settings, so the file has to say which settings."""
 
@@ -476,6 +504,7 @@ class GeneratedRegistryReadmeTest(unittest.TestCase):
             root = Path(raw)
             subprocess.run(("git", "init", "-q", str(root)), check=True)
             (root / "README.md").write_text("# hands off\n", encoding="utf-8")
+            (root / ".aart-version").write_text("9.9.9\n", encoding="utf-8")
             finished = subprocess.run(
                 [
                     sys.executable,
@@ -497,6 +526,7 @@ class GeneratedRegistryReadmeTest(unittest.TestCase):
             )
             self.assertEqual(finished.returncode, 0, finished.stderr)
             self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "# hands off\n")
+            self.assertEqual((root / ".aart-version").read_text(encoding="utf-8"), "9.9.9\n")
             self.assertTrue((root / "aart-registry.json").is_file())
 
     def test_a_real_init_on_an_empty_directory_writes_the_readme(self):
@@ -531,3 +561,6 @@ class GeneratedRegistryReadmeTest(unittest.TestCase):
             written = (root / "README.md").read_text(encoding="utf-8")
             self.assertTrue(written.startswith("# Company Registry\n"))
             self.assertIn("AART_PACKAGE", written)
+            self.assertEqual(
+                (root / ".aart-version").read_text(encoding="utf-8"), f"{EXECUTABLE_VERSION}\n"
+            )

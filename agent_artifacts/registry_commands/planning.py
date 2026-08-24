@@ -95,6 +95,7 @@ from agent_artifacts.registry_maintenance.vendoring import (
     read_vendor_record,
     verify_vendored_copy,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
 from agent_artifacts.security.model import InstallationRisk
@@ -516,10 +517,16 @@ def plan_registry_init(
     # make the file people are supposed to change the file that puts the registry out of step
     # with the command that manages it, and a repository created on GitHub with "Add a README"
     # already has one.
-    readme = (
-        ()
-        if "README.md" in files.value
-        else (("README.md", render_registry_readme(options.registry_id, options.display_name)),)
+    written_once = tuple(
+        (path, content)
+        for path, content in (
+            ("README.md", render_registry_readme(options.registry_id, options.display_name)),
+            # The pin is the version of the tool creating the registry -- the same number `init`
+            # already writes as `requires_aart.min_inclusive`.  No inference is involved: AART
+            # knows its own version, which is exactly what the deleted origin stamp did not.
+            (".aart-version", f"{EXECUTABLE_VERSION}\n".encode("utf-8")),
+        )
+        if path not in files.value
     )
     for path, expected in templates:
         existing = files.value.get(path)
@@ -573,7 +580,7 @@ def plan_registry_init(
         RegistryOperation.INIT,
         snapshot,
         (
-            *((path, content, False) for path, content in (*templates, *readme)),
+            *((path, content, False) for path, content in (*templates, *written_once)),
             (
                 "aart-registry.json",
                 canonical_json_bytes(registry_manifest_to_json(registry)),

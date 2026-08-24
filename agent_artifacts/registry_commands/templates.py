@@ -37,12 +37,26 @@ _PROVIDE_AART = b"""      - name: Provide AART
           WHEEL_URL: ${{ vars.AART_WHEEL_URL }}
           TOOL_PATH: ${{ vars.AART_TOOL_PATH }}
           TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}
-          TOOL_REF: ${{ vars.AART_REF || 'main' }}
+          TOOL_REF: ${{ vars.AART_REF }}
           INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
           PY: ${{ vars.AART_PYTHON || 'python3' }}
           GH_HOST_OVERRIDE: ${{ vars.AART_GH_HOST }}
         run: |
           set -euo pipefail
+          # `.aart-version` is this registry's own pin: one line of text, versioned in Git and
+          # reviewed in a pull request like any other change.  It answers *which* AART, which is a
+          # decision about the registry.  The variables answer *where this deployment gets it
+          # from*, which is a fact about the instance.  Neither repeats the other.
+          PIN=""
+          if [ -f .aart-version ]; then PIN=$(tr -d ' \\t\\r\\n' < .aart-version); fi
+          # An explicit AART_REF is the escape hatch for someone testing a fork branch.  It wins,
+          # but it switches the version check off, so it says so rather than quietly disagreeing
+          # with a file that is still in the repository.
+          override=""
+          if [ -n "$PIN" ] && [ -n "$TOOL_REF" ]; then override=" (pin $PIN overridden by AART_REF)"; fi
+          ref="$TOOL_REF"
+          if [ -z "$ref" ]; then ref="${PIN:+v$PIN}"; fi
+          if [ -z "$ref" ]; then ref="main"; fi
           # Four ways in, tried in this order, never combined.  The order runs from the most
           # governed supply chain to the least, so an organisation that later stands up an index
           # sets one variable and it takes over -- no stale variable has to be unset first.  Git
@@ -51,23 +65,25 @@ _PROVIDE_AART = b"""      - name: Provide AART
           tool="$RUNNER_TEMP/aart-tool"
           rm -rf "$tool"
           if [ -n "$PACKAGE" ]; then
-            how="index $INDEX_URL ($PACKAGE)"
+            requirement="${PACKAGE//\\{version\\}/$PIN}"
+            how="index $INDEX_URL ($requirement)"
             "$PY" -m pip install --quiet --no-deps --target "$tool" \\
-              --index-url "$INDEX_URL" "$PACKAGE"
+              --index-url "$INDEX_URL" "$requirement"
           elif [ -n "$WHEEL_URL" ]; then
-            how="wheel $WHEEL_URL"
-            curl -fsSL "$WHEEL_URL" -o "$RUNNER_TEMP/aart.whl"
+            url="${WHEEL_URL//\\{version\\}/$PIN}"
+            how="wheel $url"
+            curl -fsSL "$url" -o "$RUNNER_TEMP/aart.whl"
             "$PY" -c 'import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \\
               "$RUNNER_TEMP/aart.whl" "$tool"
           elif [ -n "$TOOL_PATH" ]; then
             how="path $TOOL_PATH"
             tool="$TOOL_PATH"
           else
-            how="git $TOOL_URL@$TOOL_REF"
-            git clone --quiet --depth 1 --branch "$TOOL_REF" "$TOOL_URL" "$tool" 2>/dev/null \\
+            how="git $TOOL_URL@$ref"
+            git clone --quiet --depth 1 --branch "$ref" "$TOOL_URL" "$tool" 2>/dev/null \\
               || { rm -rf "$tool"
                    git clone --quiet "$TOOL_URL" "$tool"
-                   git -C "$tool" -c advice.detachedHead=false checkout --quiet "$TOOL_REF"; }
+                   git -C "$tool" -c advice.detachedHead=false checkout --quiet "$ref"; }
           fi
           test -f "$tool/agent_artifacts/__main__.py" \\
             || { echo "aart: no agent_artifacts package under '$tool' (via $how)" >&2; exit 2; }
@@ -77,10 +93,17 @@ _PROVIDE_AART = b"""      - name: Provide AART
             "$tool" "$PY" > "$bin/aart"
           chmod +x "$bin/aart"
           echo "$bin" >> "$GITHUB_PATH"
+          # The pin claims a version; this proves it.  Every arm is checked, including the baked
+          # path, where a stale image is otherwise indistinguishable from a fresh one.
+          got=$("$bin/aart" --version | awk '{print $NF}')
+          if [ -n "$PIN" ] && [ -z "$override" ] && [ "$got" != "$PIN" ]; then
+            echo "aart: .aart-version pins $PIN but $how provided $got" >&2
+            exit 2
+          fi
           # `gh` defaults to github.com, which on an Enterprise instance is the wrong server and a
           # silent one.  Derive the host from the instance the job is already running on.
           echo "GH_HOST=${GH_HOST_OVERRIDE:-${GITHUB_SERVER_URL#https://}}" >> "$GITHUB_ENV"
-          echo "AART: $("$bin/aart" --version)  via $how"
+          echo "AART: agent-artifacts $got  via $how${PIN:+  pinned by .aart-version}$override"
 """
 
 _RUNS_ON = b"""    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
@@ -252,6 +275,7 @@ Its registry id is `__REGISTRY_ID__`. Consumers name it when they add this regis
 | Path | What it is |
 |---|---|
 | `aart-registry.json` | The registry marker: id, display name, and the AART version window it declares |
+| `.aart-version` | The AART version CI runs. One line. Bump it in a pull request |
 | `aart-source.json` | Where artifacts and collections live in this tree |
 | `artifacts/` | One directory per packaged artifact |
 | `collections/` | Named groups of artifacts installed together |
@@ -302,17 +326,39 @@ aart registry test --source . --compatibility latest
 
 ## Pointing CI at AART
 
-The workflows here need AART itself. **Nothing is hard-coded** - where it comes from is a
-repository variable, so this repository never has to be edited to move the tool.
+Two separate questions, kept in two separate places.
 
-Four ways in. The **first variable that is set wins**, and they are never combined:
+**Which AART version** is a decision about this registry, so it lives in Git:
+
+```
+.aart-version
+2.8.5
+```
+
+Bump it in a pull request. The gates then run against the new version **before** the change is
+merged, so a version that breaks this registry fails in review rather than after. `git blame`
+answers "when did we move to 2.9.0", and a bad bump is one `git revert` away. None of that is
+possible when the version lives in a settings page.
+
+The version is also **proved, not just claimed**. After fetching, CI compares `aart --version`
+against this file and fails if they differ - which catches a moved tag, an index that resolved to
+something else, and a CI image with a stale AART baked into it.
+
+**Where this deployment fetches that version from** is a fact about your instance, not about the
+registry, so it stays in repository variables. Four ways in; the **first variable that is set
+wins**, and they are never combined:
 
 | Order | Variable | Example | How it fetches |
 |---|---|---|---|
-| 1 | `AART_PACKAGE` | `agent-artifacts==2.8.5` | `pip` from `AART_PIP_INDEX_URL` |
-| 2 | `AART_WHEEL_URL` | `https://host/.../agent_artifacts-2.8.5-py3-none-any.whl` | `curl`, then unzip |
+| 1 | `AART_PACKAGE` | `agent-artifacts=={version}` | `pip` from `AART_PIP_INDEX_URL` |
+| 2 | `AART_WHEEL_URL` | `https://host/.../v{version}/agent_artifacts-{version}-py3-none-any.whl` | `curl`, then unzip |
 | 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
-| 4 | `AART_TOOL_URL` + `AART_REF` | `https://ghe.corp/platform/agent-artifacts.git`, `v2.8.5` | `git clone` |
+| 4 | `AART_TOOL_URL` | `https://ghe.corp/platform/agent-artifacts.git` | `git clone` at `v` + the pin |
+
+`{version}` is replaced with whatever `.aart-version` says, so the version appears **once**, in
+Git, and never in a settings page. Set `AART_REF` to override the pin for one registry - the run
+then says so out loud and the version check is switched off, because you asked for a different
+build on purpose.
 
 The order runs from the most governed supply chain to the least. That matters when you migrate:
 stand up an internal index later, set `AART_PACKAGE`, and it takes over. You do not have to unset
@@ -337,6 +383,7 @@ AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-art
 |---|---|---|
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Index used by `AART_PACKAGE` |
 | `AART_REPOSITORY` | `M1F1/agent-artifacts` | `owner/name` of the AART fork, combined with this instance's own URL |
+| `AART_REF` | `v` + the pin | Escape hatch: a branch or tag instead of `.aart-version`. Switches the version check off |
 | `AART_RUNNER` | `["ubuntu-latest"]` | JSON array of runner labels. Must be JSON, not a bare word |
 | `AART_CI_IMAGE` | unset | Container image for the jobs. Unset means the runner's own environment |
 | `AART_PYTHON` | `python3` | The interpreter's name inside that image |
@@ -345,10 +392,13 @@ AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-art
 
 ## The version window
 
-`aart-registry.json` declares the range of AART versions this registry supports. The quality gate
-runs at **both** ends of it, which is what `compatibility: [minimum, latest]` means in the
-workflow. That is a separate question from which AART build CI fetches - the variables above choose
-the build, the window says which versions the registry claims to work with.
+`aart-registry.json` declares the *range* of AART versions this registry supports. The quality
+gate runs at **both** ends of it, which is what `compatibility: [minimum, latest]` means in the
+workflow.
+
+That is a different statement from `.aart-version`. The window says which versions this registry
+claims to work with; the pin says which single version CI actually runs. Keep the pin inside the
+window - a pin outside it is a registry contradicting itself.
 
 ## Usage reporting
 

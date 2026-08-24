@@ -194,10 +194,24 @@ class EveryFetchArmIsReachableTest(unittest.TestCase):
 
     ARMS = ("PACKAGE", "WHEEL_URL", "TOOL_PATH", "TOOL_URL")
 
+    @staticmethod
+    def _chain(body: str) -> str:
+        """Only the if/elif/else that selects an arm — the pin is read before it and is not one."""
+
+        return body.split('tool="$RUNNER_TEMP/aart-tool"', 1)[1].split("\n          fi\n", 1)[0]
+
     def test_the_arms_are_tried_from_the_most_governed_supply_chain_to_the_least(self) -> None:
         for label, body in EMITTED.items():
-            found = [name for name in re.findall(r'\[ -n "\$(\w+)" \]|how="git', body) if name]
+            found = re.findall(r'\[ -n "\$(\w+)" \]', self._chain(body))
             self.assertEqual(tuple(found) + ("TOOL_URL",), self.ARMS, label)
+
+    def test_the_git_arm_is_the_else_so_it_cannot_be_reordered(self) -> None:
+        """The rule that keeps the other three reachable is structural, not a convention."""
+
+        for label, body in EMITTED.items():
+            chain = self._chain(body)
+            self.assertIn("\n          else\n", chain, label)
+            self.assertLess(chain.index('[ -n "$TOOL_PATH" ]'), chain.index("\n          else\n"))
 
     def test_only_the_git_arm_carries_a_default(self) -> None:
         """Every other arm must be empty unless somebody sets it, or it shadows the ones below."""
@@ -210,11 +224,56 @@ class EveryFetchArmIsReachableTest(unittest.TestCase):
         """A variable is not in the file, so the run is the only place the truth can appear."""
 
         for label, body in EMITTED.items():
-            self.assertIn('echo "AART: $("$bin/aart" --version)  via $how"', body, label)
+            self.assertIn('echo "AART: agent-artifacts $got  via $how', body, label)
 
     def test_every_arm_ends_at_the_same_check(self) -> None:
         for label, body in EMITTED.items():
             self.assertEqual(body.count('test -f "$tool/agent_artifacts/__main__.py"'), 1, label)
+
+
+class ThePinIsReadFromTheRepositoryTest(unittest.TestCase):
+    """`.aart-version` decides the version; the variables only decide where to get it.
+
+    The split is the point: a registry stood up at two companies runs the same version through
+    different supply chains, so a version in a variable would have to be repeated per deployment
+    and a supply chain in the repository would have to be edited per deployment.
+    """
+
+    def test_every_workflow_reads_the_pin_before_choosing_an_arm(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertIn("if [ -f .aart-version ]; then PIN=", body, label)
+            self.assertLess(body.index(".aart-version"), body.index('if [ -n "$PACKAGE" ]'), label)
+
+    def test_the_index_and_wheel_arms_substitute_the_pin(self) -> None:
+        """Otherwise a version would have to be written into a variable as well as the file."""
+
+        for label, body in EMITTED.items():
+            self.assertIn(r'requirement="${PACKAGE//\{version\}/$PIN}"', body, label)
+            self.assertIn(r'url="${WHEEL_URL//\{version\}/$PIN}"', body, label)
+
+    def test_the_git_arm_derives_its_ref_from_the_pin(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertIn('ref="${PIN:+v$PIN}"', body, label)
+
+    def test_no_variable_carries_a_default_ref_any_more(self) -> None:
+        """`AART_REF` with a `main` default would silently outrank the pin on every run."""
+
+        for label, body in EMITTED.items():
+            self.assertIn("TOOL_REF: ${{ vars.AART_REF }}", body, label)
+            self.assertNotIn("vars.AART_REF || 'main'", body, label)
+
+    def test_the_fetched_version_is_verified_against_the_pin(self) -> None:
+        """A pin that is only declared is the stamp again. This one is checked on every arm."""
+
+        for label, body in EMITTED.items():
+            self.assertIn(
+                'if [ -n "$PIN" ] && [ -z "$override" ] && [ "$got" != "$PIN" ]; then', body, label
+            )
+            self.assertIn("exit 2", body, label)
+
+    def test_an_override_is_announced_rather_than_silent(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertIn("overridden by AART_REF", body, label)
 
 
 if __name__ == "__main__":

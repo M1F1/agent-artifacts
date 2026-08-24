@@ -55,13 +55,13 @@ first one set wins, never combined. §3.1 explains why that order and not anothe
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AART_PACKAGE` | unset | A requirement for an index: `agent-artifacts==2.8.5`, or a range. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
+| `AART_PACKAGE` | unset | A requirement for an index, normally `agent-artifacts=={version}` — `{version}` is replaced with the pin. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | The index `AART_PACKAGE` is fetched from |
-| `AART_WHEEL_URL` | unset | Direct URL of a released wheel, downloaded with `curl` and unzipped. Always a frozen version — a wheel's filename carries it |
+| `AART_WHEEL_URL` | unset | URL of a released wheel, downloaded with `curl` and unzipped. Use `{version}` where the version appears and the pin fills it in |
 | `AART_TOOL_PATH` | unset | An agent-artifacts tree already on the runner, usually baked into the CI image. Needs neither git nor the network |
 | `AART_REPOSITORY` | `M1F1/agent-artifacts` | `owner/name` of the AART fork. Combined with the instance's own URL, so on GHES this alone points the registry at the internal fork |
 | `AART_TOOL_URL` | derived from `AART_REPOSITORY` | Full Git URL, for when AART does not live on the same instance as the registry |
-| `AART_REF` | `main` | Tag, branch or commit the git arm clones. See §4 |
+| `AART_REF` | `v` + the pin | Escape hatch: a branch or commit instead of `.aart-version`. Overrides the pin and switches the version check off. See §4 |
 | `AART_RUNNER` | `["ubuntu-latest"]` | As above |
 | `AART_CI_IMAGE` | unset | As above |
 | `AART_PYTHON` | `python3` | As above |
@@ -72,15 +72,34 @@ All three workflows share one `Provide AART` step, so they cannot drift apart. T
 github.com — from inside an Enterprise instance that is the wrong server, and it fails quietly
 rather than loudly.
 
-### 3.1 The order the arms are tried in
+### 3.1 Two questions, two homes
 
-`registry init` writes the same bytes for every registry. It does not detect how the AART running
-it was installed, and it does not write an address into the file. **Where CI fetches AART from is
-a repository variable**, which is what makes the whole page's promise — configure by settings, not
-by editing — true without exception.
+`registry init` writes the same bytes for every registry. It detects nothing about how the AART
+running it was installed. What a registry ends up with is split by a single test: **is this a
+decision about the registry, or a fact about the instance it happens to run on?**
 
-The one `Provide AART` step offers four ways in. The first variable that is set wins, and they are
-never combined:
+**Which AART version — a decision — is pinned in Git.** `registry init` writes `.aart-version`
+holding one line, the version of the tool that created the registry. That is the same number it
+already writes as `requires_aart.min_inclusive`, and it needs no inference: AART knows its own
+version, which is exactly what the origin stamp this replaced could not say about its own
+repository.
+
+```
+.aart-version
+2.8.5
+```
+
+Bumping it is a pull request. The gates run against the new version *before* it merges, `git blame`
+says when the registry moved, and a bad bump is one revert away. A version living in a settings page
+has none of those: it changes silently, takes effect everywhere at once, and is never tested first.
+
+The pin is also **proved rather than claimed**. After fetching, the step compares `aart --version`
+with the file and fails if they differ — catching a tag that moved, an index that resolved to
+something else, and a CI image with a stale AART baked in. That last one is invisible today.
+
+**Where this deployment fetches it from — a fact — stays in variables.** The same registry stood up
+at two companies runs the same version through a different supply chain, and nothing about that
+belongs in its Git history. Four arms; the first variable that is set wins, never combined:
 
 ```
 1. AART_PACKAGE     pip install from an index      most governed
@@ -89,50 +108,53 @@ never combined:
 4. AART_TOOL_URL    git clone                      least governed
 ```
 
+`{version}` inside `AART_PACKAGE` or `AART_WHEEL_URL` is replaced with the pin, and the Git arm
+clones `v` + the pin. So the version is written **once**, in the repository, and the variables carry
+no version at all.
+
 Two things follow from that order, and both are deliberate.
 
-**Maturity first, so migration is additive.** A company that clones the repo today and stands up
-an internal index tomorrow sets `AART_PACKAGE` and it takes over. Nobody has to remember to unset
+**Maturity first, so migration is additive.** A company that clones the repo today and stands up an
+internal index tomorrow sets `AART_PACKAGE` and it takes over. Nobody has to unset
 `AART_TOOL_URL` first, and a registry created before the index existed picks up the change without
 being regenerated.
 
 **Git last, because it is the only arm with a shipped default.** `AART_TOOL_URL` falls back to a
-literal, so that arm is *always* set. Any arm placed below it would be unreachable. This is the
-one rule in the block that is invisible from reading the YAML, and
-`tests/enterprise_ci_template_test.py` fails if the order is changed.
+literal, so that arm is *always* set and anything below it would be unreachable. This is structural
+rather than agreed — it is the `else` of the chain, and an `else` cannot be moved. What the tests
+guard is the part that *is* a convention: which of the first three wins.
 
-Set none of them and the registry reaches `github.com`, which an Enterprise instance cannot. That
-is a loud failure in the first run, not a silent one weeks later.
+Set none of them and the registry reaches `github.com`, which an Enterprise instance cannot. That is
+a loud failure in the first run, not a silent one weeks later.
 
 **Set them on the organisation, not the repository.** GitHub resolves repository variables over
 organisation ones, so one organisation variable configures every registry a company has, and a
-single registry can still override it. This is why the value is not written into the file: an
-address in N generated files is N places to edit when the fork moves.
+single registry can still override it.
 
-**Which arm answered is printed by the run**, not stored in the file:
+`AART_REF` remains as an escape hatch: set it and it overrides the pin, the version check is
+switched off, and the run log says so — because at that point you asked for a different build on
+purpose.
+
+**Which arm answered is printed by the run:**
 
 ```
-AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-artifacts==2.8.5)
+AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-artifacts==2.8.5)  pinned by .aart-version
 ```
 
-The cost of keeping this in settings rather than in the file is that `git log` on a registry does
-not say which AART an old run used. The run log does, and every other knob on this page already
-works that way.
+**Generated files, and files you own.** The workflows and the two JSON markers are managed —
+`registry init` refuses to overwrite one whose content differs, so hand-editing puts the registry out
+of step with the command that manages it. `.aart-version` and `README.md` are written only when
+absent and never compared: they are the two files a maintainer is meant to edit.
 
-**A generated file is still a generated file.** `registry init` refuses to overwrite a template
-whose content differs from what it would write, so hand-editing a workflow puts the registry out
-of step with the command that manages it. Use the variables, or re-run `init` on an empty
-workspace.
-
-If the AART fork is private and the runner holds no credential for it, use `AART_TOOL_PATH` and
-bake the tree into the image. AART carries no credentials of its own and this workflow invents
-none; a clone or a download succeeds only where the runner could already reach that host.
+If the AART fork is private and the runner holds no credential for it, use `AART_TOOL_PATH` and bake
+the tree into the image. AART carries no credentials of its own and this workflow invents none; a
+clone or a download succeeds only where the runner could already reach that host.
 
 ## 4. Two different meanings of "latest"
 
 They are unrelated and easy to conflate.
 
-- **`AART_REF`**, or whichever arm answered ahead of it, chooses *which AART build* runs the gates.
+- **`.aart-version`** chooses *which AART build* runs the gates, and `AART_REF` overrides it.
 - **`--compatibility minimum|latest`** chooses which end of *the registry's own declared
   compatibility window* is exercised. Both ends always run; that is the matrix.
 
@@ -213,7 +235,14 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
 - The `Provide AART` step, extracted from the bytes `registry init` actually emits and run with
   `RUNNER_TEMP` and `GITHUB_PATH` set by hand: the baked-path route and the tag clone, then the
   gates through the `aart` shim it puts on PATH.
-- Re-walked on 2026-08-24, after the four arms replaced the stamp. Each arm reached
+- Re-walked on 2026-08-24 with `.aart-version` in place. All four arms reach the pinned 2.8.5 —
+  `{version}` substituted into an index requirement and into a wheel URL, `v2.8.5` derived for the
+  clone, and the baked path checked rather than composed. A pin the arm cannot satisfy fails: a
+  path holding 2.8.5 against a pin of 2.8.4 exits `2` naming both numbers, and a pin of `9.9.9`
+  fails the clone. `AART_REF` overrides the pin and the run says so. With no file at all the
+  template behaves as it did before. Then a registry created from scratch, locked, built, and all
+  seven gates run through the shim the pinned step puts on PATH.
+- Walked earlier the same day, before the pin existed. Each arm reached
   `agent-artifacts 2.8.5` from a different place — a PEP 503 index on disk, a wheel over HTTP, a
   path, and a clone at `v2.8.5`. Then the cascade, which is the part that can actually fail: all
   four variables set resolves to the index, and dropping them one at a time walks down to the

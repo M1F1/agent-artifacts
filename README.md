@@ -169,10 +169,10 @@ passed, what is dropped, and what to configure instead — `https_proxy` is drop
 proxy that is the whole failure.
 
 `registry init` turns an empty checkout into a registry: the two JSON markers, a `.gitignore`,
-three GitHub workflows, and a `README.md` describing the registry it just made. The README is
-written only when absent — it is the one generated file you own afterwards, and AART never compares
-or overwrites it. The workflows and the JSON are managed: hand-edit one and `init` refuses the
-registry.
+three GitHub workflows, a `README.md` describing the registry it just made, and a `.aart-version`
+pinning the AART that created it. Those last two are written only when absent — they are the files
+you own afterwards, and AART never compares or overwrites them. The workflows and the JSON are
+managed: hand-edit one and `init` refuses the registry.
 
 The generated workflows need no configuration to run on github.com. To run them inside a company,
 set the variables in [Repository variables](#repository-variables) — no file in the registry
@@ -241,15 +241,28 @@ override it.
 
 ### A registry created by `aart registry init`
 
-The registry's workflows need AART itself, and **nothing about where it comes from is written into
-the files**. Four ways in; the first variable that is set wins, and they are never combined:
+A registry splits its configuration by one test: **is this a decision about the registry, or a fact
+about the instance it runs on?**
+
+*Which* AART version is a decision, so `registry init` pins it in Git, in a one-line `.aart-version`
+at the registry root. Bump it in a pull request and the gates run against the new version before it
+merges; `git blame` says when the registry moved; a bad bump is one revert away. After fetching, CI
+compares `aart --version` with that file and fails if they differ — so a moved tag, an index that
+resolved elsewhere, or a stale AART baked into a CI image is caught rather than assumed.
+
+*Where this deployment fetches it from* is a fact about the instance, so it stays in variables. Four
+ways in; the first variable that is set wins, and they are never combined:
 
 | Order | Variable | Example | How it fetches |
 |---|---|---|---|
-| 1 | `AART_PACKAGE` | `agent-artifacts==2.8.5` | `pip` from `AART_PIP_INDEX_URL` |
-| 2 | `AART_WHEEL_URL` | `https://host/…/agent_artifacts-2.8.5-py3-none-any.whl` | `curl`, then unzip |
+| 1 | `AART_PACKAGE` | `agent-artifacts=={version}` | `pip` from `AART_PIP_INDEX_URL` |
+| 2 | `AART_WHEEL_URL` | `https://host/…/v{version}/agent_artifacts-{version}-py3-none-any.whl` | `curl`, then unzip |
 | 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
-| 4 | `AART_TOOL_URL` + `AART_REF` | `https://ghe.corp/platform/agent-artifacts.git`, `v2.8.5` | `git clone` |
+| 4 | `AART_TOOL_URL` | `https://ghe.corp/platform/agent-artifacts.git` | `git clone` at `v` + the pin |
+
+`{version}` is replaced with the pin, so the version is written **once**, in the repository, and no
+variable carries one. `AART_REF` overrides the pin for a single registry — the run says so and the
+version check switches off, because you asked for a different build deliberately.
 
 The order runs from the most governed supply chain to the least, so migration is additive: stand up
 an internal index later, set `AART_PACKAGE`, and it takes over without unsetting anything. Git is
