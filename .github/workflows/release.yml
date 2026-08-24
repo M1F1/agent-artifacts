@@ -9,7 +9,9 @@ name: release
 # rather than pinning one release and silently building nothing for the next.
 #
 # Portable to a GitHub Enterprise Server fork by setting repository variables only; every default
-# reproduces the public github.com run.  See docs/ci/enterprise-fork-v1.md.
+# reproduces the public github.com run.  See docs/ci/enterprise-fork-v1.md.  Each job appears twice
+# for the reason validate.yml records: a container's `credentials` block cannot be conditional, so
+# the condition moves to the job.  Both shapes share their steps through `.github/actions/*`.
 on:
   push:
     tags:
@@ -22,6 +24,7 @@ permissions:
 
 jobs:
   quality:
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
     runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
     container: ${{ vars.AART_CI_IMAGE }}
     strategy:
@@ -29,89 +32,90 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
     env:
-      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        if: vars.AART_CI_IMAGE == ''
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/quality
         with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
           python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
 
-      - name: Install developer quality tools
-        run: ${{ vars.AART_PYTHON || 'python' }} -m pip install --disable-pip-version-check -e ".[dev]"
-
-      - name: Run canonical quality gates
-        run: make quality PYTHON=${{ vars.AART_PYTHON || 'python' }}
+  quality-private-image:
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: ./.github/actions/quality
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
 
   release:
-    needs: quality
+    needs: [quality, quality-private-image]
+    if: ${{ !cancelled() && !failure() && vars.AART_IMAGE_USERNAME_SECRET == '' }}
     runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
     container: ${{ vars.AART_CI_IMAGE }}
     env:
-      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
       # The release checklist reconciles against a real registry checkout.  A fork points this at
       # the registry it actually publishes, which is not this project's reference registry.
       REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL || 'https://github.com/M1F1/agent-artifacts-registry.git' }}
       # `gh` talks to github.com unless told otherwise; on GHES it needs the instance hostname.
       GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        if: vars.AART_CI_IMAGE == ''
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/release
         with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
           python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          tag: ${{ github.event.release.tag_name || github.ref_name }}
 
-      - name: Clone approved reference registry
-        run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
-
-      - name: Prove the tagged source was merged into main
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
-          git merge-base --is-ancestor "$TAG_COMMIT" origin/main
-
-      - name: Run stable release checklist
-        run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry" PYTHON=${{ vars.AART_PYTHON || 'python' }}
-
-      - name: Verify source version and release tag
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: ${{ vars.AART_PYTHON || 'python' }} scripts/version.py check-tag "$TAG"
-
-      - name: Verify reviewed release notes
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: test -s "docs/release/github-release-${TAG}.md"
-
-      - name: Inject commit
-        run: ${{ vars.AART_PYTHON || 'python' }} scripts/inject_commit.py
-
-      # The wheel carries where it was built from, so `registry init` can stamp a registry's CI
-      # without knowing how the wheel arrived.  Both values come from this job's own context, so a
-      # fork stamps its own instance and its own repository with no edit to this file.
-      - name: Build wheel
-        run: ${{ vars.AART_PYTHON || 'python' }} scripts/build_wheel.py
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+  release-private-image:
+    needs: [quality, quality-private-image]
+    if: ${{ !cancelled() && !failure() && vars.AART_IMAGE_USERNAME_SECRET != '' }}
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL || 'https://github.com/M1F1/agent-artifacts-registry.git' }}
+      GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: wheel
-          path: dist/*.whl
-          if-no-files-found: error
-
-      - name: Attach wheel to release
-        if: github.event_name == 'release'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" dist/*.whl --clobber
+          fetch-depth: 0
+      - uses: ./.github/actions/release
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          tag: ${{ github.event.release.tag_name || github.ref_name }}

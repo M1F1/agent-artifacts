@@ -1,0 +1,59 @@
+name: AART quality gates
+description: >
+  Install the developer tools and run the canonical gates.  Lives in an action rather than in the
+  workflow because the same steps run from two jobs that differ only in how their container image
+  is pulled, and one copy of a gate list is the only copy worth trusting.
+
+inputs:
+  python:
+    description: Name of the interpreter to invoke.
+    required: true
+  python-version:
+    description: Interpreter version to install when the job runs without a container image.
+    required: true
+  setup-python:
+    description: '"true" when the job has no container image and so needs an interpreter installed.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # `AART_INDEX_URL` and `AART_INDEX_CREDENTIALS` are job-level environment, not inputs: an input
+    # would put the credential in the action call, and the job is where the variables live anyway.
+    - name: Point pip at the internal index
+      shell: bash
+      run: |
+        set -euo pipefail
+        url="${AART_INDEX_URL:-https://pypi.org/simple}"
+        echo "pip index: $url"
+        if [ -n "${AART_INDEX_CREDENTIALS:-}" ]; then
+          # GitHub masks the secret it was given, which is the whole `user:pass` string.  Neither
+          # half is masked until it is handed back, so both are re-masked before they are used.
+          user="${AART_INDEX_CREDENTIALS%%:*}"
+          password="${AART_INDEX_CREDENTIALS#*:}"
+          echo "::add-mask::$user"
+          echo "::add-mask::$password"
+          scheme="https"
+          case "$url" in http://*) scheme="http" ;; esac
+          host="${url#http://}"
+          host="${host#https://}"
+          url="$scheme://$user:$password@$host"
+          echo "pip index: credentials supplied from a named secret"
+        fi
+        echo "PIP_INDEX_URL=$url" >> "$GITHUB_ENV"
+
+    - name: Set up Python
+      # Skipped when a container image is in use: it downloads an interpreter from github.com,
+      # which is the first step to fail on a runner with no egress.
+      if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install developer quality tools
+      shell: bash
+      run: ${{ inputs.python }} -m pip install --disable-pip-version-check -e ".[dev]"
+
+    - name: Run canonical quality gates
+      shell: bash
+      run: make quality PYTHON=${{ inputs.python }}

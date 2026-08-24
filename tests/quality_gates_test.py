@@ -52,9 +52,16 @@ class QualitySurfaceTest(unittest.TestCase):
             'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
             workflow,
         )
-        self.assertIn("run: make quality", workflow)
-        self.assertNotIn("unittest discover", workflow)
-        self.assertNotIn("ast.walk", workflow)
+        # The steps live in a composite action now: two jobs differ only in how their container
+        # image is pulled, and what they run must not be a second copy that can drift.
+        self.assertIn("uses: ./.github/actions/quality", workflow)
+        action = (ROOT / ".github" / "actions" / "quality" / "action.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("run: make quality", action)
+        for body in (workflow, action):
+            self.assertNotIn("unittest discover", body)
+            self.assertNotIn("ast.walk", body)
 
     def test_dev_extra_adds_coverage_but_runtime_stays_empty(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

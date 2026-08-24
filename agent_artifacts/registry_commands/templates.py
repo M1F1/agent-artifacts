@@ -39,10 +39,29 @@ _PROVIDE_AART = b"""      - name: Provide AART
           TOOL_URL: ${{ vars.AART_TOOL_URL || format('{0}/{1}.git', github.server_url, vars.AART_REPOSITORY || 'M1F1/agent-artifacts') }}
           TOOL_REF: ${{ vars.AART_REF }}
           INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+          INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
           PY: ${{ vars.AART_PYTHON || 'python3' }}
           GH_HOST_OVERRIDE: ${{ vars.AART_GH_HOST }}
         run: |
           set -euo pipefail
+          # An internal index usually wants credentials, and a variable cannot hold one.  So the
+          # variable holds the bare host and names the secret holding `user:pass`; the URL is
+          # assembled here and never written down anywhere.  Splitting a secret defeats GitHub's
+          # masking -- it masks the whole value it was given, not the halves -- so each half is
+          # re-masked before it is used.  `announce` keeps the bare host, so no log line, not even
+          # a masked one, carries the password.
+          announce="$INDEX_URL"
+          if [ -n "${INDEX_CREDENTIALS:-}" ]; then
+            index_user="${INDEX_CREDENTIALS%%:*}"
+            index_password="${INDEX_CREDENTIALS#*:}"
+            echo "::add-mask::$index_user"
+            echo "::add-mask::$index_password"
+            index_scheme="https"
+            case "$INDEX_URL" in http://*) index_scheme="http" ;; esac
+            index_host="${INDEX_URL#http://}"
+            index_host="${index_host#https://}"
+            INDEX_URL="$index_scheme://$index_user:$index_password@$index_host"
+          fi
           # `.aart-version` is this registry's own pin: one line of text, versioned in Git and
           # reviewed in a pull request like any other change.  It answers *which* AART, which is a
           # decision about the registry.  The variables answer *where this deployment gets it
@@ -66,7 +85,7 @@ _PROVIDE_AART = b"""      - name: Provide AART
           rm -rf "$tool"
           if [ -n "$PACKAGE" ]; then
             requirement="${PACKAGE//\\{version\\}/$PIN}"
-            how="index $INDEX_URL ($requirement)"
+            how="index $announce ($requirement)"
             "$PY" -m pip install --quiet --no-deps --target "$tool" \\
               --index-url "$INDEX_URL" "$requirement"
           elif [ -n "$WHEEL_URL" ]; then
@@ -107,11 +126,61 @@ _PROVIDE_AART = b"""      - name: Provide AART
 """
 
 _RUNS_ON = b"""    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
-    container: ${{ vars.AART_CI_IMAGE }}
 """
 
-REGISTRY_CI_WORKFLOW = (
-    b"""name: AART registry quality
+# A private image needs a `credentials` block, and that block cannot be made conditional.  Measured
+# on a real instance rather than assumed: an empty block and a `null` block are both rejected before
+# the job starts ("Unexpected value ''"), and filling it with a placeholder makes an anonymous pull
+# fail a `docker login` it never needed.  The `secrets` context is not even readable at `container:`
+# itself, only inside `credentials`.  So the choice is made in the one place a choice survives --
+# `if:` at job level -- and each job is emitted twice.  The plain variant is byte-for-byte the job
+# this template always produced, so a registry that names no secrets sees no change whatsoever.
+_PLAIN_CONTAINER = b"""    container: ${{ vars.AART_CI_IMAGE }}
+"""
+_PRIVATE_CONTAINER = b"""    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+"""
+_PLAIN_WHEN = b"vars.AART_IMAGE_USERNAME_SECRET == ''"
+_PRIVATE_WHEN = b"vars.AART_IMAGE_USERNAME_SECRET != ''"
+
+
+def _job(job_id: bytes, body: bytes, header: bytes = b"", when: bytes = b"") -> bytes:
+    """Emit one job twice, once per container shape, gated so exactly one of them runs.
+
+    `header` carries whatever belongs above the container line -- `needs`, `strategy`,
+    `environment`.  `when` is the job's own condition, which is combined with the container
+    switch rather than replaced by it.
+    """
+
+    emitted = []
+    for suffix, container, switch in (
+        (b"", _PLAIN_CONTAINER, _PLAIN_WHEN),
+        (b"-private-image", _PRIVATE_CONTAINER, _PRIVATE_WHEN),
+    ):
+        condition = switch if not when else b"".join((when, b" && ", switch))
+        emitted.append(
+            b"".join(
+                (
+                    b"  ",
+                    job_id,
+                    suffix,
+                    b":\n    if: ",
+                    condition,
+                    b"\n",
+                    header,
+                    _RUNS_ON,
+                    container,
+                    body,
+                )
+            )
+        )
+    return b"".join(emitted)
+
+
+REGISTRY_CI_WORKFLOW = b"""name: AART registry quality
 on:
   pull_request:
   push:
@@ -119,14 +188,14 @@ on:
 permissions:
   contents: read
 jobs:
-  registry-quality:
-    strategy:
+""" + _job(
+    b"registry-quality",
+    header=b"""    strategy:
       fail-fast: false
       matrix:
         compatibility: [minimum, latest]
-"""
-    + _RUNS_ON
-    + b"""    steps:
+""",
+    body=b"""    steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -138,9 +207,8 @@ jobs:
       - run: aart registry build --source . --check
       - run: aart registry audit --source .
       - run: aart registry test --source . --compatibility ${{ matrix.compatibility }}
-"""
+""",
 )
-
 USAGE_REPORT_ISSUE_FORM = b"""name: AART redacted usage report
 description: Share one voluntary, bounded AART session result with this registry.
 title: "AART usage report: "
@@ -159,8 +227,7 @@ body:
       required: true
 """
 
-USAGE_REPORT_VALIDATE_WORKFLOW = (
-    b"""name: Validate AART usage report
+USAGE_REPORT_VALIDATE_WORKFLOW = b"""name: Validate AART usage report
 on:
   issues:
     types: [opened, edited, reopened]
@@ -168,11 +235,10 @@ permissions:
   contents: read
   issues: write
 jobs:
-  validate:
-    if: startsWith(github.event.issue.title, 'AART usage report:')
-"""
-    + _RUNS_ON
-    + b"""    steps:
+""" + _job(
+    b"validate",
+    when=b"startsWith(github.event.issue.title, 'AART usage report:')",
+    body=b"""    steps:
 """
     + _PROVIDE_AART
     + b"""      - name: Read issue body as untrusted data
@@ -201,13 +267,14 @@ jobs:
           gh label create invalid-usage-report --repo "$GITHUB_REPOSITORY" --color B60205 --force
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body 'AART rejected this report because it did not match the bounded redacted schema.'
           gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason not-planned
-"""
+""",
 )
-
 # Pages is the one piece an Enterprise instance may simply not offer.  Deployment is therefore its
 # own job, gated by a variable: set `AART_PAGES` to `false` and the dashboard is still built and
 # still validated, it is just not published.  A job-level `if` is used rather than a step-level one
-# because the `github-pages` environment belongs to the job that deploys.
+# because the `github-pages` environment belongs to the job that deploys.  That job runs no Python
+# and never fetches AART, so it needs no container and stays a single job; it waits on both shapes
+# of `aggregate` and tolerates the one that stood down, which is what `!cancelled()` buys.
 USAGE_REPORT_DASHBOARD_WORKFLOW = (
     b"""name: Build AART usage dashboard
 on:
@@ -223,13 +290,13 @@ concurrency:
   group: aart-usage-pages
   cancel-in-progress: true
 jobs:
-  aggregate:
 """
-    + _RUNS_ON
-    + b"""    steps:
+    + _job(
+        b"aggregate",
+        body=b"""    steps:
 """
-    + _PROVIDE_AART
-    + b"""      - name: Export only validated report bodies and server timestamps
+        + _PROVIDE_AART
+        + b"""      - name: Export only validated report bodies and server timestamps
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh issue list --repo "$GITHUB_REPOSITORY" --label usage-report --state all --limit 10000 --json body,createdAt > usage-issues.json
@@ -237,12 +304,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: usage-dashboard
-  deploy:
-    needs: aggregate
-    if: vars.AART_PAGES != 'false'
-"""
-    + _RUNS_ON
-    + b"""    environment:
+""",
+    )
+    + b"""  deploy:
+    needs: [aggregate, aggregate-private-image]
+    if: ${{ !cancelled() && !failure() && vars.AART_PAGES != 'false' }}
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
@@ -250,7 +318,6 @@ jobs:
         uses: actions/deploy-pages@v4
 """
 )
-
 REPORTING_TEMPLATES = (
     (".github/ISSUE_TEMPLATE/usage-report.yml", USAGE_REPORT_ISSUE_FORM),
     (".github/workflows/aart-usage-dashboard.yml", USAGE_REPORT_DASHBOARD_WORKFLOW),

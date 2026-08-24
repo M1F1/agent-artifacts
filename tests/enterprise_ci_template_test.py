@@ -92,9 +92,18 @@ class DefaultsReproduceThePublicRunTest(unittest.TestCase):
         self.assertIn("vars.AART_GH_HOST || 'github.com'", workflow)
 
     def test_setup_python_is_skipped_only_when_an_image_carries_one(self) -> None:
+        """The decision still belongs to the variable; only the place it is read moved.
+
+        The steps live in a composite action now, because two jobs that differ solely in how
+        their image is pulled must not differ in what they run.  An action cannot read `vars`,
+        so the job passes the answer down and the action acts on it.
+        """
+
         for path in WORKFLOWS:
-            workflow = _read(path)
-            self.assertIn("if: vars.AART_CI_IMAGE == ''", workflow)
+            self.assertIn("setup-python: ${{ vars.AART_CI_IMAGE == '' }}", _read(path))
+        for action in ("quality", "release"):
+            body = _read(ROOT / ".github" / "actions" / action / "action.yml")
+            self.assertIn("if: inputs.setup-python == 'true'", body)
 
 
 class ToolNeedsNoPackagingTest(unittest.TestCase):
@@ -112,14 +121,17 @@ class ToolNeedsNoPackagingTest(unittest.TestCase):
         self.assertIn("PYTHONPATH=", template)
         self.assertIn("-m agent_artifacts", template)
         self.assertNotIn("setup-python", template)
-        self.assertEqual(template.count("pip install"), 1)
-        self.assertIn('if [ -n "$PACKAGE" ]', template.split("pip install")[0][-200:])
+        for name, body in _fetching_jobs(template).items():
+            self.assertEqual(body.count("pip install"), 1, name)
+            self.assertIn('if [ -n "$PACKAGE" ]', body.split("pip install")[0][-200:], name)
 
     def test_the_template_keeps_one_marketplace_action(self) -> None:
         """`uses:` cannot be a variable, so each one is a hand edit on an instance that lacks it."""
 
         uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", TEMPLATE_TEXT, re.M)
-        self.assertEqual(uses, ["actions/checkout@v4"], "template grew a marketplace dependency")
+        self.assertEqual(
+            set(uses), {"actions/checkout@v4"}, "template grew a marketplace dependency"
+        )
 
     def test_both_resolvers_check_the_package_before_trusting_the_tree(self) -> None:
         for body in (TEMPLATE_TEXT, _read(ACTION)):
@@ -141,7 +153,8 @@ class EveryEmittedWorkflowIsPortableTest(unittest.TestCase):
         for label, body in EMITTED.items():
             self.assertNotIn("setup-python", body, label)
             self.assertIn("PYTHONPATH=", body, label)
-            self.assertEqual(body.count("pip install"), 1, label)
+            for name, job in _fetching_jobs(body).items():
+                self.assertEqual(job.count("pip install"), 1, f"{label}: {name}")
 
     def test_none_of_them_pins_a_hosted_runner(self) -> None:
         for label, body in EMITTED.items():
@@ -160,11 +173,17 @@ class EveryEmittedWorkflowIsPortableTest(unittest.TestCase):
         """An Enterprise instance may not offer Pages; the dashboard must still be built."""
 
         dashboard = EMITTED["usage dashboard"]
-        self.assertIn("if: vars.AART_PAGES != 'false'", dashboard)
+        self.assertIn("vars.AART_PAGES != 'false'", dashboard)
         self.assertIn("aart reporting aggregate", dashboard)
         # The build and the publication are separate jobs, so the gate can skip one and keep the
-        # other, and so the github-pages environment belongs only to the job that deploys.
-        self.assertIn("needs: aggregate", dashboard)
+        # other, and so the github-pages environment belongs only to the job that deploys.  It
+        # waits on both shapes of the build and tolerates the one that stood down, which is what
+        # `!cancelled()` buys: without it, a skipped dependency skips the dependent too.
+        self.assertIn("needs: [aggregate, aggregate-private-image]", dashboard)
+        self.assertIn("!cancelled() && !failure()", dashboard)
+        # Deployment runs no Python and never fetches AART, so it needs no image at all.
+        deploy = _job_bodies(dashboard)["deploy"]
+        self.assertNotIn("container", deploy)
 
 
 class RegistryGatesAreCompleteTest(unittest.TestCase):
@@ -228,7 +247,10 @@ class EveryFetchArmIsReachableTest(unittest.TestCase):
 
     def test_every_arm_ends_at_the_same_check(self) -> None:
         for label, body in EMITTED.items():
-            self.assertEqual(body.count('test -f "$tool/agent_artifacts/__main__.py"'), 1, label)
+            for name, job in _fetching_jobs(body).items():
+                self.assertEqual(
+                    job.count('test -f "$tool/agent_artifacts/__main__.py"'), 1, f"{label}: {name}"
+                )
 
 
 class ThePinIsReadFromTheRepositoryTest(unittest.TestCase):
@@ -274,6 +296,136 @@ class ThePinIsReadFromTheRepositoryTest(unittest.TestCase):
     def test_an_override_is_announced_rather_than_silent(self) -> None:
         for label, body in EMITTED.items():
             self.assertIn("overridden by AART_REF", body, label)
+
+
+def _job_bodies(workflow: str) -> dict[str, str]:
+    """Split a workflow into its jobs.
+
+    Every job that runs in a container is emitted twice, once per container shape, so a count
+    taken over a whole file now says two where it means one.  The invariants are per job, and
+    this is what makes them expressible that way.
+    """
+
+    jobs = workflow.split("\njobs:\n", 1)[1]
+    bodies: dict[str, str] = {}
+    name: str | None = None
+    lines: list[str] = []
+    for line in jobs.splitlines(keepends=True):
+        match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if match:
+            if name is not None:
+                bodies[name] = "".join(lines)
+            name, lines = match.group(1), []
+        elif name is not None:
+            lines.append(line)
+    if name is not None:
+        bodies[name] = "".join(lines)
+    return bodies
+
+
+def _fetching_jobs(workflow: str) -> dict[str, str]:
+    return {name: body for name, body in _job_bodies(workflow).items() if "Provide AART" in body}
+
+
+def _steps_of(body: str) -> str:
+    return body.split("    steps:\n", 1)[1] if "    steps:\n" in body else ""
+
+
+class TheContainerSwitchTest(unittest.TestCase):
+    """A private image needs credentials, and a credentials block cannot be conditional.
+
+    Measured on a real instance, not reasoned about: an empty `credentials` block and a `null`
+    one are both rejected before the job starts, and filling it with a placeholder makes an
+    anonymous pull fail a `docker login` it never needed.  The `secrets` context is not even
+    readable at `container:` itself.  So the switch lives at `if:`, the one place a choice
+    survives, and every containerised job is emitted twice.  `docs/ci/enterprise-fork-v1.md`
+    records the runs that established each of those facts.
+    """
+
+    SOURCES = {
+        **{str(path.relative_to(ROOT)): _read(path) for path in WORKFLOWS},
+        **EMITTED,
+    }
+
+    def test_every_containerised_job_comes_in_both_shapes(self) -> None:
+        for label, workflow in self.SOURCES.items():
+            bodies = _job_bodies(workflow)
+            plain = [name for name, body in bodies.items() if "    container:" in body]
+            for name in plain:
+                if name.endswith("-private-image"):
+                    continue
+                self.assertIn(f"{name}-private-image", bodies, f"{label}: {name} has one shape")
+
+    def test_the_two_shapes_run_the_same_steps(self) -> None:
+        """The one thing duplication can break, held by a test rather than by care."""
+
+        for label, workflow in self.SOURCES.items():
+            bodies = _job_bodies(workflow)
+            for name, body in bodies.items():
+                if not name.endswith("-private-image"):
+                    continue
+                plain = bodies[name[: -len("-private-image")]]
+                self.assertEqual(
+                    _steps_of(plain).strip(), _steps_of(body).strip(), f"{label}: {name} drifted"
+                )
+
+    def test_the_switch_is_exclusive_so_exactly_one_shape_runs(self) -> None:
+        for label, workflow in self.SOURCES.items():
+            for name, body in _job_bodies(workflow).items():
+                if "    container:" not in body:
+                    continue
+                expected = "!=" if name.endswith("-private-image") else "=="
+                self.assertIn(
+                    f"vars.AART_IMAGE_USERNAME_SECRET {expected} ''", body, f"{label}: {name}"
+                )
+
+    def test_the_default_shape_carries_no_credentials_block(self) -> None:
+        """Naming no secrets must leave the job this project always ran, byte for byte."""
+
+        for label, workflow in self.SOURCES.items():
+            for name, body in _job_bodies(workflow).items():
+                if name.endswith("-private-image"):
+                    continue
+                # `persist-credentials: false` on the checkout is a different key at a different
+                # depth; what must be absent is the container's own block.
+                self.assertNotIn("\n      credentials:\n", body, f"{label}: {name}")
+                self.assertNotIn("secrets[vars.AART_IMAGE_", body, f"{label}: {name}")
+
+    def test_the_credentialed_shape_names_both_secrets_through_variables(self) -> None:
+        """A secret's *name* is not a secret, so an instance keeps its own naming."""
+
+        for label, workflow in self.SOURCES.items():
+            for name, body in _job_bodies(workflow).items():
+                if not name.endswith("-private-image"):
+                    continue
+                where = f"{label}: {name}"
+                self.assertIn(
+                    "username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}", body, where
+                )
+                self.assertIn(
+                    "password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}", body, where
+                )
+
+
+class TheIndexCredentialIsAssembledNotStoredTest(unittest.TestCase):
+    """A variable cannot hold a credential, so it holds the host and names the secret."""
+
+    def test_both_halves_are_remasked_before_use(self) -> None:
+        """GitHub masks the value it was given -- `user:pass` -- and neither half after a split."""
+
+        action = _read(ROOT / ".github" / "actions" / "quality" / "action.yml")
+        self.assertEqual(action.count("::add-mask::"), 2, "quality action: one half left unmasked")
+        # A workflow emits its job once per container shape, so the count is taken per job.
+        for label, body in EMITTED.items():
+            for name, job in _fetching_jobs(body).items():
+                self.assertEqual(
+                    job.count("::add-mask::"), 2, f"{label}: {name}: one half left unmasked"
+                )
+
+    def test_no_log_line_carries_the_assembled_url(self) -> None:
+        for label, body in EMITTED.items():
+            self.assertIn('how="index $announce', body, label)
+            self.assertNotIn('how="index $INDEX_URL', body, label)
 
 
 if __name__ == "__main__":

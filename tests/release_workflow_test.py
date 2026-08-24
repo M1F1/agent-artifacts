@@ -16,17 +16,24 @@ class ReleaseWorkflowTest(unittest.TestCase):
             'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
             workflow,
         )
-        self.assertIn('pip install --disable-pip-version-check -e ".[dev]"', workflow)
-        self.assertIn("make quality", workflow)
         self.assertIn("M1F1/agent-artifacts-registry.git", workflow)
-        self.assertIn("make release-check", workflow)
-        self.assertIn("scripts/version.py check-tag", workflow)
         self.assertIn("fetch-depth: 0", workflow)
+
+        # Each job appears once per container shape, so its steps live in a composite action
+        # rather than in two copies that can drift apart.  The checklist is what matters, and
+        # this is where it now is.
+        actions = ROOT / ".github" / "actions"
+        quality = (actions / "quality" / "action.yml").read_text(encoding="utf-8")
+        release_steps = (actions / "release" / "action.yml").read_text(encoding="utf-8")
+        self.assertIn('pip install --disable-pip-version-check -e ".[dev]"', quality)
+        self.assertIn("make quality", quality)
+        self.assertIn("make release-check", release_steps)
+        self.assertIn("scripts/version.py check-tag", release_steps)
         self.assertIn(
             "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
-            workflow,
+            release_steps,
         )
-        self.assertIn('git merge-base --is-ancestor "$TAG_COMMIT" origin/main', workflow)
+        self.assertIn('git merge-base --is-ancestor "$TAG_COMMIT" origin/main', release_steps)
 
     def test_workflow_follows_the_tag_instead_of_pinning_one_release(self) -> None:
         """A pinned trigger silently builds nothing for the next release.
@@ -42,7 +49,10 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         self.assertIn('- "v[0-9]+.[0-9]+.[0-9]+"', workflow)
         self.assertNotIn('- "v*"', workflow)
-        self.assertIn("github-release-${TAG}.md", workflow)
+        self.assertIn(
+            "github-release-${TAG}.md",
+            (ROOT / ".github" / "actions" / "release" / "action.yml").read_text(encoding="utf-8"),
+        )
         self.assertNotIn("github-release-v1.0.0.md", workflow)
         self.assertNotIn(f"tag_name == 'v{release.EXPECTED_VERSION}'", workflow)
         self.assertNotIn("tag_name == 'v1.0.0'", workflow)

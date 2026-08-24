@@ -152,14 +152,17 @@ class RegistryInitScaffoldTest(unittest.TestCase):
         # no runtime dependencies and ships __main__.py, so the gates run on a private runner
         # that can reach no package index at all.  `pip` appears once, inside the arm that only
         # runs when somebody sets AART_PACKAGE to point at one.
-        self.assertEqual(workflow.count(b"pip install"), 1)
+        # One `pip install` per job, and the job is emitted once per container shape.
+        self.assertEqual(workflow.count(b"pip install"), workflow.count(b"- name: Provide AART"))
         self.assertIn(b'if [ -n "$PACKAGE" ]', workflow)
         self.assertIn(b"PYTHONPATH=", workflow)
         self.assertIn(b"-m agent_artifacts", workflow)
         self.assertIn(b"vars.AART_REPOSITORY", workflow)
-        # One checkout now — the registry's own — and it still persists no credential.  The tool
-        # is cloned without one, because AART carries no credential of its own.
-        self.assertEqual(workflow.count(b"persist-credentials: false"), 1)
+        # One checkout per job — the registry's own — and it still persists no credential.  The
+        # tool is cloned without one, because AART carries no credential of its own.
+        self.assertEqual(
+            workflow.count(b"persist-credentials: false"), workflow.count(b"uses: actions/checkout")
+        )
         self.assertNotIn(b"git push", workflow)
         issue_form = files[".github/ISSUE_TEMPLATE/usage-report.yml"]
         self.assertIn(b"id: report", issue_form)
@@ -202,7 +205,9 @@ class RegistryInitScaffoldTest(unittest.TestCase):
             for line in workflow.decode().splitlines()
             if line.strip().startswith("- run: aart ")
         ]
-        self.assertEqual(len(commands), 6)
+        # Six gates, emitted once per container shape, and both shapes must run the same six.
+        self.assertEqual(len(commands), 12)
+        self.assertEqual(commands[:6], commands[6:])
         for command in commands:
             argv = shlex.split(
                 command.removeprefix("aart ").replace("${{ matrix.compatibility }}", "minimum")

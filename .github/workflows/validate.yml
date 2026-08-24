@@ -4,6 +4,13 @@ name: quality
 # Every default below reproduces the public github.com run exactly, so an unconfigured fork
 # behaves the way this repository always has.  See docs/ci/enterprise-fork-v1.md for the
 # variable list and for the two things a variable cannot express.
+#
+# The job appears twice because a `container.credentials` block cannot be made conditional: an
+# empty one and a `null` one are both rejected before the job starts, and a placeholder credential
+# makes an anonymous pull fail a `docker login` it never needed.  So the choice is made where a
+# choice survives -- `if:` at job level -- and the two jobs share every step through
+# `.github/actions/quality`.  Name no credential secrets and the first job is the only one that
+# runs, exactly as before.
 
 on:
   push:
@@ -14,6 +21,7 @@ permissions:
 
 jobs:
   quality:
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
     name: quality (Python ${{ matrix.python-version }})
     runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
     # A company image already carries an interpreter.  Leave AART_CI_IMAGE unset and this line
@@ -25,22 +33,42 @@ jobs:
         python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
     env:
       # The tool's own gates need ruff, mypy and coverage.  That is the one place this repository
-      # needs a package index; the registry gates need none.  Point this at an internal mirror.
-      PIP_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      # needs a package index; the registry gates need none.  The variable holds the bare host and
+      # names the secret holding `user:pass`, because a variable cannot hold a credential.
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        # Skipped when a container image is in use: it downloads an interpreter from github.com,
-        # which is the first step to fail on a runner with no egress.
-        if: vars.AART_CI_IMAGE == ''
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/quality
         with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
           python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
 
-      - name: Install developer quality tools
-        run: ${{ vars.AART_PYTHON || 'python' }} -m pip install --disable-pip-version-check -e ".[dev]"
+  quality-private-image:
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
+    name: quality (Python ${{ matrix.python-version }}, private image)
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Run canonical quality gates
-        run: make quality PYTHON=${{ vars.AART_PYTHON || 'python' }}
+      - uses: ./.github/actions/quality
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}

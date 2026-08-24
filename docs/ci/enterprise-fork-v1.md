@@ -8,8 +8,8 @@ so an unconfigured fork behaves exactly as this repository always has.
 **The runbook is the ordered version** — mirror the tool, configure it, then create a registry.
 The numbered sections after it are the reference: every variable, and what each one does.
 
-Section 5 names the two things a variable cannot express. Read it before assuming the move is a
-settings change only.
+Section 5 names the three things a variable cannot express. Read it before assuming the move is
+a settings change only.
 
 ## The runbook, in order
 
@@ -45,6 +45,8 @@ where you can. Section 2 is the full table; on a private runner with no egress t
 | `AART_PIP_INDEX_URL` | the internal mirror, for `ruff`, `mypy` and `coverage` |
 | `AART_GH_HOST` | the instance hostname, so `gh` does not talk to github.com |
 | `AART_PYTHON_VERSIONS` | one entry, e.g. `["3.11"]`, if you also set `AART_CI_IMAGE` |
+| `AART_IMAGE_USERNAME_SECRET`, `AART_IMAGE_PASSWORD_SECRET` | the **names** of your existing image-registry secrets, if the image needs a login |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | the **name** of the secret holding `user:pass`, if the index needs a login |
 
 ### Step 3 — Decide how registries will fetch AART
 
@@ -99,6 +101,8 @@ every registry created later is configured before it exists.
 | `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON` | same reasons as the fork |
 | `AART_PIP_INDEX_URL` | only if you chose `AART_PACKAGE` |
 | `AART_GH_HOST`, `AART_REPOSITORY` | the instance hostname and the tool's path on it |
+| `AART_IMAGE_USERNAME_SECRET`, `AART_IMAGE_PASSWORD_SECRET` | the image needs a login. Set the **names** of the secrets, not the values |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | you chose `AART_PACKAGE` and the index needs a login |
 | `AART_PAGES` = `false` | the instance offers no GitHub Pages. The dashboard is still built and validated, only not published |
 
 ### Step 8 — Make the gates pass once
@@ -166,6 +170,9 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
 | `AART_REFERENCE_REGISTRY_URL` | this project's public registry | The registry the release checklist reconciles against. A fork publishes to its own |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
+| `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |
+| `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the index. Combined with `AART_PIP_INDEX_URL`, which stays a bare host |
 
 ## 3. Variables a registry sets
 
@@ -190,6 +197,9 @@ first one set wins, never combined. §3.1 explains why that order and not anothe
 | `AART_CI_IMAGE` | unset | As above |
 | `AART_PYTHON` | `python3` | As above |
 | `AART_PAGES` | unset | Set to `false` where the instance offers no GitHub Pages. The usage dashboard is still built and still validated; only its publication is skipped |
+| `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. As above: it selects the job shape, and a name is not a secret |
+| `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the index. Only the `AART_PACKAGE` arm reaches an index at all |
 
 All three workflows share one `Provide AART` step, so they cannot drift apart. That step also sets
 `GH_HOST` from `GITHUB_SERVER_URL`, because `gh issue list --repo owner/name` otherwise talks to
@@ -328,6 +338,36 @@ The rule this leads to: **the fewer `uses:` lines a workflow has, the more porta
 is why the registry workflow resolves AART with a dozen lines of `bash` rather than an action, even
 though an action would read more nicely.
 
+**A variable cannot hold a credential, and a credentials block cannot be made conditional.**
+Both were measured on real runs rather than reasoned about, because the documentation states
+neither. What the runs established:
+
+| Tried | Result |
+|---|---|
+| `secrets[vars.NAME]` — a secret named by a variable | **works**, in `env:` and inside `container.credentials` alike |
+| `secrets` anywhere in the `container:` expression itself | `Unrecognized named-value: 'secrets'` |
+| `credentials:` with empty values | `Unexpected value ''`, before the job starts |
+| `credentials: ${{ fromJSON('null') }}` | the same rejection — `null` is not *absent* |
+| `credentials:` filled with a placeholder | `Docker login for '' failed`, so an anonymous pull breaks |
+| `container: ${{ fromJSON(vars.X \|\| 'null') }}` | `null` runs on the host, an object runs in the container |
+
+Two consequences shape every workflow here.
+
+1. **The credential switch lives at `if:`, so each containerised job is emitted twice.** One shape
+   carries no `credentials` block at all and is byte-for-byte the job this project always ran; the
+   other names both secrets through variables. `AART_IMAGE_USERNAME_SECRET` decides which runs, and
+   because it is a *name* rather than a value it is safe in a variable — a secret's name is not a
+   secret. Naming nothing changes nothing, which is why an existing fork sees no difference.
+2. **The index credential is assembled, never stored.** `AART_PIP_INDEX_URL` holds the bare host and
+   `AART_PIP_INDEX_CREDENTIALS_SECRET` names a secret holding `user:pass`; the URL is composed in
+   the step. Splitting a secret **defeats GitHub's masking** — it masks the whole value it was
+   given, not the halves — so both halves are re-masked with `::add-mask::` before use, and the log
+   line names the bare host so no password reaches it even masked.
+
+The steps of the two shapes live in a composite action rather than in two copies, since a
+duplicated gate list is a gate list that drifts. An action cannot read `vars`, so the job reads the
+variables and passes the answers down.
+
 ## 6. Many registries, one pin
 
 Five registries mean five places to move `AART_REF`. Promote the workflow to a **reusable
@@ -378,18 +418,30 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
   it.
 - A registry scaffolded from scratch by the shipped code, and its three emitted workflows read
   back and parsed.
+- Walked on GitHub Actions itself on 2026-08-24, because the two questions the container shape
+  turns on are not answered anywhere in the documentation. Sixteen throwaway runs, each isolated to
+  one question, on a branch since deleted. What they established is the table in §5. Three of the
+  early runs were invalid for a reason worth recording: `run: echo "RESULT 9: ..."` is a plain YAML
+  scalar containing `": "`, which is a mapping, so those runs failed on the probe rather than on
+  the thing being probed. They were re-run inside block scalars and are not counted above.
+- The `secrets[vars.NAME]` form and the `if:`-driven switch were then confirmed on the company
+  GitHub Enterprise Server instance this work is for, which is the instance that matters.
+- The credentialed index walked end to end on 2026-08-24, against a local index that answers `401`
+  without credentials and `200` with them. The emitted step, run with the secret set, installs AART
+  through it and exits `0`; run without, `pip` prompts for a user and fails. The announced line
+  carries the bare host, and the password appears in the output exactly once — inside the
+  `::add-mask::` directive, which is the line GitHub consumes and removes.
 
-**Not walked: any of it on a GitHub Enterprise Server instance, or on a self-hosted runner.** Four
-claims are therefore unverified and should be checked on the first real run:
+**Not walked: the gates themselves on a GitHub Enterprise Server instance, or on a self-hosted
+runner.** Three claims are therefore unverified and should be checked on the first real run:
 
-1. That `container: ${{ vars.AART_CI_IMAGE }}` with the variable unset means *no container* rather
-   than an error. If it errors on your instance, drop the `container:` line — a self-hosted runner
-   usually already runs in the intended image.
-2. That your instance carries `actions/checkout@v4`, `actions/setup-python@v5`, and
+1. That your instance carries `actions/checkout@v4`, `actions/setup-python@v5`, and
    `actions/upload-artifact@v4` for the release job.
-3. That splitting the dashboard into `aggregate` and `deploy` jobs still deploys, and that dropping
+2. That splitting the dashboard into `aggregate` and `deploy` jobs still deploys, and that dropping
    `configure-pages` changes nothing for a static output. Both follow GitHub's own documented
-   two-job Pages pattern, but neither was run.
-4. That `GH_HOST` derived from `GITHUB_SERVER_URL` is what your `gh` expects. The derivation strips
+   two-job Pages pattern, but neither was run. `deploy` now waits on both shapes of `aggregate`
+   and tolerates the one that stood down; a skipped dependency skips its dependents unless the
+   condition says otherwise, which is what `!cancelled()` is doing there.
+3. That `GH_HOST` derived from `GITHUB_SERVER_URL` is what your `gh` expects. The derivation strips
    `https://` and nothing else, so an instance served on a path or a non-default port needs
    `AART_GH_HOST` set explicitly.

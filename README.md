@@ -238,6 +238,9 @@ override it.
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
 | `AART_REFERENCE_REGISTRY_URL` | this project's registry | The registry the release checklist reconciles against |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
+| `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username |
+| `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for that index |
 
 ### A registry created by `aart registry init`
 
@@ -276,6 +279,25 @@ the run: `AART: agent-artifacts 2.8.5  via wheel https://…`.
 The registry also reads `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON`, `AART_PIP_INDEX_URL`,
 `AART_REPOSITORY`, `AART_GH_HOST`, and `AART_PAGES` — set the last to `false` where the instance
 offers no GitHub Pages, and the usage dashboard is still built and validated, only not published.
+
+### Registries and images that need a login
+
+A private image needs a `credentials` block, and that block cannot be made conditional: an empty one
+and a `null` one are both rejected before the job starts, and a placeholder makes an anonymous pull
+fail a `docker login` it never needed. So every containerised job is written twice and `if:` picks
+one. **You name the secrets rather than copying them**, because a secret's name is not a secret:
+
+| Variable | Holds |
+|---|---|
+| `AART_IMAGE_USERNAME_SECRET` | the name of your existing username secret, e.g. `NEXUS_USER` |
+| `AART_IMAGE_PASSWORD_SECRET` | the name of your existing password secret |
+| `AART_PIP_INDEX_CREDENTIALS_SECRET` | the name of a secret holding `user:pass` for the index |
+
+Setting `AART_IMAGE_USERNAME_SECRET` is what flips the switch. Leave it unset and the job that runs
+is the one this project always ran, unchanged. An organisation therefore keeps its own naming and
+creates no new secrets, and the index URL stays a bare host — the credential is assembled in the
+step, with both halves re-masked first, because GitHub masks the whole `user:pass` it was given and
+neither half after a split.
 
 [The Enterprise fork contract](docs/ci/enterprise-fork-v1.md) is the full page. Its runbook is the
 ordered version of everything above — mirror this repository onto the instance, set its variables,

@@ -1,0 +1,79 @@
+name: AART release checklist
+description: >
+  Reconcile against the reference registry, prove the tag, build the offline wheel and ship it.
+  Lives in an action for the same reason the quality gates do: two jobs differ only in how their
+  container image is pulled, and a release checklist duplicated is a release checklist that drifts.
+
+inputs:
+  python:
+    description: Name of the interpreter to invoke.
+    required: true
+  python-version:
+    description: Interpreter version to install when the job runs without a container image.
+    required: true
+  setup-python:
+    description: '"true" when the job has no container image and so needs an interpreter installed.'
+    required: true
+  tag:
+    description: The release tag under inspection.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Clone approved reference registry
+      shell: bash
+      run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
+
+    - name: Prove the tagged source was merged into main
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+        TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+        git merge-base --is-ancestor "$TAG_COMMIT" origin/main
+
+    - name: Run stable release checklist
+      shell: bash
+      run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry" PYTHON=${{ inputs.python }}
+
+    - name: Verify source version and release tag
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: ${{ inputs.python }} scripts/version.py check-tag "$TAG"
+
+    - name: Verify reviewed release notes
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: test -s "docs/release/github-release-${TAG}.md"
+
+    - name: Inject commit
+      shell: bash
+      run: ${{ inputs.python }} scripts/inject_commit.py
+
+    - name: Build wheel
+      shell: bash
+      run: ${{ inputs.python }} scripts/build_wheel.py
+
+    - name: Upload wheel artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheel
+        path: dist/*.whl
+        if-no-files-found: error
+
+    - name: Attach wheel to release
+      if: github.event_name == 'release'
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: gh release upload "$TAG" dist/*.whl --clobber
