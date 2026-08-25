@@ -55,3 +55,13 @@ def secret_field(key: str, value: str) -> str:
 def secret_object(key: str, value: str, *, trailing: str = "") -> bytes:
     """A JSON object holding one credential member, as bytes, optionally left unterminated."""
     return ("{" + secret_field(key, value) + trailing).encode("utf-8")
+
+
+def assignment(name: str, value: str) -> str:
+    """`NAME=value` — a credential named by an assignment, the form a transcript prints."""
+    return name + "=" + value
+
+
+def assignment_bytes(name: str, value: str) -> bytes:
+    """The same, as bytes, for a fixture standing in for a tool's raw output."""
+    return assignment(name, value).encode("utf-8")

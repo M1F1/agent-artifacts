@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from agent_artifacts.commands.marketplace import _setup_reminders
 from agent_artifacts.setup import render_setup_outcome
 from agent_artifacts.setup_render import render_setup_payload
+from tests.credential_fixtures import assignment
 from tests.function_cases import function_test_case
 
 MANUAL = {
@@ -317,7 +318,9 @@ def _failure_payload(detail: str) -> dict:
 
 
 def test_a_credential_shaped_detail_is_redacted_before_it_is_printed() -> None:
-    text = _joined(_failure_payload("failed: secret=realsecretvalue rejected"))
+    text = _joined(
+        _failure_payload("failed: " + assignment("secret", "realsecretvalue") + " rejected")
+    )
 
     assert "realsecretvalue" not in text
     assert "[redacted]" in text

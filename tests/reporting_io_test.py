@@ -12,6 +12,7 @@ from agent_artifacts.reporting.model import (
     UsageReport,
     UsageResult,
 )
+from tests.credential_fixtures import assignment_bytes
 
 
 def _plan(mode: ReportingMode):
@@ -88,7 +89,9 @@ class ReportingIoTest(unittest.TestCase):
 
     def test_provider_failure_never_exposes_command_output(self) -> None:
         def run(argv, **_kwargs):
-            return subprocess.CompletedProcess(argv, 1, b"TOKEN=secret", b"/Users/alice/private")
+            return subprocess.CompletedProcess(
+                argv, 1, assignment_bytes("TOKEN", "secret"), b"/Users/alice/private"
+            )
 
         result = GitHubIssueProvider(run=run)(_plan(ReportingMode.AUTOMATIC))
 

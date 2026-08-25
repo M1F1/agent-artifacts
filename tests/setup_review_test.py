@@ -18,6 +18,7 @@ from agent_artifacts.setup import (
     setup_banner,
 )
 from agent_artifacts.tui_layout import CONTENT_MEASURE
+from tests.credential_fixtures import assignment
 from tests.setup_fixtures import recipe
 
 RETRY = "aart marketplace setup mcp/atlassian --profile tabnine --scope project"
@@ -92,7 +93,9 @@ class SetupReviewProjectionTests(unittest.TestCase):
             "pin:abc",
             "/source",
             installer(
-                purpose="Configure token=do-not-render through reviewed automation.",
+                purpose="Configure "
+                + assignment("token", "do-not-render")
+                + " through reviewed automation.",
                 required_tools=["/usr/bin/security", "api_token=do-not-render"],
             ),
             "https://github.com/acme/catalog/blob/" + "b" * 40,

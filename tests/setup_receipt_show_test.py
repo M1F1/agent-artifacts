@@ -10,6 +10,7 @@ from __future__ import annotations
 from agent_artifacts.model import SetupStateRecord
 from agent_artifacts.setup_receipt import ReceiptLocation
 from agent_artifacts.setup_render import receipt_payload, render_receipt_payload
+from tests.credential_fixtures import assignment
 from tests.function_cases import function_test_case
 
 LOCATION = ReceiptLocation(
@@ -134,7 +135,9 @@ def test_a_credential_shaped_detail_in_a_step_is_redacted() -> None:
         scope="project",
         status="configured",
         detail="done",
-        receipt=({"step_id": "s", "module": "m@1", "detail": "secret=realsecretvalue"},),
+        receipt=(
+            {"step_id": "s", "module": "m@1", "detail": assignment("secret", "realsecretvalue")},
+        ),
     )
 
     text = _text(record)

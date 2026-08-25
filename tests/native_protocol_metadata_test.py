@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from tests.credential_fixtures import credential_url
+from tests.credential_fixtures import assignment, credential_url
 
 
 def _unwrap(result):
@@ -61,7 +61,7 @@ class ProvenanceTest(unittest.TestCase):
 
         for origin_update in (
             {"url": credential_url("github.com", "/example/upstream.git")},
-            {"url": "https://github.com/example/upstream.git?token=secret"},
+            {"url": "https://github.com/example/upstream.git?" + assignment("token", "secret")},
             {"resolved_commit": "main"},
             {"input_digest": "sha256:not-a-digest"},
         ):

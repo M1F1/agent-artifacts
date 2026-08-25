@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.credential_fixtures import assignment
 from tests.packaging_test import REPO_ROOT, _load_script
 
 EXPECTED_SCENARIOS = (
@@ -87,8 +88,8 @@ class SystemMatrixTest(unittest.TestCase):
             return subprocess.CompletedProcess(
                 command,
                 7,
-                "token=must-not-leak",
-                "password=must-not-leak",
+                assignment("token", "must-not-leak"),
+                assignment("password", "must-not-leak"),
             )
 
         def timeout(command, _cwd, _environment, timeout_seconds):

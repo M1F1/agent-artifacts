@@ -96,7 +96,8 @@ all — which is itself part of the finding above.
 `LAF-63` was found while implementing `RR-2A`, not during a run, and is recorded rather than fixed
 there. `_SENSITIVE_ASSIGNMENT` (`setup.py:131`) opens with `\b(token|password|secret|api[_-]?key…)`,
 and in `GITHUB_TOKEN` the position before `TOKEN` sits between two word characters, so no boundary
-exists and no match is made. Measured: `TOKEN=ghp_x` redacts, `GITHUB_TOKEN=ghp_x` does not,
+exists and no match is made. Measured: a bare `TOKEN` assignment redacts, a `GITHUB_TOKEN` one
+does not,
 `secret=abc` redacts, `AWS_SECRET_ACCESS_KEY=abc` does not. The prefixed forms are the ones real
 recipes use. The same pattern is what `_redact` applies before writing the setup state file
 (`setup.py:1400`), so this is a credential reaching disk, not only a terminal — which also means

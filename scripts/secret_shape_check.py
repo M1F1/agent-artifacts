@@ -38,7 +38,10 @@ _URI_RE = re.compile(
 )
 
 # A credential-naming key next to a quoted value: `"password":"…"`, `token = '…'`, `secret: "…"`.
-_KEY_WORDS = "password|passwd|pwd|secret|token|api[_-]?key|credential"
+_KEY_WORDS = (
+    "password|passwd|pwd|secret|token|credential"
+    "|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key"
+)
 _KV_RE = re.compile(
     r"(?i)\b(" + _KEY_WORDS + r")\b[\"']?\s*[" + _COLON + r"=]\s*[\"'][^\"']{2,}[\"']"
 )
@@ -47,6 +50,19 @@ _KV_RE = re.compile(
 # and length, never by value.
 _TOKEN_PREFIXES = ("ghp", "gho", "ghs", "ghu", "ghr", "github" + "_pat")
 _TOKEN_RE = re.compile(r"\b(" + "|".join(_TOKEN_PREFIXES) + r")_[A-Za-z0-9_]{20,}")
+
+# The same key words with no quotes around the value. GitHub ships this as a separate detector
+# and it is the one that caught a second round of fixtures after the first was fixed. It is
+# searched only *inside* a string or backtick span, because outside one the same text is an
+# ordinary keyword argument -- a name bound to a factory call is code, not a credential, and a
+# gate that cannot tell the two apart is a gate people switch off.
+_SPAN_RE = re.compile(r"\"[^\"\n]*\"|'[^'\n]*'|`[^`\n]*`")
+_UNQUOTED_RE = re.compile(
+    r"(?i)\b(" + _KEY_WORDS + r")\b\s*" + r"=" + r"\s*([^\s\"'`,;)}\]&$\\]{4,})"
+)
+# A value opening with one of these is a placeholder or an expansion rather than a credential:
+# a bracketed redaction marker, a format field, an angle-bracketed stand-in, a percent form.
+_PLACEHOLDER_STARTS = ("[", "{", "<", "%")
 
 _SKIP_SUFFIXES = (".lock.json", ".png", ".ico", ".whl")
 
@@ -95,6 +111,18 @@ def _scan(path: str) -> tuple[Finding, ...]:
             findings.append(
                 Finding(path, number, "token-literal", "a literal in the shape of an issued token")
             )
+        for span in _SPAN_RE.findall(line):
+            match = _UNQUOTED_RE.search(span)
+            if match and not match.group(2).startswith(_PLACEHOLDER_STARTS):
+                findings.append(
+                    Finding(
+                        path,
+                        number,
+                        "credential-assignment",
+                        "a credential-naming key assigned a value inside a string",
+                    )
+                )
+                break
     return tuple(findings)
 
 

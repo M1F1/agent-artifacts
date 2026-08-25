@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
+from tests.credential_fixtures import assignment
 from tests.versioning_test import ROOT, _load_script
 
 REFERENCE_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry.git"
@@ -188,9 +189,9 @@ class ReleaseChecklistTest(unittest.TestCase):
                 return _successful_runner(command, cwd, environment, timeout_seconds)
             rendered = " ".join(command)
             if "registry validate" in rendered:
-                return subprocess.CompletedProcess(command, 5, "token=secret", "")
+                return subprocess.CompletedProcess(command, 5, assignment("token", "secret"), "")
             if "registry build" in rendered:
-                return subprocess.CompletedProcess(command, 5, "", "password=secret")
+                return subprocess.CompletedProcess(command, 5, "", assignment("password", "secret"))
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with tempfile.TemporaryDirectory() as raw:

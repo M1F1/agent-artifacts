@@ -11,6 +11,7 @@ from agent_artifacts.security.analyzers import (
     AnalyzerProcessKind,
     AnalyzerProcessRequest,
 )
+from tests.credential_fixtures import assignment, assignment_bytes
 
 
 class _InputSink:
@@ -71,7 +72,7 @@ class SecurityAnalyzerProcessAdapterTest(unittest.TestCase):
             5,
             4,
         )
-        process = _FakeProcess(b"012345", b"credential=secret")
+        process = _FakeProcess(b"012345", assignment_bytes("credential", "secret"))
         environment = {
             "PATH": "/custom/bin",
             "LANG": "pl_PL.UTF-8",
@@ -109,7 +110,7 @@ class SecurityAnalyzerProcessAdapterTest(unittest.TestCase):
 
         failures = (
             (FileNotFoundError("secret path"), AnalyzerProcessKind.UNAVAILABLE),
-            (OSError("token=secret"), AnalyzerProcessKind.FAILED_TO_START),
+            (OSError(assignment("token", "secret")), AnalyzerProcessKind.FAILED_TO_START),
         )
         for error, expected in failures:
             with (

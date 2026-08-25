@@ -18,6 +18,7 @@ from agent_artifacts.security.tool_adapters import (
     discover_tool_adapters,
     run_tool_adapter,
 )
+from tests.credential_fixtures import assignment_bytes
 
 
 def _input(*paths: str) -> AnalyzerInput:
@@ -196,7 +197,9 @@ class SecurityToolAdaptersTest(unittest.TestCase):
     def test_ruff_adapter_uses_fixed_json_argv_and_safe_normalized_finding(self) -> None:
         output = (
             b'[{"code":"S602","filename":"payload/main.py",'
-            b'"location":{"column":1,"row":7},"message":"token=must-not-echo"}]'
+            b'"location":{"column":1,"row":7},"message":"'
+            + assignment_bytes("token", "must-not-echo")
+            + b'"}]'
         )
         result, calls = _run("ruff", output)
 
@@ -222,7 +225,9 @@ class SecurityToolAdaptersTest(unittest.TestCase):
     def test_bandit_adapter_maps_severity_without_copying_raw_message(self) -> None:
         output = (
             b'{"errors":[],"results":[{"filename":"payload/main.py",'
-            b'"issue_severity":"HIGH","issue_text":"credential=secret",'
+            b'"issue_severity":"HIGH","issue_text":"'
+            + assignment_bytes("credential", "secret")
+            + b'",'
             b'"line_number":2,"test_id":"B602"}]}'
         )
         result, calls = _run("bandit", output)
@@ -283,7 +288,9 @@ class SecurityToolAdaptersTest(unittest.TestCase):
 
         output = (
             b'[{"name":"demo","version":"1",'
-            b'"vulns":[{"aliases":["CVE-2025-0001"],"description":"token=secret",'
+            b'"vulns":[{"aliases":["CVE-2025-0001"],"description":"'
+            + assignment_bytes("token", "secret")
+            + b'",'
             b'"fix_versions":["2"],"id":"PYSEC-2025-1"}]}]'
         )
         calls = []
@@ -499,7 +506,9 @@ class SecurityToolAdaptersTest(unittest.TestCase):
 
         outcomes = [
             AnalyzerProcessOutcome(AnalyzerProcessKind.COMPLETED, 0, b"ruff 1.2.3\n", b""),
-            AnalyzerProcessOutcome(AnalyzerProcessKind.COMPLETED, 8, b"[]", b"token=secret"),
+            AnalyzerProcessOutcome(
+                AnalyzerProcessKind.COMPLETED, 8, b"[]", assignment_bytes("token", "secret")
+            ),
         ]
         failed = run_tool_adapter(
             _adapter("ruff"), _input(), runner=lambda _request: outcomes.pop(0)

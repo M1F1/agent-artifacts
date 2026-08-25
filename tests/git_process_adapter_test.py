@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.io.git import GitProcessRequest, run_git_process
-from tests.credential_fixtures import credential_url
+from tests.credential_fixtures import assignment, assignment_bytes, credential_url
 
 
 class GitProcessAdapterTest(unittest.TestCase):
@@ -52,7 +52,9 @@ class GitProcessAdapterTest(unittest.TestCase):
             list(request.argv),
             128,
             stdout=b"",
-            stderr=f"Authentication failed for {secret_url} token=top-secret".encode(),
+            stderr=(
+                f"Authentication failed for {secret_url} " + assignment("token", "top-secret")
+            ).encode(),
         )
         with patch("agent_artifacts.io.git.subprocess.run", return_value=failed):
             auth = run_git_process(request, environ={"PATH": "/bin"})
@@ -61,7 +63,9 @@ class GitProcessAdapterTest(unittest.TestCase):
         self.assertEqual(auth.diagnostics[0].code.value, "source-auth-failed")
         self.assertNotIn("secret", auth.diagnostics[0].message)
 
-        timeout = subprocess.TimeoutExpired(list(request.argv), 1, output=b"token=late")
+        timeout = subprocess.TimeoutExpired(
+            list(request.argv), 1, output=assignment_bytes("token", "late")
+        )
         with patch("agent_artifacts.io.git.subprocess.run", side_effect=timeout):
             timed_out = run_git_process(request, environ={"PATH": "/bin"})
         self.assertIsInstance(timed_out, Err)

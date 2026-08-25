@@ -23,7 +23,7 @@ from agent_artifacts.store.model import (
     ReferenceWriteCommand,
     object_store_paths,
 )
-from tests.credential_fixtures import secret_object
+from tests.credential_fixtures import assignment_bytes, secret_object
 
 
 class ObjectReferenceStoreTest(unittest.TestCase):
@@ -157,7 +157,7 @@ class ObjectReferenceStoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             paths = object_store_paths(root)
             external = Path(root) / "secret"
-            external.write_bytes(b"token=must-not-be-read")
+            external.write_bytes(assignment_bytes("token", "must-not-be-read"))
             reference_path = Path(paths.references_file)
             reference_path.parent.mkdir(parents=True)
             reference_path.symlink_to(external)

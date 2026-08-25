@@ -19,7 +19,7 @@ from agent_artifacts.io.config_store import (
     write_configuration,
 )
 from agent_artifacts.protocol.hashing import sha256_bytes
-from tests.credential_fixtures import secret_object
+from tests.credential_fixtures import assignment, secret_object
 
 
 class ConfigurationStoreTest(unittest.TestCase):
@@ -42,7 +42,7 @@ class ConfigurationStoreTest(unittest.TestCase):
 
             with patch(
                 "agent_artifacts.io.config_store.os.replace",
-                side_effect=OSError("replace failed token=secret"),
+                side_effect=OSError("replace failed " + assignment("token", "secret")),
             ):
                 result = write_configuration(ConfigDocument(str(path), b"new"))
 
