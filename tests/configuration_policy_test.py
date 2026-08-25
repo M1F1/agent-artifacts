@@ -23,6 +23,7 @@ from agent_artifacts.configuration.schema import (
 )
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok
+from tests.credential_fixtures import credential_url
 
 
 def _config(document: str):
@@ -191,7 +192,10 @@ class ConfigurationPolicyTest(unittest.TestCase):
 
         self.assertIsInstance(result, Err)
         self.assertEqual(
-            redact_text("failed https://user:token@example.test/repo?token=abc password=hunter2"),
+            redact_text(
+                "failed "
+                + credential_url("example.test", "/repo?token=abc password=hunter2", held="token")
+            ),
             "failed https://[redacted]@example.test/repo?token=[redacted] password=[redacted]",
         )
 

@@ -31,11 +31,11 @@ class RenderTemplateTest(unittest.TestCase):
 
     def test_nested_objects_and_lists_render_all_the_way_down(self) -> None:
         rendered = _render_template(
-            {"env": {"TOKEN": "${token}"}, "args": ["--root", "${dir}"]},
-            {"token": "abc", "dir": "/srv"},
+            {"env": {"LABEL": "${label}"}, "args": ["--root", "${dir}"]},
+            {"label": "abc", "dir": "/srv"},
         )
 
-        self.assertEqual(rendered, {"env": {"TOKEN": "abc"}, "args": ["--root", "/srv"]})
+        self.assertEqual(rendered, {"env": {"LABEL": "abc"}, "args": ["--root", "/srv"]})
 
     def test_an_unknown_field_renders_as_empty_rather_than_leaking_the_placeholder(self) -> None:
         # Leaving ``${missing}`` in place would ship a literal placeholder to the harness; an

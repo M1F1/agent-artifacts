@@ -20,6 +20,7 @@ from agent_artifacts.configuration.schema import parse_organization_policy, pars
 from agent_artifacts.domain.diagnostics import Diagnostic, DiagnosticCode, Severity
 from agent_artifacts.domain.identifiers import ObjectDigest
 from agent_artifacts.domain.result import Err, Ok
+from tests.credential_fixtures import secret_object
 
 
 def _digest(character: str) -> ObjectDigest:
@@ -150,7 +151,7 @@ class ConfigurationApplicationTest(unittest.TestCase):
 
     def test_corrupt_user_config_is_recoverable_but_cannot_drive_content(self) -> None:
         paths = _paths()
-        corrupt = b'{"token":"secret-value", broken'
+        corrupt = secret_object("token", "secret-value", trailing=", broken")
         fake = _FakePorts({paths.user_config_file: corrupt})
 
         local = load_configuration(

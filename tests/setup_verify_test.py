@@ -29,6 +29,7 @@ from agent_artifacts.setup_verify import (
     verify_claims,
 )
 from agent_artifacts.setup_verify_probes import command_accepted, orphan_run_directories
+from tests.credential_fixtures import access_token
 from tests.function_cases import function_test_case
 
 BLOCK = (
@@ -285,7 +286,7 @@ def test_rr10f_a_record_written_before_the_fix_is_reported_not_repaired() -> Non
         {
             "module": "docker.build@1",
             "step_id": "build",
-            "detail": "fatal: authentication failed for ghp_leftoverfromoldrecord1",
+            "detail": "fatal: authentication failed for " + access_token("leftoverfromoldrecord1"),
         }
     )
 
@@ -295,7 +296,7 @@ def test_rr10f_a_record_written_before_the_fix_is_reported_not_repaired() -> Non
     assert status == FALSE
     assert "delete the record" in detail
     # The value is never echoed back. Saying where it is, is the whole answer.
-    assert "ghp_leftoverfromoldrecord1" not in detail
+    assert access_token("leftoverfromoldrecord1") not in detail
     assert tuple(dict(step) for step in record.receipt) == before
 
 

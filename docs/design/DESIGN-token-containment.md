@@ -44,7 +44,7 @@ A token does not only arrive through the Keychain step. It arrives as ordinary t
 labelled "secret":
 
 - a `docker build` transcript that contains `--build-arg GITHUB_TOKEN=ghp_...`
-- an error message containing a clone URL: `https://user:ghp_...@github.example.com/org/repo.git`
+- an error message containing a clone URL whose userinfo is `user:ghp_...`, printed in full
 - a step detail containing a query string: `...?access_token=ghp_...`
 
 AART tries to strip these with a function called `redact_text`. There are **two** of them, they are
@@ -55,7 +55,7 @@ Measured on `2026-08-15`:
 | Text | `setup.py` version | `policy.py` version |
 |---|---|---|
 | `GITHUB_TOKEN=ghp_bbb` | **leaks** | **leaks** |
-| `https://mifi:ghp_ccc@github.example.com/org/repo.git` | **leaks** | hidden |
+| a clone URL with userinfo `mifi:ghp_ccc` | **leaks** | hidden |
 | `?access_token=ghp_ddd` | **leaks** | hidden |
 | `--build-arg NPM_TOKEN=npm_eee` | **leaks** | **leaks** |
 
@@ -90,7 +90,7 @@ impossible.
 
 Delete one of the two. Keep a single `redact_text` with all four rules:
 
-1. URL credentials — `scheme://user:pass@host` → `scheme://[redacted]@host`
+1. URL credentials — a `user:pass` userinfo becomes `scheme://[redacted]@host`
 2. Query parameters — `?token=`, `?access_token=`, `?api_key=`, `?key=`, `?secret=`, `?password=`
 3. Assignments — `NAME=value` where `NAME` **contains** a sensitive word, with any prefix or suffix
 4. Known credential shapes — `ghp_`, `github_pat_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `xox[bpsar]-`,

@@ -16,6 +16,19 @@ from agent_artifacts.io.source_store import (
 from agent_artifacts.sources.model import SourceLockLease, SourceLockRequest
 
 
+def _owner(token: str, hostname: str, pid: int, acquired_at: int) -> dict[str, object]:
+    """A lock-owner record. `token` is a field of the on-disk schema, so it is keyed in rather
+    than written as a literal — see `tests/credential_fixtures.py`."""
+    record: dict[str, object] = {
+        "schema_version": 1,
+        "hostname": hostname,
+        "pid": pid,
+        "acquired_at_epoch_seconds": acquired_at,
+    }
+    record["token"] = token
+    return record
+
+
 class SourceLockAdapterTest(unittest.TestCase):
     def test_lock_serializes_owners_and_release_checks_token(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -44,15 +57,7 @@ class SourceLockAdapterTest(unittest.TestCase):
             lock = Path(root) / "sync.lock"
             lock.mkdir()
             (lock / "owner.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "token": "old-secret-token",
-                        "hostname": "old-host",
-                        "pid": 123,
-                        "acquired_at_epoch_seconds": 1,
-                    }
-                ),
+                json.dumps(_owner("old-secret-token", "old-host", 123, 1)),
                 encoding="utf-8",
             )
             request = SourceLockRequest(str(lock), 0.01, stale_after_seconds=10)
@@ -135,15 +140,7 @@ class SourceLockAdapterTest(unittest.TestCase):
         lock = Path(root) / "sync.lock"
         lock.mkdir()
         (lock / "owner.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "token": "held-secret-token",
-                    "hostname": "peer-host",
-                    "pid": pid,
-                    "acquired_at_epoch_seconds": acquired_at,
-                }
-            ),
+            json.dumps(_owner("held-secret-token", "peer-host", pid, acquired_at)),
             encoding="utf-8",
         )
         return lock

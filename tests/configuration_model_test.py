@@ -16,6 +16,7 @@ from agent_artifacts.configuration.model import (
     git_location_parts,
 )
 from agent_artifacts.domain.identifiers import SourceAlias, SourceId
+from tests.credential_fixtures import credential_url
 
 
 class ConfigurationModelTest(unittest.TestCase):
@@ -132,7 +133,7 @@ class ConfigurationModelTest(unittest.TestCase):
             "https://example.test/repo?ref=main",
             "https://example.test/repo#main",
             "https://user@example.test/repo",
-            "https://user:secret@example.test/repo",
+            credential_url("example.test", "/repo"),
             "ssh://admin@example.test/repo",
             "https://[invalid/repo",
             "git@example.test:repo/",

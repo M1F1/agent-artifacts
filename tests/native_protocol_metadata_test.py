@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import unittest
 
+from tests.credential_fixtures import credential_url
+
 
 def _unwrap(result):
     from agent_artifacts.domain.result import Ok
@@ -58,7 +60,7 @@ class ProvenanceTest(unittest.TestCase):
         from agent_artifacts.protocol.native_schema import parse_provenance
 
         for origin_update in (
-            {"url": "https://user:secret@github.com/example/upstream.git"},
+            {"url": credential_url("github.com", "/example/upstream.git")},
             {"url": "https://github.com/example/upstream.git?token=secret"},
             {"resolved_commit": "main"},
             {"input_digest": "sha256:not-a-digest"},

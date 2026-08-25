@@ -20,6 +20,7 @@ EXPECTED_GATES = (
     "coverage",
     "packaging-check",
     "docs-check",
+    "secret-shape-check",
 )
 
 

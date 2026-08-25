@@ -9,6 +9,7 @@ from agent_artifacts.configuration.schema import (
 )
 from agent_artifacts.domain.identifiers import SourceAlias
 from agent_artifacts.domain.result import Err, Ok
+from tests.credential_fixtures import credential_url
 
 
 class ConfiguredSourceFromInputTest(unittest.TestCase):
@@ -50,7 +51,7 @@ class ConfiguredSourceFromInputTest(unittest.TestCase):
             configured_source_from_input(
                 "secret",
                 SourceKind.SOURCE_GIT,
-                "https://user:token@git.example/team/artifacts.git",
+                credential_url("git.example", "/team/artifacts.git", held="token"),
             ),
             configured_source_from_input(
                 "unsafe-ref",
@@ -82,7 +83,7 @@ class ConfiguredSourceFromInputTest(unittest.TestCase):
         unsafe = ConfiguredSource(
             SourceAlias("secret"),
             SourceKind.SOURCE_GIT,
-            "https://user:token@git.example/team/artifacts.git",
+            credential_url("git.example", "/team/artifacts.git", held="token"),
             "main",
             True,
         )

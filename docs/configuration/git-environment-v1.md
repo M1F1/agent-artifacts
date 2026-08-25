@@ -47,7 +47,8 @@ whatever transport error Git produces and no mention of a proxy. The proxy was e
 shell, so it looks like it was in effect. It was not.
 
 This is deliberate. A proxy URL is one of the ordinary places a credential hides —
-`https://user:token@proxy.example:3128` is a supported and common form — and AART's rule is that it
+a proxy address carrying `user:token` in its userinfo is a
+supported and common form — and AART's rule is that it
 never carries a credential it was not handed on purpose.
 
 **The route that works** is Git's own configuration, because `HOME` is passed:

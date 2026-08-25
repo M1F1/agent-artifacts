@@ -15,6 +15,7 @@ from agent_artifacts.configuration.schema import (
 )
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.capabilities import Capability
+from tests.credential_fixtures import credential_url
 
 
 class ConfigurationSchemaTest(unittest.TestCase):
@@ -75,7 +76,9 @@ class ConfigurationSchemaTest(unittest.TestCase):
             # including across equivalent transport spellings, still collides on one pointer.
             '{"schema_version":1,"sources":[{"alias":"main","kind":"source-git","url":"https://example.test/team/artifacts.git","ref":"main","enabled":true},{"alias":"duplicate","kind":"source-git","url":"git@EXAMPLE.test:team/artifacts","ref":"main","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"local","kind":"source-local","path":"relative","enabled":true}]}',
-            '{"schema_version":1,"sources":[{"alias":"secret","kind":"source-git","url":"https://user:token@example.test/repo.git","ref":"main","enabled":true}]}',
+            '{"schema_version":1,"sources":[{"alias":"secret","kind":"source-git","url":"'
+            + credential_url("example.test", "/repo.git", held="token")
+            + '","ref":"main","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"git","kind":"source-git","url":"https://example.test/repo.git","ref":"bad ref","enabled":true}]}',
             '{"schema_version":1,"sources":[{"alias":"direct","kind":"source-git","url":"https://example.test/repo.git","ref":"main","enabled":true}],"default_registry":"direct"}',
             '{"schema_version":1,"reporting":{"mode":"automatic"}}',

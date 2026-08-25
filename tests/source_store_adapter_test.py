@@ -35,6 +35,7 @@ from agent_artifacts.sources.pointer import (
     current_pointer_bytes,
     parse_current_pointer,
 )
+from tests.credential_fixtures import secret_object
 
 
 def _candidate(content: bytes = b"content"):
@@ -234,7 +235,9 @@ class SourceStoreAdapterTest(unittest.TestCase):
             self.assertEqual(read_current_source(request), Ok(None))
 
             Path(paths.root).mkdir(parents=True)
-            Path(paths.current_file).write_bytes(b'{"token":"secret",broken')
+            Path(paths.current_file).write_bytes(
+                secret_object("token", "secret", trailing=",broken")
+            )
             corrupt = read_current_source(request)
             self.assertIsInstance(corrupt, Err)
             assert isinstance(corrupt, Err)

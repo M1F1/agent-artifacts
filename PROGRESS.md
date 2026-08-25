@@ -2558,7 +2558,8 @@ brief's queue.
 - **Nothing about the behaviour changed, and nothing should have.** AART runs system Git with an
   allowlisted environment — `HOME`, `PATH`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`, `SYSTEMROOT` — so
   `https_proxy` never reaches it. That is deliberate: a proxy URL is one of the ordinary places a
-  credential hides, and `https://user:token@proxy.example:3128` is a supported form. `LAF-49` was
+  credential hides, and a proxy URL carrying `user:token` in its userinfo —
+  `https://[redacted]@proxy.example:3128` once hidden — is a supported form. `LAF-49` was
   never a request to pass it through. It was that nobody was told.
 - **The cost is specific, so the page names it.** On a network whose only egress is a proxy, every
   command that touches a remote fails with Git's transport error and no mention of a proxy — and

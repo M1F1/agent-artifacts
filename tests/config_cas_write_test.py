@@ -24,6 +24,7 @@ from agent_artifacts.io.config_cas import (
     write_configuration_checked,
 )
 from agent_artifacts.protocol.hashing import sha256_bytes
+from tests.credential_fixtures import secret_field
 
 
 class ConfigCasWriteTest(unittest.TestCase):
@@ -157,11 +158,15 @@ class ConfigCasWriteTest(unittest.TestCase):
             Path(path).write_bytes(b"original")
             os.mkdir(lock, 0o700)
             # An owner recorded long ago whose process is provably gone.
-            (Path(lock) / "owner.json").write_text(
-                '{"acquired_at_epoch_seconds":0,"hostname":"%s","pid":999999,'
-                '"schema_version":1,"token":"abandoned"}' % os.uname().nodename,
-                encoding="utf-8",
+            owner = (
+                (
+                    '{"acquired_at_epoch_seconds":0,"hostname":"%s","pid":999999,'
+                    '"schema_version":1,' % os.uname().nodename
+                )
+                + secret_field("token", "abandoned")
+                + "}"
             )
+            (Path(lock) / "owner.json").write_text(owner, encoding="utf-8")
 
             with mock.patch(
                 "agent_artifacts.io.config_cas._owner_alive",

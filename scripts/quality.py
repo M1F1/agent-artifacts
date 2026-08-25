@@ -23,6 +23,7 @@ QUALITY_GATES = (
     "coverage",
     "packaging-check",
     "docs-check",
+    "secret-shape-check",
 )
 
 
@@ -134,6 +135,7 @@ def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ..
         ),
         Gate("packaging-check", ((python, "scripts/packaging_check.py"),)),
         Gate("docs-check", ((python, "scripts/docs_check.py"),)),
+        Gate("secret-shape-check", ((python, "scripts/secret_shape_check.py"),)),
     )
 
 

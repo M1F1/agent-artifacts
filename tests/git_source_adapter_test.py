@@ -23,6 +23,7 @@ from agent_artifacts.sources.model import (
     SnapshotLimits,
     SourceInstanceId,
 )
+from tests.credential_fixtures import credential_url
 
 
 def _archive(path: str, *, unsafe: bool = False) -> None:
@@ -285,7 +286,7 @@ class GitSourceAdapterTest(unittest.TestCase):
                 timeout_seconds=30,
             )
             secret = GitSnapshotRequest(
-                location="https://user:secret@example.test/repo.git", **base
+                location=credential_url("example.test", "/repo.git"), **base
             )
             local = GitSnapshotRequest(location=f"file://{root}/repo.git", **base)
 

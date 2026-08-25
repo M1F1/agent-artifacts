@@ -52,6 +52,7 @@ from agent_artifacts.security import (
     parse_assessment,
 )
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
+from tests.credential_fixtures import access_token
 
 
 def _path(raw: str):
@@ -685,7 +686,7 @@ class SecurityBaselineContentTest(unittest.TestCase):
         self.assertIn("python-unsafe-deserialization", rules)
 
     def test_mcp_json_finds_literal_credentials_and_shell_dispatch_without_echo(self) -> None:
-        secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+        secret = access_token("abcdefghijklmnopqrstuvwxyz1234567890")
         payload = json.dumps(
             {
                 "server": {

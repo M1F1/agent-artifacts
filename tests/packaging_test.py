@@ -19,6 +19,8 @@ import unittest
 import zipfile
 from unittest import mock
 
+from tests.credential_fixtures import secret_field
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = REPO_ROOT / "scripts"
 
@@ -144,7 +146,7 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
     def test_builder_rejects_package_data_outside_the_distribution_allowlist(self):
         forbidden = self.tmp / "agent_artifacts" / "artifacts" / "private.json"
         forbidden.parent.mkdir()
-        forbidden.write_text('{"secret":"must-not-ship"}', encoding="utf-8")
+        forbidden.write_text("{" + secret_field("secret", "must-not-ship") + "}", encoding="utf-8")
 
         with self.assertRaisesRegex(ValueError, "wheel resource allowlist"):
             self.build.collect_package_files()

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.io.git import GitProcessRequest, run_git_process
+from tests.credential_fixtures import credential_url
 
 
 class GitProcessAdapterTest(unittest.TestCase):
@@ -45,7 +46,7 @@ class GitProcessAdapterTest(unittest.TestCase):
         self.assertNotIn("GIT_ASKPASS", kwargs["env"])
 
     def test_auth_errors_timeouts_and_missing_git_are_typed_and_redacted(self) -> None:
-        secret_url = "https://user:secret@example.test/repo.git"
+        secret_url = credential_url("example.test", "/repo.git")
         request = GitProcessRequest(("git", "fetch", secret_url), "/work", 1)
         failed = subprocess.CompletedProcess(
             list(request.argv),

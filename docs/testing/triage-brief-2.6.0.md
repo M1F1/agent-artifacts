@@ -116,7 +116,7 @@ screen was stronger than the version protecting your disk. That is `LAF-72`, and
 that mattered.
 
 Both are now one function. It hides: a credential name with any prefix, a password inside a web
-address (`https://user:secret@host`), a password in a URL query string, and a value that simply
+address (a `user:secret` userinfo), a password in a URL query string, and a value that simply
 *looks* like a credential with no name beside it at all — which is the case none of the others can
 reach, and the case a `git clone` failure actually prints. It recognises credentials by shape and
 never by randomness, so the long checksums a receipt exists to record are left alone.

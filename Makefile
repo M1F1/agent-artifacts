@@ -8,7 +8,7 @@ PYTHON ?= python
 REGISTRY ?=
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
+.PHONY: test unit integration system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check secret-shape-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
 
 # Aggregate. The Python discovery is the broad unit/regression gate; integration is end to end.
 test: unit integration
@@ -61,6 +61,9 @@ packaging-check:
 
 docs-check:
 	$(QUALITY) docs-check
+
+secret-shape-check:
+	$(QUALITY) secret-shape-check
 
 quality:
 	$(QUALITY)
