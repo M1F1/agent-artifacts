@@ -183,7 +183,12 @@ The list is short, because it was made short on purpose:
 | Needed | Why |
 |---|---|
 | A Python interpreter, named by `AART_PYTHON` | setting `AART_CI_IMAGE` skips `actions/setup-python`, which downloads from github.com and is the first thing to fail on a runner with no egress |
-| `git` | the gates run the tool against real checkouts, so a tarball checkout with no `.git` fails them |
+| `git` | the gates read the working tree through `git ls-files`, and the tool's own tests build real repositories |
+
+Ownership is handled for you. `actions/checkout` writes the workspace as the runner's uid and a
+container job usually runs as another, so git answers every command with `detected dubious
+ownership`. Both composite actions mark the workspace trusted before anything else runs. Nothing
+to set, and nothing to rebuild an image for.
 
 **Not** GNU Make. The gates are run as `scripts/quality.py`, and the release checklist as
 `scripts/release.py check` — both are what the Makefile targets always wrapped. `make` stays for

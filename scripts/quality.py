@@ -55,14 +55,31 @@ def snapshot_paths(paths: Iterable[Path]) -> tuple[tuple[str, int, str], ...]:
     return tuple(snapshot)
 
 
+def git_listing(command: tuple[str, ...], root: Path) -> bytes:
+    """Run a read-only git command, and say what git said when it refuses.
+
+    ``check=True`` alone raises ``CalledProcessError``, which prints the argv and the exit code
+    and throws away the one thing that explains the failure -- git's own message on stderr.  In a
+    container that message is usually ``detected dubious ownership``, because the checkout belongs
+    to the uid that ran ``actions/checkout`` and the job runs as another one.  Losing it turns a
+    two-line fix into an afternoon.
+    """
+    result = subprocess.run(command, cwd=root, capture_output=True)
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", "replace").strip() or "(git said nothing)"
+        raise SystemExit(
+            f"{' '.join(command)} failed ({result.returncode}) in {root}\n"
+            f"{detail}\n"
+            "The gates read the working tree through git, so this stops them before any gate runs."
+        )
+    return result.stdout
+
+
 def workspace_paths(root: Path) -> tuple[Path, ...]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=root,
-        capture_output=True,
-        check=True,
+    listing = git_listing(
+        ("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"), root
     )
-    return tuple(root / raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
+    return tuple(root / raw.decode("utf-8") for raw in listing.split(b"\0") if raw)
 
 
 def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ...]:

@@ -21,6 +21,16 @@ inputs:
 runs:
   using: composite
   steps:
+    # The release steps read history through git, so they need the same trust the quality action
+    # establishes.  See the note there.
+    - name: Trust the checked-out workspace
+      shell: bash
+      # `$PWD`, not `$GITHUB_WORKSPACE`: a composite step starts in the repository root
+      # anyway, and the shell guarantees `$PWD` is set to it.  An unset environment
+      # variable would expand to an empty path, which git accepts and which fixes
+      # nothing -- a silent no-op is the worst outcome for a step like this.
+      run: git config --global --add safe.directory "$PWD"
+
     - name: Set up Python
       if: inputs.setup-python == 'true'
       uses: actions/setup-python@v5

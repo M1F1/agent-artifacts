@@ -18,6 +18,19 @@ inputs:
 runs:
   using: composite
   steps:
+    # `actions/checkout` writes the workspace as the runner's uid; a container job usually runs as
+    # a different one, and git then refuses every command in it with `detected dubious ownership`.
+    # It is a container fact, not a repository fault, so the fix belongs here rather than in an
+    # image every fork would have to rebuild.  Marking one known path costs nothing and leaves
+    # git's protection in place everywhere else.
+    - name: Trust the checked-out workspace
+      shell: bash
+      # `$PWD`, not `$GITHUB_WORKSPACE`: a composite step starts in the repository root
+      # anyway, and the shell guarantees `$PWD` is set to it.  An unset environment
+      # variable would expand to an empty path, which git accepts and which fixes
+      # nothing -- a silent no-op is the worst outcome for a step like this.
+      run: git config --global --add safe.directory "$PWD"
+
     # `AART_INDEX_URL` and `AART_INDEX_CREDENTIALS` are job-level environment, not inputs: an input
     # would put the credential in the action call, and the job is where the variables live anyway.
     - name: Point pip at the internal index
