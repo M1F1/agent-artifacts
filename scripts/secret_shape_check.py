@@ -79,9 +79,12 @@ class Finding:
 
 
 def _tracked_files() -> tuple[str, ...]:
-    listing = subprocess.run(
-        ("git", "ls-files"), cwd=ROOT, capture_output=True, text=True, check=True
-    )
+    # Same reason as `quality.py`: when git refuses, its message on stderr is the fix, and
+    # `check=True` would discard it in favour of an argv and an exit code.
+    listing = subprocess.run(("git", "ls-files"), cwd=ROOT, capture_output=True, text=True)
+    if listing.returncode:
+        detail = listing.stderr.strip() or "(git said nothing)"
+        raise SystemExit(f"git ls-files failed ({listing.returncode}) in {ROOT}\n{detail}")
     return tuple(line for line in listing.stdout.splitlines() if line)
 
 
