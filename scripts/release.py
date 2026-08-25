@@ -198,7 +198,24 @@ def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[
         return destination.name, _sha256(destination.read_bytes())
 
 
-def _environment() -> dict[str, str]:
+def _environment(cwd: Path) -> dict[str, str]:
+    """The scrubbed environment every checklist subprocess runs in.
+
+    System and global git config are switched off on purpose: release evidence must not depend on
+    what happens to be configured on the machine that produced it.
+
+    That also switches off the one setting a container needs.  `actions/checkout` writes the
+    workspace as the runner's uid, a container job usually runs as another, and git then refuses
+    every command in it with `detected dubious ownership` -- so a CI job would mark its own
+    workspace safe with `git config --global`, and this process would not read it.  The result was
+    two diagnostics at once, both saying a git command "could not prove" something, neither saying
+    why.
+
+    So the exception is stated here instead, through `GIT_CONFIG_COUNT` rather than a file: no
+    configuration is read, one directory is trusted, and it is the directory this command runs in
+    rather than a wildcard.
+    """
+
     environment = {
         "PATH": os.environ.get("PATH", os.defpath),
         "LANG": "C",
@@ -207,6 +224,9 @@ def _environment() -> dict[str, str]:
         "PYTHONDONTWRITEBYTECODE": "1",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "safe.directory",
+        "GIT_CONFIG_VALUE_0": str(cwd),
         "GIT_TERMINAL_PROMPT": "0",
         "GCM_INTERACTIVE": "never",
     }
@@ -240,13 +260,28 @@ def _run(
     timeout_seconds: int = 120,
 ) -> subprocess.CompletedProcess[str] | None:
     try:
-        return runner(command, cwd, _environment(), timeout_seconds)
+        return runner(command, cwd, _environment(cwd), timeout_seconds)
     except (OSError, subprocess.SubprocessError):
         return None
 
 
 def _diagnostic(check: str, code: str, message: str) -> ReleaseDiagnostic:
     return ReleaseDiagnostic(check, code, message)
+
+
+def _why(result: subprocess.CompletedProcess[str] | None) -> str:
+    """What the command said, appended to a diagnostic that would otherwise only say it failed.
+
+    "cannot prove the release worktree is clean" is true and useless.  Git had already explained
+    itself on stderr and the explanation was dropped, so the log showed two checks failing for
+    reasons it did not print.  Three separate failures on one Enterprise walk were diagnosed by
+    guessing at a message that had already been produced.
+    """
+
+    if result is None:
+        return "; the command could not be started"
+    detail = (result.stderr or result.stdout or "").strip().splitlines()
+    return f"; git said: {detail[0]}" if detail else ""
 
 
 def _repository_diagnostics(
@@ -325,7 +360,7 @@ def _repository_diagnostics(
                 _diagnostic(
                     "repository",
                     "repository-state-unavailable",
-                    "cannot prove the release worktree is clean",
+                    "cannot prove the release worktree is clean" + _why(status),
                 )
             )
         elif status.stdout:
@@ -348,7 +383,8 @@ def _repository_diagnostics(
                 _diagnostic(
                     "repository",
                     "source-not-merged-into-main",
-                    "release source commit is not proven to be merged into origin/main",
+                    "release source commit is not proven to be merged into origin/main"
+                    + _why(main_membership),
                 )
             )
     return tuple(diagnostics)
@@ -489,7 +525,7 @@ def _registry_diagnostics(
                 _diagnostic(
                     "registry-origin",
                     "registry-state-unavailable",
-                    "cannot prove the reference registry worktree is clean",
+                    "cannot prove the reference registry worktree is clean" + _why(status),
                 ),
             ),
             None,

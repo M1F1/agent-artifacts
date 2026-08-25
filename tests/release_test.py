@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -357,6 +358,34 @@ class ReleaseChecklistTest(unittest.TestCase):
             "registry-origin-invalid", codes(REFERENCE_REGISTRY_URL=fork_origin + ".git")
         )
         self.assertEqual(release.approved_registry_origin(), release.REFERENCE_REGISTRY_ORIGIN)
+
+    def test_scrubbed_environment_reads_no_config_yet_trusts_the_directory_it_runs_in(
+        self,
+    ) -> None:
+        """Hermetic and container-safe are both required, and one used to cancel the other.
+
+        System and global git config stay off so release evidence cannot depend on the machine
+        that produced it.  That also silenced the workspace-ownership exception a container job
+        writes with `git config --global`, so on a real Enterprise run two checks failed at once
+        -- `repository-state-unavailable` and `source-not-merged-into-main` -- both of them git
+        refusing a workspace owned by another uid.
+
+        `GIT_CONFIG_COUNT` states the exception without reading a file, and names the directory
+        the command runs in rather than a wildcard.
+        """
+
+        release = _load_script("release")
+        environment = release._environment(pathlib.Path("/__w/aart/aart"))
+
+        self.assertEqual(environment["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(environment["GIT_CONFIG_GLOBAL"], os.devnull)
+        self.assertEqual(environment["GIT_CONFIG_COUNT"], "1")
+        self.assertEqual(environment["GIT_CONFIG_KEY_0"], "safe.directory")
+        self.assertEqual(environment["GIT_CONFIG_VALUE_0"], "/__w/aart/aart")
+        self.assertNotIn("*", environment["GIT_CONFIG_VALUE_0"])
+        # Still scrubbed: nothing ambient leaks in beside the exception.
+        self.assertNotIn("HOME", environment)
+        self.assertNotIn("GITHUB_TOKEN", environment)
 
     def test_skipping_reconciliation_reports_skipped_and_never_passed(self) -> None:
         """A fork with no artifact catalogue can still release, and the receipt says what it did.
