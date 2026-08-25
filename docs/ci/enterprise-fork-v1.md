@@ -168,6 +168,7 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_PYTHON_VERSIONS` | `["3.10", "3.14"]` | JSON array for the quality matrix. **Pin to one entry when `AART_CI_IMAGE` is set** — one image carries one interpreter, and a two-entry matrix would run the same Python twice under two names |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Internal mirror for `ruff`/`mypy`/`coverage`. This repository's gates only |
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
+| `AART_ARTIFACT_V4` | `true` | Set to `false` where the instance's artifact backend does not speak the v4 protocol, and the release job uploads the wheel with `upload-artifact@v3` instead. Measured, not guessed — see section 5 |
 | `AART_REFERENCE_REGISTRY_URL` | **no default** | The registry the release checklist reconciles against, and the switch for whether it reconciles at all. Unset, the clone is skipped and the seven registry checks report `skipped` — never `passed` — with a warning on every run. See below |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
 | `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |
@@ -368,11 +369,25 @@ should read.
 **`uses:` cannot contain an expression.** GitHub Actions requires a literal action reference, so no
 variable can redirect where an action comes from. Two consequences:
 
-1. **Action versions may need a one-time edit.** A GitHub Enterprise Server instance carries a
-   bundled copy of the common actions, and its versions can lag github.com's. If your instance has
-   `actions/checkout@v3` but not `@v4`, that is a hand edit, once — and for the registry workflow
-   it is an edit `registry init` will then refuse, so raise it as a change to the template rather
-   than to one registry.
+1. **A version can be present and still unusable.** This was written as a guess about instances
+   carrying older bundled actions. A real Enterprise run says the guess was the wrong shape. The
+   instance downloaded `actions/upload-artifact@v4` without complaint and then failed at run time:
+
+   ```text
+   GHESNotSupportedError: @actions/artifact v2.0.0+, upload-artifact@v4+ and
+   download-artifact@v4+ are not currently supported on GHES.
+   ```
+
+   The action was there. The instance's artifact backend does not speak the protocol that version
+   uses. So the thing to check is not "does the instance have `@v4`" but "does `@v4` work here",
+   and only a run answers that.
+
+   Because `uses:` takes no expression, the release job carries **both** upload steps and picks one
+   with `if:` — the same move `container.credentials` forced. `AART_ARTIFACT_V4=false` selects the
+   v3 step. Nothing about the github.com run changes.
+
+   For the registry workflow the same situation would be an edit `registry init` refuses, so raise
+   it as a change to the template rather than to one registry.
 2. **An instance without the bundled actions needs `run:` steps instead.** The registry workflow is
    already down to one action, `actions/checkout`, which can be replaced with a plain `git clone`
    using `${{ github.server_url }}` and `${{ github.token }}`.
@@ -479,11 +494,29 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
   carries the bare host, and the password appears in the output exactly once — inside the
   `::add-mask::` directive, which is the line GitHub consumes and removes.
 
-**Not walked: the gates themselves on a GitHub Enterprise Server instance, or on a self-hosted
-runner.** Three claims are therefore unverified and should be checked on the first real run:
+**Walked on a real GitHub Enterprise Server instance on 2026-08-25**, in a container image on a
+company runner, against an internal index. `quality` is green there and `release` builds the wheel.
+Five defects came out of that walk, none of them fixable by a variable, all of them fixed here:
 
-1. That your instance carries `actions/checkout@v4`, `actions/setup-python@v5`, and
-   `actions/upload-artifact@v4` for the release job.
+| What failed | What it actually was |
+|---|---|
+| `make: command not found` | CI shelled out to GNU Make for two lines of substitution. It no longer does |
+| `git ls-files` exit 128 | `dubious ownership`: `actions/checkout` writes the workspace as one uid, a container job runs as another |
+| `Needed a single revision` | git writes `refs/remotes/origin/HEAD` on fetch only since 2.46; older gits fell through to a tag named `HEAD` |
+| `registry-origin-invalid` on any fork | the workflow honoured `AART_REFERENCE_REGISTRY_URL` and the checklist compared against a constant |
+| two checks "cannot prove" at once | the checklist runs git with global config off, so the workspace-trust the job had written was invisible to it |
+
+Three of the five printed no usable message, because the process that failed had captured the
+explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
+print what it said.**
+
+**One claim remains unverified**, and one was answered by the walk:
+
+1. ~~That your instance carries the actions the release job needs.~~ **Answered, and the question
+   was wrong.** The instance carried `actions/upload-artifact@v4` and downloaded it without
+   complaint, then failed at run time with `GHESNotSupportedError`: its artifact backend does not
+   speak the protocol that version uses. Presence is not the test; a run is. The release job now
+   carries both upload steps and picks one with `if:`, selected by `AART_ARTIFACT_V4`.
 2. That splitting the dashboard into `aggregate` and `deploy` jobs still deploys, and that dropping
    `configure-pages` changes nothing for a static output. Both follow GitHub's own documented
    two-job Pages pattern, but neither was run. `deploy` now waits on both shapes of `aggregate`

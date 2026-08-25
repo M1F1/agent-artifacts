@@ -17,6 +17,9 @@ inputs:
   tag:
     description: The release tag under inspection.
     required: true
+  artifact-v4:
+    description: '"true" when the instance supports the v4 artifact protocol.'
+    required: true
 
 runs:
   using: composite
@@ -86,8 +89,29 @@ runs:
       shell: bash
       run: ${{ inputs.python }} scripts/build_wheel.py
 
+    # The step appears twice for the reason `container.credentials` does in validate.yml: the
+    # thing that has to change is `uses:`, and `uses:` cannot contain an expression.  So the
+    # choice moves to where a choice survives -- `if:` -- and both spellings sit in the file.
+    #
+    # This is not a version preference.  A GitHub Enterprise Server instance ships
+    # `upload-artifact@v4` and downloads it happily, then fails at run time:
+    #
+    #     GHESNotSupportedError: @actions/artifact v2.0.0+, upload-artifact@v4+ and
+    #     download-artifact@v4+ are not currently supported on GHES.
+    #
+    # The action is present; the instance's artifact backend does not speak the protocol that
+    # version uses.  Measured on a real instance, which is the only place it could be measured.
     - name: Upload wheel artifact
+      if: inputs.artifact-v4 == 'true'
       uses: actions/upload-artifact@v4
+      with:
+        name: wheel
+        path: dist/*.whl
+        if-no-files-found: error
+
+    - name: Upload wheel artifact (instance artifact protocol)
+      if: inputs.artifact-v4 != 'true'
+      uses: actions/upload-artifact@v3
       with:
         name: wheel
         path: dist/*.whl
