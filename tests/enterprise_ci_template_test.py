@@ -44,6 +44,12 @@ def _read(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _uncommented(text: str) -> str:
+    """The settings only.  A comment naming a tool is the note explaining why it is gone."""
+
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
 class VariablesAreDocumentedTest(unittest.TestCase):
     def test_every_variable_a_workflow_reads_is_on_the_page(self) -> None:
         page = _read(PAGE)
@@ -103,14 +109,15 @@ class DefaultsReproduceThePublicRunTest(unittest.TestCase):
         # The wheel is attached through the REST API at `GITHUB_API_URL`, which the runner sets
         # to this instance, so there is no host to configure and none to forget.  `gh` defaulted
         # to github.com, so a fork that missed the variable uploaded to the wrong server.
-        settings = "\n".join(
-            line for line in workflow.splitlines() if not line.lstrip().startswith("#")
-        )
-        self.assertNotIn("GH_HOST", settings)
+        self.assertNotIn("GH_HOST", _uncommented(workflow))
 
+        # Neither `gh` nor `curl` may come back: a real Enterprise image had neither, and the
+        # attach step failed on each in turn after the wheel was already built.  The interpreter
+        # is the only thing the release can assume, because every other step already needs it.
         action = _read(ROOT / ".github" / "actions" / "release" / "action.yml")
-        self.assertNotIn("gh release", action)
-        self.assertIn("$GITHUB_API_URL/repos/$GITHUB_REPOSITORY", action)
+        for absent in ("gh release", "curl "):
+            self.assertNotIn(absent, _uncommented(action), absent)
+        self.assertIn("scripts/attach_release_asset.py", action)
         self.assertIn("if: env.REFERENCE_REGISTRY_URL != ''", action)
         self.assertIn("--without-registry", action)
 

@@ -94,9 +94,12 @@ _PROVIDE_AART = b"""      - name: Provide AART
           elif [ -n "$WHEEL_URL" ]; then
             url="${WHEEL_URL//\\{version\\}/$PIN}"
             how="wheel $url"
-            curl -fsSL "$url" -o "$RUNNER_TEMP/aart.whl"
-            "$PY" -c 'import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \\
-              "$RUNNER_TEMP/aart.whl" "$tool"
+            # `urllib`, not `curl`: this arm has to run on whatever image the organisation
+            # uses, and a real Enterprise image carried git and Python and neither `curl` nor
+            # `gh`.  The interpreter is already required by every other arm, so asking for
+            # nothing beyond it is the only assumption that holds everywhere.
+            "$PY" -c 'import sys,urllib.request,zipfile;urllib.request.urlretrieve(sys.argv[1],sys.argv[2]);zipfile.ZipFile(sys.argv[2]).extractall(sys.argv[3])' \\
+              "$url" "$RUNNER_TEMP/aart.whl" "$tool"
           elif [ -n "$TOOL_PATH" ]; then
             how="path $TOOL_PATH"
             tool="$TOOL_PATH"

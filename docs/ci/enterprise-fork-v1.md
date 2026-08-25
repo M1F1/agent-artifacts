@@ -502,7 +502,7 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
 
 **Walked on a real GitHub Enterprise Server instance on 2026-08-25**, in a container image on a
 company runner, against an internal index. `quality` is green there and `release` builds the wheel.
-Six defects came out of that walk, none of them fixable by a variable, all of them fixed here:
+Seven defects came out of that walk, none of them fixable by a variable, all of them fixed here:
 
 | What failed | What it actually was |
 |---|---|
@@ -511,11 +511,17 @@ Six defects came out of that walk, none of them fixable by a variable, all of th
 | `Needed a single revision` | git writes `refs/remotes/origin/HEAD` on fetch only since 2.46; older gits fell through to a tag named `HEAD` |
 | `registry-origin-invalid` on any fork | the workflow honoured `AART_REFERENCE_REGISTRY_URL` and the checklist compared against a constant |
 | two checks "cannot prove" at once | the checklist runs git with global config off, so the workspace-trust the job had written was invisible to it |
-| `gh: command not found` | the last step of `release` needed the GitHub CLI to attach the wheel. It now uses the REST API, which needs only `curl` |
+| `gh: command not found` | the last step of `release` needed the GitHub CLI to attach the wheel |
+| `curl: command not found` | and the rewrite around the REST API needed `curl`. The image carries git and a Python interpreter and nothing else, so the step now uses `urllib` and asks for neither |
 
-Three of the six printed no usable message, because the process that failed had captured the
+Three of the seven printed no usable message, because the process that failed had captured the
 explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
 print what it said.**
+
+The last two rows are one lesson, learned twice: **the only programs a step may assume are git
+and the interpreter.** Every other tool -- Make, the GitHub CLI, `curl` -- turned out to be a
+dependency the project had moved somewhere no lockfile could see it. A step that fails on a
+missing tool fails *after* the work is done, which is the most expensive place to fail.
 
 **One claim remains unverified**, and one was answered by the walk:
 
