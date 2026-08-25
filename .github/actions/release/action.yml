@@ -117,9 +117,41 @@ runs:
         path: dist/*.whl
         if-no-files-found: error
 
+    # The GitHub CLI is not installed in every CI image -- a real Enterprise image had Python, git
+    # and an internal index and no `gh`, so this step failed after the wheel was already built.
+    # The REST API needs only `curl` and the interpreter already running everything else, so the
+    # tool comes off the list of things an image has to carry, the same way GNU Make did.
+    #
+    # It also removes a hazard `gh` brought with it: `gh` talks to github.com unless `GH_HOST` says
+    # otherwise, so an unset `AART_GH_HOST` pointed a fork's upload at the wrong instance
+    # entirely.  `GITHUB_API_URL` is set by the runner and is always this instance, and the upload
+    # host is read from the release itself rather than guessed.
     - name: Attach wheel to release
       if: github.event_name == 'release'
       shell: bash
       env:
         TAG: ${{ inputs.tag }}
-      run: gh release upload "$TAG" dist/*.whl --clobber
+      run: |
+        set -euo pipefail
+        wheel="$(ls dist/*.whl)"
+        name="$(basename "$wheel")"
+        api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
+        auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+        release="$(curl -fsSL "${auth[@]}" "$api/releases/tags/$TAG")"
+
+        # One reading of the release answers both questions: which asset of this name already
+        # exists, and where uploads go.  The upload host is its own hostname on an Enterprise
+        # instance, so it is read from the release rather than assembled; `{?name,label}` is the
+        # URI template suffix and is dropped.
+        facts="$(printf '%s' "$release" | ${{ inputs.python }} -c 'import json,sys;r=json.load(sys.stdin);n=sys.argv[1];print(next((x["id"] for x in r["assets"] if x["name"]==n),""));print(r["upload_url"].split("{")[0])' "$name")"
+        existing="$(printf '%s' "$facts" | head -n 1)"
+        upload="$(printf '%s' "$facts" | tail -n 1)"
+
+        # This is what `--clobber` was doing: replace an asset of the same name rather than fail
+        # on it, so re-running a release is not a dead end.
+        if [ -n "$existing" ]; then
+          curl -fsS -X DELETE "${auth[@]}" "$api/releases/assets/$existing" >/dev/null
+        fi
+        curl -fsS -X POST "${auth[@]}" -H "Content-Type: application/octet-stream" \
+          --data-binary "@$wheel" "$upload?name=$name" >/dev/null
+        echo "attached $name to $TAG"

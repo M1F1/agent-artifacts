@@ -64,6 +64,12 @@ has.
 The last row always works. It is the row to start on, because it needs nothing that does not exist
 after Step 1, and moving up later is one variable set.
 
+One caveat on the second row: the wheel is fetched with a bare `curl`, carrying no token. If the
+fork is private — which on an Enterprise instance it usually is — its release assets need a login,
+and an anonymous fetch gets a sign-in page instead of a wheel. That row is for an instance where
+the release is readable without credentials. Everywhere else, the first and last rows are the ones
+that carry authentication of their own.
+
 ### Step 4 — Prove the fork is green before going further
 
 Run the fork's own `validate` workflow. It is the same nine gates as `make quality`. A red run here
@@ -236,7 +242,7 @@ first one set wins, never combined. §3.1 explains why that order and not anothe
 |---|---|---|
 | `AART_PACKAGE` | unset | A requirement for an index, normally `agent-artifacts=={version}` — `{version}` is replaced with the pin. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | The index `AART_PACKAGE` is fetched from |
-| `AART_WHEEL_URL` | unset | URL of a released wheel, downloaded with `curl` and unzipped. Use `{version}` where the version appears and the pin fills it in |
+| `AART_WHEEL_URL` | unset | URL of a released wheel, downloaded with `curl` and unzipped. Use `{version}` where the version appears and the pin fills it in. **The address has to answer without a login** — the fetch sends no token, so a release asset on a private repository returns HTML and the unzip fails. Use `AART_PACKAGE` or `AART_TOOL_URL` there |
 | `AART_TOOL_PATH` | unset | An agent-artifacts tree already on the runner, usually baked into the CI image. Needs neither git nor the network |
 | `AART_REPOSITORY` | `M1F1/agent-artifacts` | `owner/name` of the AART fork. Combined with the instance's own URL, so on GHES this alone points the registry at the internal fork |
 | `AART_TOOL_URL` | derived from `AART_REPOSITORY` | Full Git URL, for when AART does not live on the same instance as the registry |
@@ -496,7 +502,7 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
 
 **Walked on a real GitHub Enterprise Server instance on 2026-08-25**, in a container image on a
 company runner, against an internal index. `quality` is green there and `release` builds the wheel.
-Five defects came out of that walk, none of them fixable by a variable, all of them fixed here:
+Six defects came out of that walk, none of them fixable by a variable, all of them fixed here:
 
 | What failed | What it actually was |
 |---|---|
@@ -505,8 +511,9 @@ Five defects came out of that walk, none of them fixable by a variable, all of t
 | `Needed a single revision` | git writes `refs/remotes/origin/HEAD` on fetch only since 2.46; older gits fell through to a tag named `HEAD` |
 | `registry-origin-invalid` on any fork | the workflow honoured `AART_REFERENCE_REGISTRY_URL` and the checklist compared against a constant |
 | two checks "cannot prove" at once | the checklist runs git with global config off, so the workspace-trust the job had written was invisible to it |
+| `gh: command not found` | the last step of `release` needed the GitHub CLI to attach the wheel. It now uses the REST API, which needs only `curl` |
 
-Three of the five printed no usable message, because the process that failed had captured the
+Three of the six printed no usable message, because the process that failed had captured the
 explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
 print what it said.**
 
@@ -524,4 +531,8 @@ print what it said.**
    condition says otherwise, which is what `!cancelled()` is doing there.
 3. That `GH_HOST` derived from `GITHUB_SERVER_URL` is what your `gh` expects. The derivation strips
    `https://` and nothing else, so an instance served on a path or a non-default port needs
-   `AART_GH_HOST` set explicitly.
+   `AART_GH_HOST` set explicitly. This now applies only to the registry workflows, which still run
+   `gh`. The `release` job does not: the walk showed the CLI missing from a real CI image, and the
+   same log showed `GH_HOST: github.com` sitting under it — so had `gh` been installed, the wheel
+   would have gone to the wrong server. Both are gone. The wheel is attached through
+   `GITHUB_API_URL`, which the runner sets to the instance the job is running on.

@@ -90,8 +90,10 @@ jobs:
       # passing and verify seven checks fewer, which is why the checklist warns on every run that
       # skips and records `registry_reconciliation` in its receipt.
       REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
-      # `gh` talks to github.com unless told otherwise; on GHES it needs the instance hostname.
-      GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
+      # No `GH_HOST` here any more: the release action attaches the wheel through the REST API at
+      # `GITHUB_API_URL`, which the runner sets to this instance.  `gh` defaulted to github.com,
+      # so a fork that forgot `AART_GH_HOST` uploaded to the wrong instance -- a mistake the
+      # variable could prevent but only if you knew to set it.  Now there is nothing to set.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
@@ -120,7 +122,6 @@ jobs:
       AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
       AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
       REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
-      GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout

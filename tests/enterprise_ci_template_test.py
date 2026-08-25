@@ -99,9 +99,18 @@ class DefaultsReproduceThePublicRunTest(unittest.TestCase):
         workflow = _read(WORKFLOWS[1])
         self.assertIn("REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}", workflow)
         self.assertNotIn("AART_REFERENCE_REGISTRY_URL ||", workflow)
-        self.assertIn("vars.AART_GH_HOST || 'github.com'", workflow)
+        # And no `GH_HOST` is set here any more -- checked outside the comments, which say why.
+        # The wheel is attached through the REST API at `GITHUB_API_URL`, which the runner sets
+        # to this instance, so there is no host to configure and none to forget.  `gh` defaulted
+        # to github.com, so a fork that missed the variable uploaded to the wrong server.
+        settings = "\n".join(
+            line for line in workflow.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertNotIn("GH_HOST", settings)
 
         action = _read(ROOT / ".github" / "actions" / "release" / "action.yml")
+        self.assertNotIn("gh release", action)
+        self.assertIn("$GITHUB_API_URL/repos/$GITHUB_REPOSITORY", action)
         self.assertIn("if: env.REFERENCE_REGISTRY_URL != ''", action)
         self.assertIn("--without-registry", action)
 
