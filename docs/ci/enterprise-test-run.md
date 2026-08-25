@@ -7,26 +7,30 @@ whole setup up **once**, on a real company instance, before the design is truste
 Everything below is a mirror, a variable, or a command. If you have to edit a file to make this
 work, that is the finding, not the workaround.
 
-## Two steps that exist only until this merges
+## One setting that exists only until this merges
 
 This branch is not on `main` and carries no tag of its own. The tag `v2.8.5` points at `main` and
-does **not** contain this work. So two settings differ from the steady state, and both come off
-afterwards:
+does **not** contain this work. So the registry needs telling where to look:
 
 | Where | Set | Why |
 |---|---|---|
-| The AART fork | default branch = `docs/ghe-ci-portability` | so the fork's own CI runs this code |
-| The registry | `AART_REF` = `docs/ghe-ci-portability` | so the registry's CI fetches this code instead of the tag the pin names |
+| The registry | `AART_REF` = `docs/ghe-ci-portability` | so its CI fetches this code instead of the tag the pin names |
 
 `AART_REF` is the escape hatch written for exactly this: it overrides the pin, switches the version
 check off, and says so in the run log rather than disagreeing quietly with a file still in the
-repository. Delete both once a tag exists.
+repository. Delete it once a tag exists.
+
+Nothing else about the walk is temporary. The fork's own CI runs on any branch it is pushed to, so
+the fork needs no version of this note at all.
 
 ## Part A — the tool
 
 ### 1. Put AART on the instance
 
-A fork through the web UI works where the instance can reach github.com. Where it cannot, mirror:
+Which of these two you do depends on whether the instance already holds a copy.
+
+**No repository there yet.** A fork through the web UI works where the instance can reach
+github.com. Where it cannot, mirror:
 
 ```bash
 git clone --mirror https://github.com/M1F1/agent-artifacts.git
@@ -39,7 +43,24 @@ git -C agent-artifacts.git push --mirror https://ghe.corp/platform/agent-artifac
 `--mirror` is what carries the tags and every branch. Tags are load-bearing: the git arm clones `v`
 followed by the pin, so a mirror without tags leaves that arm unable to find any version.
 
-Then set the fork's default branch to `docs/ghe-ci-portability` under **Settings → General**.
+**A repository is already there.** Do not point `--mirror` at it. `--mirror` makes the remote match
+your local copy exactly, which means it force-updates every branch and **deletes remote refs your
+copy does not have** — someone else's branch, a tag added on the instance. Push the one branch
+instead:
+
+```bash
+git remote add ghe https://ghe.corp/platform/agent-artifacts.git
+git push ghe docs/ghe-ci-portability
+```
+
+A branch name the remote does not hold yet is a new ref, so this cannot fast-forward-reject and
+cannot overwrite anything. Add `git push ghe v2.8.5` if the existing copy has no tags and you also
+want to walk the git arm without `AART_REF`.
+
+**The default branch is not part of this.** `validate.yml` triggers on `push` with no branch
+filter, so the push above starts a `quality` run on its own, and the registry reaches this code
+through `AART_REF` rather than through whatever `main` says. Changing the default branch is
+optional — worth avoiding on a repository other people are already using.
 
 ### 2. Set the fork's variables
 
