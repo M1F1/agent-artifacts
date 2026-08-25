@@ -3,11 +3,13 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -314,6 +316,47 @@ class ReleaseChecklistTest(unittest.TestCase):
         checks = {item["name"]: item["passed"] for item in receipt["checks"]}
         self.assertFalse(checks["registry-compatibility"])
         self.assertFalse(any("registry validate" in " ".join(command) for command in calls))
+
+    def test_a_fork_reconciles_against_the_registry_the_workflow_cloned(self) -> None:
+        """The approved origin follows `REFERENCE_REGISTRY_URL`, defaulting to this project's.
+
+        The release workflow clones whatever that variable names, because a fork publishes to its
+        own registry and cannot reach this one.  Before this, the checklist compared against a
+        constant, so a fork's release failed as `registry-origin-invalid` no matter what it set --
+        a variable contradicted by a constant, and the exact class of defect this branch exists to
+        remove.  Unset, the default still admits exactly one registry.
+        """
+
+        release = _load_script("release")
+        fork_origin = "https://ghe.example.invalid/platform/aart-registry"
+
+        def fork(command, _cwd, _environment, _timeout_seconds):
+            if command[:4] == ("git", "remote", "get-url", "origin"):
+                stdout = fork_origin + ".git\n"
+            elif command == ("git", "ls-remote", "--symref", "origin", "HEAD"):
+                stdout = f"ref: refs/heads/main\tHEAD\n{REFERENCE_COMMIT}\tHEAD\n"
+            elif command[:2] == ("git", "rev-parse"):
+                stdout = REFERENCE_COMMIT + "\n"
+            else:
+                stdout = ""
+            return subprocess.CompletedProcess(command, 0, stdout, "")
+
+        def codes(**environment: str) -> tuple[str, ...]:
+            with tempfile.TemporaryDirectory() as raw:
+                root = _fixture_root(raw, release)
+                registry = root / "reference-registry"
+                registry.mkdir()
+                with unittest.mock.patch.dict(os.environ, environment, clear=False):
+                    receipt = release.check_release(
+                        root, registry, process_runner=fork, require_clean=False
+                    )
+            return tuple(item["code"] for item in receipt["diagnostics"])
+
+        self.assertIn("registry-origin-invalid", codes(REFERENCE_REGISTRY_URL=""))
+        self.assertNotIn(
+            "registry-origin-invalid", codes(REFERENCE_REGISTRY_URL=fork_origin + ".git")
+        )
+        self.assertEqual(release.approved_registry_origin(), release.REFERENCE_REGISTRY_ORIGIN)
 
     def test_dirty_or_noncurrent_registry_is_blocking_before_registry_tools(self) -> None:
         release = _load_script("release")

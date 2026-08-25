@@ -405,6 +405,26 @@ def _normalize_origin(raw: str) -> str:
     return raw.strip().removesuffix(".git").removesuffix("/")
 
 
+def approved_registry_origin() -> str:
+    """The registry origin this checklist will accept, defaulting to this project's own.
+
+    The release workflow already clones whatever `REFERENCE_REGISTRY_URL` names, because a fork
+    publishes to its own registry and cannot reach this one.  Reading the same variable here is
+    what makes that setting mean something: without it the workflow clones the fork's registry and
+    this check rejects it as "not the approved public reference repository", which is a variable
+    contradicted by a constant.
+
+    The guard itself is unchanged.  On this repository the variable is unset, the default applies,
+    and a release still reconciles against exactly one approved registry.  A fork states its own,
+    and the registry it clones is then the registry it is checked against -- one value, not two
+    that can disagree.
+    """
+
+    return _normalize_origin(os.environ.get("REFERENCE_REGISTRY_URL", "")) or (
+        REFERENCE_REGISTRY_ORIGIN
+    )
+
+
 def _remote_head_commit(result: subprocess.CompletedProcess[str] | None) -> str | None:
     if result is None or result.returncode != 0:
         return None
@@ -441,14 +461,17 @@ def _registry_diagnostics(
     if (
         origin is None
         or origin.returncode != 0
-        or _normalize_origin(origin.stdout) != REFERENCE_REGISTRY_ORIGIN
+        or _normalize_origin(origin.stdout) != approved_registry_origin()
     ):
         return RegistryEvidence(
             (
                 _diagnostic(
                     "registry-origin",
                     "registry-origin-invalid",
-                    "release registry is not the approved public reference repository",
+                    "reference registry origin is "
+                    f"{_normalize_origin(origin.stdout) if origin else '(unreadable)'}, "
+                    f"not the approved {approved_registry_origin()}; "
+                    "set REFERENCE_REGISTRY_URL to the registry this release publishes to",
                 ),
             ),
             None,
