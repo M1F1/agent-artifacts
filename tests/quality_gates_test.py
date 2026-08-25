@@ -58,7 +58,11 @@ class QualitySurfaceTest(unittest.TestCase):
         action = (ROOT / ".github" / "actions" / "quality" / "action.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("run: make quality", action)
+        # And it delegates to the canonical runner directly.  `make quality` was a one-line
+        # wrapper around this very command, so the indirection only added GNU Make to what a CI
+        # image must carry -- a real Enterprise image without it failed before a gate could run.
+        self.assertIn("scripts/quality.py", action)
+        self.assertNotIn("make ", action)
         for body in (workflow, action):
             self.assertNotIn("unittest discover", body)
             self.assertNotIn("ast.walk", body)

@@ -54,6 +54,10 @@ runs:
       shell: bash
       run: ${{ inputs.python }} -m pip install --disable-pip-version-check -e ".[dev]"
 
+    # `scripts/quality.py` is the canonical gate runner and the Makefile target is a one-line
+    # wrapper around it, so calling it directly costs nothing and drops GNU Make from the list of
+    # things a CI image has to carry.  The script propagates its own interpreter to every gate
+    # (`python: str = sys.executable`), which is what the `PYTHON=` argument used to do.
     - name: Run canonical quality gates
       shell: bash
-      run: make quality PYTHON=${{ inputs.python }}
+      run: ${{ inputs.python }} scripts/quality.py

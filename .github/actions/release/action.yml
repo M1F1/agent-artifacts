@@ -42,7 +42,7 @@ runs:
 
     - name: Run stable release checklist
       shell: bash
-      run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry" PYTHON=${{ inputs.python }}
+      run: ${{ inputs.python }} scripts/release.py check --registry "$RUNNER_TEMP/reference-registry"
 
     - name: Verify source version and release tag
       shell: bash

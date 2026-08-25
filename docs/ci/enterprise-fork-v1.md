@@ -174,6 +174,21 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
 | `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the index. Combined with `AART_PIP_INDEX_URL`, which stays a bare host |
 
+### What a container image has to carry
+
+`AART_CI_IMAGE` is the one variable that moves work into an environment this project does not
+build, so it is the one place where the image, not a variable, is the thing that has to be right.
+The list is short, because it was made short on purpose:
+
+| Needed | Why |
+|---|---|
+| A Python interpreter, named by `AART_PYTHON` | setting `AART_CI_IMAGE` skips `actions/setup-python`, which downloads from github.com and is the first thing to fail on a runner with no egress |
+| `git` | the gates run the tool against real checkouts, so a tarball checkout with no `.git` fails them |
+
+**Not** GNU Make. The gates are run as `scripts/quality.py`, and the release checklist as
+`scripts/release.py check` — both are what the Makefile targets always wrapped. `make` stays for
+people typing at a keyboard; CI never needed it, and an image is easier to supply without it.
+
 ## 3. Variables a registry sets
 
 `aart registry init` writes **three** workflows itself, all already parameterised — the quality
