@@ -626,7 +626,7 @@ def _registry_diagnostics(
 
 def check_release(
     root: Path,
-    registry: Path,
+    registry: Path | None,
     *,
     process_runner: ProcessRunner = _run_process,
     require_clean: bool = True,
@@ -638,7 +638,14 @@ def check_release(
         require_clean=require_clean,
         require_main=require_main,
     )
-    registry_evidence = _registry_diagnostics(root, registry, process_runner)
+    # `registry is None` is the deliberate "this fork has no registry" case, not a missing
+    # argument: the caller has to ask for it by name.  Reconciliation is then not performed, and
+    # nothing pretends it was -- the seven registry checks report `skipped`, never `passed`.
+    registry_evidence = (
+        _registry_diagnostics(root, registry, process_runner)
+        if registry is not None
+        else RegistryEvidence((), None, False)
+    )
     after = _repository_diagnostics(
         root,
         process_runner=process_runner,
@@ -659,7 +666,10 @@ def check_release(
         )
     )
     failed_checks = {item.check for item in diagnostics}
-    if not registry_evidence.content_checks_ran:
+    skipped_checks: frozenset[str] = frozenset()
+    if registry is None:
+        skipped_checks = frozenset(("registry-origin", *REGISTRY_CONTENT_CHECKS))
+    elif not registry_evidence.content_checks_ran:
         failed_checks.update(REGISTRY_CONTENT_CHECKS)
     try:
         version = str(_versioning().read_version(root))
@@ -670,7 +680,15 @@ def check_release(
         "status": "passed" if not diagnostics else "failed",
         "version": version,
         "registry_commit": registry_evidence.commit,
-        "checks": [{"name": name, "passed": name not in failed_checks} for name in RELEASE_CHECKS],
+        "registry_reconciliation": "skipped" if registry is None else "performed",
+        "checks": [
+            {
+                "name": name,
+                "passed": name not in failed_checks and name not in skipped_checks,
+                "skipped": name in skipped_checks,
+            }
+            for name in RELEASE_CHECKS
+        ],
         "diagnostics": [item.to_json() for item in diagnostics],
     }
 
@@ -690,7 +708,17 @@ def _parser() -> argparse.ArgumentParser:
         help="directory the wheel is written into (default: dist/)",
     )
     check = commands.add_parser("check", help="run the complete stable-release checklist")
-    check.add_argument("--registry", required=True, type=Path)
+    # Exactly one of the two, and `--without-registry` has to be typed.  A fork that publishes no
+    # artifact catalogue has nothing to reconcile against, but "no registry" must be a statement
+    # rather than an omission -- an optional `--registry` would let the reconciliation disappear
+    # from a release by accident, which is the failure mode worth spending a flag to avoid.
+    source = check.add_mutually_exclusive_group(required=True)
+    source.add_argument("--registry", type=Path)
+    source.add_argument(
+        "--without-registry",
+        action="store_true",
+        help="reconcile against no registry; the seven registry checks report skipped",
+    )
     check.add_argument("--json", action="store_true")
     return parser
 
@@ -721,12 +749,25 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
         print(f"{digest}  {name}")
         print(f"wrote {output_dir / name}")
         return 0
-    receipt = check_release(root, args.registry)
+    receipt = check_release(root, None if args.without_registry else args.registry)
     if args.json:
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
     else:
+        if receipt["registry_reconciliation"] == "skipped":
+            # Loud, on stderr, and every time.  A release that verified less than the last one is
+            # worth one line now rather than a question in six months about why a regression got
+            # through.
+            print(
+                "release warning: no registry was reconciled against, so seven checks did not "
+                "run. This release proves the tool, not its agreement with an artifact catalogue.",
+                file=sys.stderr,
+            )
         for check in receipt["checks"]:
-            print(f"{check['name']}: {'passed' if check['passed'] else 'failed'}")
+            if check["skipped"]:
+                state = "skipped"
+            else:
+                state = "passed" if check["passed"] else "failed"
+            print(f"{check['name']}: {state}")
         for diagnostic in receipt["diagnostics"]:
             print(f"{diagnostic['code']}: {diagnostic['message']}", file=sys.stderr)
         print(f"release checklist {receipt['status']}: {receipt['version']}")

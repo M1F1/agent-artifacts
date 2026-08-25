@@ -358,6 +358,37 @@ class ReleaseChecklistTest(unittest.TestCase):
         )
         self.assertEqual(release.approved_registry_origin(), release.REFERENCE_REGISTRY_ORIGIN)
 
+    def test_skipping_reconciliation_reports_skipped_and_never_passed(self) -> None:
+        """A fork with no artifact catalogue can still release, and the receipt says what it did.
+
+        The danger of an opt-out is not that it exists but that it flatters: seven checks that did
+        not run must never read as seven checks that passed.  They report `skipped`, the receipt
+        records `registry_reconciliation`, and the printed run warns on stderr.
+        """
+
+        release = _load_script("release")
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, release)
+            receipt = release.check_release(
+                root, None, process_runner=_successful_runner, require_clean=False
+            )
+
+        self.assertEqual(receipt["registry_reconciliation"], "skipped")
+        self.assertEqual(receipt["status"], "passed")
+        self.assertIsNone(receipt["registry_commit"])
+        registry_checks = {
+            item["name"]: item for item in receipt["checks"] if item["name"].startswith("registry-")
+        }
+        self.assertEqual(len(registry_checks), 7)
+        for name, item in registry_checks.items():
+            with self.subTest(check=name):
+                self.assertTrue(item["skipped"])
+                self.assertFalse(item["passed"])
+        for item in receipt["checks"]:
+            if not item["name"].startswith("registry-"):
+                self.assertFalse(item["skipped"])
+
     def test_dirty_or_noncurrent_registry_is_blocking_before_registry_tools(self) -> None:
         release = _load_script("release")
         for status, head, origin_head, expected in (

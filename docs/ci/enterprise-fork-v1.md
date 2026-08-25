@@ -168,11 +168,38 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_PYTHON_VERSIONS` | `["3.10", "3.14"]` | JSON array for the quality matrix. **Pin to one entry when `AART_CI_IMAGE` is set** — one image carries one interpreter, and a two-entry matrix would run the same Python twice under two names |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Internal mirror for `ruff`/`mypy`/`coverage`. This repository's gates only |
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
-| `AART_REFERENCE_REGISTRY_URL` | this project's public registry | The registry the release checklist reconciles against. A fork publishes to its own |
+| `AART_REFERENCE_REGISTRY_URL` | **no default** | The registry the release checklist reconciles against, and the switch for whether it reconciles at all. Unset, the clone is skipped and the seven registry checks report `skipped` — never `passed` — with a warning on every run. See below |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
 | `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |
 | `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
 | `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the index. Combined with `AART_PIP_INDEX_URL`, which stays a bare host |
+
+### The one variable with no default
+
+Every other variable defaults to the public run, so an unconfigured fork behaves the way this
+repository always has. `AART_REFERENCE_REGISTRY_URL` cannot: a default naming a github.com
+repository reproduces nothing on an instance that cannot reach github.com. It guarantees a failed
+clone, which is worse than no default at all.
+
+So presence is the switch — the same shape `AART_IMAGE_USERNAME_SECRET` already uses:
+
+| Set to | What a release does |
+|---|---|
+| a registry URL | clones it and runs all eleven checks, seven of them against that registry |
+| unset | skips the clone, runs four checks, reports the other seven as `skipped` |
+
+Actions cannot tell an unset variable from an empty one, which is why a default and an opt-out
+cannot both exist here. One of them had to go, and a default that only ever produces a failed
+clone is the one worth losing.
+
+The release checklist is an acceptance test, not a publication step: it runs the version being
+released against a real catalogue to prove the tool still operates one. A fork that keeps no
+catalogue has nothing to reconcile against, and the proof it cannot run is a proof it does not
+need. What it must not do is claim it ran — hence `skipped`, a `registry_reconciliation` field in
+the receipt, and a warning on stderr every time.
+
+**This repository sets the variable explicitly.** Clearing it would not fail anything; it would
+quietly verify seven checks fewer, which is the whole reason the warning is loud.
 
 ### What a container image has to carry
 

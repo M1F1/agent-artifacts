@@ -37,7 +37,10 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    # Unset means this fork keeps no artifact catalogue, so there is nothing to reconcile against
+    # and nothing to clone.  The variable is the switch; there is no second one to remember.
     - name: Clone approved reference registry
+      if: env.REFERENCE_REGISTRY_URL != ''
       shell: bash
       run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
 
@@ -50,9 +53,18 @@ runs:
         TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
         git merge-base --is-ancestor "$TAG_COMMIT" origin/main
 
+    # `--without-registry` is typed out rather than inferred from a missing `--registry`, so a
+    # release that verifies less can only happen on purpose.  The checklist warns on every such
+    # run and marks the seven registry checks `skipped`, never `passed`.
     - name: Run stable release checklist
       shell: bash
-      run: ${{ inputs.python }} scripts/release.py check --registry "$RUNNER_TEMP/reference-registry"
+      run: |
+        set -euo pipefail
+        if [ -n "${REFERENCE_REGISTRY_URL:-}" ]; then
+          ${{ inputs.python }} scripts/release.py check --registry "$RUNNER_TEMP/reference-registry"
+        else
+          ${{ inputs.python }} scripts/release.py check --without-registry
+        fi
 
     - name: Verify source version and release tag
       shell: bash

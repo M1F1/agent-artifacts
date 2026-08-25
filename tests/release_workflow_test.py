@@ -16,7 +16,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
             'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
             workflow,
         )
-        self.assertIn("M1F1/agent-artifacts-registry.git", workflow)
+        # No default here on purpose: the variable's presence is what decides whether the
+        # reconciliation runs.  `enterprise_ci_template_test` holds that contract.
+        self.assertIn("REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}", workflow)
         self.assertIn("fetch-depth: 0", workflow)
 
         # Each job appears once per container shape, so its steps live in a composite action
@@ -31,7 +33,10 @@ class ReleaseWorkflowTest(unittest.TestCase):
         # a thing every CI image had to carry -- which is how a real Enterprise image failed.
         self.assertIn("scripts/quality.py", quality)
         self.assertNotIn("make ", quality)
+        # Both invocations, because the reconciliation is now a choice the variable makes and a
+        # test that saw only one branch would not notice the other disappearing.
         self.assertIn("scripts/release.py check --registry", release_steps)
+        self.assertIn("scripts/release.py check --without-registry", release_steps)
         self.assertNotIn("make ", release_steps)
         self.assertIn("scripts/version.py check-tag", release_steps)
         self.assertIn(

@@ -82,14 +82,28 @@ class DefaultsReproduceThePublicRunTest(unittest.TestCase):
             # An unset image must leave the job on the runner's own environment.
             self.assertIn("container: ${{ vars.AART_CI_IMAGE }}", workflow)
 
-    def test_release_defaults_still_name_this_projects_registry_and_host(self) -> None:
+    def test_the_registry_url_is_the_switch_and_carries_no_default(self) -> None:
+        """One variable decides whether a release reconciles against a registry at all.
+
+        Every other variable defaults to the public run, because an unconfigured fork should
+        behave the way this repository always has.  This one cannot: a default naming a
+        github.com repository reproduces nothing on an instance that cannot reach github.com --
+        it guarantees a failed clone.  So the default is gone and presence is the switch, the
+        same shape `AART_IMAGE_USERNAME_SECRET` already uses.
+
+        Actions cannot tell an unset variable from an empty one, which is why a default and an
+        opt-out cannot both exist here.  This repository sets the variable explicitly; clearing
+        it is a real change, and the checklist says so on every run that skips.
+        """
+
         workflow = _read(WORKFLOWS[1])
-        self.assertIn(
-            "vars.AART_REFERENCE_REGISTRY_URL || "
-            "'https://github.com/M1F1/agent-artifacts-registry.git'",
-            workflow,
-        )
+        self.assertIn("REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}", workflow)
+        self.assertNotIn("AART_REFERENCE_REGISTRY_URL ||", workflow)
         self.assertIn("vars.AART_GH_HOST || 'github.com'", workflow)
+
+        action = _read(ROOT / ".github" / "actions" / "release" / "action.yml")
+        self.assertIn("if: env.REFERENCE_REGISTRY_URL != ''", action)
+        self.assertIn("--without-registry", action)
 
     def test_setup_python_is_skipped_only_when_an_image_carries_one(self) -> None:
         """The decision still belongs to the variable; only the place it is read moved.

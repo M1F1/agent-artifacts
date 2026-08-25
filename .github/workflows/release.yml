@@ -8,10 +8,14 @@ name: release
 # source version the release contract governs, so the pattern below stays deliberately broad
 # rather than pinning one release and silently building nothing for the next.
 #
-# Portable to a GitHub Enterprise Server fork by setting repository variables only; every default
-# reproduces the public github.com run.  See docs/ci/enterprise-fork-v1.md.  Each job appears twice
-# for the reason validate.yml records: a container's `credentials` block cannot be conditional, so
-# the condition moves to the job.  Both shapes share their steps through `.github/actions/*`.
+# Portable to a GitHub Enterprise Server fork by setting repository variables only.  Every default
+# reproduces the public github.com run except one: `AART_REFERENCE_REGISTRY_URL` has no default,
+# because a default naming a github.com repository reproduces nothing on an instance that cannot
+# reach it.  See the note on that variable below.  See docs/ci/enterprise-fork-v1.md.
+#
+# Each job appears twice for the reason validate.yml records: a container's `credentials` block
+# cannot be conditional, so the condition moves to the job.  Both shapes share their steps through
+# `.github/actions/*`.
 on:
   push:
     tags:
@@ -75,9 +79,17 @@ jobs:
     env:
       AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
       AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
-      # The release checklist reconciles against a real registry checkout.  A fork points this at
-      # the registry it actually publishes, which is not this project's reference registry.
-      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL || 'https://github.com/M1F1/agent-artifacts-registry.git' }}
+      # The release checklist reconciles against a real registry checkout, and this variable is
+      # the switch: set, the reconciliation runs against what it names; unset, it is skipped and
+      # says so.  There is deliberately no default.  A default naming this project's registry
+      # promised a fork parity it cannot have -- an Enterprise instance cannot reach github.com,
+      # so the default guaranteed a failed clone rather than the public behaviour.  Actions cannot
+      # tell an unset variable from an empty one, so a default and an opt-out cannot coexist here.
+      #
+      # This repository therefore sets it explicitly.  Clearing it is a real change: releases keep
+      # passing and verify seven checks fewer, which is why the checklist warns on every run that
+      # skips and records `registry_reconciliation` in its receipt.
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
       # `gh` talks to github.com unless told otherwise; on GHES it needs the instance hostname.
       GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -105,7 +117,7 @@ jobs:
     env:
       AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
       AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
-      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL || 'https://github.com/M1F1/agent-artifacts-registry.git' }}
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
       GH_HOST: ${{ vars.AART_GH_HOST || 'github.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
