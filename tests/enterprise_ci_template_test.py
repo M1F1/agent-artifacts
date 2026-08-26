@@ -25,6 +25,7 @@ ACTION = ROOT / ".github" / "actions" / "aart" / "action.yml"
 WORKFLOWS = (
     ROOT / ".github" / "workflows" / "validate.yml",
     ROOT / ".github" / "workflows" / "release.yml",
+    ROOT / ".github" / "workflows" / "cut-release.yml",
 )
 # The registry's workflow has one home: the bytes `registry init` writes.  A second copy under
 # docs/ would rot, and `plan_registry_init` refuses a template whose content has drifted.

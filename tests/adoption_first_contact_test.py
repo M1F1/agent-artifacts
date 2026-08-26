@@ -71,18 +71,16 @@ class ReadmeAdoptionTest(unittest.TestCase):
     def test_the_release_section_names_the_commands_a_release_actually_runs(self) -> None:
         """A release page that has drifted is worse than none: it is followed.
 
-        These are the four that cannot be guessed from the repository -- the acknowledgement flag
-        that keeps a mistyped version from writing, the checklist's two mutually exclusive forms,
-        and the digest the published wheel is compared against.
+        The button is the documented route and the script is the same sequence from a terminal, so
+        both spellings of the registry choice have to appear -- a release that verifies seven
+        checks fewer must be something an operator typed, never something a page implied.
         """
 
         section = _README[_README.index("## Releasing") : _README.index("## License")]
         for command in (
             "python scripts/version.py set 2.9.0 --write",
-            "python scripts/quality.py",
-            "python scripts/release.py check --registry",
-            "python scripts/release.py check --without-registry",
-            "python scripts/release.py wheel-digest --output dist",
+            "python scripts/cut_release.py 2.9.0 --registry",
+            "python scripts/cut_release.py 2.9.0 --without-registry",
         ):
             with self.subTest(command=command):
                 self.assertIn(command, section)

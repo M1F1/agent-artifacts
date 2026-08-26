@@ -427,91 +427,71 @@ Python itself.
 
 ## Releasing
 
-A release is two pushes and one button. The version and the notes go in on `main`, the tag starts
-the build, and publishing the release attaches the wheel. Everything between those points is
-checked, and every check fails closed.
+**Actions → cut release → Run workflow → type the version.** That is the release.
 
-The commands below use `2.9.0` as the example. Substitute the version you are releasing.
+Two things are decided before you press it, and they are the two a machine cannot decide: which
+version, and what the notes say. Both arrive on `main` through an ordinary reviewed change.
 
-### 1. Set the version and write the notes
+### What you do
 
-```sh
-python scripts/version.py set 2.9.0 --write
-```
+1. In the change that closes the release, set the version:
 
-`--write` is not politeness. The script refuses to touch a file without it, so a mistyped command
-changes nothing. It updates `pyproject.toml` and `agent_artifacts/__init__.py` together, and the
-`validate` gate fails if the two ever disagree.
+   ```sh
+   python scripts/version.py set 2.9.0 --write
+   ```
 
-Then write the release notes at `docs/release/github-release-v2.9.0.md`. The release job checks
-that this file exists and is not empty before it builds anything, so a missing note stops the
-release rather than shipping one without it.
+   `--write` is not politeness. The script refuses to touch a file without it, so a mistyped
+   command changes nothing. It updates `pyproject.toml` and `agent_artifacts/__init__.py`
+   together, and the `validate` gate fails if the two ever disagree.
 
-### 2. Run the gates
+2. Write the notes at `docs/release/github-release-v2.9.0.md`.
 
-```sh
-python scripts/quality.py
-```
+3. Merge to `main`.
 
-All ten, each in its own temporary cache, stopping at the first failure. This is the same runner CI
-invokes, not a local approximation of it.
+4. Press the button and type `2.9.0`.
 
-### 3. Run the release checklist
+### What the button does
 
-```sh
-python scripts/release.py check --registry /path/to/agent-artifacts-registry
-```
+In this order, writing nothing until every check has passed:
 
-Eleven checks. Four cover this repository — a clean worktree at a commit merged into `main`, the
-schema freeze, the system matrix, and the package. The other seven reconcile against a real
-registry checkout, which is why the path is required rather than optional.
+| Step | Refuses when |
+|---|---|
+| Preconditions | the worktree is dirty, the source version does not match the tag, the notes are missing or empty, the tag already exists, or `HEAD` is not in `origin/main` |
+| Ten quality gates | any gate fails |
+| Eleven checklist checks | any check fails — four cover this repository, seven reconcile against the reference registry |
+| Tag and publish | — |
 
-With no registry to hand:
+A run therefore produces a tag and a release, or it produces neither. There is no half-published
+state to unpick by hand.
 
-```sh
-python scripts/release.py check --without-registry
-```
+Publishing the release fires `release.yml`, which builds the wheel and attaches it. That keeps one
+builder of release artifacts rather than two that can disagree. The release body carries the
+wheel's `sha256`, computed from the same tag, so a downloaded asset can be checked against it.
 
-Those seven are then reported `skipped`, never `passed`, the run warns, and the receipt records it.
-Typing the flag out is the point: a release that verifies less can only happen on purpose.
+### The same thing from a terminal
 
-### 4. Merge, then tag
-
-The tag has to name a commit that is already in `origin/main`. The release job proves it with
-`git merge-base --is-ancestor` and stops if it cannot.
+The button is a trigger; the sequence lives in a script, so it runs anywhere:
 
 ```sh
-git tag -a v2.9.0 -m "AART 2.9.0"
+python scripts/cut_release.py 2.9.0 --registry /path/to/agent-artifacts-registry
 ```
+
+With no registry checkout to hand:
 
 ```sh
-git push origin v2.9.0
+python scripts/cut_release.py 2.9.0 --without-registry
 ```
 
-The tag push starts the release workflow: the gates again, then the wheel, uploaded as a workflow
-artifact.
-
-### 5. Publish
-
-```sh
-python scripts/release.py wheel-digest --output dist
-```
-
-That builds the exact wheel the tag publishes and prints its `sha256`. Append the digest line to the
-notes, then create the release from them:
-
-```sh
-gh release create v2.9.0 --title "AART 2.9.0" --notes-file docs/release/github-release-v2.9.0.md
-```
-
-Publishing fires the workflow a second time, and that run also attaches the wheel to the release.
-Download the asset afterwards and compare its digest with the one you published. The wheel is
-byte-reproducible from its tag, so the two must match exactly.
+The seven registry checks are then reported `skipped`, never `passed`, and the run says so. Typing
+the flag out is the point: a release that verifies less can only happen on purpose. In CI the same
+choice is made by one repository variable, `AART_REFERENCE_REGISTRY_URL` — set, the registry is
+cloned and reconciled against; unset, those checks are skipped. It has no default, because a
+default naming a github.com repository reproduces nothing on an instance that cannot reach it.
 
 ### The workflow is read from the tag, not from `main`
 
 This is the part that catches people, and it caught us. GitHub loads workflow files from the ref
-that triggered the run, so a release runs the workflow **as it was at the tag**. A fix merged to
+that triggered the run, so a release runs `release.yml` **as it was at the tag**. A fix merged to
 `main` after tagging is not in that run, and re-running the failed job replays the same commit
 rather than picking the fix up. Move the tag and publish again:
 
@@ -519,13 +499,8 @@ rather than picking the fix up. Move the tag and publish again:
 git tag -f v2.9.0 main && git push -f origin v2.9.0
 ```
 
-Re-publishing is safe: the attach step replaces an asset of the same name instead of colliding with
-it.
-
-One repository variable has no default and decides how much a release verifies:
-`AART_REFERENCE_REGISTRY_URL`. Set, the checklist reconciles against the registry it names. Unset,
-those seven checks are skipped and the run says so. See
-[Repository variables](#repository-variables).
+Re-publishing is safe: the attach step replaces an asset of the same name instead of colliding
+with it.
 
 ## License
 

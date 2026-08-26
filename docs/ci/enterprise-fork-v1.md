@@ -523,6 +523,13 @@ and the interpreter.** Every other tool -- Make, the GitHub CLI, `curl` -- turne
 dependency the project had moved somewhere no lockfile could see it. A step that fails on a
 missing tool fails *after* the work is done, which is the most expensive place to fail.
 
+A third workflow arrived out of this walk rather than out of a defect: `cut-release.yml`. The
+release was eight commands typed in order, and typing them in order was the only thing holding the
+order together -- which is how a run reached `gh release upload` with the checklist never run. It
+is now one dispatch with one input, backed by `scripts/cut_release.py`, and it writes nothing until
+every precondition passes. It reads the same variables as the other two, so a fork configures it by
+configuring nothing extra.
+
 **One claim remains unverified**, and one was answered by the walk:
 
 1. ~~That your instance carries the actions the release job needs.~~ **Answered, and the question

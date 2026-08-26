@@ -1,0 +1,74 @@
+name: AART cut release
+description: >
+  Check every precondition, run the gates and the checklist, then tag and publish.  Lives in an
+  action for the same reason the other two do: two jobs differ only in how their container image
+  is pulled, and a release sequence duplicated is a release sequence that drifts.
+
+inputs:
+  python:
+    description: Name of the interpreter to invoke.
+    required: true
+  python-version:
+    description: Interpreter version to install when the job runs without a container image.
+    required: true
+  setup-python:
+    description: '"true" when the job has no container image and so needs an interpreter installed.'
+    required: true
+  version:
+    description: The version to cut, without the leading v.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # See the note in `.github/actions/quality/action.yml`: a container job runs as a different uid
+    # from the one `actions/checkout` wrote the workspace with, and git refuses everything until
+    # the path is trusted.  Every step below reads history.
+    - name: Trust the checked-out workspace
+      shell: bash
+      run: git config --global --add safe.directory "$PWD"
+
+    - name: Set up Python
+      if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install developer quality tools
+      shell: bash
+      run: ${{ inputs.python }} -m pip install --disable-pip-version-check -e ".[dev]"
+
+    # The gates run here rather than inside the script so this job installs its tools once and the
+    # script stays runnable on a laptop with no arguments about who installs what.
+    - name: Run canonical quality gates
+      shell: bash
+      run: ${{ inputs.python }} scripts/quality.py
+
+    # Unset means this fork keeps no artifact catalogue, so there is nothing to reconcile against.
+    # The variable is the switch; see the note in `.github/workflows/release.yml`.
+    - name: Clone approved reference registry
+      if: env.REFERENCE_REGISTRY_URL != ''
+      shell: bash
+      run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
+
+    # An annotated tag records who made it, and git refuses to write one with no identity.  The
+    # actor is the person who pressed the button, which is the truest answer available here.
+    - name: Name the tagger
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config --global user.name "$GITHUB_ACTOR"
+        git config --global user.email "$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
+
+    - name: Cut the release
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -n "${REFERENCE_REGISTRY_URL:-}" ]; then
+          registry=(--registry "$RUNNER_TEMP/reference-registry")
+        else
+          registry=(--without-registry)
+        fi
+        ${{ inputs.python }} scripts/cut_release.py "$VERSION" --skip-gates "${registry[@]}"
