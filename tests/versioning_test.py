@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import re
 import shutil
@@ -202,6 +203,9 @@ class VersionFilesTest(unittest.TestCase):
             versioning.validate_tag(complete, "v1.0.0", stable)
 
 
+versioning_module = _load_script("version")
+
+
 class MirroredVersionTest(unittest.TestCase):
     """The version lives in three files and is quoted in two more.
 
@@ -236,6 +240,20 @@ class MirroredVersionTest(unittest.TestCase):
                 "agent_artifacts-2.8.6-py3-none-any.whl",
                 (root / "README.md").read_text(encoding="utf-8"),
             )
+
+    def test_the_freeze_carries_the_version_so_stale_means_a_schema_moved(self) -> None:
+        """The freeze's digests are a tripwire; the version in it was resetting the tripwire.
+
+        `release_version` sits in the same document as the schema digests, so a plain version bump
+        made the whole thing stale and the fix was `freeze --write` -- every release, unread. A
+        tripwire reset by routine catches nothing. With the version mirrored, `schema-freeze-stale`
+        again means what it says.
+        """
+
+        release = _load_script("release")
+        frozen = json.loads((ROOT / release.SCHEMA_FREEZE_PATH).read_text(encoding="utf-8"))
+        self.assertEqual(frozen["release_version"], str(versioning_module.read_version(ROOT)))
+        self.assertIn(release.SCHEMA_FREEZE_PATH, _load_script("version")._MIRRORS)
 
     def test_a_root_without_them_is_not_a_version_error(self) -> None:
         """A fixture directory is not a repository, and a missing README is not a mismatch."""

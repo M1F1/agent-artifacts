@@ -447,13 +447,7 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
    an exact wheel. All five are rewritten by that one command, and it prints the two it rewrote.
    The `validate` gate fails if any of them disagree, which is why none is ever edited by hand.
 
-2. Regenerate the schema freeze, which records the release version alongside the schema digests:
-
-   ```sh
-   python scripts/release.py freeze --write
-   ```
-
-3. Write the notes at `docs/release/github-release-v2.9.0.md`, and name the new version in the
+2. Write the notes at `docs/release/github-release-v2.9.0.md`, and name the new version in the
    three documents the checklist requires: `CHANGELOG.md`, `docs/release/compatibility-v18.md`
    and `docs/release/release-checklist-v18.md`. These are prose, so no command writes them; the
    checklist refuses a release whose documents still describe the previous one.
@@ -468,9 +462,15 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
    Two failures are expected until the change is merged — a dirty worktree, and a commit not yet
    in `origin/main`. Everything else should already be green.
 
-5. Merge to `main`.
+4. Merge to `main`.
 
-6. Press the button and type `2.9.0`.
+5. Press the button and type `2.9.0`.
+
+There is no step for the schema freeze. `docs/release/schema-freeze-v18.json` records the version
+along with a digest of every normative schema file, and the version half is written by step 1. If
+the checklist ever reports `schema-freeze-stale`, a schema itself moved — stop and find out why
+before running `python scripts/release.py freeze --write`. The freeze is a tripwire, and a tripwire
+reset by routine catches nothing.
 
 ### What the button does
 

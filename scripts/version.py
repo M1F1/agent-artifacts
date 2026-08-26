@@ -207,14 +207,25 @@ def write_version(root: Path, version: Version) -> tuple[str, ...]:
 
 
 # The three files above are the version's home and must agree, which `read_version` enforces.
-# These two only quote it, and a quotation that disagrees is just as broken: the release checklist
-# is pinned to a literal in `scripts/release.py`, and the README publishes install commands naming
-# an exact wheel.  Bumping by hand meant editing more than twenty of them, and a bump that missed
-# one failed the gates with a message about a wheel name rather than about a missed edit.
+# These only quote it, and a quotation that disagrees is just as broken: the release checklist is
+# pinned to a literal in `scripts/release.py`, the README publishes install commands naming an
+# exact wheel, and the schema freeze records the release it was taken for.  Bumping by hand meant
+# editing more than twenty of them, and a bump that missed one failed the gates with a message
+# about a wheel name rather than about a missed edit.
+#
+# The freeze is here for a second reason, and it is the more important one.  It exists to notice
+# when a normative schema changes without anyone deciding to change it -- the digests are a
+# tripwire.  But it also carried the release version, so a plain version bump made it stale and
+# the fix was to regenerate it, every release, unread.  A tripwire reset by routine catches
+# nothing.  Moving the version leaves `schema-freeze-stale` meaning what it says: a schema moved.
 #
 # Written only where they exist.  A version fixture in a temporary directory is not a repository,
 # and a missing README is not a version error.
-_MIRRORS = ("scripts/release.py", "README.md")
+_MIRRORS = (
+    "scripts/release.py",
+    "README.md",
+    "docs/release/schema-freeze-v18.json",
+)
 
 
 def mirror_version(root: Path, previous: str, version: str) -> tuple[str, ...]:
