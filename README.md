@@ -441,8 +441,10 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
    ```
 
    `--write` is not politeness. The script refuses to touch a file without it, so a mistyped
-   command changes nothing. It updates `pyproject.toml` and `agent_artifacts/__init__.py`
-   together, and the `validate` gate fails if the two ever disagree.
+   command changes nothing. The version lives in three files — `pyproject.toml`,
+   `agent_artifacts/__init__.py` and `agent_artifacts/runtime_contract.py` — and this writes all
+   three at once. The `validate` gate fails if they ever disagree, which is why they are never
+   edited by hand.
 
 2. Write the notes at `docs/release/github-release-v2.9.0.md`.
 
