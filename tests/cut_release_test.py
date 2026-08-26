@@ -59,6 +59,10 @@ class PreconditionsTest(unittest.TestCase):
         patched = mock.patch.object(cut_release, "_run")
         self.run = patched.start()
         self.addCleanup(patched.stop)
+        # The placeholder scan reads the real repository; these tests are about the git decisions.
+        markers = mock.patch.object(cut_release.release_docs, "open_markers", return_value=())
+        self.markers = markers.start()
+        self.addCleanup(markers.stop)
 
     def _refusal(self, git: _Git) -> str:
         with mock.patch.object(cut_release, "_git", git):
@@ -110,6 +114,18 @@ class PreconditionsTest(unittest.TestCase):
         written = [call[0] for call in git.calls]
         for verb in ("tag", "push", "commit"):
             self.assertNotIn(verb, written)
+
+    def test_an_unwritten_release_document_is_refused_with_the_places_listed(self) -> None:
+        """The checklist asks whether the documents name this version, not whether they say much.
+
+        `release_docs.py` writes the headings and leaves visible TODO lines where the prose goes,
+        so a release could otherwise ship a compatibility note reading `TODO(2.9.0): what moves`.
+        """
+
+        self.markers.return_value = ("CHANGELOG.md:7: TODO(2.9.0): a bold sentence of claim",)
+        said = self._refusal(_clean_repository())
+        self.assertIn("placeholder", said)
+        self.assertIn("CHANGELOG.md:7", said)
 
 
 class ExitCodeTest(unittest.TestCase):

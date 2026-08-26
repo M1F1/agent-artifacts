@@ -434,45 +434,53 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
 
 ### What you do
 
-1. In the change that closes the release, set the version:
+```sh
+python scripts/prepare_release.py
+```
 
-   ```sh
-   python scripts/version.py set 2.9.0 --write
-   ```
+It asks which version and what the release does in one line, then runs everything local in the
+only order that works: the version into the six files that carry it, the four documents into their
+places, the ten gates, the eleven checklist checks. It stops at the first refusal and says which
+step refused.
 
-   `--write` is not politeness. The script refuses to touch a file without it, so a mistyped
-   command changes nothing. The version lives in three files — `pyproject.toml`,
-   `agent_artifacts/__init__.py` and `agent_artifacts/runtime_contract.py` — and is quoted in two
-   more: `scripts/release.py`, which pins the checklist, and this page, whose install commands name
-   an exact wheel. All five are rewritten by that one command, and it prints the two it rewrote.
-   The `validate` gate fails if any of them disagree, which is why none is ever edited by hand.
+One thing it deliberately leaves you: the prose. The documents arrive with their headings and a
+visible `TODO(2.9.0)` line wherever a human has to write something, and the script will not
+continue while one stands. A change record, a compatibility statement and a checklist entry are
+what someone reads to decide whether to upgrade; no command can write them, and a release that
+ships without them is a release nobody can assess.
 
-2. Write the notes at `docs/release/github-release-v2.9.0.md`, and name the new version in the
-   three documents the checklist requires: `CHANGELOG.md`, `docs/release/compatibility-v18.md`
-   and `docs/release/release-checklist-v18.md`. These are prose, so no command writes them; the
-   checklist refuses a release whose documents still describe the previous one.
+When it finishes, three things are left and none of them is a gate:
 
-4. Check it before anyone reviews it. The gates and the checklist both run again in the button's
-   job, but finding a stale document here costs a minute and finding it there costs a round trip:
+1. Commit, push, open the pull request.
+2. Merge to `main`.
+3. **Actions → cut release → Run workflow → type the version.**
 
-   ```sh
-   python scripts/quality.py && python scripts/release.py check --without-registry
-   ```
+### The same script, driven by an agent
 
-   Two failures are expected until the change is merged — a dirty worktree, and a commit not yet
-   in `origin/main`. Everything else should already be green.
+Pass what a person would have typed and read a receipt instead of prose:
 
-4. Merge to `main`.
+```sh
+python scripts/prepare_release.py 2.9.0 --summary "One line about the release." --json
+```
 
-5. Press the button and type `2.9.0`.
+Both callers take the same path through the same steps — a JSON mode running different code is a
+JSON mode reporting a run nobody had. `stdout` carries exactly one document; everything the steps
+print goes to `stderr`. It never prompts where there is no terminal to prompt at, and never
+substitutes a default for an answer it could not get: a guessed version would set six files to a
+number nobody chose.
 
-There is no step for the schema freeze. `docs/release/schema-freeze-v18.json` records the version
-along with a digest of every normative schema file, and the version half is written by step 1. If
-the checklist ever reports `schema-freeze-stale`, a schema itself moved — stop and find out why
-before running `python scripts/release.py freeze --write`. The freeze is a tripwire, and a tripwire
-reset by routine catches nothing.
+Three exit codes, and the middle one is the interesting one:
 
-### What the button does
+| Code | Meaning | What to do |
+|---|---|---|
+| `0` | prepared | commit, merge, press the button |
+| `3` | documents still hold placeholders | the receipt lists them by file and line — write them, run again |
+| `2` | a step failed | read `reason`; nothing already written was undone |
+
+`3` is separate from `2` on purpose. An unwritten changelog is a retry after work; a failing gate
+is a stop. One code for both teaches a caller to treat them the same.
+
+### What the button does### What the button does
 
 In this order, writing nothing until every check has passed:
 

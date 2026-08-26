@@ -71,14 +71,16 @@ class ReadmeAdoptionTest(unittest.TestCase):
     def test_the_release_section_names_the_commands_a_release_actually_runs(self) -> None:
         """A release page that has drifted is worse than none: it is followed.
 
-        The button is the documented route and the script is the same sequence from a terminal, so
-        both spellings of the registry choice have to appear -- a release that verifies seven
-        checks fewer must be something an operator typed, never something a page implied.
+        Both callers of the local half have to be on the page -- a person's bare invocation and
+        an agent's, which is the same script with the answers passed in.  So does each spelling of
+        the registry choice: a release that verifies seven checks fewer must be something an
+        operator typed, never something a page implied.
         """
 
         section = _README[_README.index("## Releasing") : _README.index("## License")]
         for command in (
-            "python scripts/version.py set 2.9.0 --write",
+            "python scripts/prepare_release.py",
+            '--summary "One line about the release." --json',
             "python scripts/cut_release.py 2.9.0 --registry",
             "python scripts/cut_release.py 2.9.0 --without-registry",
         ):
@@ -86,6 +88,8 @@ class ReadmeAdoptionTest(unittest.TestCase):
                 self.assertIn(command, section)
         # The one thing this walk proved the hard way, and the reason a re-run looks like a no-op.
         self.assertIn("read from the tag, not from `main`", section)
+        # `3` is separate from `2` on purpose, and a caller only knows that if it is written.
+        self.assertIn("| `3` |", section)
 
     def test_registry_entrance_names_vendoring_and_links_the_walked_tutorial(self) -> None:
         for phrase in (

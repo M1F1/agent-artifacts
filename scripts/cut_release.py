@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import github_api  # noqa: E402
 import release as release_module  # noqa: E402
+import release_docs  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,6 +64,17 @@ def preconditions(version: str, tag: str, notes: Path, remote: str) -> None:
             f"no release notes at {notes.relative_to(ROOT)}\n"
             "Write them first: the release job refuses to build without them, and notes written "
             "after the fact are notes nobody read."
+        )
+
+    # `release_docs.py` writes the headings and leaves visible TODO lines where the prose goes.
+    # They are easy to leave behind, and the checklist would not notice: it asks whether the
+    # documents name this version, not whether anyone finished writing them.
+    open_markers = release_docs.open_markers(version, ROOT)
+    if open_markers:
+        listed = "\n".join(f"  {line}" for line in open_markers)
+        raise Refused(
+            f"{len(open_markers)} release document placeholder(s) still open:\n{listed}\n"
+            "Write them, or delete the lines if they do not apply to this release."
         )
 
     if _git("ls-remote", "--tags", remote, f"refs/tags/{tag}").stdout.strip():
