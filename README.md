@@ -380,7 +380,7 @@ The historical first live-acceptance record remains in
 [`docs/testing/PROGRESS-live-acceptance.md`](docs/testing/PROGRESS-live-acceptance.md). The new
 remediation run is documented separately and does not rewrite that evidence.
 
-## Development dependencies and what `make quality` runs
+## Development dependencies and what the quality gates run
 
 **The installed runtime has no dependencies.** `dependencies = []` in `pyproject.toml`, standard
 library only — that is a design rule, not an accident, and the gates below exist partly to keep it
@@ -402,11 +402,12 @@ Tests are **stdlib `unittest`** — there is no test-runner dependency. The whee
 `scripts/build_wheel.py`, also stdlib, so the offline release path needs neither `setuptools` nor
 `build`.
 
-### The nine gates
+### The ten gates
 
-`make quality` runs all nine through `scripts/quality.py`, each in a temporary cache directory with
-`PYTHONDONTWRITEBYTECODE=1`, and stops at the first failure. Run one on its own with
-`make <gate>`.
+`python scripts/quality.py` runs all ten, each in a temporary cache directory with
+`PYTHONDONTWRITEBYTECODE=1`, stopping at the first failure. `make quality` is a wrapper around
+the same script; CI calls the script directly, because a CI image is not obliged to carry GNU Make
+and a real one did not. Run a single gate with `make <gate>`.
 
 | Gate | Command | Depends on |
 |---|---|---|
@@ -419,14 +420,112 @@ Tests are **stdlib `unittest`** — there is no test-runner dependency. The whee
 | `coverage` | `coverage run --branch --source=agent_artifacts` over the unit suite, then `coverage report` | `coverage` |
 | `packaging-check` | `scripts/packaging_check.py` — builds the wheel and inspects it | stdlib |
 | `docs-check` | `scripts/docs_check.py` | stdlib |
+| `secret-shape-check` | `scripts/secret_shape_check.py` — refuses credential-shaped literals anywhere in the tracked tree, so the repository stays pushable to an instance with push protection on | stdlib |
 
-Four of the nine — `unit`, `integration`, `validate`, `docs-check` — need nothing installed beyond
-Python itself. A release additionally runs eleven checks in `scripts/release.py`, which require a
-local clone of the reference registry:
+Four of the ten — `unit`, `integration`, `validate`, `docs-check` — need nothing installed beyond
+Python itself.
+
+## Releasing
+
+A release is two pushes and one button. The version and the notes go in on `main`, the tag starts
+the build, and publishing the release attaches the wheel. Everything between those points is
+checked, and every check fails closed.
+
+The commands below use `2.9.0` as the example. Substitute the version you are releasing.
+
+### 1. Set the version and write the notes
 
 ```sh
-make release-check REGISTRY=/path/to/agent-artifacts-registry
+python scripts/version.py set 2.9.0 --write
 ```
+
+`--write` is not politeness. The script refuses to touch a file without it, so a mistyped command
+changes nothing. It updates `pyproject.toml` and `agent_artifacts/__init__.py` together, and the
+`validate` gate fails if the two ever disagree.
+
+Then write the release notes at `docs/release/github-release-v2.9.0.md`. The release job checks
+that this file exists and is not empty before it builds anything, so a missing note stops the
+release rather than shipping one without it.
+
+### 2. Run the gates
+
+```sh
+python scripts/quality.py
+```
+
+All ten, each in its own temporary cache, stopping at the first failure. This is the same runner CI
+invokes, not a local approximation of it.
+
+### 3. Run the release checklist
+
+```sh
+python scripts/release.py check --registry /path/to/agent-artifacts-registry
+```
+
+Eleven checks. Four cover this repository — a clean worktree at a commit merged into `main`, the
+schema freeze, the system matrix, and the package. The other seven reconcile against a real
+registry checkout, which is why the path is required rather than optional.
+
+With no registry to hand:
+
+```sh
+python scripts/release.py check --without-registry
+```
+
+Those seven are then reported `skipped`, never `passed`, the run warns, and the receipt records it.
+Typing the flag out is the point: a release that verifies less can only happen on purpose.
+
+### 4. Merge, then tag
+
+The tag has to name a commit that is already in `origin/main`. The release job proves it with
+`git merge-base --is-ancestor` and stops if it cannot.
+
+```sh
+git tag -a v2.9.0 -m "AART 2.9.0"
+```
+
+```sh
+git push origin v2.9.0
+```
+
+The tag push starts the release workflow: the gates again, then the wheel, uploaded as a workflow
+artifact.
+
+### 5. Publish
+
+```sh
+python scripts/release.py wheel-digest --output dist
+```
+
+That builds the exact wheel the tag publishes and prints its `sha256`. Append the digest line to the
+notes, then create the release from them:
+
+```sh
+gh release create v2.9.0 --title "AART 2.9.0" --notes-file docs/release/github-release-v2.9.0.md
+```
+
+Publishing fires the workflow a second time, and that run also attaches the wheel to the release.
+Download the asset afterwards and compare its digest with the one you published. The wheel is
+byte-reproducible from its tag, so the two must match exactly.
+
+### The workflow is read from the tag, not from `main`
+
+This is the part that catches people, and it caught us. GitHub loads workflow files from the ref
+that triggered the run, so a release runs the workflow **as it was at the tag**. A fix merged to
+`main` after tagging is not in that run, and re-running the failed job replays the same commit
+rather than picking the fix up. Move the tag and publish again:
+
+```sh
+git tag -f v2.9.0 main && git push -f origin v2.9.0
+```
+
+Re-publishing is safe: the attach step replaces an asset of the same name instead of colliding with
+it.
+
+One repository variable has no default and decides how much a release verifies:
+`AART_REFERENCE_REGISTRY_URL`. Set, the checklist reconciles against the registry it names. Unset,
+those seven checks are skipped and the run says so. See
+[Repository variables](#repository-variables).
 
 ## License
 

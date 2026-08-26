@@ -7,6 +7,7 @@ from agent_artifacts import __version__, model, tui, wizard
 
 _ROOT = Path(__file__).resolve().parents[1]
 _README = (_ROOT / "README.md").read_text(encoding="utf-8")
+_SPELLED = {9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
 
 
 class ReadmeAdoptionTest(unittest.TestCase):
@@ -46,6 +47,47 @@ class ReadmeAdoptionTest(unittest.TestCase):
         self.assertIn(f'"agent-artifacts=={__version__}"', section)
         self.assertIn(f"./agent_artifacts-{__version__}-py3-none-any.whl", section)
         self.assertIn("not available", section)
+
+    def test_the_gate_table_lists_every_gate_the_runner_actually_builds(self) -> None:
+        """The heading said nine for as long as there were ten.
+
+        `secret-shape-check` was added and the prose was not, so the page under-reported the work
+        by one gate -- harmless in itself, and exactly the drift that makes a reader stop trusting
+        the rest of the table.  Reading the names off `build_gates` closes it: a gate added without
+        a row fails here.
+        """
+
+        import sys
+
+        sys.path.insert(0, str(_ROOT / "scripts"))
+        import quality
+
+        names = [gate.name for gate in quality.build_gates(_ROOT / "unused")]
+        for name in names:
+            with self.subTest(gate=name):
+                self.assertIn(f"| `{name}` |", _README)
+        self.assertIn(f"### The {_SPELLED[len(names)]} gates", _README)
+
+    def test_the_release_section_names_the_commands_a_release_actually_runs(self) -> None:
+        """A release page that has drifted is worse than none: it is followed.
+
+        These are the four that cannot be guessed from the repository -- the acknowledgement flag
+        that keeps a mistyped version from writing, the checklist's two mutually exclusive forms,
+        and the digest the published wheel is compared against.
+        """
+
+        section = _README[_README.index("## Releasing") : _README.index("## License")]
+        for command in (
+            "python scripts/version.py set 2.9.0 --write",
+            "python scripts/quality.py",
+            "python scripts/release.py check --registry",
+            "python scripts/release.py check --without-registry",
+            "python scripts/release.py wheel-digest --output dist",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(command, section)
+        # The one thing this walk proved the hard way, and the reason a re-run looks like a no-op.
+        self.assertIn("read from the tag, not from `main`", section)
 
     def test_registry_entrance_names_vendoring_and_links_the_walked_tutorial(self) -> None:
         for phrase in (
