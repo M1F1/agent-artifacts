@@ -458,9 +458,19 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
    and `docs/release/release-checklist-v18.md`. These are prose, so no command writes them; the
    checklist refuses a release whose documents still describe the previous one.
 
-4. Merge to `main`.
+4. Check it before anyone reviews it. The gates and the checklist both run again in the button's
+   job, but finding a stale document here costs a minute and finding it there costs a round trip:
 
-5. Press the button and type `2.9.0`.
+   ```sh
+   python scripts/quality.py && python scripts/release.py check --without-registry
+   ```
+
+   Two failures are expected until the change is merged — a dirty worktree, and a commit not yet
+   in `origin/main`. Everything else should already be green.
+
+5. Merge to `main`.
+
+6. Press the button and type `2.9.0`.
 
 ### What the button does
 
