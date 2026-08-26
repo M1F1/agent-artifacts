@@ -253,7 +253,39 @@ class MirroredVersionTest(unittest.TestCase):
         release = _load_script("release")
         frozen = json.loads((ROOT / release.SCHEMA_FREEZE_PATH).read_text(encoding="utf-8"))
         self.assertEqual(frozen["release_version"], str(versioning_module.read_version(ROOT)))
-        self.assertIn(release.SCHEMA_FREEZE_PATH, _load_script("version")._MIRRORS)
+        mirrors = _load_script("version")._MIRRORS
+        self.assertIn(release.SCHEMA_FREEZE_PATH, tuple(mirror.relative for mirror in mirrors))
+
+    def test_a_tree_whose_mirrors_were_left_behind_can_still_be_repaired(self) -> None:
+        """The state the tool most needed to fix was the one state it refused to touch.
+
+        Bump the three home files without the mirrors -- by hand, or with a run that stopped
+        early -- and re-running `set` on the version already there did nothing, because the
+        rewrite keyed on a previous value that had already gone.  Each mirror now names the
+        version it records, so the repair needs no memory of what came before.
+        """
+
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.6", complete=True)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "release.py").write_text(
+                'EXPECTED_VERSION = "2.8.5"\nDOC = "github-release-v2.8.5.md"\n', encoding="utf-8"
+            )
+            (root / "README.md").write_text(
+                "pipx install ./agent_artifacts-2.8.5-py3-none-any.whl\n", encoding="utf-8"
+            )
+
+            said = versioning.check_version(root)
+            self.assertTrue(any("scripts/release.py records 2.8.5" in line for line in said))
+            self.assertTrue(any("README.md records 2.8.5" in line for line in said))
+            self.assertIn("python scripts/version.py set 2.8.6 --write", said[-1])
+
+            touched = versioning.write_version(root, versioning.parse_version("2.8.6"))
+
+            self.assertEqual(touched, ("scripts/release.py", "README.md"))
+            self.assertEqual(versioning.check_version(root), ())
+            self.assertNotIn("2.8.5", (root / "README.md").read_text(encoding="utf-8"))
 
     def test_a_root_without_them_is_not_a_version_error(self) -> None:
         """A fixture directory is not a repository, and a missing README is not a mismatch."""

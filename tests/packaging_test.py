@@ -12,6 +12,7 @@ import io
 import pathlib
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -300,6 +301,52 @@ class TypedBehaviorProbeTest(unittest.TestCase):
 
     def test_identical_typed_behavior_passes(self):
         self.assertIsNone(self.packaging._compare_typed_behavior("same\n", "same\n"))
+
+
+class LentBuildBackendTest(unittest.TestCase):
+    """A new virtual environment can no longer be assumed to contain setuptools.
+
+    `ensurepip` stopped bundling it in Python 3.12, and `system_site_packages` reaches the base
+    interpreter rather than a virtual environment the developer is working inside -- so a venv
+    made from a venv on a recent Python has none.  The editable install then failed with a
+    hundred lines of pip traceback ending in `Cannot import 'setuptools.build_meta'`, which never
+    says that the build backend is the missing thing.
+    """
+
+    def test_the_lent_directory_carries_the_backend_and_nothing_else(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            lent = smoke._lend_build_backend(pathlib.Path(raw))
+
+            names = {entry.name for entry in lent.iterdir()}
+            self.assertIn("setuptools", names)
+            # Only the backend travels.  Lending the whole environment would put the developer's
+            # own editable agent_artifacts on the path, and the install would look like it worked
+            # when nothing had been installed at all.
+            self.assertNotIn("agent_artifacts", names)
+            self.assertFalse([name for name in names if name.startswith("agent_artifacts")])
+
+    def test_the_lent_backend_is_importable_by_another_interpreter(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            lent = smoke._lend_build_backend(pathlib.Path(raw))
+            environment = {"PYTHONPATH": str(lent), "PATH": "/usr/bin:/bin"}
+
+            probe = subprocess.run(
+                [sys.executable, "-S", "-c", "import setuptools.build_meta"],
+                capture_output=True,
+                env=environment,
+            )
+
+            self.assertEqual(probe.returncode, 0, probe.stderr.decode("utf-8", "replace"))
+
+    def test_a_missing_backend_names_the_command_that_installs_one(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            with mock.patch.object(smoke.importlib.util, "find_spec", return_value=None):
+                with self.assertRaises(RuntimeError) as caught:
+                    smoke._lend_build_backend(pathlib.Path(raw))
+        self.assertIn('pip install -e ".[dev]"', str(caught.exception))
 
 
 if __name__ == "__main__":

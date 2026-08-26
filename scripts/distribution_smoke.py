@@ -327,6 +327,52 @@ def _make_environment(root: Path) -> Path:
     return python
 
 
+def _has_module(python: Path, module: str, environment: dict[str, str]) -> bool:
+    probe = subprocess.run(
+        [str(python), "-c", f"import {module}"],
+        capture_output=True,
+        env=environment,
+    )
+    return probe.returncode == 0
+
+
+def _lend_build_backend(workspace: Path) -> Path:
+    """A directory holding just the build backend, for interpreters whose venv has none.
+
+    ``ensurepip`` stopped bundling setuptools in Python 3.12, and ``system_site_packages`` reaches
+    the *base* interpreter, not a virtual environment the developer is working inside -- so a venv
+    created from a venv on a recent Python has no setuptools anywhere on its path.  The editable
+    install then fails with ``Cannot import 'setuptools.build_meta'`` and a hundred lines of pip
+    traceback that never name the backend as the missing thing.
+
+    The developer extra names ``setuptools>=61`` for exactly this, so this process has one to lend.
+    Only the backend is lent: a directory of links, not the whole environment, so nothing else --
+    least of all an editable ``agent_artifacts`` from the developer's own environment -- can leak
+    in and make the install look like it worked when it did not.
+    """
+
+    spec = importlib.util.find_spec("setuptools")
+    if spec is None or spec.origin is None:
+        raise RuntimeError(
+            "no setuptools to build an editable install with, in this environment or the new one.\n"
+            f'Install the developer tools first:  {sys.executable} -m pip install -e ".[dev]"'
+        )
+    site_packages = Path(spec.origin).resolve().parent.parent
+    lent = workspace / "build-backend"
+    lent.mkdir()
+    # ``wheel`` travels with it: an older setuptools has no built-in ``bdist_wheel`` and fails the
+    # metadata build with ``invalid command``, which names the backend even less clearly than the
+    # import error did.  The developer extra pins both.
+    for name in ("setuptools", "_distutils_hack", "pkg_resources", "wheel", "packaging"):
+        source = site_packages / name
+        if source.exists():
+            (lent / name).symlink_to(source)
+    for pattern in ("setuptools-*.dist-info", "wheel-*.dist-info", "packaging-*.dist-info"):
+        for metadata in site_packages.glob(pattern):
+            (lent / metadata.name).symlink_to(metadata)
+    return lent
+
+
 def _load_packaging_check(source_root: Path):
     path = source_root / "scripts" / "packaging_check.py"
     spec = importlib.util.spec_from_file_location("_aart_distribution_packaging", path)
@@ -436,6 +482,9 @@ def run_smoke(source_root: Path) -> dict[str, Any]:
         )
 
         editable_python = _make_environment(editable_environment)
+        build_environment = dict(environment)
+        if not _has_module(editable_python, "setuptools", environment):
+            build_environment["PYTHONPATH"] = str(_lend_build_backend(workspace))
         _run(
             [
                 str(editable_python),
@@ -449,7 +498,7 @@ def run_smoke(source_root: Path) -> dict[str, Any]:
                 str(source_root),
             ],
             cwd=outside,
-            environment=environment,
+            environment=build_environment,
         )
         _run(
             [str(_environment_script(editable_environment, "aart")), "--version"],

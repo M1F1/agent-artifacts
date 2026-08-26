@@ -164,7 +164,7 @@ def check_version(root: Path = ROOT) -> tuple[str, ...]:
         ensure_allowed(root, version)
     except (OSError, VersionError) as error:
         return (str(error),)
-    return ()
+    return mirror_diagnostics(root, str(version))
 
 
 def _replace_one(pattern: re.Pattern[str], text: str, replacement: str, label: str) -> str:
@@ -221,27 +221,75 @@ def write_version(root: Path, version: Version) -> tuple[str, ...]:
 #
 # Written only where they exist.  A version fixture in a temporary directory is not a repository,
 # and a missing README is not a version error.
+#
+# Each mirror names, in one place, the version it currently records.  Reading that anchor is what
+# makes the rewrite repair-capable: keying only on the previous canonical version meant a tree
+# whose three home files had already moved -- bumped by hand, or by a run that stopped before the
+# mirrors -- could never be repaired, because re-running `set` on the version already there did
+# nothing at all.  The state the tool most needs to fix was the one state it refused to touch.
+@dataclass(frozen=True)
+class _Mirror:
+    relative: str
+    anchor: re.Pattern[str]
+
+
 _MIRRORS = (
-    "scripts/release.py",
-    "README.md",
-    "docs/release/schema-freeze-v18.json",
+    _Mirror("scripts/release.py", re.compile(r'^EXPECTED_VERSION = "([^"]+)"', re.MULTILINE)),
+    _Mirror("README.md", re.compile(r"agent_artifacts-([0-9][^\s-]*)-py3-none-any\.whl")),
+    _Mirror(
+        "docs/release/schema-freeze-v18.json",
+        re.compile(r'"release_version"\s*:\s*"([^"]+)"'),
+    ),
 )
 
 
+def _recorded(root: Path, mirror: _Mirror) -> tuple[str, str] | None:
+    """The text of the mirror and the version it quotes, or None where the file is absent."""
+
+    path = root / mirror.relative
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8")
+    match = mirror.anchor.search(text)
+    return (text, match.group(1)) if match else (text, "")
+
+
 def mirror_version(root: Path, previous: str, version: str) -> tuple[str, ...]:
-    if previous == version:
-        return ()
     touched: list[str] = []
-    for relative in _MIRRORS:
-        path = root / relative
-        if not path.exists():
+    for mirror in _MIRRORS:
+        found = _recorded(root, mirror)
+        if found is None:
             continue
-        text = path.read_text(encoding="utf-8")
-        if previous not in text:
+        text, recorded = found
+        stale = recorded or previous
+        if stale == version or stale not in text:
             continue
-        path.write_text(text.replace(previous, version), encoding="utf-8")
-        touched.append(relative)
+        (root / mirror.relative).write_text(text.replace(stale, version), encoding="utf-8")
+        touched.append(mirror.relative)
     return tuple(touched)
+
+
+def mirror_diagnostics(root: Path, version: str) -> tuple[str, ...]:
+    """Name every mirror that disagrees, and the one command that fixes all of them.
+
+    Without this the disagreement surfaces as unit-test failures about a wheel name, a README
+    table and a freeze document -- seven of them, in three files, none of which says that a
+    version bump missed its mirrors or what to run about it.
+    """
+
+    diagnostics: list[str] = []
+    for mirror in _MIRRORS:
+        found = _recorded(root, mirror)
+        if found is None:
+            continue
+        recorded = found[1]
+        if not recorded:
+            diagnostics.append(f"{mirror.relative} no longer quotes the version where expected")
+        elif recorded != version:
+            diagnostics.append(f"{mirror.relative} records {recorded}, the version is {version}")
+    if diagnostics:
+        diagnostics.append(f"repair them with: python scripts/version.py set {version} --write")
+    return tuple(diagnostics)
 
 
 def _report(mirrors: tuple[str, ...], line: str) -> None:
