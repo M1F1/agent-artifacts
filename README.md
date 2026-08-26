@@ -386,9 +386,29 @@ remediation run is documented separately and does not rewrite that evidence.
 library only — that is a design rule, not an accident, and the gates below exist partly to keep it
 true. Everything in this section is developer and CI tooling that a user of `aart` never installs.
 
+Install them into a virtual environment, so nothing lands in the system interpreter:
+
 ```sh
-pip install -e ".[dev]"
+python3 -m venv .venv
 ```
+
+```sh
+source .venv/bin/activate
+```
+
+```sh
+python -m pip install -e ".[dev]"
+```
+
+`.venv/` is already in `.gitignore`. Activate it in every new shell before running the gates or
+`scripts/prepare_release.py`; `deactivate` leaves it. Behind an internal package index, add
+`--index-url <your index>` to the install, or set `PIP_INDEX_URL` first. If `python3 -m venv` fails
+with an `ensurepip` error, that interpreter's venv support is broken — use another one, for example
+`python3.11 -m venv .venv`.
+
+Without these tools six of the ten gates cannot run. `scripts/quality.py` says so before it starts,
+names the ones that are missing, and prints the install command; the other four — `unit`,
+`integration`, `validate`, `docs-check` — need nothing but Python and can be run on their own.
 
 | Package | Constraint | Used for |
 |---|---|---|

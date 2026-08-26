@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXPECTED_GATES = (
@@ -286,6 +289,47 @@ class ResidueRegisterGateTest(unittest.TestCase):
         self.assertEqual(len(rows), len({identifier for identifier, _ in rows}))
         # The stream gathered twenty-eight; implementing the response to it added two more.
         self.assertGreaterEqual(len(rows), 28)
+
+
+class MissingToolTest(unittest.TestCase):
+    """A gate whose tool is absent must name the tool and the command that installs it.
+
+    Three failures in the Enterprise walk were unreadable because a step said only that something
+    exited non-zero.  A developer environment without ``ruff`` produced ``No module named ruff``,
+    which is true and names no fix.
+    """
+
+    def test_the_needed_tools_are_read_off_the_gate_commands(self):
+        quality = _load_script("quality")
+        with tempfile.TemporaryDirectory() as raw:
+            temp_root = pathlib.Path(raw)
+            with unittest.mock.patch.object(quality.importlib.util, "find_spec", return_value=None):
+                self.assertEqual(
+                    quality.missing_tools(("format-check", "lint"), temp_root), ("ruff",)
+                )
+                self.assertEqual(quality.missing_tools(("typecheck",), temp_root), ("mypy",))
+                self.assertEqual(quality.missing_tools(("coverage",), temp_root), ("coverage",))
+                # These four run on a bare interpreter, which is why the message offers them.
+                self.assertEqual(
+                    quality.missing_tools(
+                        ("unit", "integration", "validate", "docs-check"), temp_root
+                    ),
+                    (),
+                )
+
+    def test_a_missing_tool_stops_the_run_and_prints_the_install_command(self):
+        quality = _load_script("quality")
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            with unittest.mock.patch.object(quality, "missing_tools", return_value=("ruff",)):
+                with unittest.mock.patch.object(quality.subprocess, "run") as run:
+                    with contextlib.redirect_stderr(stderr):
+                        code = quality._run(("format-check",), pathlib.Path(raw))
+        self.assertEqual(code, 2)
+        run.assert_not_called()
+        said = stderr.getvalue()
+        self.assertIn("ruff", said)
+        self.assertIn('pip install -e ".[dev]"', said)
 
 
 class PackagingCheckTest(unittest.TestCase):

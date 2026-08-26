@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import subprocess
 import sys
@@ -139,7 +140,45 @@ def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ..
     )
 
 
+# The three the developer extra installs.  Everything else a gate runs is either the standard
+# library or a script in this repository.
+_DEVELOPER_TOOLS = ("ruff", "mypy", "coverage")
+
+
+def missing_tools(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]:
+    """Which developer tools the chosen gates need and this interpreter cannot import.
+
+    Read off the gate commands rather than listed here, so a gate that starts using a tool is
+    covered without anyone remembering to add it.
+    """
+
+    by_name = {gate.name: gate for gate in build_gates(temp_root)}
+    wanted: list[str] = []
+    for name in selected:
+        for command in by_name[name].commands:
+            for index, argument in enumerate(command[:-1]):
+                if argument == "-m" and command[index + 1] in _DEVELOPER_TOOLS:
+                    wanted.append(command[index + 1])
+    absent = [tool for tool in dict.fromkeys(wanted) if importlib.util.find_spec(tool) is None]
+    return tuple(absent)
+
+
 def _run(selected: tuple[str, ...], temp_root: Path) -> int:
+    absent = missing_tools(selected, temp_root)
+    if absent:
+        # Named before anything runs, with the fix.  Otherwise the first gate exits on
+        # `No module named ruff`, which is true and tells nobody what to do about it.
+        print(
+            f"missing developer tool(s): {', '.join(absent)}\n"
+            f"The installed runtime has no dependencies; these are the gates' own tools.\n"
+            f'  {sys.executable} -m pip install -e ".[dev]"\n'
+            "Behind an internal index, add --index-url. Four gates -- unit, integration, "
+            "validate,\ndocs-check -- need none of them and can be run alone: "
+            f"{sys.executable} scripts/quality.py unit",
+            file=sys.stderr,
+        )
+        return 2
+
     environment = os.environ.copy()
     environment.update(
         {
