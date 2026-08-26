@@ -64,7 +64,7 @@ has.
 The last row always works. It is the row to start on, because it needs nothing that does not exist
 after Step 1, and moving up later is one variable set.
 
-One caveat on the second row: the wheel is fetched with a bare `curl`, carrying no token. If the
+One caveat on the second row: the wheel is fetched anonymously, carrying no token. If the
 fork is private — which on an Enterprise instance it usually is — its release assets need a login,
 and an anonymous fetch gets a sign-in page instead of a wheel. That row is for an instance where
 the release is readable without credentials. Everywhere else, the first and last rows are the ones
@@ -72,7 +72,8 @@ that carry authentication of their own.
 
 ### Step 4 — Prove the fork is green before going further
 
-Run the fork's own `validate` workflow. It is the same nine gates as `make quality`. A red run here
+Run the fork's own `validate` workflow. It is the same ten gates as `python scripts/quality.py`.
+A red run here
 is a runner or index problem, and every later step would inherit it.
 
 ### Step 5 — Install AART on your own machine
@@ -513,8 +514,9 @@ Seven defects came out of that walk, none of them fixable by a variable, all of 
 | two checks "cannot prove" at once | the checklist runs git with global config off, so the workspace-trust the job had written was invisible to it |
 | `gh: command not found` | the last step of `release` needed the GitHub CLI to attach the wheel |
 | `curl: command not found` | and the rewrite around the REST API needed `curl`. The image carries git and a Python interpreter and nothing else, so the step now uses `urllib` and asks for neither |
+| `CERTIFICATE_VERIFY_FAILED` from `pypi.org` | the release button's own action copied the install step from the quality action and left the step that points pip at the internal index behind. Both now call one shared action, and a test refuses any action that installs with pip without it |
 
-Three of the seven printed no usable message, because the process that failed had captured the
+Three of the eight printed no usable message, because the process that failed had captured the
 explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
 print what it said.**
 
@@ -529,6 +531,13 @@ order together -- which is how a run reached `gh release upload` with the checkl
 is now one dispatch with one input, backed by `scripts/cut_release.py`, and it writes nothing until
 every precondition passes. It reads the same variables as the other two, so a fork configures it by
 configuring nothing extra.
+
+Its first run failed, and the way it failed is the eighth row above. The action was written by
+copying the sequence a job needs -- trust the workspace, install the tools, run the gates -- and
+one step of that sequence, the one choosing where pip fetches from, did not come with it. Nothing
+caught it, because nothing said the two had to agree. The step is now `.github/actions/pip-index`,
+called by both, and a test walks every action that runs `pip install` and refuses one that does not
+call it first. **A sequence that has to be repeated should be a thing, not a habit.**
 
 **One claim remains unverified**, and one was answered by the walk:
 

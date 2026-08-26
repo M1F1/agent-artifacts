@@ -31,32 +31,8 @@ runs:
       # nothing -- a silent no-op is the worst outcome for a step like this.
       run: git config --global --add safe.directory "$PWD"
 
-    # `AART_INDEX_URL` and `AART_INDEX_CREDENTIALS` are job-level environment, not inputs: an input
-    # would put the credential in the action call, and the job is where the variables live anyway.
     - name: Point pip at the internal index
-      shell: bash
-      run: |
-        set -euo pipefail
-        url="${AART_INDEX_URL:-https://pypi.org/simple}"
-        echo "pip index: $url"
-        if [ -n "${AART_INDEX_CREDENTIALS:-}" ]; then
-          # GitHub masks the secret it was given, which is the whole `user:pass` string.  Neither
-          # half is masked until it is handed back, so both are re-masked before they are used.
-          user="${AART_INDEX_CREDENTIALS%%:*}"
-          held="${AART_INDEX_CREDENTIALS#*:}"
-          echo "::add-mask::$user"
-          echo "::add-mask::$held"
-          scheme="https"
-          case "$url" in http://*) scheme="http" ;; esac
-          host="${url#http://}"
-          host="${host#https://}"
-          # `at` keeps this line out of the shape a secret scanner refuses on push.  See
-          # `scripts/secret_shape_check.py` -- the repository carries no credential-shaped literal.
-          at="@"
-          url="$scheme://$user:$held$at$host"
-          echo "pip index: credentials supplied from a named secret"
-        fi
-        echo "PIP_INDEX_URL=$url" >> "$GITHUB_ENV"
+      uses: ./.github/actions/pip-index
 
     - name: Set up Python
       # Skipped when a container image is in use: it downloads an interpreter from github.com,

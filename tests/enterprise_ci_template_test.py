@@ -51,6 +51,44 @@ def _uncommented(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
 
 
+class PipReachesTheRightIndexTest(unittest.TestCase):
+    """Anything that installs with pip must first be told which index to install from.
+
+    The release button shipped with the install step copied and the index step left behind. On a
+    runner that cannot see pypi.org, pip went to pypi.org anyway and failed on a certificate it
+    could not verify -- a message naming neither the index nor the step that was missing. The
+    action's own description warns that a sequence duplicated is a sequence that drifts; this is
+    the test that makes the warning binding.
+    """
+
+    def test_every_action_that_installs_with_pip_points_pip_at_the_index_first(self) -> None:
+        directory = ROOT / ".github" / "actions"
+        installers = [
+            path
+            for path in sorted(directory.glob("*/action.yml"))
+            if "-m pip install" in _uncommented(_read(path))
+        ]
+        self.assertTrue(installers, "no action installs with pip; this test has lost its subject")
+        for path in installers:
+            with self.subTest(action=str(path.relative_to(ROOT))):
+                body = _uncommented(_read(path))
+                self.assertIn("uses: ./.github/actions/pip-index", body)
+                self.assertLess(
+                    body.index("uses: ./.github/actions/pip-index"),
+                    body.index("-m pip install"),
+                    "the index has to be chosen before pip is asked to fetch anything",
+                )
+
+    def test_the_shared_step_is_the_only_copy(self) -> None:
+        directory = ROOT / ".github" / "actions"
+        writers = [
+            path
+            for path in sorted(directory.glob("*/action.yml"))
+            if "PIP_INDEX_URL=" in _read(path)
+        ]
+        self.assertEqual(writers, [directory / "pip-index" / "action.yml"])
+
+
 class VariablesAreDocumentedTest(unittest.TestCase):
     def test_every_variable_a_workflow_reads_is_on_the_page(self) -> None:
         page = _read(PAGE)
@@ -444,8 +482,9 @@ class TheIndexCredentialIsAssembledNotStoredTest(unittest.TestCase):
     def test_both_halves_are_remasked_before_use(self) -> None:
         """GitHub masks the value it was given -- `user:pass` -- and neither half after a split."""
 
-        action = _read(ROOT / ".github" / "actions" / "quality" / "action.yml")
-        self.assertEqual(action.count("::add-mask::"), 2, "quality action: one half left unmasked")
+        # One action assembles the URL for every caller, so this is the only place to look.
+        action = _read(ROOT / ".github" / "actions" / "pip-index" / "action.yml")
+        self.assertEqual(action.count("::add-mask::"), 2, "pip-index action: one half unmasked")
         # A workflow emits its job once per container shape, so the count is taken per job.
         for label, body in EMITTED.items():
             for name, job in _fetching_jobs(body).items():

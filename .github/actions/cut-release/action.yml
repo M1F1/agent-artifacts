@@ -28,6 +28,9 @@ runs:
       shell: bash
       run: git config --global --add safe.directory "$PWD"
 
+    - name: Point pip at the internal index
+      uses: ./.github/actions/pip-index
+
     - name: Set up Python
       if: inputs.setup-python == 'true'
       uses: actions/setup-python@v5

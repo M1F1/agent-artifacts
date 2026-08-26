@@ -424,7 +424,7 @@ wins**, and they are never combined:
 | Order | Variable | Example | How it fetches |
 |---|---|---|---|
 | 1 | `AART_PACKAGE` | `agent-artifacts=={version}` | `pip` from `AART_PIP_INDEX_URL` |
-| 2 | `AART_WHEEL_URL` | `https://host/.../v{version}/agent_artifacts-{version}-py3-none-any.whl` | `curl`, then unzip |
+| 2 | `AART_WHEEL_URL` | `https://host/.../v{version}/agent_artifacts-{version}-py3-none-any.whl` | fetch, then unzip |
 | 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
 | 4 | `AART_TOOL_URL` | `https://ghe.corp/platform/agent-artifacts.git` | `git clone` at `v` + the pin |
 
