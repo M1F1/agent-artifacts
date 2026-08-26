@@ -25,6 +25,28 @@ class ReadmeAdoptionTest(unittest.TestCase):
                 self.assertGreaterEqual(_README.count(source), 3)
         self.assertIn("The editable install is for working on AART itself", _README)
 
+    def test_the_enterprise_grid_covers_the_same_three_installers_at_this_version(self) -> None:
+        """A private instance narrows the grid, and the narrowing has to be written down.
+
+        Only the Git row carries credentials there: `pip`, `pipx` and `uv` send no token when they
+        fetch a URL, so a release asset on a private repository answers with a sign-in page and the
+        installer fails on a corrupt archive rather than on a refusal.  A reader who copies the
+        public table and swaps the host gets that failure with no clue in it.
+
+        The version comes from the executable for the reason the grid above does: a literal keeps
+        passing while the page goes stale.
+        """
+
+        start = _README.index("### On a private Enterprise instance")
+        section = _README[start : _README.index("The editable install is", start)]
+        for installer in ("python -m pip install", "pipx install", "uv tool install"):
+            with self.subTest(installer=installer):
+                self.assertGreaterEqual(section.count(installer), 3)
+        self.assertIn(f"agent-artifacts.git@v{__version__}", section)
+        self.assertIn(f'"agent-artifacts=={__version__}"', section)
+        self.assertIn(f"./agent_artifacts-{__version__}-py3-none-any.whl", section)
+        self.assertIn("not available", section)
+
     def test_registry_entrance_names_vendoring_and_links_the_walked_tutorial(self) -> None:
         for phrase in (
             "`vendor` is the foreign-repository path",
