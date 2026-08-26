@@ -515,8 +515,9 @@ Seven defects came out of that walk, none of them fixable by a variable, all of 
 | `gh: command not found` | the last step of `release` needed the GitHub CLI to attach the wheel |
 | `curl: command not found` | and the rewrite around the REST API needed `curl`. The image carries git and a Python interpreter and nothing else, so the step now uses `urllib` and asks for neither |
 | `CERTIFICATE_VERIFY_FAILED` from `pypi.org` | the release button's own action copied the install step from the quality action and left the step that points pip at the internal index behind. Both now call one shared action, and a test refuses any action that installs with pip without it |
+| the button's release had no wheel on it | GitHub raises no workflow event for anything done with the repository `GITHUB_TOKEN`, so the release the button published set nothing off. The button now calls the release action itself rather than waiting to be reacted to |
 
-Three of the eight printed no usable message, because the process that failed had captured the
+Three of the nine printed no usable message, because the process that failed had captured the
 explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
 print what it said.**
 
@@ -538,6 +539,18 @@ one step of that sequence, the one choosing where pip fetches from, did not come
 caught it, because nothing said the two had to agree. The step is now `.github/actions/pip-index`,
 called by both, and a test walks every action that runs `pip install` and refuses one that does not
 call it first. **A sequence that has to be repeated should be a thing, not a habit.**
+
+Its second run reached the end and left a release with nothing attached, which is the ninth row.
+The design said: publish the release, and `release.yml` -- which already builds and attaches the
+wheel -- reacts to it. One builder of release artifacts, not two that can disagree. What it missed
+is that GitHub deliberately raises no event for anything done with the repository `GITHUB_TOKEN`,
+so that a workflow cannot set itself off in a loop. The run that publishes a release is therefore
+the last run there will be.
+
+The wheel is still built in one place. The button now calls that action directly instead of
+waiting to be reacted to, and the action takes `attach` from its caller rather than reading
+`github.event_name` -- which was never true for a run started by a button. Both callers, and the
+rule that there is only one builder, are held by tests.
 
 **One claim remains unverified**, and one was answered by the walk:
 

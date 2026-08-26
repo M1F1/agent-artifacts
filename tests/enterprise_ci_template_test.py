@@ -51,6 +51,45 @@ def _uncommented(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
 
 
+class TheButtonFinishesTheJobTest(unittest.TestCase):
+    """A release published with the repository token raises no event, so nothing reacts to it.
+
+    GitHub does not run workflows for anything done with `GITHUB_TOKEN` -- the rule that stops a
+    workflow setting itself off in a loop. The release button published a release with that token
+    and expected `release.yml` to notice; `release.yml` never ran, and the first release the
+    button produced had no wheel attached. The run that publishes a release is the last run there
+    will be, so it has to finish the job itself.
+    """
+
+    def _action(self, name: str) -> str:
+        return _read(ROOT / ".github" / "actions" / name / "action.yml")
+
+    def test_the_button_delegates_to_the_one_thing_that_builds_a_release_artifact(self) -> None:
+        body = _uncommented(self._action("cut-release"))
+        self.assertIn("uses: ./.github/actions/release", body)
+        self.assertIn('attach: "true"', body)
+        # Delegating, not repeating: a second builder is a second answer to what the wheel is.
+        self.assertNotIn("scripts/build_wheel.py", body)
+        self.assertNotIn("scripts/attach_release_asset.py", body)
+
+    def test_attaching_is_asked_for_by_the_caller_not_read_off_the_event(self) -> None:
+        body = _uncommented(self._action("release"))
+        self.assertIn("if: inputs.attach == 'true'", body)
+        self.assertNotIn("github.event_name", body)
+
+    def test_every_caller_of_the_release_action_says_whether_to_attach(self) -> None:
+        callers = [
+            ROOT / ".github" / "workflows" / "release.yml",
+            ROOT / ".github" / "actions" / "cut-release" / "action.yml",
+        ]
+        for path in callers:
+            with self.subTest(caller=str(path.relative_to(ROOT))):
+                body = _uncommented(_read(path))
+                self.assertEqual(
+                    body.count("uses: ./.github/actions/release"), body.count("attach:")
+                )
+
+
 class PipReachesTheRightIndexTest(unittest.TestCase):
     """Anything that installs with pip must first be told which index to install from.
 

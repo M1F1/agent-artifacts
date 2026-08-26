@@ -20,6 +20,12 @@ inputs:
   artifact-v4:
     description: '"true" when the instance supports the v4 artifact protocol.'
     required: true
+  attach:
+    description: >
+      '"true" when the wheel should be attached to the release.  Not read off the event: the
+      release button publishes the release itself and then calls this action directly, because a
+      release created with the repository GITHUB_TOKEN raises no event for anything to react to.'
+    required: true
 
 runs:
   using: composite
@@ -126,8 +132,12 @@ runs:
     # The script also removes a hazard `gh` brought with it: `gh` talks to github.com unless
     # `GH_HOST` says otherwise, so an unset `AART_GH_HOST` pointed a fork's upload at the wrong
     # instance entirely.  See scripts/attach_release_asset.py for what is read rather than guessed.
+    # Asked for by the caller rather than read off `github.event_name`.  The release button
+    # publishes the release with the repository `GITHUB_TOKEN`, and GitHub deliberately raises no
+    # workflow event for anything done with that token -- so the run that publishes a release is
+    # the last run there will be, and it has to finish the job itself.
     - name: Attach wheel to release
-      if: github.event_name == 'release'
+      if: inputs.attach == 'true'
       shell: bash
       env:
         TAG: ${{ inputs.tag }}

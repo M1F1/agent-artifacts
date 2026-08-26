@@ -17,6 +17,9 @@ inputs:
   version:
     description: The version to cut, without the leading v.
     required: true
+  artifact-v4:
+    description: '"true" when the instance supports the v4 artifact protocol.'
+    required: true
 
 runs:
   using: composite
@@ -75,3 +78,21 @@ runs:
           registry=(--without-registry)
         fi
         ${{ inputs.python }} scripts/cut_release.py "$VERSION" --skip-gates "${registry[@]}"
+
+    # The release exists now, and nothing is going to notice.  A release created with the
+    # repository `GITHUB_TOKEN` raises no workflow event -- GitHub's rule, so that a workflow
+    # cannot set itself off in a loop -- so `release.yml` never runs for a release this button
+    # published, and the first run of this button left a release with no wheel on it.
+    #
+    # So the button finishes the job, by calling the same action `release.yml` calls.  Delegating
+    # rather than repeating is the point: there is still exactly one thing in this repository that
+    # builds a release artifact, and the two paths cannot come to disagree about what it produces.
+    - name: Build and attach the wheel
+      uses: ./.github/actions/release
+      with:
+        python: ${{ inputs.python }}
+        python-version: ${{ inputs.python-version }}
+        setup-python: ${{ inputs.setup-python }}
+        tag: v${{ inputs.version }}
+        artifact-v4: ${{ inputs.artifact-v4 }}
+        attach: "true"
