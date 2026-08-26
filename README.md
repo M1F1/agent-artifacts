@@ -442,15 +442,25 @@ version, and what the notes say. Both arrive on `main` through an ordinary revie
 
    `--write` is not politeness. The script refuses to touch a file without it, so a mistyped
    command changes nothing. The version lives in three files — `pyproject.toml`,
-   `agent_artifacts/__init__.py` and `agent_artifacts/runtime_contract.py` — and this writes all
-   three at once. The `validate` gate fails if they ever disagree, which is why they are never
-   edited by hand.
+   `agent_artifacts/__init__.py` and `agent_artifacts/runtime_contract.py` — and is quoted in two
+   more: `scripts/release.py`, which pins the checklist, and this page, whose install commands name
+   an exact wheel. All five are rewritten by that one command, and it prints the two it rewrote.
+   The `validate` gate fails if any of them disagree, which is why none is ever edited by hand.
 
-2. Write the notes at `docs/release/github-release-v2.9.0.md`.
+2. Regenerate the schema freeze, which records the release version alongside the schema digests:
 
-3. Merge to `main`.
+   ```sh
+   python scripts/release.py freeze --write
+   ```
 
-4. Press the button and type `2.9.0`.
+3. Write the notes at `docs/release/github-release-v2.9.0.md`, and name the new version in the
+   three documents the checklist requires: `CHANGELOG.md`, `docs/release/compatibility-v18.md`
+   and `docs/release/release-checklist-v18.md`. These are prose, so no command writes them; the
+   checklist refuses a release whose documents still describe the previous one.
+
+4. Merge to `main`.
+
+5. Press the button and type `2.9.0`.
 
 ### What the button does
 

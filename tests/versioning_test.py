@@ -202,6 +202,51 @@ class VersionFilesTest(unittest.TestCase):
             versioning.validate_tag(complete, "v1.0.0", stable)
 
 
+class MirroredVersionTest(unittest.TestCase):
+    """The version lives in three files and is quoted in two more.
+
+    `scripts/release.py` pins the release checklist to a literal, and the README publishes install
+    commands naming an exact wheel.  Bumping by hand meant editing more than twenty occurrences,
+    and a bump that missed one failed the gates with a message about a wheel name rather than about
+    a missed edit -- which is exactly how this was found, on a 2.8.6 dry run.
+    """
+
+    def test_set_rewrites_the_files_that_only_quote_the_version(self) -> None:
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.5", complete=True)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "release.py").write_text(
+                'EXPECTED_VERSION = "2.8.5"\nDOC = "github-release-v2.8.5.md"\n',
+                encoding="utf-8",
+            )
+            (root / "README.md").write_text(
+                "pipx install ./agent_artifacts-2.8.5-py3-none-any.whl\n",
+                encoding="utf-8",
+            )
+
+            touched = versioning.write_version(root, versioning.parse_version("2.8.6"))
+
+            self.assertEqual(touched, ("scripts/release.py", "README.md"))
+            self.assertIn(
+                'EXPECTED_VERSION = "2.8.6"',
+                (root / "scripts" / "release.py").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "agent_artifacts-2.8.6-py3-none-any.whl",
+                (root / "README.md").read_text(encoding="utf-8"),
+            )
+
+    def test_a_root_without_them_is_not_a_version_error(self) -> None:
+        """A fixture directory is not a repository, and a missing README is not a mismatch."""
+
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.5", complete=True)
+            self.assertEqual(versioning.write_version(root, versioning.parse_version("2.8.6")), ())
+            self.assertEqual(str(versioning.read_version(root)), "2.8.6")
+
+
 class RepositoryReleaseContractTest(unittest.TestCase):
     def test_repository_version_matches_its_release_contract(self):
         """The tree is at the exact stable version its release contract governs.

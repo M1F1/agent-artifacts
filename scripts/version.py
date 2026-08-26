@@ -179,8 +179,9 @@ def _runtime_contract_assignment(version: Version) -> str:
     return f"EXECUTABLE_VERSION = SemVer({version.major}, {version.minor}, {version.patch}{prerelease})"
 
 
-def write_version(root: Path, version: Version) -> None:
+def write_version(root: Path, version: Version) -> tuple[str, ...]:
     ensure_allowed(root, version)
+    previous = _version_strings(root)[0]
     init_path = root / "agent_artifacts" / "__init__.py"
     runtime_contract_path = root / "agent_artifacts" / "runtime_contract.py"
     project_path = root / "pyproject.toml"
@@ -202,6 +203,42 @@ def write_version(root: Path, version: Version) -> None:
     init_path.write_text(updated_init, encoding="utf-8")
     project_path.write_text(updated_project, encoding="utf-8")
     runtime_contract_path.write_text(updated_runtime_contract, encoding="utf-8")
+    return mirror_version(root, previous, str(version))
+
+
+# The three files above are the version's home and must agree, which `read_version` enforces.
+# These two only quote it, and a quotation that disagrees is just as broken: the release checklist
+# is pinned to a literal in `scripts/release.py`, and the README publishes install commands naming
+# an exact wheel.  Bumping by hand meant editing more than twenty of them, and a bump that missed
+# one failed the gates with a message about a wheel name rather than about a missed edit.
+#
+# Written only where they exist.  A version fixture in a temporary directory is not a repository,
+# and a missing README is not a version error.
+_MIRRORS = ("scripts/release.py", "README.md")
+
+
+def mirror_version(root: Path, previous: str, version: str) -> tuple[str, ...]:
+    if previous == version:
+        return ()
+    touched: list[str] = []
+    for relative in _MIRRORS:
+        path = root / relative
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if previous not in text:
+            continue
+        path.write_text(text.replace(previous, version), encoding="utf-8")
+        touched.append(relative)
+    return tuple(touched)
+
+
+def _report(mirrors: tuple[str, ...], line: str) -> None:
+    """Say what else moved.  A silent edit to a file the operator did not name is a surprise."""
+
+    print(line)
+    for relative in mirrors:
+        print(f"  also rewritten: {relative}")
 
 
 def validate_tag(root: Path, tag: str, expected: Version | None = None) -> None:
@@ -251,20 +288,17 @@ def main(argv: tuple[str, ...] | None = None, root: Path = ROOT) -> int:
             candidate = next_alpha(read_version(root))
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version set: {candidate}")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "finalize":
             candidate = finalize_candidate(read_version(root))
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version finalized: {candidate}")
+            _report(write_version(root, candidate), f"version finalized: {candidate}")
         elif args.command == "set":
             candidate = parse_version(args.version)
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version set: {candidate}")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "check-tag":
             validate_tag(root, args.tag)
             print(f"release tag check OK: {args.tag}")
