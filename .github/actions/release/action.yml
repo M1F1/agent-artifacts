@@ -17,9 +17,6 @@ inputs:
   tag:
     description: The release tag under inspection.
     required: true
-  artifact-v4:
-    description: '"true" when the instance supports the v4 artifact protocol.'
-    required: true
   attach:
     description: >
       '"true" when the wheel should be attached to the release.  Not read off the event: the
@@ -95,11 +92,6 @@ runs:
       shell: bash
       run: ${{ inputs.python }} scripts/build_wheel.py
 
-    # The release asset comes first, and the workflow artifact after it.  The order is the order
-    # of consequence: the wheel on the release is what people install, and the artifact is a
-    # convenience copy of the same bytes.  With the upload first, anything that stops it -- an
-    # instance whose artifact backend does not speak the protocol, most of all -- stopped the
-    # release from ever getting its file, after the file had already been built.
     # Neither the GitHub CLI nor curl is installed in every CI image.  A real Enterprise image had
     # git, an internal index and a Python interpreter, and nothing else -- this step failed first on
     # `gh: command not found` and then, rewritten around the REST API, on `curl: command not found`,
@@ -120,30 +112,20 @@ runs:
         TAG: ${{ inputs.tag }}
       run: ${{ inputs.python }} scripts/attach_release_asset.py "$TAG"
 
-    # The step appears twice for the reason `container.credentials` does in validate.yml: the
-    # thing that has to change is `uses:`, and `uses:` cannot contain an expression.  So the
-    # choice moves to where a choice survives -- `if:` -- and both spellings sit in the file.
+    # There is no workflow-artifact copy of the wheel, and the reason is worth keeping.
     #
-    # This is not a version preference.  A GitHub Enterprise Server instance ships
-    # `upload-artifact@v4` and downloads it happily, then fails at run time:
+    # The step used to appear twice, choosing a version with `if:`, because a GitHub Enterprise
+    # Server instance ships `upload-artifact@v4`, downloads it happily and then fails at run time:
     #
     #     GHESNotSupportedError: @actions/artifact v2.0.0+, upload-artifact@v4+ and
     #     download-artifact@v4+ are not currently supported on GHES.
     #
-    # The action is present; the instance's artifact backend does not speak the protocol that
-    # version uses.  Measured on a real instance, which is the only place it could be measured.
-    - name: Upload wheel artifact
-      if: inputs.artifact-v4 == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: wheel
-        path: dist/*.whl
-        if-no-files-found: error
-
-    - name: Upload wheel artifact (instance artifact protocol)
-      if: inputs.artifact-v4 != 'true'
-      uses: actions/upload-artifact@v3
-      with:
-        name: wheel
-        path: dist/*.whl
-        if-no-files-found: error
+    # github.com then closed the other half of that fork. It now refuses `upload-artifact@v3`
+    # outright -- and refuses it while *resolving* the action, before any `if:` is evaluated, so
+    # merely naming v3 in a file failed a run that would never have executed the step. One host
+    # cannot use v4, the other cannot name v3, and a single file cannot satisfy both.
+    #
+    # It did not need to. The wheel is attached to the release above, which is where anyone
+    # installing it looks; the artifact was a second copy of the same bytes with a shorter life.
+    # A run on a tag with no release still builds the wheel and so still proves it builds. This
+    # also retires `AART_ARTIFACT_V4`: one fewer thing a fork has to know about itself.

@@ -17,9 +17,6 @@ inputs:
   version:
     description: The version to cut, without the leading v.
     required: true
-  artifact-v4:
-    description: '"true" when the instance supports the v4 artifact protocol.'
-    required: true
 
 runs:
   using: composite
@@ -94,5 +91,4 @@ runs:
         python-version: ${{ inputs.python-version }}
         setup-python: ${{ inputs.setup-python }}
         tag: v${{ inputs.version }}
-        artifact-v4: ${{ inputs.artifact-v4 }}
         attach: "true"

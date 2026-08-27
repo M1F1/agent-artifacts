@@ -47,8 +47,6 @@ jobs:
           python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
           setup-python: ${{ vars.AART_CI_IMAGE == '' }}
           version: ${{ inputs.version }}
-          # Unset means v4, so github.com and any instance that supports it are untouched.
-          artifact-v4: ${{ vars.AART_ARTIFACT_V4 != 'false' }}
 
   cut-private-image:
     if: vars.AART_IMAGE_USERNAME_SECRET != ''
@@ -75,5 +73,3 @@ jobs:
           python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
           setup-python: ${{ vars.AART_CI_IMAGE == '' }}
           version: ${{ inputs.version }}
-          # Unset means v4, so github.com and any instance that supports it are untouched.
-          artifact-v4: ${{ vars.AART_ARTIFACT_V4 != 'false' }}

@@ -39,16 +39,14 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("scripts/release.py check --without-registry", release_steps)
         self.assertNotIn("make ", release_steps)
         self.assertIn("scripts/version.py check-tag", release_steps)
-        # Both upload spellings, switched by `if:`.  `uses:` takes no expression, so a fork whose
-        # artifact backend rejects the v4 protocol cannot be served by a variable inside `uses:` --
-        # only by two steps and a condition, the move `container.credentials` already forced.
-        # An Enterprise run proved this is needed: the action downloads, then fails at run time
-        # with `GHESNotSupportedError`.
-        self.assertIn("uses: actions/upload-artifact@v4", release_steps)
-        self.assertIn("uses: actions/upload-artifact@v3", release_steps)
-        self.assertIn("if: inputs.artifact-v4 == 'true'", release_steps)
-        self.assertIn("if: inputs.artifact-v4 != 'true'", release_steps)
-        self.assertIn("artifact-v4: ${{ vars.AART_ARTIFACT_V4 != 'false' }}", workflow)
+        # No workflow-artifact copy of the wheel, on either spelling.  An Enterprise instance
+        # cannot run `upload-artifact@v4` -- `GHESNotSupportedError` at run time -- and github.com
+        # refuses `@v3` while *resolving* the action, before any `if:` is evaluated, so naming it
+        # failed a run that would never have executed the step.  Measured on both hosts.  The
+        # wheel is attached to the release, which is where anyone installing it looks.
+        self.assertNotIn("uses: actions/upload-artifact", release_steps)
+        self.assertNotIn("inputs.artifact-v4", release_steps)
+        self.assertNotIn("AART_ARTIFACT_V4", workflow)
         self.assertIn(
             "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
             release_steps,

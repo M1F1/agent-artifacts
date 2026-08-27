@@ -175,7 +175,6 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_PYTHON_VERSIONS` | `["3.10", "3.14"]` | JSON array for the quality matrix. **Pin to one entry when `AART_CI_IMAGE` is set** — one image carries one interpreter, and a two-entry matrix would run the same Python twice under two names |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Internal mirror for `ruff`/`mypy`/`coverage`. This repository's gates only |
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
-| `AART_ARTIFACT_V4` | `true` | Set to `false` where the instance's artifact backend does not speak the v4 protocol, and the release job uploads the wheel with `upload-artifact@v3` instead. Measured, not guessed — see section 5 |
 | `AART_REFERENCE_REGISTRY_URL` | **no default** | The registry the release checklist reconciles against, and the switch for whether it reconciles at all. Unset, the clone is skipped and the seven registry checks report `skipped` — never `passed` — with a warning on every run. See below |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
 | `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |
@@ -389,9 +388,15 @@ variable can redirect where an action comes from. Two consequences:
    uses. So the thing to check is not "does the instance have `@v4`" but "does `@v4` work here",
    and only a run answers that.
 
-   Because `uses:` takes no expression, the release job carries **both** upload steps and picks one
-   with `if:` — the same move `container.credentials` forced. `AART_ARTIFACT_V4=false` selects the
-   v3 step. Nothing about the github.com run changes.
+   The first answer was both upload steps in the file, picked between with `if:` — the same move
+   `container.credentials` forced. That answer is gone, because github.com closed the other half
+   of the fork: it now refuses `upload-artifact@v3` **while resolving the action**, before any
+   `if:` is evaluated, so merely naming v3 fails a run that would never have executed the step.
+   One host cannot run v4, the other will not resolve v3, and one file cannot satisfy both.
+
+   So the release keeps no workflow-artifact copy of the wheel at all. The wheel is attached to
+   the release, which is where anyone installing it looks and which outlives an artifact anyway.
+   A run on a tag with no release still builds the wheel, and so still proves it builds.
 
    For the registry workflow the same situation would be an edit `registry init` refuses, so raise
    it as a change to the template rather than to one registry.
@@ -516,8 +521,9 @@ Seven defects came out of that walk, none of them fixable by a variable, all of 
 | `curl: command not found` | and the rewrite around the REST API needed `curl`. The image carries git and a Python interpreter and nothing else, so the step now uses `urllib` and asks for neither |
 | `CERTIFICATE_VERIFY_FAILED` from `pypi.org` | the release button's own action copied the install step from the quality action and left the step that points pip at the internal index behind. Both now call one shared action, and a test refuses any action that installs with pip without it |
 | the button's release had no wheel on it | GitHub raises no workflow event for anything done with the repository `GITHUB_TOKEN`, so the release the button published set nothing off. The button now calls the release action itself rather than waiting to be reacted to |
+| `deprecated version of actions/upload-artifact: v3` | github.com refuses `@v3` while resolving a composite action, before any `if:` runs, so naming it failed a run that would never have reached the step. GHES cannot run `@v4`; the copy is gone and the wheel goes on the release |
 
-Three of the nine printed no usable message, because the process that failed had captured the
+Three of the ten printed no usable message, because the process that failed had captured the
 explanation and discarded it. That is worth more than any single fix: **when a subprocess fails,
 print what it said.**
 
@@ -558,7 +564,8 @@ rule that there is only one builder, are held by tests.
    was wrong.** The instance carried `actions/upload-artifact@v4` and downloaded it without
    complaint, then failed at run time with `GHESNotSupportedError`: its artifact backend does not
    speak the protocol that version uses. Presence is not the test; a run is. The release job now
-   carries both upload steps and picks one with `if:`, selected by `AART_ARTIFACT_V4`.
+   keeps no workflow-artifact copy at all: github.com refuses `@v3` at resolution time, so the
+   two-spellings answer could not survive on both hosts. The wheel goes on the release.
 2. That splitting the dashboard into `aggregate` and `deploy` jobs still deploys, and that dropping
    `configure-pages` changes nothing for a static output. Both follow GitHub's own documented
    two-job Pages pattern, but neither was run. `deploy` now waits on both shapes of `aggregate`

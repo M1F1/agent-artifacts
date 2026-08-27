@@ -77,16 +77,15 @@ class TheButtonFinishesTheJobTest(unittest.TestCase):
         self.assertIn("if: inputs.attach == 'true'", body)
         self.assertNotIn("github.event_name", body)
 
-    def test_the_release_asset_is_attached_before_the_convenience_copy(self) -> None:
-        """The wheel on the release is the deliverable; the workflow artifact is a copy.
+    def test_no_step_names_an_artifact_action_either_host_refuses(self) -> None:
+        """One host cannot run v4, the other will not resolve v3, and one file cannot do both.
 
-        With the upload first, an instance whose artifact backend does not speak the protocol
-        that version uses stopped the release from ever getting its file -- after the file had
-        already been built.
+        github.com fails the run while resolving the action, before any `if:` is evaluated, so
+        the two-spellings-and-a-condition pattern that worked for the container image does not
+        work here. The wheel is attached to the release instead, which is the copy that lasts.
         """
 
-        body = _uncommented(self._action("release"))
-        self.assertLess(body.index("Attach wheel to release"), body.index("Upload wheel artifact"))
+        self.assertNotIn("upload-artifact", _uncommented(self._action("release")))
 
     def test_every_caller_of_the_release_action_says_whether_to_attach(self) -> None:
         callers = [
