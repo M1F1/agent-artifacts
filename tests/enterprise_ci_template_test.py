@@ -77,6 +77,17 @@ class TheButtonFinishesTheJobTest(unittest.TestCase):
         self.assertIn("if: inputs.attach == 'true'", body)
         self.assertNotIn("github.event_name", body)
 
+    def test_the_release_asset_is_attached_before_the_convenience_copy(self) -> None:
+        """The wheel on the release is the deliverable; the workflow artifact is a copy.
+
+        With the upload first, an instance whose artifact backend does not speak the protocol
+        that version uses stopped the release from ever getting its file -- after the file had
+        already been built.
+        """
+
+        body = _uncommented(self._action("release"))
+        self.assertLess(body.index("Attach wheel to release"), body.index("Upload wheel artifact"))
+
     def test_every_caller_of_the_release_action_says_whether_to_attach(self) -> None:
         callers = [
             ROOT / ".github" / "workflows" / "release.yml",

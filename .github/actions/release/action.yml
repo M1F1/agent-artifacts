@@ -95,6 +95,31 @@ runs:
       shell: bash
       run: ${{ inputs.python }} scripts/build_wheel.py
 
+    # The release asset comes first, and the workflow artifact after it.  The order is the order
+    # of consequence: the wheel on the release is what people install, and the artifact is a
+    # convenience copy of the same bytes.  With the upload first, anything that stops it -- an
+    # instance whose artifact backend does not speak the protocol, most of all -- stopped the
+    # release from ever getting its file, after the file had already been built.
+    # Neither the GitHub CLI nor curl is installed in every CI image.  A real Enterprise image had
+    # git, an internal index and a Python interpreter, and nothing else -- this step failed first on
+    # `gh: command not found` and then, rewritten around the REST API, on `curl: command not found`,
+    # both times after the wheel was already built.  So it now asks for nothing the release does not
+    # already need, the same way GNU Make came off the list earlier.
+    #
+    # The script also removes a hazard `gh` brought with it: `gh` talks to github.com unless
+    # `GH_HOST` says otherwise, so an unset `AART_GH_HOST` pointed a fork's upload at the wrong
+    # instance entirely.  See scripts/attach_release_asset.py for what is read rather than guessed.
+    # Asked for by the caller rather than read off `github.event_name`.  The release button
+    # publishes the release with the repository `GITHUB_TOKEN`, and GitHub deliberately raises no
+    # workflow event for anything done with that token -- so the run that publishes a release is
+    # the last run there will be, and it has to finish the job itself.
+    - name: Attach wheel to release
+      if: inputs.attach == 'true'
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: ${{ inputs.python }} scripts/attach_release_asset.py "$TAG"
+
     # The step appears twice for the reason `container.credentials` does in validate.yml: the
     # thing that has to change is `uses:`, and `uses:` cannot contain an expression.  So the
     # choice moves to where a choice survives -- `if:` -- and both spellings sit in the file.
@@ -122,23 +147,3 @@ runs:
         name: wheel
         path: dist/*.whl
         if-no-files-found: error
-
-    # Neither the GitHub CLI nor curl is installed in every CI image.  A real Enterprise image had
-    # git, an internal index and a Python interpreter, and nothing else -- this step failed first on
-    # `gh: command not found` and then, rewritten around the REST API, on `curl: command not found`,
-    # both times after the wheel was already built.  So it now asks for nothing the release does not
-    # already need, the same way GNU Make came off the list earlier.
-    #
-    # The script also removes a hazard `gh` brought with it: `gh` talks to github.com unless
-    # `GH_HOST` says otherwise, so an unset `AART_GH_HOST` pointed a fork's upload at the wrong
-    # instance entirely.  See scripts/attach_release_asset.py for what is read rather than guessed.
-    # Asked for by the caller rather than read off `github.event_name`.  The release button
-    # publishes the release with the repository `GITHUB_TOKEN`, and GitHub deliberately raises no
-    # workflow event for anything done with that token -- so the run that publishes a release is
-    # the last run there will be, and it has to finish the job itself.
-    - name: Attach wheel to release
-      if: inputs.attach == 'true'
-      shell: bash
-      env:
-        TAG: ${{ inputs.tag }}
-      run: ${{ inputs.python }} scripts/attach_release_asset.py "$TAG"
