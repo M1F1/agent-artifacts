@@ -21,54 +21,64 @@ See the [native source contract](docs/protocol/native-source-v1.md),
 
 ## Install and quick start
 
-Python 3.10 or later is required. Pick the installer you use and the source you trust; all nine
-commands in the table below were exercised against the published `v2.8.5` artifact or tag. If you
-are installing from a company GitHub Enterprise Server instance, read the section after it — not
-every source works there.
+Python 3.10 or later is required.
+
+**The exact commands are on this repository's [Releases page](../../releases).** Every release
+carries them, filled in with the address of the repository you are reading them in -- so a fork on
+a company instance shows its own host, and nobody has to guess or substitute anything. That link is
+relative on purpose: it resolves inside whatever repository this file lives in, which is why this
+page can point at a release without naming an address that would be wrong in a fork, and would
+conflict on every merge from upstream.
+
+From a checkout, the same commands print here:
+
+```sh
+python scripts/install_commands.py
+```
+
+The shapes are below, if you want them before you look. `<repository>` is the address of the
+repository you are reading this in; the command above prints it filled in.
 
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|
+| Tagged Git repository, no clone | `python -m pip install --no-deps "git+<repository>.git@v2.8.5"` | `pipx install "git+<repository>.git@v2.8.5"` | `uv tool install "git+<repository>.git@v2.8.5"` |
 | Downloaded wheel | `python -m pip install --no-deps ./agent_artifacts-2.8.5-py3-none-any.whl` | `pipx install ./agent_artifacts-2.8.5-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.8.5-py3-none-any.whl` |
-| GitHub release wheel | `python -m pip install --no-deps https://github.com/M1F1/agent-artifacts/releases/download/v2.8.5/agent_artifacts-2.8.5-py3-none-any.whl` | `pipx install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.5/agent_artifacts-2.8.5-py3-none-any.whl` | `uv tool install https://github.com/M1F1/agent-artifacts/releases/download/v2.8.5/agent_artifacts-2.8.5-py3-none-any.whl` |
-| Tagged Git repository, no clone | `python -m pip install --no-deps "git+https://github.com/M1F1/agent-artifacts.git@v2.8.5"` | `pipx install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.5"` | `uv tool install "git+https://github.com/M1F1/agent-artifacts.git@v2.8.5"` |
+| Release wheel by URL | `python -m pip install --no-deps <the wheel's address on the release>` | `pipx install <the wheel's address on the release>` | `uv tool install <the wheel's address on the release>` |
+
+The Git row leads because it is the only one that needs nothing arranged first: `git+https://` goes
+through git, and git uses the credentials you already push with.
 
 `pipx` and `uv tool` create an isolated tool environment. AART has no runtime dependencies. The
 release wheel is byte-reproducible from its tag and its digest is published in the release notes.
 
-The nine commands above name `github.com`, where every source answers without a login. A fork on a
-GitHub Enterprise Server instance is normally private, and that changes which of them work at all.
-
 ### On a private Enterprise instance
 
-**Install from the tag.** It is the only source that needs nothing arranged first: `git+https://`
-goes through git, and git uses the same credentials you already push with.
+A fork on a GitHub Enterprise Server instance is normally private, and that changes which of those
+sources work at all.
 
-| Source | `pip` (inside your environment) | `pipx` | `uv` |
-|---|---|---|---|
-| **Tagged Git repository, no clone** | `python -m pip install --no-deps "git+https://ghe.corp/platform/agent-artifacts.git@v2.8.5"` | `pipx install "git+https://ghe.corp/platform/agent-artifacts.git@v2.8.5"` | `uv tool install "git+https://ghe.corp/platform/agent-artifacts.git@v2.8.5"` |
-| Internal index, once the wheel is published to it | `python -m pip install --no-deps --index-url https://nexus.corp/repository/pypi/simple "agent-artifacts==2.8.5"` | `pipx install --index-url https://nexus.corp/repository/pypi/simple "agent-artifacts==2.8.5"` | `uv tool install --default-index https://nexus.corp/repository/pypi/simple "agent-artifacts==2.8.5"` |
-| Downloaded wheel, fetched with a token first | `python -m pip install --no-deps ./agent_artifacts-2.8.5-py3-none-any.whl` | `pipx install ./agent_artifacts-2.8.5-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.8.5-py3-none-any.whl` |
-| Release wheel by URL | not available — see below | not available | not available |
+| Source | Works on a private instance |
+|---|---|
+| Tagged Git repository, no clone | **Yes.** git authenticates, so this row needs nothing set up |
+| Downloaded wheel | Yes, once the file is on disk -- see below for getting it there |
+| Internal index, once the wheel is published to it | Yes. Add `--index-url <your index>` (`--default-index` for `uv`) and ask for `"agent-artifacts==2.8.5"` |
+| Release wheel by URL | **No.** See below |
 
 The last row is the one that surprises people. `pip`, `pipx` and `uv` send no token when they fetch
 a URL, so a release asset on a private repository answers with a sign-in page. The installer then
 fails on a corrupt archive rather than on a refusal, and the message names neither cause nor fix.
 Use that row only where the address answers without a login.
 
-To get the wheel onto disk for the third row, download it with something that does authenticate:
+To get the wheel onto disk instead, download it with something that does authenticate -- your
+instance's own UI, or a CLI you already have signed in -- and install from the file.
 
-```sh
-GH_HOST=ghe.corp gh release download v2.8.5 --repo platform/agent-artifacts --pattern '*.whl'
-```
-
-Substitute your own host and `owner/name` throughout, and keep a reviewed tag rather than following
-a moving branch. Where `pipx` is unavailable, an unzipped wheel is a working installation on its
-own — AART has no runtime dependencies, so a directory on `PYTHONPATH` is enough.
+Keep a reviewed tag rather than following a moving branch. Where `pipx` is unavailable, an unzipped
+wheel is a working installation on its own -- AART has no runtime dependencies, so a directory on
+`PYTHONPATH` is enough.
 
 The editable install is for working on AART itself, not for a colleague adopting it:
 
 ```sh
-git clone https://github.com/M1F1/agent-artifacts.git
+git clone <repository>.git
 cd agent-artifacts
 python -m pip install --no-index --no-deps --no-build-isolation -e .
 ```

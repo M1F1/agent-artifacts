@@ -11,42 +11,57 @@ _SPELLED = {9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
 
 
 class ReadmeAdoptionTest(unittest.TestCase):
-    def test_install_grid_covers_three_installers_and_three_checkout_free_sources(self) -> None:
+    def _install_section(self) -> str:
+        start = _README.index("## Install and quick start")
+        return _README[start : _README.index("The editable install is", start)]
+
+    def test_the_page_names_no_address_a_fork_would_have_to_correct(self) -> None:
+        """The exact commands belong on the release, not here.
+
+        A README cannot know which instance it is being read on -- nothing interpolates a variable
+        into a markdown file -- so an address written here is upstream's address, wrong in every
+        fork, and a line every fork would have to edit and then re-edit on each merge. The release
+        page can know: `cut_release.py` derives it from the remote it is publishing to.
+        """
+
+        section = self._install_section()
+        for address in ("https://github.com/", "http://", "ghe.corp", "nexus.corp"):
+            with self.subTest(address=address):
+                self.assertNotIn(address, section)
+        # Relative on purpose: it resolves inside whatever repository the file lives in.
+        self.assertIn("[Releases page](../../releases)", section)
+        self.assertIn("python scripts/install_commands.py", section)
+
+    def test_install_grid_covers_three_installers_against_a_named_placeholder(self) -> None:
+        section = self._install_section()
         for installer in ("python -m pip install", "pipx install", "uv tool install"):
             with self.subTest(installer=installer):
-                self.assertGreaterEqual(_README.count(installer), 3)
+                self.assertGreaterEqual(section.count(installer), 3)
+        # One placeholder, defined once, used everywhere an address would have gone.
+        self.assertIn("`<repository>` is the address of the", section)
+        self.assertGreaterEqual(section.count("git+<repository>.git@v"), 3)
         # Taken from the executable, not written here: a literal passes while the README goes
-        # stale, which is exactly how 2.8.0 nearly shipped a matrix still naming 2.7.1.
-        for source in (
-            f"./agent_artifacts-{__version__}-py3-none-any.whl",
-            f"releases/download/v{__version__}/agent_artifacts-{__version__}-py3-none-any.whl",
-            f"git+https://github.com/M1F1/agent-artifacts.git@v{__version__}",
-        ):
-            with self.subTest(source=source):
-                self.assertGreaterEqual(_README.count(source), 3)
+        # stale, which is exactly how 2.8.0 nearly shipped a matrix still naming 2.7.1.  A wheel
+        # filename is not an address, so it stays whole.
+        self.assertGreaterEqual(
+            section.count(f"./agent_artifacts-{__version__}-py3-none-any.whl"), 3
+        )
         self.assertIn("The editable install is for working on AART itself", _README)
 
-    def test_the_enterprise_grid_covers_the_same_three_installers_at_this_version(self) -> None:
+    def test_the_enterprise_section_still_says_which_sources_stop_working(self) -> None:
         """A private instance narrows the grid, and the narrowing has to be written down.
 
         Only the Git row carries credentials there: `pip`, `pipx` and `uv` send no token when they
         fetch a URL, so a release asset on a private repository answers with a sign-in page and the
         installer fails on a corrupt archive rather than on a refusal.  A reader who copies the
         public table and swaps the host gets that failure with no clue in it.
-
-        The version comes from the executable for the reason the grid above does: a literal keeps
-        passing while the page goes stale.
         """
 
         start = _README.index("### On a private Enterprise instance")
         section = _README[start : _README.index("The editable install is", start)]
-        for installer in ("python -m pip install", "pipx install", "uv tool install"):
-            with self.subTest(installer=installer):
-                self.assertGreaterEqual(section.count(installer), 3)
-        self.assertIn(f"agent-artifacts.git@v{__version__}", section)
         self.assertIn(f'"agent-artifacts=={__version__}"', section)
-        self.assertIn(f"./agent_artifacts-{__version__}-py3-none-any.whl", section)
-        self.assertIn("not available", section)
+        self.assertIn("Release wheel by URL", section)
+        self.assertIn("**No.**", section)
 
     def test_the_gate_table_lists_every_gate_the_runner_actually_builds(self) -> None:
         """The heading said nine for as long as there were ten.

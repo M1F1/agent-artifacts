@@ -103,6 +103,8 @@ def validate_markdown(path: Path, text: str, root: Path) -> tuple[Diagnostic, ..
         local = _link_path(match.group(1))
         if not local:
             continue
+        if local in _REPOSITORY_RELATIVE:
+            continue
         if local.startswith("/"):
             candidate = root / local.lstrip("/")
         else:
@@ -117,6 +119,14 @@ def validate_markdown(path: Path, text: str, root: Path) -> tuple[Diagnostic, ..
                 )
             )
     return tuple(sorted(diagnostics))
+
+
+# GitHub resolves a link from a file at the repository root against `host/owner/name/blob/branch/`,
+# so `../../releases` lands on that repository's own releases page -- whichever repository, on
+# whichever instance, the reader is looking at.  There is no file behind it and there is not meant
+# to be: it is the one way a page can point at a release without writing down an address that
+# would be upstream's in every fork, and a merge conflict on every merge from upstream.
+_REPOSITORY_RELATIVE = ("../../releases", "../../issues", "../../pulls", "../../tags")
 
 
 def _repository_markdown(root: Path) -> tuple[Path, ...]:

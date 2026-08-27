@@ -88,6 +88,20 @@ def origin(remote: str = "origin") -> tuple[str, str]:
     return root, repository
 
 
+def repository_url(remote: str = "origin") -> str:
+    """``https://host/owner/name`` for this checkout, whichever instance it lives on.
+
+    The API root is the thing already derived from the remote, so the web address is derived back
+    out of it rather than parsed a second time.  Callers use it to print install commands that
+    name the reader's own instance -- a README cannot, because nothing interpolates a variable
+    into a markdown file.
+    """
+
+    api, repository = origin(remote)
+    host = "https://github.com" if api == "https://api.github.com" else api[: -len("/api/v3")]
+    return f"{host}/{repository}"
+
+
 def request(
     url: str,
     *,

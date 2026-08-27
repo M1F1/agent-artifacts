@@ -11,9 +11,10 @@ neither.  The two decisions a human genuinely makes -- which version, and what t
 are made before this runs, in a reviewed change on `main`.  This script only refuses to proceed
 when they are missing; it never invents them.
 
-The wheel is not built or attached here.  Publishing the release fires `release.yml`, which runs
-the gates once more on the tag and attaches the wheel it builds.  That keeps one builder of
-release artifacts rather than two that can disagree.
+The wheel is not built or attached here.  The action that runs this calls the release action next,
+which builds the wheel and attaches it -- one builder of release artifacts rather than two that can
+disagree.  It is called rather than triggered: GitHub raises no workflow event for anything done
+with the repository token, so a release published here sets nothing off.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import github_api  # noqa: E402
+import install_commands  # noqa: E402
 import release as release_module  # noqa: E402
 import release_docs  # noqa: E402
 
@@ -101,13 +103,19 @@ def publish(tag: str, version: str, notes: Path, remote: str) -> str:
     """Tag, push, and create the release.  Returns the release's URL."""
 
     name, digest = release_module.wheel_digest(ROOT, output_dir=ROOT / "dist")
-    body = f"{notes.read_text(encoding='utf-8').rstrip()}\n\n```\n{digest}  {name}\n```\n"
+    api, repository = github_api.origin(remote)
+    # The commands name this instance, because the release page is where someone goes to get the
+    # version and a README cannot say it: nothing interpolates a variable into a markdown file, so
+    # a fork's README shows whatever host upstream wrote.  Here the address is derived, not typed.
+    install = install_commands.lines(github_api.repository_url(remote), version)
+    body = (
+        f"{notes.read_text(encoding='utf-8').rstrip()}\n\n```\n{digest}  {name}\n```\n\n{install}\n"
+    )
 
     _git("tag", "-a", tag, "-m", f"AART {version}")
     _git("push", remote, f"refs/tags/{tag}")
     print(f"\n==> pushed {tag}")
 
-    api, repository = github_api.origin(remote)
     created = github_api.json_request(
         f"{api}/repos/{repository}/releases",
         method="POST",
@@ -155,7 +163,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     print(f"\nreleased {tag}: {url}")
-    print("release.yml is now building the wheel and will attach it to that release.")
+    print("The wheel is built and attached next, by the release action this job calls.")
     return 0
 
 

@@ -21,7 +21,11 @@ dev = [
     # Explicit editable-build prerequisite for Python versions whose venv/ensurepip no longer
     # bundles setuptools. It is visible only to development/CI, never runtime metadata.
     "setuptools>=61",
-    "ruff>=0.6",
+    # Pinned exactly, and it is the formatter that forces it.  `ruff>=0.6` let a developer's
+    # machine hold 0.12 while CI installed 0.16, and the two format the same file differently --
+    # so `format-check` failed in CI on code the developer's own ruff had just formatted, naming
+    # a line and no cause.  A floor is not a version for a tool whose output has to match.
+    "ruff==0.16.4",
     "mypy>=1.11",
     "coverage>=7.6",
     "wheel>=0.44",

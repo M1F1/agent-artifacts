@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import importlib.util
 import os
 import subprocess
@@ -152,6 +153,12 @@ def missing_tools(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]
     covered without anyone remembering to add it.
     """
 
+    return tuple(
+        tool for tool in _tools_for(selected, temp_root) if importlib.util.find_spec(tool) is None
+    )
+
+
+def _tools_for(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]:
     by_name = {gate.name: gate for gate in build_gates(temp_root)}
     wanted: list[str] = []
     for name in selected:
@@ -159,8 +166,28 @@ def missing_tools(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]
             for index, argument in enumerate(command[:-1]):
                 if argument == "-m" and command[index + 1] in _DEVELOPER_TOOLS:
                     wanted.append(command[index + 1])
-    absent = [tool for tool in dict.fromkeys(wanted) if importlib.util.find_spec(tool) is None]
-    return tuple(absent)
+    return tuple(dict.fromkeys(wanted))
+
+
+def _report_tool_versions(absent: tuple[str, ...], selected: tuple[str, ...], temp: Path) -> None:
+    """Say which version of each tool is about to run.
+
+    `format-check` compares this machine's formatter against a file another machine's formatter
+    wrote.  When the two differ the failure names a line and no cause, and the line looks fine.
+    The versions are pinned in the developer extra for that reason; printing them makes a
+    mismatch readable in the first four lines of a log instead of not at all.
+    """
+
+    if absent:
+        return
+    for tool in _tools_for(selected, temp):
+        # From the installed distribution, not the module: `ruff` is a binary wrapper and carries
+        # no `__version__`, which is exactly the tool whose version matters most here.
+        try:
+            found = importlib.metadata.version(tool)
+        except importlib.metadata.PackageNotFoundError:  # pragma: no cover - importable, unlisted
+            found = "(not an installed distribution)"
+        print(f"{tool} {found}", flush=True)
 
 
 def _run(selected: tuple[str, ...], temp_root: Path) -> int:
@@ -178,6 +205,8 @@ def _run(selected: tuple[str, ...], temp_root: Path) -> int:
             file=sys.stderr,
         )
         return 2
+
+    _report_tool_versions(absent, selected, temp_root)
 
     environment = os.environ.copy()
     environment.update(

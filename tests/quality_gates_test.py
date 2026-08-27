@@ -332,6 +332,29 @@ class MissingToolTest(unittest.TestCase):
         self.assertIn('pip install -e ".[dev]"', said)
 
 
+class RepositoryRelativeLinkTest(unittest.TestCase):
+    """`../../releases` has no file behind it, and is the point.
+
+    It resolves against whichever repository the reader is in, which is the one way a page can
+    point at a release without writing down an address that is upstream's in every fork.
+    """
+
+    def test_the_fork_safe_forms_are_allowed_and_a_typo_is_not(self) -> None:
+        docs_check = _load_script("docs_check")
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            good = root / "good.md"
+            good.write_text("See [Releases](../../releases).\n", encoding="utf-8")
+            bad = root / "bad.md"
+            bad.write_text("See [Releases](../../releasez).\n", encoding="utf-8")
+
+            self.assertEqual(
+                docs_check.validate_markdown(good, good.read_text(encoding="utf-8"), root), ()
+            )
+            found = docs_check.validate_markdown(bad, bad.read_text(encoding="utf-8"), root)
+            self.assertEqual([item.code for item in found], ["DOC002"])
+
+
 class PackagingCheckTest(unittest.TestCase):
     def test_packaging_smoke_does_not_mutate_tracked_source(self):
         packaging_check = _load_script("packaging_check")
