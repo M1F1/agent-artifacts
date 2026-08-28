@@ -28,6 +28,7 @@ the gates hold no state.  So a stopped run is resumed by repeating it.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -155,6 +156,38 @@ def _ask(question: str) -> str:
         return ""
 
 
+def _suggested() -> tuple[str, str] | None:
+    """`(version, why)` from the changelog's unreleased entries, or `None` if it cannot say.
+
+    The number is not a matter of taste: semantic versioning says which part moves, and the
+    changelog says what kind of change happened.  Asking a person to work that out again, from
+    entries they have already written, is how a release ends up called `2.9.0` over a section that
+    only fixes things.  So it is offered, and Enter takes it -- but it is still offered rather than
+    imposed, because the person pressing the button is the one who answers for the number.
+    """
+
+    path = ROOT / "scripts" / "changelog.py"
+    spec = importlib.util.spec_from_file_location("_aart_prepare_changelog", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - only if the file is gone
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    try:
+        text = (ROOT / module.CHANGELOG).read_text(encoding="utf-8")
+        current = str(module._versioning().read_version(ROOT))
+        part, version = module.next_version(text, current)
+    except Exception:
+        # No unreleased section, nothing in it that decides a part, an unreadable file: every one
+        # of those means there is nothing to suggest, and none of them is this script's failure.
+        return None
+    kinds = ", ".join(module.unreleased(text).kinds)
+    return (
+        version,
+        f"a {part} move from {current}, from the changelog's unreleased headings: {kinds}",
+    )
+
+
 def _next_actions(version: str) -> tuple[str, ...]:
     return (
         f"git checkout -b release/{version} && git add -A && "
@@ -177,7 +210,13 @@ def main(argv: list[str]) -> int:
     arguments = parser.parse_args(argv[1:])
 
     try:
-        version = (arguments.version or _ask("Which version? (for example 2.8.6)")).strip()
+        suggested = _suggested()
+        question = "Which version? (for example 2.8.6)"
+        if suggested is not None:
+            question = f"Which version? Enter takes {suggested[0]} — {suggested[1]}"
+        version = (arguments.version or _ask(question)).strip()
+        if not version and suggested is not None:
+            version = suggested[0]
         version = version.lstrip("v")
         if not version:
             raise Stopped("no version given")

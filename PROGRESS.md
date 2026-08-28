@@ -86,7 +86,7 @@ A six-task queue, each task one commit, each gated on all ten quality gates befo
 | 2 | CI split for a protected `main`: PR check / release / cut-release | **done** |
 | 3 | Wizard and MCP install: one quick/verbose question (`#113`) | **done** |
 | 4 | Delete stale documents; purge the old distribution name from docs | **done, smaller than asked** |
-| 5 | Generate `CHANGELOG.md` from the semantic version and the commits | queued |
+| 5 | Generate `CHANGELOG.md` from the semantic version and the commits | **done** |
 | 6 | Search over artifacts, in the CLI and in the TUI | queued |
 
 Tasks 5 and 6 were added mid-run. Task 6's model is `npx skills`; both keep the runtime
@@ -242,6 +242,39 @@ a newcomer reads first:
 Records are not rewritten. A live-acceptance document saying it measured
 `agent_artifacts-2.6.0-py3-none-any.whl` is stating what happened; changing it to `aart_cli` would
 make it say something that never did.
+
+### Task 5: the changelog decides the version
+
+The version used to be typed, and the changelog written under it. That is backwards: semantic
+versioning says which part of a number a change moves, and the changelog is where the kind of
+change is recorded. So the changelog now decides the number.
+
+Changes land under `## Unreleased`, each under a heading naming its kind. `scripts/changelog.py`:
+
+- `check` — the file's shape: headings, order, duplicate versions, real dates, empty sections. Run
+  on every gate run as `DOC011` in `docs-check`, because a heading in the wrong shape is no longer
+  untidy — it is a version that comes out wrong.
+- `next` — the part that moves and the version it moves to, with the headings it read.
+- `release --write` — cuts the section under a dated heading and prints the `version.py set` to run.
+
+`Removed`/`Breaking` move the major, `Added`/`Changed` the minor, `Fixed`/`Security`/`Packaging`/
+`Documentation`/`Testing` the patch. Anything else — `Compatibility`, `Known defects shipped open`,
+`Upgrading from 2.7.1` — is prose about the release and is kept and ignored. A section made only of
+those **refuses** to decide a number instead of guessing one.
+
+**One decision worth naming: below `1.0.0`, every part moves the one below it.** A removal moves
+the minor, everything else the patch. A zero major version promises nothing, and `1.0.0` announces
+a stability that cannot be taken back — so a heading should not be able to trigger it by accident.
+Without this rule, the first `### Removed` on this branch would have released `1.0.0`.
+
+`prepare_release.py` now offers that number and Enter takes it; it is still offered rather than
+imposed, because the person pressing the button answers for it. `release_docs.py` no longer
+scaffolds a `### Fixed` TODO over entries that already exist.
+
+What is **not** generated is the prose. No tool can write the sentence saying why something was
+wrong, and a changelog of generated commit subjects is a changelog nobody reads.
+
+The `## Unreleased` section now holds this branch's six tasks, written as they landed.
 
 ## Readable receipt (`2.6.0`, released)
 

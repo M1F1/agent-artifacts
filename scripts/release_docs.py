@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import re
 import sys
 from dataclasses import dataclass
@@ -49,6 +50,21 @@ def contract_version(root: Path = ROOT) -> str:
     return match.group(1)
 
 
+def _unreleased_body(root: Path) -> str | None:
+    """What `## Unreleased` already holds, or `None` — including when there is no such script."""
+
+    path = root / "scripts" / "changelog.py"
+    if not path.is_file():  # a plan root that is not this repository
+        return None
+    spec = importlib.util.spec_from_file_location("_aart_release_docs_changelog", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - only if the file is unreadable
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.section_body(root)
+
+
 def plan(version: str, summary: str, root: Path = ROOT) -> tuple[Document, ...]:
     contract = contract_version(root)
     today = datetime.date.today().isoformat()
@@ -74,13 +90,21 @@ dependencies: standard library only.
 {_todo(version, "the list, or the word None -- but not silence")}
 """
 
-    changelog = f"""## {version} — {today}
-
-{headline}
+    # Written as the changes landed, if anyone did.  Scaffolding a `### Fixed` TODO over entries
+    # that already exist asks for the same prose twice, in two places, and one of the two then
+    # becomes the real one by accident.  See scripts/changelog.py.
+    waiting = _unreleased_body(root)
+    body = (
+        waiting
+        or f"""{headline}
 
 ### Fixed
 
-- {_todo(version, "a bold sentence of claim, then why it was wrong")}
+- {_todo(version, "a bold sentence of claim, then why it was wrong")}"""
+    )
+    changelog = f"""## {version} — {today}
+
+{body}
 
 """
 

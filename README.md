@@ -476,8 +476,35 @@ Python itself.
 
 **Actions → cut release → Run workflow → type the version.** That is the release.
 
-Two things are decided before you press it, and they are the two a machine cannot decide: which
-version, and what the notes say. Both arrive on `main` through an ordinary reviewed change.
+One thing is decided before you press it, and it is the one a machine cannot decide: what the
+notes say. It arrives on `main` through an ordinary reviewed change.
+
+### The number comes from the changelog
+
+Changes are written under `## Unreleased` in `CHANGELOG.md` as they land, each under a heading that
+says what kind of change it is. That heading is what decides the version:
+
+| Heading | What moves |
+|---|---|
+| `Removed`, `Breaking` | major |
+| `Added`, `Changed` | minor |
+| `Fixed`, `Security`, `Packaging`, `Documentation`, `Testing` | patch |
+
+Anything else — `Compatibility`, `Known defects shipped open`, `Upgrading from 2.7.1` — is prose
+about the release rather than a change in it. It is kept and ignored when the number is decided,
+and a section made only of those refuses to decide one rather than guessing.
+
+```sh
+python scripts/changelog.py next
+```
+
+Below `1.0.0` each part moves the one below it: a removal moves the minor, everything else moves
+the patch. A zero major version promises nothing, and `1.0.0` announces a stability that cannot be
+taken back, so it is not something a heading should trigger by accident.
+
+`scripts/prepare_release.py` offers that number and Enter takes it. `docs-check` holds the file's
+shape on every run (`DOC011`), because a heading in the wrong shape is no longer a typo — it is a
+version that comes out wrong, or a release that cannot be cut at all.
 
 ### What you do
 
@@ -527,7 +554,7 @@ Three exit codes, and the middle one is the interesting one:
 `3` is separate from `2` on purpose. An unwritten changelog is a retry after work; a failing gate
 is a stop. One code for both teaches a caller to treat them the same.
 
-### What the button does### What the button does
+### What the button does
 
 In this order, writing nothing until every check has passed:
 
