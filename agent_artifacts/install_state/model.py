@@ -317,6 +317,38 @@ class InstallationRecord:
         return (str(self.coordinate), self.profile, self.scope)
 
 
+# Enough to act on; a manifest with dozens of clashes is one problem, not dozens.
+_CONTESTED_SHOWN = 5
+
+
+def _ownership_conflict(
+    contested: list[tuple[tuple[str, ...], list["InstallationRecord"]]],
+) -> str:
+    """Say which effect is contested and who contests it, not merely that the rule was broken.
+
+    The refusal itself is right: two installations owning one file means an upgrade to either can
+    silently undo the other, and the manifest would no longer describe the disk.  What was wrong
+    was the wording.  `installation effect ownership must be unique across the manifest` names no
+    file, no claimant and no remedy, so the only way to act on it was to read the manifest by hand.
+    """
+
+    lines = ["installation effect ownership must be unique across the manifest"]
+    for (_, destination, json_path, _identity, _memory), holders in contested[:_CONTESTED_SHOWN]:
+        where = f"{destination} -> {json_path}" if json_path else destination
+        lines.append(f"  {where}")
+        for holder in holders:
+            lines.append(f"    claimed by {holder.coordinate}  [profile {holder.profile}]")
+    remaining = len(contested) - _CONTESTED_SHOWN
+    if remaining > 0:
+        lines.append(f"  ... and {remaining} more contested effect(s)")
+    lines.append(
+        "Uninstall whichever of the two you no longer want, then install again.  Installing the "
+        "same artifact from a second source is the usual cause: the coordinates differ, so these "
+        "are two installations, but they write to one file."
+    )
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class InstallState:
     schema_version: int
@@ -330,21 +362,23 @@ class InstallState:
         ordered = tuple(sorted(self.installations, key=lambda item: item.key))
         if len({item.key for item in ordered}) != len(ordered):
             raise ValueError("installation identities must be unique")
-        effect_owners = tuple(
-            (
-                item.scope,
-                *effect.locator,
-                (
-                    str(item.artifact.identity)
-                    if item.artifact.identity.kind == "memory" and effect.kind == "managed-block"
-                    else ""
-                ),
-            )
-            for item in ordered
-            for effect in item.effects
-        )
-        if len(set(effect_owners)) != len(effect_owners):
-            raise ValueError("installation effect ownership must be unique across the manifest")
+        owners: dict[tuple[str, ...], list[InstallationRecord]] = {}
+        for item in ordered:
+            for effect in item.effects:
+                key = (
+                    item.scope,
+                    *effect.locator,
+                    (
+                        str(item.artifact.identity)
+                        if item.artifact.identity.kind == "memory"
+                        and effect.kind == "managed-block"
+                        else ""
+                    ),
+                )
+                owners.setdefault(key, []).append(item)
+        contested = [(key, holders) for key, holders in owners.items() if len(holders) > 1]
+        if contested:
+            raise ValueError(_ownership_conflict(contested))
         object.__setattr__(self, "installations", ordered)
 
 
