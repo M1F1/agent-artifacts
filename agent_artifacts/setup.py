@@ -1466,6 +1466,50 @@ def setup_retry_command(*, coordinate: str, profile: str, scope: str) -> str:
     )
 
 
+SETUP_QUEUE_PROMPT = "Run setup? [Y/s/n]: "
+"""The one question asked before a setup queue runs.  There is no second one by default."""
+
+SETUP_EFFECT_PROMPT = "Approve this exact effect? [y/N]: "
+"""Asked per step only after the operator asked to be asked.  See `setup_queue_choice`."""
+
+
+def setup_queue_question(*, artifacts: int, steps: int) -> Tuple[str, ...]:
+    """What is about to happen, in two lines, before the one question about it.
+
+    The wizard used to print every step in full and then ask whether to finalize the queue, and
+    then ask again about each step in turn.  That is a wall of text in front of someone who has
+    already decided -- they chose to install the artifact -- and reading all of it was the price
+    of answering any of it (`#113`).  The count is what a person needs to answer this question;
+    the detail is one keystroke away for anyone who wants it.
+    """
+
+    step_word = "step" if steps == 1 else "steps"
+    artifact_word = "artifact" if artifacts == 1 else "artifacts"
+    return (
+        f"Setup: {steps} {step_word} for {artifacts} {artifact_word}.",
+        "Enter runs them. Type s to see and approve each step, or n to stop.",
+    )
+
+
+def setup_queue_choice(answer: Optional[str]) -> str:
+    """Read the answer to `SETUP_QUEUE_PROMPT` as one of `run`, `show` or `stop`.
+
+    `None` is not an empty line: it is no terminal at all, and a queue that installed itself
+    because nobody was there to say otherwise is the one outcome this question must never have.
+    An answer nobody planned for stops as well -- the queue is repeatable, and a typo that runs
+    every step is worse than a typo that runs none.
+    """
+
+    if answer is None:
+        return "stop"
+    reply = answer.strip().casefold()
+    if reply in ("", "y", "yes", "run"):
+        return "run"
+    if reply in ("s", "show", "v", "verbose"):
+        return "show"
+    return "stop"
+
+
 _BANNER_MINIMUM_RULE = 6
 """Fewer dashes than this around a label is not a rule, so the banner changes shape instead."""
 

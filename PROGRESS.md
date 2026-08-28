@@ -84,7 +84,7 @@ A six-task queue, each task one commit, each gated on all ten quality gates befo
 |---|---|---|
 | 1 | Poetry builds the wheel; version reset to `0.0.1`; semantic versioning | **done** |
 | 2 | CI split for a protected `main`: PR check / release / cut-release | **done** |
-| 3 | Wizard and MCP install: one quick/verbose question (`#113`) | queued |
+| 3 | Wizard and MCP install: one quick/verbose question (`#113`) | **done** |
 | 4 | Delete stale documents; purge the old distribution name from docs | queued |
 | 5 | Generate `CHANGELOG.md` from the semantic version and the commits | queued |
 | 6 | Search over artifacts, in the CLI and in the TUI | queued |
@@ -164,6 +164,40 @@ every instance separately: protect `main` and require a pull request; require th
 `pr-check`; turn on "require branches to be up to date before merging". The third is not optional
 decoration — with `pr-check.yml` triggering on pull requests only, there is no post-merge run, so
 it is the only thing that catches two green pull requests that break `main` together.
+
+### Task 3: the setup queue asks one question (`#113`)
+
+Installing three MCP servers used to mean reading every step of every plan, answering
+`Finalize this setup queue? [y/N]`, and then answering `Approve this exact effect? [y/N]` once per
+step. The person had already decided — they chose to install the artifact — so every answer after
+the first was to a question that was already settled.
+
+There is now one question, and by default it is the only one:
+
+```
+Setup: 7 steps for 2 artifacts.
+Enter runs them. Type s to see and approve each step, or n to stop.
+Run setup? [Y/s/n]:
+```
+
+- **Enter runs it.** Each step says what it is as it happens. Reporting and asking permission are
+  two different things, and treating them as one is what made this screen frightening.
+- **`s` is the old screen**, unchanged: the full review first, then a question per step. It is
+  kept because the answer can genuinely be no when a step touches something the operator owns.
+- **`n`, an unrecognised answer, or no terminal at all stops.** A queue is repeatable, so a typo
+  that runs nothing is cheaper than a typo that runs everything, and `None` — end of input, nobody
+  there — must never mean yes.
+
+A quiet run still asks for anything a step needs. Those prompts come from the runtime, and nothing
+on this screen can or should answer them.
+
+**One decision worth naming: Enter now means run.** The old default was no. That is the change the
+issue asks for — the quiet path is the default — and the question is still asked, once, in plain
+words. Say so if you would rather it stayed the other way; it is one line.
+
+The command line already worked this way (`consent=lambda _effect: approved`), so the two surfaces
+now agree. `wizard.py`'s own wordiness is untouched: the issue also asks for shorter messages
+across the MCP screens, and that is a separate pass.
 
 ## Readable receipt (`2.6.0`, released)
 

@@ -87,6 +87,8 @@ from .reporting.projection import (
     usage_reports_by_registry_from_consumer,
 )
 from .setup import (
+    SETUP_EFFECT_PROMPT,
+    SETUP_QUEUE_PROMPT,
     advisory_messages,
     project_setup_review,
     recovery_messages,
@@ -95,6 +97,8 @@ from .setup import (
     render_setup_review,
     run_reload_reminders,
     setup_banner,
+    setup_queue_choice,
+    setup_queue_question,
     setup_retry_command,
 )
 from .sources.model import SourceIdentityTransition, SourceSyncOutcome
@@ -590,13 +594,10 @@ def _canonical_setup_run(
             for failure in queue.failures
         )
         return _CanonicalSetupRun(1 if queue.failures else 0, plan_failures)
-    write("Review setup queue (runs sequentially after installed payloads):")
     # Keyed by identity because one ``step_id`` is only unique inside its own plan, and every
     # plan stays referenced by ``queue.plans`` for the whole run.
     safe_effects = {}
     for plan in queue.plans:
-        for line in render_setup_review(plan.legacy_plan):
-            write(line)
         safe_effects.update(
             {
                 id(effect): rendered
@@ -607,8 +608,19 @@ def _canonical_setup_run(
                 )
             }
         )
-    answer = _read_line(read, "Finalize this setup queue? [y/N]: ")
-    if answer is None or answer.strip().lower() not in ("y", "yes"):
+    for line in setup_queue_question(
+        artifacts=len(queue.plans),
+        steps=sum(len(plan.legacy_plan.effects) for plan in queue.plans),
+    ):
+        write(line)
+    answer = _read_line(read, SETUP_QUEUE_PROMPT)
+    choice = setup_queue_choice(answer)
+    if choice == "show":
+        write("Review setup queue (runs sequentially after installed payloads):")
+        for plan in queue.plans:
+            for line in render_setup_review(plan.legacy_plan):
+                write(line)
+    if choice == "stop":
         write("Payload outcome: installed; installed payloads were not rolled back.")
         write("Setup remains pending.")
         for plan in queue.plans:
@@ -648,12 +660,27 @@ def _canonical_setup_run(
         return _CanonicalSetupRun(1, (*declined, *planning))
 
     def consent(effect) -> bool:
+        """Report each step, and ask about it only when the operator asked to be asked.
+
+        The two are different things, and treating them as one is what made this screen
+        frightening (`#113`): a person who has chosen to install an artifact has already decided
+        that its steps may run, so asking again per effect asks a question whose answer was
+        settled. It stays available -- `s` at the question above -- because the answer can
+        genuinely be no when a step touches something the operator owns.
+
+        Quiet or not, a step that needs a value still asks for it: that prompt comes from the
+        runtime, and nothing here can or should answer it.
+        """
+
         reviewed = safe_effects.get(id(effect))
+        if choice == "run":
+            write(f"  {reviewed.index}. {reviewed.identity}" if reviewed else "  running a step")
+            return True
         if reviewed is None:
             write("Approve this reviewed setup effect.")
         else:
             write(f"Approve {reviewed.index}. {reviewed.identity}. {reviewed.recovery}.")
-        decision = _read_line(read, "Approve this exact effect? [y/N]: ")
+        decision = _read_line(read, SETUP_EFFECT_PROMPT)
         return decision is not None and decision.strip().lower() in ("y", "yes")
 
     def announce(position: int, total: int, plan) -> None:

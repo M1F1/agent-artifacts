@@ -8,6 +8,8 @@ from dataclasses import replace
 
 from agent_artifacts.model import SetupQueueItem
 from agent_artifacts.setup import (
+    SETUP_EFFECT_PROMPT,
+    SETUP_QUEUE_PROMPT,
     manual_reference,
     parse_installer,
     plan_setup,
@@ -16,6 +18,8 @@ from agent_artifacts.setup import (
     render_setup_outcome,
     render_setup_review,
     setup_banner,
+    setup_queue_choice,
+    setup_queue_question,
 )
 from agent_artifacts.tui_layout import CONTENT_MEASURE
 from tests.credential_fixtures import assignment
@@ -259,6 +263,49 @@ class SetupReviewProjectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupQueueQuestionTests(unittest.TestCase):
+    """`#113`. One question before the queue runs, and it is the only one by default."""
+
+    def test_the_question_says_what_is_about_to_happen_in_two_lines(self):
+        self.assertEqual(
+            (
+                "Setup: 7 steps for 2 artifacts.",
+                "Enter runs them. Type s to see and approve each step, or n to stop.",
+            ),
+            setup_queue_question(artifacts=2, steps=7),
+        )
+
+    def test_one_of_each_is_written_as_one_of_each(self):
+        first, _options = setup_queue_question(artifacts=1, steps=1)
+
+        self.assertEqual("Setup: 1 step for 1 artifact.", first)
+
+    def test_the_prompts_name_their_defaults(self):
+        # The queue question runs on Enter; the per-step question, which is now opt-in, does not.
+        self.assertEqual("Run setup? [Y/s/n]: ", SETUP_QUEUE_PROMPT)
+        self.assertEqual("Approve this exact effect? [y/N]: ", SETUP_EFFECT_PROMPT)
+
+    def test_enter_runs_the_queue(self):
+        for answer in ("", "  ", "y", "Y", "yes", "run"):
+            with self.subTest(answer=answer):
+                self.assertEqual("run", setup_queue_choice(answer))
+
+    def test_s_asks_for_the_detail_and_for_a_question_per_step(self):
+        for answer in ("s", "S", "show", "v", "verbose", " show "):
+            with self.subTest(answer=answer):
+                self.assertEqual("show", setup_queue_choice(answer))
+
+    def test_no_stops_and_so_does_an_answer_nobody_planned_for(self):
+        for answer in ("n", "no", "q", "banana", "-"):
+            with self.subTest(answer=answer):
+                self.assertEqual("stop", setup_queue_choice(answer))
+
+    def test_no_terminal_is_not_an_empty_line(self):
+        """`None` is EOF -- nobody was there.  A queue that installs itself then must not."""
+
+        self.assertEqual("stop", setup_queue_choice(None))
 
 
 class SetupBoundaryTests(unittest.TestCase):
