@@ -90,6 +90,11 @@ jobs:
       # passing and verify seven checks fewer, which is why the checklist warns on every run that
       # skips and records `registry_reconciliation` in its receipt.
       REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
       # No `GH_HOST` here any more: the release action attaches the wheel through the REST API at
       # `GITHUB_API_URL`, which the runner sets to this instance.  `gh` defaulted to github.com,
       # so a fork that forgot `AART_GH_HOST` uploaded to the wrong instance -- a mistake the
@@ -122,6 +127,11 @@ jobs:
       AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
       AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
       REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout

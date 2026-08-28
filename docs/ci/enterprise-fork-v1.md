@@ -180,6 +180,8 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |
 | `AART_IMAGE_PASSWORD_SECRET` | unset | **Name** of the secret holding the image-registry password |
 | `AART_PIP_INDEX_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the index. Combined with `AART_PIP_INDEX_URL`, which stays a bare host |
+| `AART_INDEX_PUBLISH_URL` | unset | Upload endpoint of the index the wheel is published to, and the switch for whether it is published at all. Unset, the release attaches the wheel and stops there — which is what the public run does. See below |
+| `AART_INDEX_PUBLISH_CREDENTIALS_SECRET` | unset | **Name** of a secret holding `user:pass` for the publishing account. Note this is a *deploy* account, not the read-only one `AART_PIP_INDEX_CREDENTIALS_SECRET` names |
 
 ### The one variable with no default
 
@@ -198,6 +200,41 @@ So presence is the switch — the same shape `AART_IMAGE_USERNAME_SECRET` alread
 Actions cannot tell an unset variable from an empty one, which is why a default and an opt-out
 cannot both exist here. One of them had to go, and a default that only ever produces a failed
 clone is the one worth losing.
+
+### Publishing the wheel to an internal index
+
+A release attaches the wheel to the release page, and on github.com that is where it stops. Inside
+a company the wheel usually also belongs on the internal index, so that `pip install agent-artifacts`
+works the way every other internal package does.
+
+Set `AART_INDEX_PUBLISH_URL` to the upload endpoint of a **hosted** repository — a proxy or a group
+repository will refuse the upload, and say so. For Nexus that is the repository's own address:
+
+```
+https://nexus.corp/repository/pypi-internal/
+```
+
+Set `AART_INDEX_PUBLISH_CREDENTIALS_SECRET` to the *name* of a secret holding the publishing
+account and its token, separated by a colon. The value never appears in a variable, a workflow, or
+this page; the workflow re-masks each half before anything can echo one.
+
+| Set to | What a release does |
+|---|---|
+| an upload endpoint | attaches the wheel to the release **and** publishes it to that index |
+| unset | attaches the wheel and publishes nowhere — the public behaviour |
+
+Two details worth knowing before the first run:
+
+* It runs only when a release is actually published, never on a plain tag push. An index that
+  already holds a version refuses the second upload, and a run that did nothing wrong would fail.
+* Nothing here uses `twine`. This page records four steps that failed because they assumed a
+  program was installed — Make, then `gh`, then `curl` — on an image holding git, an interpreter
+  and nothing else. Uploading a wheel is one HTTP POST, so `scripts/publish_to_index.py` makes one,
+  against the standard library. It speaks the legacy upload API, which Nexus `pypi-hosted`,
+  Artifactory, devpi and PyPI itself all accept.
+
+Once the wheel is on the index, the `AART_PACKAGE` arm in a registry's own workflow becomes usable:
+a registry can install AART from the index rather than cloning it.
 
 The release checklist is an acceptance test, not a publication step: it runs the version being
 released against a real catalogue to prove the tool still operates one. A fork that keeps no
