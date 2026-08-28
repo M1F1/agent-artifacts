@@ -46,6 +46,15 @@ every fix made here rather than on their side: a fork must need no hand-edits.
   a zero major version promises nothing and `1.0.0` cannot be taken back. `docs-check` holds the
   file's shape (`DOC011`).
 - `scripts/version.py bump {major,minor,patch}`, so a version is computed rather than typed.
+- **`aart marketplace search WORD…`, and `/` in the TUI.** A catalog of any size is no longer a
+  list to page through: every word must match, so a second word narrows the answer, and matching
+  is case-insensitive substring over name, coordinate, summary and collection membership —
+  `review` finds `code-review`. In the curses list `/` filters live as you type, Enter keeps the
+  filter and Escape drops it; in the text fallback `/review` shows the matching rows and `/` alone
+  lists everything again. A filter only hides rows: what was ticked stays ticked, and every row
+  keeps the number it has in the full list, so a filtered selection cannot install its neighbour.
+  Ranking is one stated table in `agent_artifacts/marketplace/search.py`, and the runtime gains no
+  dependency for any of it.
 
 ### Removed
 

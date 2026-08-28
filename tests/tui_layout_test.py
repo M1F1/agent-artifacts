@@ -142,11 +142,16 @@ class StatusBarTests(unittest.TestCase):
         self.assertNotIn("·", bar)
 
     def test_counters_are_right_aligned_when_there_is_room(self):
-        bar = layout.status_bar(self.HINTS, counters=("2 selected", "5-12 of 48"), width=120)
+        counters = ("2 selected", "5-12 of 48")
+        # Derived from the hint table rather than fixed, so adding a key to the table changes what
+        # "room" means without turning this property into a failure about a number.
+        width = len(layout.status_bar(self.HINTS, counters=(), width=400)) + 40
+
+        bar = layout.status_bar(self.HINTS, counters=counters, width=width)
 
         self.assertTrue(bar.startswith("space=toggle"))
         self.assertTrue(bar.rstrip().endswith("5-12 of 48"))
-        self.assertLessEqual(len(bar), 120)
+        self.assertLessEqual(len(bar), width)
 
     def test_the_row_range_is_the_first_thing_dropped(self):
         counters = ("2 selected", "5-12 of 48")

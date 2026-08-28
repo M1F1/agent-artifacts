@@ -276,6 +276,43 @@ wrong, and a changelog of generated commit subjects is a changelog nobody reads.
 
 The `## Unreleased` section now holds this branch's six tasks, written as they landed.
 
+### Task 6: finding an artifact without reading the whole list
+
+`list` prints everything, which stops working at the size a company catalog reaches. The model is
+`npx skills`: you type, the list shrinks. It is one matcher, in
+`agent_artifacts/marketplace/search.py`, and three surfaces ask it rather than each inventing an
+answer — the runtime gains no dependency, because none is needed for substring matching.
+
+- **Every word must match.** `review python` finds what matches both. A second word narrowing the
+  answer is what a person typing a second word is trying to do.
+- **The order is a stated table**, not a feeling: a name that *is* the word (100), then a name that
+  starts with it (50), then a name that holds it (30), then the coordinate (20), the summary (10),
+  anything else (5). Summed over the words, ties keep catalog order, so two runs print one order.
+- **`aart marketplace search WORD…`**, beside `list`, with `--limit` and `--json`. The JSON says
+  the score and which fields matched. Fields are searched *after* redaction, so a query cannot
+  confirm one letter at a time a secret the output refuses to print.
+- **The curses list takes `/`** and narrows live as each key is typed; Enter keeps the filter and
+  hands the arrows back, Escape drops it. While the filter is open every printable key is a letter
+  of it — `q` types a q — so the status bar swaps to `enter=keep, esc=clear, bksp=erase` rather
+  than advertising keys that no longer do what they say.
+- **The text fallback takes `/review`** on the selection line, and `/` alone lists everything again.
+
+**The rule that everything here protects: a filter hides rows and does nothing else.** Rows keep
+the number they have in the full list, the cursor and every returned index address the caller's own
+list, and what was ticked stays ticked while it is hidden. A filtered view that renumbered its rows
+would install whichever artifact happened to sit at the number the person read.
+
+Two smaller decisions worth naming. **Typing moves the cursor onto the best match**, so one more
+letter and Enter takes the row the filter was narrowing towards; **dropping the filter leaves the
+cursor where it was**, because clearing a filter is not a reason to lose the row someone is looking
+at. And `tests/tui_layout_test.py` had one test asserting the status bar fits both counters at
+width 120 — one more hint in the canonical table made that false, so it now derives the width from
+the table instead of naming a number.
+
+Two things found and left alone: `_prompt_indices` in `tui.py` has no caller and no test (the live
+text prompt is `_prompt_wizard_indices`), and there is no keyword or tag field on an artifact, so
+search reaches only what a manifest already says.
+
 ## Readable receipt (`2.6.0`, released)
 
 - **Design:** [docs/design/DESIGN-readable-receipt.md](docs/design/DESIGN-readable-receipt.md)

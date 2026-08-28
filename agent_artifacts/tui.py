@@ -65,6 +65,7 @@ from .domain.result import Err as DomainErr
 from .domain.result import Ok as DomainOk
 from .domain.result import Result as DomainResult
 from .marketplace.model import MarketplaceCatalog
+from .marketplace.search import Document, search, summary_line
 from .model import (
     ArtifactType,
     Err,
@@ -1717,6 +1718,53 @@ _NOTHING_SELECTED = (
     "Nothing is selected yet. Enter number(s) between 1 and {count}, or 'q' to quit."
 )
 
+_KEEPS_ITS_NUMBER = (
+    "Each row keeps the number it has in the full list, so type the numbers shown. "
+    "'/' on its own lists everything again."
+)
+
+
+def _choice_documents(choices: Sequence[_Choice]) -> Tuple[Document, ...]:
+    """Each row as the text a person would type at it.
+
+    The name is what they half remember, the qualified key is what they paste, and the summary is
+    what they describe. The type goes in as well, so `/skill` is a way to see only skills without
+    a filter flag existing anywhere.
+    """
+
+    return tuple(
+        Document(
+            choice.name,
+            choice.qualified_key or choice.label,
+            choice.description,
+            (("type", choice.type),) if choice.type else (),
+        )
+        for choice in choices
+    )
+
+
+def _matching_rows(choices: Sequence[_Choice], query: str) -> Tuple[int, ...]:
+    """The rows matching ``query``, best first, named by their place in ``choices``.
+
+    Positions, never a renumbered list. The caller's indices address the basket, the availability
+    map and the install plan; a filtered view that renumbered its rows would let a person select
+    the artifact that happens to sit at the number they read.
+    """
+
+    return tuple(hit.index for hit in search(_choice_documents(choices), query))
+
+
+def _write_search(write: WriteFn, choices: Sequence[_Choice], query: str) -> None:
+    """Answer a ``/`` line: the matching rows, at their own numbers, and how many there were."""
+
+    matches = _matching_rows(choices, query)
+    width = shutil.get_terminal_size(fallback=(100, 24)).columns
+    for index in matches:
+        write(_text_choice_line(index + 1, choices[index], width))
+    write(summary_line(query, len(matches), len(choices)))
+    if matches and len(matches) < len(choices):
+        write(_KEEPS_ITS_NUMBER)
+
 
 def _prompt_wizard_indices(
     read: ReadFn,
@@ -1761,6 +1809,9 @@ def _prompt_wizard_indices(
                     write(line)
                 continue
             write(f"Enter ?N with a number between 1 and {len(choices)}.")
+            continue
+        if answer.startswith("/"):
+            _write_search(write, choices, answer[1:])
             continue
         parsed = _parse_indices(answer, len(choices))
         if parsed:
@@ -2151,7 +2202,10 @@ def _run_user_text_wizard(
             width = shutil.get_terminal_size(fallback=(200, 24)).columns
             for index, choice in enumerate(read_model.choices, start=1):
                 write(_text_choice_line(index, choice, width))
-            write("Enter ?N for details; blank keeps the current basket.")
+            write(
+                "Enter ?N for details, /TEXT to search by name, coordinate or summary; "
+                "blank keeps the current basket."
+            )
             selected = tuple(
                 index
                 for index, choice in enumerate(read_model.choices)
@@ -2161,7 +2215,7 @@ def _run_user_text_wizard(
             event = _prompt_wizard_indices(
                 read,
                 write,
-                "Selection (b=back, q=quit): ",
+                "Selection (/=search, b=back, q=quit): ",
                 read_model.choices,
                 selected=selected,
             )
@@ -3667,6 +3721,7 @@ def _curses_multi_event(
     reasons: Optional[Sequence[str]] = None,
     detail_for: Optional[Callable[[int], Sequence[str]]] = None,
     notice: str = "",
+    documents: Optional[Sequence[Document]] = None,
 ) -> WizardInput:
     cursor, scroll = _position(session, session.current)
     try:
@@ -3689,6 +3744,7 @@ def _curses_multi_event(
             reasons=reasons,
             detail_for=detail_for,
             notice=notice,
+            documents=documents,
         )
     except TypeError as error:
         if "unexpected keyword argument" not in str(error):
@@ -4496,6 +4552,7 @@ def _run_user_curses_wizard(
                 cells=tuple(choice.cells or (choice.label,) for choice in read_model.choices),
                 pane_for=functools.partial(_choice_pane, read_model.choices),
                 detail_for=functools.partial(_choice_detail, read_model.choices),
+                documents=_choice_documents(read_model.choices),
             )
             session = remember_position(
                 session, "artifacts", cursor=event.cursor, scroll=event.scroll
@@ -5434,6 +5491,7 @@ def _curses_multiselect(
     reasons: Optional[Sequence[str]] = None,
     detail_for: Optional[Callable[[int], Sequence[str]]] = None,
     notice: str = "",
+    documents: Optional[Sequence[Document]] = None,
 ):
     """A checkbox list, optionally returning explicit wizard navigation and position.
 
@@ -5441,6 +5499,13 @@ def _curses_multiselect(
     because moving the cursor onto a row and pressing Enter is the most natural gesture on a list
     and it used to end the session silently (D5). A disabled cursor row refuses and says why
     instead of leaving; only a list with no selectable row at all still returns nothing.
+
+    ``/`` starts a filter and every printable key after it narrows the list live; Enter keeps the
+    filter and hands the arrows back, Escape drops it. A filter hides rows, and hiding a row is
+    all it does: what was ticked stays ticked, and every index this function reports is a position
+    in the caller's own ``labels``, never in the filtered view. ``documents`` says what each row
+    is *about* -- name, coordinate, summary -- so a filter ranks the way `marketplace search` does;
+    without it the row's printed label is the text searched, which still matches but ranks flatly.
     """
     if not labels:
         return WizardInput("confirm") if wizard else ()
@@ -5451,34 +5516,71 @@ def _curses_multiselect(
         if 0 <= index < len(checked) and (disabled is None or not disabled[index]):
             checked[index] = True
     back_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8, ord("b")}
+    erase_keys = {getattr(curses, "KEY_BACKSPACE", -1), 127, 8}
     hints = _list_hints(
         toggle=True,
         back=wizard,
         details=details is not None,
         add=wizard and allow_add,
         maintain=wizard and allow_source_maintenance,
+        search=True,
     )
     selectable = disabled is None or not all(disabled)
+    corpus = (
+        tuple(documents)
+        if documents is not None
+        else tuple(Document(label, label) for label in labels)
+    )
+    query = ""
+    searching = False
+    # True while the query has just changed: the cursor then rides the best match, so typing one
+    # more letter and pressing Enter takes the row the filter was narrowing towards. Dropping the
+    # filter does not set it, because the row someone was looking at is still the row they were
+    # looking at.
+    snap = False
     while True:
+        view = _search_view(corpus, query)
+        if view and (snap or cursor not in view):
+            cursor = view[0]
+        snap = False
+        position = view.index(cursor) if view else 0
         scroll = _draw_list(
             curses,
             stdscr,
             title,
-            labels,
-            cursor,
-            checked,
-            disabled=disabled,
+            tuple(labels[index] for index in view),
+            position,
+            [checked[index] for index in view],
+            disabled=None if disabled is None else [disabled[index] for index in view],
             header=header,
             scroll=scroll,
-            hints=hints,
-            cells=cells,
-            pane_for=pane_for,
-            notice=notice,
+            hints=_SEARCH_HINTS if searching else hints,
+            cells=None if cells is None else tuple(cells[index] for index in view),
+            pane_for=(
+                None
+                if pane_for is None or not view
+                else functools.partial(_filtered_pane, pane_for, view)
+            ),
+            notice=notice or _search_notice(query, len(view), len(labels), searching),
         )
         notice = ""
         ch = stdscr.getch()
+        if searching:
+            # Every printable key is a letter of the query while the filter is open, so nothing
+            # here may fall through to the bindings below: `q` types a q, `b` types a b.
+            if ch == 27:  # ESC drops the filter and the search together
+                query, searching, scroll = "", False, 0
+            elif ch in (curses.KEY_ENTER, 10, 13):
+                searching = False  # keep what is on screen, hand the arrows back
+            elif ch in erase_keys:
+                query, scroll, snap = query[:-1], 0, True
+            elif 32 <= ch < 127:
+                query, scroll, snap = query + chr(ch), 0, True
+            continue
         if ch in (ord("q"), 27):  # q / ESC
             return WizardInput("quit", cursor=cursor, scroll=scroll) if wizard else None
+        elif ch == ord("/"):
+            searching, scroll = True, 0
         elif wizard and ch in back_keys:
             return WizardInput("back", cursor=cursor, scroll=scroll)
         elif wizard and allow_add and ch in (ord("a"), ord("A")):
@@ -5490,26 +5592,30 @@ def _curses_multiselect(
             return WizardInput("resubscribe", (cursor,), cursor=cursor, scroll=scroll)
         elif wizard and allow_source_maintenance and ch in (ord("r"), ord("R")):
             return WizardInput("remove", (cursor,), cursor=cursor, scroll=scroll)
-        elif ch in (curses.KEY_UP, ord("k")):
-            cursor = (cursor - 1) % len(labels)
-        elif ch in (curses.KEY_DOWN, ord("j")):
-            cursor = (cursor + 1) % len(labels)
-        elif ch == ord(" "):
+        elif ch in (curses.KEY_UP, ord("k")) and view:
+            cursor = view[(position - 1) % len(view)]
+        elif ch in (curses.KEY_DOWN, ord("j")) and view:
+            cursor = view[(position + 1) % len(view)]
+        elif ch == ord(" ") and view:
             if disabled is None or not disabled[cursor]:
                 checked[cursor] = not checked[cursor]
-        elif ch == ord("?") and detail_for is not None:
+        elif ch == ord("?") and detail_for is not None and view:
             _draw_detail(curses, stdscr, labels[cursor], record=tuple(detail_for(cursor)))
-        elif ch == ord("?") and details is not None and cursor < len(details):
+        elif ch == ord("?") and details is not None and view and cursor < len(details):
             _draw_detail(curses, stdscr, labels[cursor], details[cursor])
         elif ch in (curses.KEY_ENTER, 10, 13):
+            # Over every row, not the filtered ones: a filter hides rows, it never unticks them.
             selected = tuple(i for i, on in enumerate(checked) if on)
             if not selected and selectable:
+                if not view:
+                    notice = _NOTHING_MATCHES.format(query=query)
+                    continue
                 if disabled is not None and disabled[cursor]:
                     notice = _refusal(reasons, cursor)
                     continue
                 selected = (cursor,)
             return (
-                WizardInput("confirm", selected, cursor=cursor, scroll=scroll)
+                WizardInput("confirm", selected, cursor=cursor, scroll=0 if query else scroll)
                 if wizard
                 else selected
             )
@@ -5618,8 +5724,46 @@ def _refusal(reasons: Optional[Sequence[str]], cursor: int) -> str:
     return f"cannot select this row: {reason}" if reason else "this row cannot be selected"
 
 
+_NOTHING_MATCHES = "Nothing matches {query!r}. Press / to change the filter."
+
+_SEARCH_HINTS: Tuple[Tuple[str, str], ...] = (
+    ("enter", "keep"),
+    ("esc", "clear"),
+    ("bksp", "erase"),
+)
+"""The bar while a filter is being typed. Every other key is a letter, so no other key is offered."""
+
+
+def _filtered_pane(pane_for, view: Sequence[int], position: int, width: int) -> Sequence[str]:
+    """The pane for the row at ``position`` of a filtered view, asked for by its real index."""
+
+    return pane_for(view[position], width)
+
+
+def _search_view(corpus: Sequence[Document], query: str) -> Tuple[int, ...]:
+    """Which rows a filter leaves, best first; every row when nothing is typed."""
+
+    return tuple(hit.index for hit in search(corpus, query))
+
+
+def _search_notice(query: str, matches: int, total: int, searching: bool) -> str:
+    """The one line under the title while a filter is being typed or is being held."""
+
+    if searching:
+        return f"/{query}   {summary_line(query, matches, total)}"
+    if query:
+        return f"filter {query!r}   {summary_line(query, matches, total)}   /=change"
+    return ""
+
+
 def _list_hints(
-    *, toggle: bool, back: bool, details: bool, add: bool, maintain: bool = False
+    *,
+    toggle: bool,
+    back: bool,
+    details: bool,
+    add: bool,
+    maintain: bool = False,
+    search: bool = False,
 ) -> Tuple[Tuple[str, str], ...]:
     """The canonical hint table filtered down to the keys this screen actually accepts (D2)."""
 
@@ -5628,6 +5772,7 @@ def _list_hints(
         "enter": True,
         "b": back,
         "?": details,
+        "/": search,
         "a": add,
         "s": maintain,
         "i": maintain,

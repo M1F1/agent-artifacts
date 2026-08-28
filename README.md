@@ -135,6 +135,29 @@ authoritative selected set.
 An artifact can declare `requires`. Direct install and update calculate a deterministic transitive
 closure before review; an unavailable or conflicting dependency cannot create a partial install.
 
+### Finding an artifact without reading the whole list
+
+`list` prints everything. On a catalog of any size, the way to find one artifact is to type part
+of it:
+
+```sh
+aart marketplace search review
+aart marketplace search review python --json
+```
+
+Every word must match, so a second word narrows the answer rather than widening it. Matching is
+case-insensitive substring over the name, the coordinate, the summary, and collection membership:
+`review` finds `code-review`. The best matches come first -- a name that *is* the word, then a
+name that starts with it, then a name that holds it, then a coordinate, then a summary -- and rows
+that tie keep catalog order, so two runs over one catalog print one order. The coordinate printed
+is the one `install` takes.
+
+The TUI searches the same way. In the list of artifacts press `/` and keep typing: the list
+narrows as you type, Enter keeps the filter and hands the arrows back, Escape drops it. In the
+text fallback the same thing is a line: `/review` shows the matching rows, `/` on its own lists
+everything again. A filter only hides rows -- what was ticked stays ticked, and every row keeps
+the number it has in the full list.
+
 ## MCP setup and credentials
 
 A v2 recipe and its package-root `SETUP.md` are compiled before AART plans an installation effect.
@@ -374,7 +397,7 @@ payload-free consumer projection. Both are generated and must pass their gates b
 
 ```text
 aart source add|list|sync|health
-aart marketplace list|health|install|update|uninstall|status|setup
+aart marketplace list|search|health|install|update|uninstall|status|setup
 aart registry init|scaffold|collection|discover|vendor|vendor-batch|revendor|promote-native|refresh-native|lock|build|validate|audit|publish|diff
 aart security scan|show|verify|analyzers|suites
 aart reporting validate-event|validate-issue|aggregate

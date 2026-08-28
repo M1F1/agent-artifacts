@@ -56,6 +56,7 @@ from agent_artifacts.consumer.runtime_requirements import (
 from agent_artifacts.domain.diagnostics import Diagnostic, Severity, diagnostic_to_data
 from agent_artifacts.domain.result import Err, Ok, Result
 from agent_artifacts.marketplace.catalog import marketplace_catalog_bytes, render_marketplace
+from agent_artifacts.marketplace.search import Document, search, summary_line
 from agent_artifacts.model import Request, SetupManualReference
 from agent_artifacts.protocol.json import canonical_json_bytes
 from agent_artifacts.protocol.native_schema import parse_artifact_manifest
@@ -70,6 +71,7 @@ from agent_artifacts.receipt_service import (
     unsupported_action,
     verify_view,
 )
+from agent_artifacts.redaction import redact_text
 from agent_artifacts.reporting.application import ReportingApplicationService
 from agent_artifacts.reporting.model import ReportingPlan
 from agent_artifacts.reporting.projection import (
@@ -100,6 +102,7 @@ from agent_artifacts.store.model import ObjectReadRequest
 from ._configured_runtime import load_runtime_configuration
 
 _LIST_OPERATION = "marketplace.list"
+_SEARCH_OPERATION = "marketplace.search"
 _HEALTH_OPERATION = "marketplace.health"
 _MAX_ENVIRONMENT_BYTES = 1024 * 1024
 
@@ -343,6 +346,119 @@ def _list(request: Request) -> int:
     else:
         rendered = render_marketplace(catalog.value, executable_version=EXECUTABLE_VERSION)
         print(rendered, end="") if rendered else print("No marketplace artifacts are available.")
+    return _common.OK
+
+
+def _search_rows(catalog) -> tuple[tuple[Document, ...], tuple[dict, ...]]:
+    """The catalog as searchable text, and the row each piece of text stands for.
+
+    Every field searched is the redacted field, so what can be found is exactly what can be
+    printed. Searching the unredacted text would let a query confirm, one letter at a time, a
+    secret the output refuses to show.
+    """
+
+    documents: list[Document] = []
+    rows: list[dict] = []
+    for item in catalog.items:
+        artifact = item.artifact.artifact
+        summary = redact_text(artifact.summary)
+        documents.append(
+            Document(
+                item.coordinate.artifact.name,
+                str(item.coordinate),
+                summary,
+                (("collections", " ".join(artifact.collections)),) if artifact.collections else (),
+            )
+        )
+        rows.append(
+            {
+                "coordinate": str(item.coordinate),
+                "kind": "artifact",
+                "summary": summary,
+                "trust": item.trust.kind.value,
+                "source": item.source.alias.value,
+            }
+        )
+    for collection in catalog.collections:
+        summary = redact_text(collection.summary)
+        members = tuple(str(member) for member in collection.members)
+        documents.append(
+            Document(
+                collection.coordinate.name,
+                str(collection.coordinate),
+                summary,
+                (("members", " ".join(members)),),
+            )
+        )
+        rows.append(
+            {
+                "coordinate": str(collection.coordinate),
+                "kind": "collection",
+                "summary": summary,
+                "members": list(members),
+            }
+        )
+    return tuple(documents), tuple(rows)
+
+
+def _search(request: Request) -> int:
+    runtime = load_runtime_configuration(request, content_required=True)
+    if isinstance(runtime, Err):
+        return _emit_error(request, runtime, _SEARCH_OPERATION)
+    catalog = load_read_only_marketplace(
+        runtime.value.loaded.effective,
+        data_root=runtime.value.paths.data_root,
+        observe_freshness=not request.offline,
+    )
+    if isinstance(catalog, Err):
+        return _emit_error(request, catalog, _SEARCH_OPERATION)
+
+    query = " ".join(request.query)
+    documents, rows = _search_rows(catalog.value)
+    limit = request.search_limit
+    if limit is not None and limit < 1:
+        return _emit_error(
+            request,
+            _invalid(
+                "--limit is a count of rows to print, so it is at least 1",
+                "drop --limit to print every match",
+            ),
+            _SEARCH_OPERATION,
+        )
+    hits = search(documents, query, limit=limit)
+
+    if request.json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "ok": True,
+                    "operation": _SEARCH_OPERATION,
+                    "aart_version": str(EXECUTABLE_VERSION),
+                    "query": query,
+                    "searched": len(documents),
+                    "matches": [
+                        {
+                            **rows[hit.index],
+                            "score": hit.score,
+                            "matched": list(hit.matched),
+                        }
+                        for hit in hits
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return _common.OK
+
+    print(summary_line(query, len(hits), len(documents)))
+    for hit in hits:
+        row = rows[hit.index]
+        marker = "[collection]" if row["kind"] == "collection" else f"[{row['trust']}]"
+        where = f" ({', '.join(hit.matched)})" if hit.matched else ""
+        print(f"  {row['coordinate']} {marker} {row['summary']}{where}")
+    if not hits:
+        print("Try one word, or part of one: matching is by substring, not by whole word.")
     return _common.OK
 
 
@@ -1078,6 +1194,8 @@ def run(request: Request) -> int:
         return _receipt(request)
     if request.marketplace_action == "list":
         return _list(request)
+    if request.marketplace_action == "search":
+        return _search(request)
     if request.marketplace_action == "health":
         return _health(request)
     if request.marketplace_action in _LIFECYCLE_ACTIONS:
