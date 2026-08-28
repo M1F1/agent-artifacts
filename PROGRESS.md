@@ -85,7 +85,7 @@ A six-task queue, each task one commit, each gated on all ten quality gates befo
 | 1 | Poetry builds the wheel; version reset to `0.0.1`; semantic versioning | **done** |
 | 2 | CI split for a protected `main`: PR check / release / cut-release | **done** |
 | 3 | Wizard and MCP install: one quick/verbose question (`#113`) | **done** |
-| 4 | Delete stale documents; purge the old distribution name from docs | queued |
+| 4 | Delete stale documents; purge the old distribution name from docs | **done, smaller than asked** |
 | 5 | Generate `CHANGELOG.md` from the semantic version and the commits | queued |
 | 6 | Search over artifacts, in the CLI and in the TUI | queued |
 
@@ -198,6 +198,50 @@ words. Say so if you would rather it stayed the other way; it is one line.
 The command line already worked this way (`consent=lambda _effect: approved`), so the two surfaces
 now agree. `wizard.py`'s own wordiness is untouched: the issue also asks for shorter messages
 across the MCP screens, and that is a separate pass.
+
+### Task 4: the purge, and why it is 14 documents and not 34
+
+The instruction was to delete the 34 documents with no inbound link and keep whatever hangs on an
+unresolved problem. Counting again, more carefully, changed the number: **20 of those 34 are named
+by a document that stays**, in prose rather than in a link, which my first count did not see.
+
+- `docs/testing/residue-register.md` — the authoritative ledger — cites four of them as the
+  evidence for its findings: `github-release-v2.5.0.md`, `github-release-v2.6.0.md`,
+  `PROGRESS-live-acceptance-v12.md`, `PROGRESS-live-acceptance-v13.md`.
+- `tests/quality_gates_test.py` names `github-release-v2.5.0.md` three times. Deleting it fails a
+  gate.
+- Two plans cite `github-release-v2.4.0.md` and `schema-freeze-v12.json`.
+- The rest are cited by other records that stay: a `compatibility-v*.md` names the schema freeze it
+  was compared against, and a reader following that name would find nothing.
+
+So **14 documents were deleted** — the ones nothing at all refers to — and the other 20 stayed. The
+full list of what stayed and why is above; say which of them you want gone anyway and they can go
+in one commit, but each one costs a kept document a reference it can no longer follow.
+
+Deleted: `compatibility-v6.md`, `compatibility-v11.md`, `github-release-v1.1.1.md`,
+`github-release-v1.2.0.md`, `github-release-v1.3.0.md`, `github-release-v1.3.1.md`,
+`github-release-v1.4.0.md`, `github-release-v2.1.0.md`, `github-release-v2.2.0.md`,
+`github-release-v2.3.0.md`, `schema-freeze-v6.json`, `schema-freeze-v16.json`,
+`schema-freeze-v17.json`, `PROGRESS-mcp-secret-join.md`.
+
+**The distribution name was already almost gone**, because task 1 renamed it everywhere it is an
+instruction. What was left was stale rather than merely misnamed, and it was in the two documents
+a newcomer reads first:
+
+- `README.md` told a developer to run `pip install -e ".[dev]"`. That extra no longer exists — the
+  tools moved into Poetry's dev group — so the command a developer was given fails. It now gives
+  both routes and says which one CI uses.
+- The same section still listed `setuptools` and `wheel` as required tools and claimed the wheel
+  builder is stdlib. Neither is true since task 1.
+- `docs/design/DESIGN.md` still declared the distribution name to be `agent-artifacts` and told
+  pip to install that name.
+- The README's title was `agent-artifacts`, which is the repository's name and also the name of a
+  **different project on PyPI** — the one that was installed here by mistake. The title is now
+  `AART`, and the three names are separated in the first paragraph.
+
+Records are not rewritten. A live-acceptance document saying it measured
+`agent_artifacts-2.6.0-py3-none-any.whl` is stating what happened; changing it to `aart_cli` would
+make it say something that never did.
 
 ## Readable receipt (`2.6.0`, released)
 

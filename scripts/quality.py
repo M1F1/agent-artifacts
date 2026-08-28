@@ -199,9 +199,13 @@ def _run(selected: tuple[str, ...], temp_root: Path) -> int:
             f"missing developer tool(s): {', '.join(absent)}\n"
             f"The installed runtime has no dependencies; these are the gates' own tools.\n"
             "  poetry install --with dev\n"
-            "Behind an internal index, add --index-url. Four gates -- unit, integration, "
-            "validate,\ndocs-check -- need none of them and can be run alone: "
-            f"{sys.executable} scripts/quality.py unit",
+            # The second route is not a fallback for people without Poetry: it is what CI runs.
+            # Poetry takes an install source only from a block inside pyproject.toml, so it cannot
+            # be pointed at a per-fork internal index; pip reads PIP_INDEX_URL and always could.
+            f"  {sys.executable} scripts/dev_tools.py install"
+            "   (the same pinned versions, installed with pip, which reads PIP_INDEX_URL)\n"
+            "Four gates -- unit, integration, validate, docs-check -- need none of them and can "
+            f"be run alone:\n  {sys.executable} scripts/quality.py unit",
             file=sys.stderr,
         )
         return 2
