@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import re
 import shutil
@@ -46,7 +47,7 @@ def _fixture_root(raw: str, *, version: str = "0.1.48", complete: bool = False) 
         encoding="utf-8",
     )
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "agent-artifacts"\nversion = "{version}"\ndependencies = []\n',
+        f'[project]\nname = "aart-cli"\nversion = "{version}"\ndependencies = []\n',
         encoding="utf-8",
     )
     state = "complete" if complete else "pending"
@@ -85,6 +86,35 @@ class VersionValueTest(unittest.TestCase):
             )
         with self.assertRaises(versioning.VersionError):
             versioning.finalize_candidate(versioning.parse_version("1.0.0"))
+
+
+class SemanticBumpTest(unittest.TestCase):
+    """`bump` is what makes the versioning semantic: the step is named, not typed as a literal."""
+
+    def test_each_named_step_advances_the_right_field_and_zeroes_the_rest(self):
+        versioning = _load_script("version")
+        current = versioning.parse_version("1.4.2")
+        expected = {"major": "2.0.0", "minor": "1.5.0", "patch": "1.4.3"}
+        for part, result in expected.items():
+            with self.subTest(part=part):
+                self.assertEqual(str(versioning.next_release(current, part)), result)
+
+    def test_a_prerelease_is_sent_to_finalize_rather_than_bumped_past(self):
+        """`1.2.0a3` is already on its way to `1.2.0`; bumping it would skip its own release."""
+
+        versioning = _load_script("version")
+        with self.assertRaises(versioning.VersionError) as caught:
+            versioning.next_release(versioning.parse_version("1.2.0a3"), "patch")
+        self.assertIn("finalize", str(caught.exception))
+
+    def test_an_unknown_step_is_refused_by_name(self):
+        versioning = _load_script("version")
+        with self.assertRaises(versioning.VersionError):
+            versioning.next_release(versioning.parse_version("1.0.0"), "revision")
+
+    def test_the_command_refuses_to_write_without_being_told_to(self):
+        versioning = _load_script("version")
+        self.assertEqual(versioning.main(("bump", "minor")), 1)
 
 
 class VersionFilesTest(unittest.TestCase):
@@ -202,6 +232,100 @@ class VersionFilesTest(unittest.TestCase):
             versioning.validate_tag(complete, "v1.0.0", stable)
 
 
+versioning_module = _load_script("version")
+
+
+class MirroredVersionTest(unittest.TestCase):
+    """The version lives in three files and is quoted in two more.
+
+    `scripts/release.py` pins the release checklist to a literal, and the README publishes install
+    commands naming an exact wheel.  Bumping by hand meant editing more than twenty occurrences,
+    and a bump that missed one failed the gates with a message about a wheel name rather than about
+    a missed edit -- which is exactly how this was found, on a 2.8.6 dry run.
+    """
+
+    def test_set_rewrites_the_files_that_only_quote_the_version(self) -> None:
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.5", complete=True)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "release.py").write_text(
+                'EXPECTED_VERSION = "2.8.5"\nDOC = "github-release-v2.8.5.md"\n',
+                encoding="utf-8",
+            )
+            (root / "README.md").write_text(
+                "pipx install ./aart_cli-2.8.5-py3-none-any.whl\n",
+                encoding="utf-8",
+            )
+
+            touched = versioning.write_version(root, versioning.parse_version("2.8.6"))
+
+            self.assertEqual(touched, ("scripts/release.py", "README.md"))
+            self.assertIn(
+                'EXPECTED_VERSION = "2.8.6"',
+                (root / "scripts" / "release.py").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "aart_cli-2.8.6-py3-none-any.whl",
+                (root / "README.md").read_text(encoding="utf-8"),
+            )
+
+    def test_the_freeze_carries_the_version_so_stale_means_a_schema_moved(self) -> None:
+        """The freeze's digests are a tripwire; the version in it was resetting the tripwire.
+
+        `release_version` sits in the same document as the schema digests, so a plain version bump
+        made the whole thing stale and the fix was `freeze --write` -- every release, unread. A
+        tripwire reset by routine catches nothing. With the version mirrored, `schema-freeze-stale`
+        again means what it says.
+        """
+
+        release = _load_script("release")
+        frozen = json.loads((ROOT / release.SCHEMA_FREEZE_PATH).read_text(encoding="utf-8"))
+        self.assertEqual(frozen["release_version"], str(versioning_module.read_version(ROOT)))
+        mirrors = _load_script("version")._MIRRORS
+        self.assertIn(release.SCHEMA_FREEZE_PATH, tuple(mirror.relative for mirror in mirrors))
+
+    def test_a_tree_whose_mirrors_were_left_behind_can_still_be_repaired(self) -> None:
+        """The state the tool most needed to fix was the one state it refused to touch.
+
+        Bump the three home files without the mirrors -- by hand, or with a run that stopped
+        early -- and re-running `set` on the version already there did nothing, because the
+        rewrite keyed on a previous value that had already gone.  Each mirror now names the
+        version it records, so the repair needs no memory of what came before.
+        """
+
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.6", complete=True)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "release.py").write_text(
+                'EXPECTED_VERSION = "2.8.5"\nDOC = "github-release-v2.8.5.md"\n', encoding="utf-8"
+            )
+            (root / "README.md").write_text(
+                "pipx install ./aart_cli-2.8.5-py3-none-any.whl\n", encoding="utf-8"
+            )
+
+            said = versioning.check_version(root)
+            self.assertTrue(any("scripts/release.py records 2.8.5" in line for line in said))
+            self.assertTrue(any("README.md records 2.8.5" in line for line in said))
+            self.assertIn("python scripts/version.py set 2.8.6 --write", said[-1])
+
+            touched = versioning.write_version(root, versioning.parse_version("2.8.6"))
+
+            self.assertEqual(touched, ("scripts/release.py", "README.md"))
+            self.assertEqual(versioning.check_version(root), ())
+            self.assertNotIn("2.8.5", (root / "README.md").read_text(encoding="utf-8"))
+
+    def test_a_root_without_them_is_not_a_version_error(self) -> None:
+        """A fixture directory is not a repository, and a missing README is not a mismatch."""
+
+        versioning = _load_script("version")
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, version="2.8.5", complete=True)
+            self.assertEqual(versioning.write_version(root, versioning.parse_version("2.8.6")), ())
+            self.assertEqual(str(versioning.read_version(root)), "2.8.6")
+
+
 class RepositoryReleaseContractTest(unittest.TestCase):
     def test_repository_version_matches_its_release_contract(self):
         """The tree is at the exact stable version its release contract governs.
@@ -259,7 +383,7 @@ class RepositoryReleaseContractTest(unittest.TestCase):
             build.ROOT = target
             self.assertEqual(build.main(), 0)
             version = str(versioning.read_version(ROOT))
-            wheel = target / "dist" / f"agent_artifacts-{version}-py3-none-any.whl"
+            wheel = target / "dist" / f"aart_cli-{version}-py3-none-any.whl"
             self.assertTrue(wheel.is_file(), wheel)
             with zipfile.ZipFile(wheel) as archive:
                 metadata_name = next(

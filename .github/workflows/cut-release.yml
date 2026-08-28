@@ -1,0 +1,91 @@
+name: cut release
+
+# The whole release, behind one button: Actions -> cut release -> Run workflow -> type the version.
+#
+# Everything a human genuinely decides -- which version, and what the notes say -- is decided
+# before this runs, in an ordinary reviewed change on `main`. This workflow does the mechanical
+# half that used to be eight commands typed in order, where typing them in order was the only
+# thing holding the order together.
+#
+# It writes nothing until every precondition passes, so a run produces a tag and a release or it
+# produces neither. Publishing the release then fires `release.yml`, which builds the wheel and
+# attaches it -- one builder of release artifacts, not two that can disagree.
+#
+# Portable to a GitHub Enterprise Server fork by setting repository variables only, like the other
+# two workflows. The job appears twice for the reason pr-check.yml records: a container's
+# `credentials` block cannot be conditional, so the condition moves to the job.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to cut, without the leading v (for example 2.9.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write  # creates the tag and the release
+
+# Poetry builds the wheel and installs the developer tooling.  An image that keeps Poetry off
+# `PATH` -- `/opt/poetry/bin/poetry` is the common shape -- names it in this variable instead;
+# unset, every step falls back to plain `poetry`.  See docs/ci/enterprise-fork-v1.md.
+env:
+  AART_POETRY: ${{ vars.AART_POETRY }}
+
+jobs:
+  cut:
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/cut-release
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          version: ${{ inputs.version }}
+
+  cut-private-image:
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/cut-release
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          version: ${{ inputs.version }}

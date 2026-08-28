@@ -13,6 +13,7 @@ from __future__ import annotations
 import unittest
 
 from agent_artifacts.security import BaselineScanRequest, assess_installation_risk
+from tests.credential_fixtures import access_token
 from tests.security_baseline_test import _fixture
 
 _PAYLOAD = ("payload/SKILL.md", b"# Review\n", False)
@@ -74,7 +75,7 @@ class ABuildFileIsReadTest(unittest.TestCase):
         findings = _rule_ids(
             (
                 "payload/Dockerfile",
-                b"FROM debian:12\nENV API_TOKEN=ghp_0123456789abcdefghijklmnopqrstuvwx\n",
+                b"FROM debian:12\nENV API_TOKEN=" + access_token().encode("utf-8") + b"\n",
                 False,
             )
         )

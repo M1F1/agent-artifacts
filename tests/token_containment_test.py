@@ -55,12 +55,13 @@ from agent_artifacts.setup_verify import (
     verification_payload,
     verify_claims,
 )
+from tests.credential_fixtures import access_token, credential_url
 from tests.setup_docker_build_test import queue_item
 from tests.setup_fixtures import recipe
 
 # One planted value per shape the redactor recognises, each distinctive enough that a substring
 # search cannot match it by accident. Named for where a real run would meet them.
-IN_A_TRANSCRIPT = "ghp_planted16charstranscript01"
+IN_A_TRANSCRIPT = access_token("planted16charstranscript01")
 IN_A_CLONE_URL = "planted-clone-url-secret-02"
 IN_AN_ASSIGNMENT = "planted-assignment-secret-03"
 IN_A_QUERY_STRING = "planted-query-string-secret-04"
@@ -71,7 +72,9 @@ PLANTED = (IN_A_TRANSCRIPT, IN_A_CLONE_URL, IN_AN_ASSIGNMENT, IN_A_QUERY_STRING)
 # one of them has a name sitting next to it.
 TRANSCRIPT = (
     f"fatal: authentication failed for {IN_A_TRANSCRIPT}\n"
-    f"remote: https://oauth2:{IN_A_CLONE_URL}@ghe.example.test/team/repo.git\n"
+    "remote: "
+    + credential_url("ghe.example.test", "/team/repo.git", user="oauth2", held=IN_A_CLONE_URL)
+    + "\n"
     f"COMPANY_GHE_TOKEN={IN_AN_ASSIGNMENT}\n"
     f"tried https://ghe.example.test/api/v3?access_token={IN_A_QUERY_STRING}\n"
 )
@@ -400,7 +403,13 @@ class RecordedTokenIsReportedTest(unittest.TestCase):
             profile="claude",
             scope="user",
             status="configured",
-            detail=f"cloned https://oauth2:{IN_A_TRANSCRIPT}@ghe.example.test/team/repo.git",
+            detail="cloned "
+            + credential_url(
+                "ghe.example.test",
+                "/team/repo.git",
+                user="oauth2",
+                held=IN_A_TRANSCRIPT,
+            ),
             plan_hash="a" * 64,
         )
         probes = VerificationProbes(

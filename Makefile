@@ -1,14 +1,15 @@
 # agent-artifacts — build & validation tasks (WP-21).
 #
-# Zero runtime deps; build tooling is stdlib-only (no setuptools / wheel / build needed
-# for the offline path). The wheel produced by `make wheel` installs with:
-#     pip install --no-index dist/agent_artifacts-<v>-py3-none-any.whl
+# Zero runtime deps. Poetry builds the wheel and installs the developer tooling; nothing it
+# installs reaches the runtime, which stays standard-library only. The wheel produced by
+# `make wheel` still installs with no index at all:
+#     pip install --no-index dist/aart_cli-<v>-py3-none-any.whl
 
 PYTHON ?= python
 REGISTRY ?=
 QUALITY = $(PYTHON) scripts/quality.py
 
-.PHONY: test unit integration system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
+.PHONY: test unit integration system-matrix release-freeze release-check wheel validate clean lint format format-check typecheck coverage packaging-check docs-check secret-shape-check quality version-check version-show version-next-alpha version-bump-alpha version-finalize version-set
 
 # Aggregate. The Python discovery is the broad unit/regression gate; integration is end to end.
 test: unit integration
@@ -29,7 +30,7 @@ release-check:
 	@test -n "$(REGISTRY)" || (echo "REGISTRY=/path/to/agent-artifacts-registry is required" >&2; exit 2)
 	$(PYTHON) scripts/release.py check --registry "$(REGISTRY)"
 
-# Stamp the git commit, then build the stdlib wheel into dist/.
+# Stamp the git commit, then build the wheel into dist/ with Poetry.
 wheel:
 	$(PYTHON) scripts/inject_commit.py
 	$(PYTHON) scripts/build_wheel.py
@@ -38,7 +39,7 @@ validate:
 	$(QUALITY) validate
 
 # --------------------------------------------------------------------------- #
-# Optional developer tooling. Requires the dev extra:  pip install -e ".[dev]"
+# Optional developer tooling. Requires Poetry's dev group:  poetry install --with dev
 # These are developer/CI dependencies only; the installed runtime stays stdlib-only.
 # --------------------------------------------------------------------------- #
 lint:
@@ -61,6 +62,9 @@ packaging-check:
 
 docs-check:
 	$(QUALITY) docs-check
+
+secret-shape-check:
+	$(QUALITY) secret-shape-check
 
 quality:
 	$(QUALITY)

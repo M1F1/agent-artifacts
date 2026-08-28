@@ -16,6 +16,7 @@ from agent_artifacts.sources.model import (
     SourceValidationRequest,
 )
 from agent_artifacts.sources.validation import validate_source_candidate
+from tests.credential_fixtures import secret_field
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "protocol" / "native-source-v1"
 
@@ -70,7 +71,9 @@ class SourceValidationTest(unittest.TestCase):
     def test_corrupt_source_marker_is_rejected_without_mutating_acquired_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             marker = Path(root) / "aart-source.json"
-            marker.write_bytes(b'{"schema_version":1,"token":"secret"')
+            marker.write_bytes(
+                b'{"schema_version":1,' + secret_field("token", "secret").encode("utf-8")
+            )
             candidate = _candidate(Path(root))
             before = candidate.snapshot
 

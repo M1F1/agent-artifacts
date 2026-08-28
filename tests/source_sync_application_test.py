@@ -40,6 +40,7 @@ from agent_artifacts.sources.model import (
     source_instance_id,
     source_store_paths,
 )
+from tests.credential_fixtures import assignment
 
 
 def _unwrap(result):
@@ -75,7 +76,13 @@ def _current(candidate, *, source_id: str = "fixture-source") -> CurrentSource:
 
 
 def _failure(code: str = "source-unavailable") -> Err:
-    return Err((Diagnostic(DiagnosticCode(code), Severity.ERROR, "sync failed token=secret"),))
+    return Err(
+        (
+            Diagnostic(
+                DiagnosticCode(code), Severity.ERROR, "sync failed " + assignment("token", "secret")
+            ),
+        )
+    )
 
 
 class _FakePorts:

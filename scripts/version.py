@@ -82,6 +82,34 @@ def finalize_candidate(version: Version) -> Version:
     return Version(version.major, version.minor, version.patch)
 
 
+_RELEASE_PARTS = ("major", "minor", "patch")
+
+
+def next_release(version: Version, part: str) -> Version:
+    """The next release version, one semantic step from this one.
+
+    Semantic versioning is a promise about what a number change means, so the step has to be
+    named -- `major` for a break, `minor` for an addition, `patch` for a fix -- rather than
+    typed as a literal that nobody can check against the diff.
+
+    A prerelease is refused rather than quietly finalized: `1.2.0a3` is already on its way to
+    `1.2.0`, and `finalize` is the command that takes it there. Doing both here would give two
+    commands one meaning and let a release skip its own prereleases by accident.
+    """
+
+    if part not in _RELEASE_PARTS:
+        raise VersionError(f"unknown release part {part!r}; expected one of {_RELEASE_PARTS}")
+    if not version.stable:
+        raise VersionError(
+            f"{version} is a prerelease; finalize it first:  version.py finalize --write"
+        )
+    if part == "major":
+        return Version(version.major + 1, 0, 0)
+    if part == "minor":
+        return Version(version.major, version.minor + 1, 0)
+    return Version(version.major, version.minor, version.patch + 1)
+
+
 def _extract(pattern: re.Pattern[str], text: str, label: str) -> str:
     matches = pattern.findall(text)
     if len(matches) != 1:
@@ -164,7 +192,7 @@ def check_version(root: Path = ROOT) -> tuple[str, ...]:
         ensure_allowed(root, version)
     except (OSError, VersionError) as error:
         return (str(error),)
-    return ()
+    return mirror_diagnostics(root, str(version))
 
 
 def _replace_one(pattern: re.Pattern[str], text: str, replacement: str, label: str) -> str:
@@ -179,8 +207,9 @@ def _runtime_contract_assignment(version: Version) -> str:
     return f"EXECUTABLE_VERSION = SemVer({version.major}, {version.minor}, {version.patch}{prerelease})"
 
 
-def write_version(root: Path, version: Version) -> None:
+def write_version(root: Path, version: Version) -> tuple[str, ...]:
     ensure_allowed(root, version)
+    previous = _version_strings(root)[0]
     init_path = root / "agent_artifacts" / "__init__.py"
     runtime_contract_path = root / "agent_artifacts" / "runtime_contract.py"
     project_path = root / "pyproject.toml"
@@ -202,6 +231,101 @@ def write_version(root: Path, version: Version) -> None:
     init_path.write_text(updated_init, encoding="utf-8")
     project_path.write_text(updated_project, encoding="utf-8")
     runtime_contract_path.write_text(updated_runtime_contract, encoding="utf-8")
+    return mirror_version(root, previous, str(version))
+
+
+# The three files above are the version's home and must agree, which `read_version` enforces.
+# These only quote it, and a quotation that disagrees is just as broken: the release checklist is
+# pinned to a literal in `scripts/release.py`, the README publishes install commands naming an
+# exact wheel, and the schema freeze records the release it was taken for.  Bumping by hand meant
+# editing more than twenty of them, and a bump that missed one failed the gates with a message
+# about a wheel name rather than about a missed edit.
+#
+# The freeze is here for a second reason, and it is the more important one.  It exists to notice
+# when a normative schema changes without anyone deciding to change it -- the digests are a
+# tripwire.  But it also carried the release version, so a plain version bump made it stale and
+# the fix was to regenerate it, every release, unread.  A tripwire reset by routine catches
+# nothing.  Moving the version leaves `schema-freeze-stale` meaning what it says: a schema moved.
+#
+# Written only where they exist.  A version fixture in a temporary directory is not a repository,
+# and a missing README is not a version error.
+#
+# Each mirror names, in one place, the version it currently records.  Reading that anchor is what
+# makes the rewrite repair-capable: keying only on the previous canonical version meant a tree
+# whose three home files had already moved -- bumped by hand, or by a run that stopped before the
+# mirrors -- could never be repaired, because re-running `set` on the version already there did
+# nothing at all.  The state the tool most needs to fix was the one state it refused to touch.
+@dataclass(frozen=True)
+class _Mirror:
+    relative: str
+    anchor: re.Pattern[str]
+
+
+_MIRRORS = (
+    _Mirror("scripts/release.py", re.compile(r'^EXPECTED_VERSION = "([^"]+)"', re.MULTILINE)),
+    _Mirror("README.md", re.compile(r"aart_cli-([0-9][^\s-]*)-py3-none-any\.whl")),
+    _Mirror(
+        "docs/release/schema-freeze-v18.json",
+        re.compile(r'"release_version"\s*:\s*"([^"]+)"'),
+    ),
+)
+
+
+def _recorded(root: Path, mirror: _Mirror) -> tuple[str, str] | None:
+    """The text of the mirror and the version it quotes, or None where the file is absent."""
+
+    path = root / mirror.relative
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8")
+    match = mirror.anchor.search(text)
+    return (text, match.group(1)) if match else (text, "")
+
+
+def mirror_version(root: Path, previous: str, version: str) -> tuple[str, ...]:
+    touched: list[str] = []
+    for mirror in _MIRRORS:
+        found = _recorded(root, mirror)
+        if found is None:
+            continue
+        text, recorded = found
+        stale = recorded or previous
+        if stale == version or stale not in text:
+            continue
+        (root / mirror.relative).write_text(text.replace(stale, version), encoding="utf-8")
+        touched.append(mirror.relative)
+    return tuple(touched)
+
+
+def mirror_diagnostics(root: Path, version: str) -> tuple[str, ...]:
+    """Name every mirror that disagrees, and the one command that fixes all of them.
+
+    Without this the disagreement surfaces as unit-test failures about a wheel name, a README
+    table and a freeze document -- seven of them, in three files, none of which says that a
+    version bump missed its mirrors or what to run about it.
+    """
+
+    diagnostics: list[str] = []
+    for mirror in _MIRRORS:
+        found = _recorded(root, mirror)
+        if found is None:
+            continue
+        recorded = found[1]
+        if not recorded:
+            diagnostics.append(f"{mirror.relative} no longer quotes the version where expected")
+        elif recorded != version:
+            diagnostics.append(f"{mirror.relative} records {recorded}, the version is {version}")
+    if diagnostics:
+        diagnostics.append(f"repair them with: python scripts/version.py set {version} --write")
+    return tuple(diagnostics)
+
+
+def _report(mirrors: tuple[str, ...], line: str) -> None:
+    """Say what else moved.  A silent edit to a file the operator did not name is a surprise."""
+
+    print(line)
+    for relative in mirrors:
+        print(f"  also rewritten: {relative}")
 
 
 def validate_tag(root: Path, tag: str, expected: Version | None = None) -> None:
@@ -227,6 +351,9 @@ def _parser() -> argparse.ArgumentParser:
     bump.add_argument("--write", action="store_true", help="required acknowledgement to write")
     finalize = commands.add_parser("finalize", help="finalize the current prerelease core version")
     finalize.add_argument("--write", action="store_true", help="required acknowledgement to write")
+    release = commands.add_parser("bump", help="advance one semantic step: major, minor, or patch")
+    release.add_argument("part", choices=_RELEASE_PARTS)
+    release.add_argument("--write", action="store_true", help="required acknowledgement to write")
     set_command = commands.add_parser("set", help="explicitly set a validated version")
     set_command.add_argument("version")
     set_command.add_argument("--write", action="store_true", help="required acknowledgement")
@@ -251,20 +378,22 @@ def main(argv: tuple[str, ...] | None = None, root: Path = ROOT) -> int:
             candidate = next_alpha(read_version(root))
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version set: {candidate}")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "finalize":
             candidate = finalize_candidate(read_version(root))
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version finalized: {candidate}")
+            _report(write_version(root, candidate), f"version finalized: {candidate}")
+        elif args.command == "bump":
+            candidate = next_release(read_version(root), args.part)
+            if not args.write:
+                raise VersionError(f"refusing to write {candidate} without --write")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "set":
             candidate = parse_version(args.version)
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
-            write_version(root, candidate)
-            print(f"version set: {candidate}")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "check-tag":
             validate_tag(root, args.tag)
             print(f"release tag check OK: {args.tag}")

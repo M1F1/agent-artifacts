@@ -24,6 +24,7 @@ from agent_artifacts.protocol.native_models import ArtifactSelector, CollectionM
 from agent_artifacts.protocol.paths import SafeRelativePath
 from agent_artifacts.protocol.registry_models import IndexProvenance, ReviewRecord
 from agent_artifacts.protocol.semver import SemVer, VersionBounds
+from tests.credential_fixtures import credential_url
 from tests.marketplace_fixtures import (
     artifact,
     configured_source,
@@ -195,17 +196,21 @@ class MarketplaceProjectionTest(unittest.TestCase):
 
     def test_outputs_redact_credentials_from_untrusted_provenance(self) -> None:
         source = configured_source("direct", SourceKind.SOURCE_GIT)
-        secret = "do-not-leak"
+        planted = "do-not-leak"
         indexed = artifact(
             "direct-id",
             "private",
             provenance=IndexProvenance(
-                f"https://user:{secret}@upstream.example/private.git?token={secret}",
+                credential_url(
+                    "upstream.example",
+                    f"/private.git?token={planted}",
+                    held=planted,
+                ),
                 "b" * 40,
                 SafeRelativePath(("artifacts", "skill", "private")),
             ),
         )
-        indexed = replace(indexed, summary=f"Use private with api_key={secret}")
+        indexed = replace(indexed, summary=f"Use private with api_key={planted}")
         catalog = build_marketplace(
             graph((source, "direct-id", (indexed,))),
             effective_configuration((source,)),
@@ -216,8 +221,8 @@ class MarketplaceProjectionTest(unittest.TestCase):
         encoded = marketplace_catalog_bytes(catalog.value).decode("utf-8")
         rendered = render_marketplace(catalog.value)
 
-        self.assertNotIn(secret, encoded)
-        self.assertNotIn(secret, rendered)
+        self.assertNotIn(planted, encoded)
+        self.assertNotIn(planted, rendered)
         self.assertIn("[redacted]", encoded)
         self.assertIn("[redacted]", rendered)
 

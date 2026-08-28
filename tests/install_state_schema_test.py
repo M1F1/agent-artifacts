@@ -266,6 +266,50 @@ class InstallStateSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "effect ownership"):
             InstallState(2, (original, other))
 
+    def test_a_contested_effect_names_the_file_and_both_claimants(self) -> None:
+        """Refusing is right; refusing without saying what clashes sends the reader to the file."""
+
+        original = _record()
+        other_identity = ArtifactIdentity("mcp", "jira")
+        other = replace(
+            original,
+            coordinate=ArtifactCoordinate(SourceAlias("company"), other_identity),
+            artifact=replace(original.artifact, identity=other_identity),
+        )
+
+        with self.assertRaises(ValueError) as raised:
+            InstallState(2, (original, other))
+
+        message = str(raised.exception)
+        self.assertIn(".mcp.json -> mcpServers.atlassian", message)
+        self.assertIn("company/mcp/atlassian", message)
+        self.assertIn("company/mcp/jira", message)
+        self.assertIn("Uninstall whichever of the two", message)
+
+    def test_a_long_list_of_clashes_is_cut_short_and_says_how_many_remain(self) -> None:
+        """A manifest with dozens of clashes is one problem; the reader needs a few, not all."""
+
+        base = _record()
+        records = []
+        for slot in range(7):
+            for claimant in ("a", "b"):
+                identity = ArtifactIdentity("mcp", f"tool{slot}{claimant}")
+                records.append(
+                    replace(
+                        base,
+                        coordinate=ArtifactCoordinate(SourceAlias("company"), identity),
+                        artifact=replace(base.artifact, identity=identity),
+                        effects=(replace(base.effects[0], json_path=f"mcpServers.slot{slot}"),),
+                    )
+                )
+
+        with self.assertRaises(ValueError) as raised:
+            InstallState(2, tuple(records))
+
+        message = str(raised.exception)
+        self.assertEqual(message.count("claimed by"), 10)
+        self.assertIn("... and 2 more contested effect(s)", message)
+
     def test_merge_effects_with_distinct_identities_can_share_a_json_path(self) -> None:
         original = _record()
         other_identity = ArtifactIdentity("mcp", "jira")

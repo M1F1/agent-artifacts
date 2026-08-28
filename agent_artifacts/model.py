@@ -468,6 +468,14 @@ class Request:
     source_location: Optional[str] = None
     source_make_default: Optional[bool] = None
     marketplace_action: Optional[str] = None
+    # The words `marketplace search` was given, kept apart from `names`.  `names` holds
+    # coordinates, which are parsed and must resolve; these are free text, which matches or does
+    # not.  One field for both would make a typo in a coordinate look like a search that found
+    # nothing.
+    query: Tuple[str, ...] = ()
+    # How many rows a search prints.  ``None`` prints every match: a catalog is finite and the
+    # person asked.
+    search_limit: Optional[int] = None
     runtime_environment: Optional[str] = None
     # Canonical lifecycle gates.  Each defaults to the denying value so that neither an agent nor a
     # script can acquire an authorization by omitting a flag.

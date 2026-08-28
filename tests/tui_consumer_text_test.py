@@ -31,10 +31,12 @@ from tests.marketplace_fixtures import source_state
 _INSTALL_STATE_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "install-state"
 
 
-def _scripted(answers):
+def _scripted(answers, prompts=None):
     values = iter(answers)
 
     def read(_prompt=""):
+        if prompts is not None:
+            prompts.append(_prompt)
         try:
             return next(values)
         except StopIteration:
@@ -410,7 +412,10 @@ class TuiConsumerTextTest(unittest.TestCase):
                     service,
                     reviewed.value,
                     payload.value,
-                    read=_scripted(["y", "y", "y"]),
+                    # `s` is the answer that asks for the old behaviour: the full review, and a
+                    # question per effect.  That is what this test is about, and it is now a
+                    # keystroke rather than the only path through the screen (`#113`).
+                    read=_scripted(["y", "s", "y"]),
                     write=writes.append,
                 )
 
@@ -743,6 +748,110 @@ class TuiConsumerTextTest(unittest.TestCase):
             self.assertGreaterEqual(rendered.count("direct/skill/review@1.0.0"), 3)
             self.assertGreaterEqual(rendered.count("Basket: 1 selected"), 1)
             self.assertTrue((project / ".claude/skills/review/SKILL.md").exists())
+
+
+class QuietSetupQueueTest(unittest.TestCase):
+    """One question, then the steps run -- and the detail is there for whoever asks for it.
+
+    The screen used to print every step of every plan, ask whether to finalize the queue, and
+    then ask again about each step in turn.  That is a wall of text in front of a person who has
+    already decided, and every `y` after the first asks a question whose answer was settled when
+    they chose to install the artifact (`#113`).  No test asserted any of those strings, which is
+    how they lasted; these do.
+    """
+
+    def _run(self, answers):
+        """Install the fixture artifact, then run its setup queue against `answers`."""
+
+        prompts: list[str] = []
+        writes: list[str] = []
+        with tempfile.TemporaryDirectory() as raw:
+            fixture = SetupFixture(Path(raw))
+            (fixture.project / ".agent-artifacts/manifest.json").unlink()
+            service = ConsumerApplicationService(
+                ConsumerContext(
+                    fixture.catalog,
+                    fixture.effective,
+                    builtin(),
+                    fixture.location,
+                    fixture.paths,
+                ),
+                LocalConsumerAdapter(),
+            )
+            reviewed = service.prepare(
+                ConsumerActionRequest(
+                    "install",
+                    (fixture.catalog.items[0].coordinate,),
+                    ("claude",),
+                )
+            )
+            assert isinstance(reviewed, Ok), reviewed
+            payload = service.finalize(reviewed.value, reviewed.value.review_digest)
+            assert isinstance(payload, Ok), payload
+
+            with mock.patch.object(tui.sys, "platform", "darwin"):
+                code = tui._run_canonical_setup_queue(
+                    service,
+                    reviewed.value,
+                    payload.value,
+                    read=_scripted(answers, prompts),
+                    write=writes.append,
+                )
+            configured = (fixture.project / ".setup-config").exists()
+        return code, "\n".join(writes), prompts, configured
+
+    def test_pressing_enter_runs_the_queue_and_asks_nothing_else(self):
+        # "y" authorizes the untrusted-source capability, which is a real question: the answer can
+        # genuinely be no.  The empty line is the operator pressing Enter at the one question this
+        # screen asks about the queue itself.
+        code, rendered, prompts, configured = self._run(["y", ""])
+
+        self.assertEqual(code, 0)
+        self.assertTrue(configured)
+        self.assertIn("Run setup? [Y/s/n]: ", prompts)
+        self.assertIn("Setup: 1 step for 1 artifact.", rendered)
+        self.assertIn("Enter runs them.", rendered)
+        # The two prompts this change exists to remove.
+        self.assertNotIn("Finalize this setup queue?", rendered + "".join(prompts))
+        self.assertNotIn("Approve this exact effect?", rendered + "".join(prompts))
+        # Reporting is not asking: the step still says what it is while it happens.
+        self.assertIn("1. ", rendered)
+        # And the detail nobody asked for stays unprinted.
+        self.assertNotIn("Setup review:", rendered)
+
+    def test_s_shows_every_step_and_asks_about_each_one(self):
+        code, rendered, prompts, configured = self._run(["y", "s", "y"])
+
+        self.assertEqual(code, 0)
+        self.assertTrue(configured)
+        self.assertIn("Review setup queue (runs sequentially after installed payloads):", rendered)
+        self.assertIn("Setup review:", rendered)
+        self.assertIn("Approve this exact effect? [y/N]: ", prompts)
+
+    def test_n_stops_before_any_effect_runs(self):
+        code, rendered, _prompts, configured = self._run(["y", "n"])
+
+        self.assertEqual(code, 1)
+        self.assertFalse(configured)
+        self.assertIn("Setup remains pending.", rendered)
+        self.assertIn("installed payloads were not rolled back", rendered)
+
+    def test_an_answer_nobody_planned_for_stops_as_well(self):
+        """A typo that runs every step is worse than a typo that runs none: the queue repeats."""
+
+        code, _rendered, _prompts, configured = self._run(["y", "banana"])
+
+        self.assertEqual(code, 1)
+        self.assertFalse(configured)
+
+    def test_no_terminal_at_all_never_runs_the_queue(self):
+        """Ending the answers raises EOF, which is not an empty line and must not mean yes."""
+
+        code, rendered, _prompts, configured = self._run(["y"])
+
+        self.assertEqual(code, 1)
+        self.assertFalse(configured)
+        self.assertIn("Setup remains pending.", rendered)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from agent_artifacts.reporting.model import (
     UsageResult,
 )
 from agent_artifacts.reporting.projection import RegistryUsageReport
+from tests.credential_fixtures import assignment
 
 
 def _event(name: str = "review") -> UsageReport:
@@ -122,7 +123,9 @@ class ReportingApplicationTest(unittest.TestCase):
         service = ReportingApplicationService(
             ReportingDestination(ReportingMode.AUTOMATIC, "github.com", "org/registry"),
             browser=lambda _plan: self.fail("browser provider used"),
-            authenticated=lambda _plan: (_ for _ in ()).throw(RuntimeError("TOKEN=secret")),
+            authenticated=lambda _plan: (_ for _ in ()).throw(
+                RuntimeError(assignment("TOKEN", "secret"))
+            ),
         )
 
         prepared = service.prepare(event)

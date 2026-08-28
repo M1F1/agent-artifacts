@@ -251,6 +251,15 @@ def acquire_git_snapshot(
             "--prune",
             "--tags",
             "origin",
+            # Both refspecs are named rather than left to the remote's configured default.  The
+            # branch one is that default, restated because naming any refspec replaces it.  The
+            # second is the point: git only began writing `refs/remotes/origin/HEAD` on fetch in
+            # 2.46, so on an older git a ref of `HEAD` resolved against nothing and fell through
+            # to `refs/tags/HEAD`, which reported `Needed a single revision` -- a true message
+            # about the wrong ref.  Fetching HEAD by name has worked forever and costs no extra
+            # round trip.
+            "+refs/heads/*:refs/remotes/origin/*",
+            "+HEAD:refs/remotes/origin/HEAD",
         ),
     )
     if isinstance(fetched, Err):

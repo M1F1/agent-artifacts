@@ -41,7 +41,7 @@ def _build_wheel(source_copy: Path, wheel_dir: Path) -> None:
             cwd=source_copy,
             check=True,
         )
-        built = tuple((source_copy / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        built = tuple((source_copy / "dist").glob("aart_cli-*-py3-none-any.whl"))
         if len(built) != 1:
             raise ValueError(f"expected one stdlib-built wheel, found {built}")
         shutil.move(str(built[0]), wheel_dir / built[0].name)
@@ -255,7 +255,7 @@ def check_packaging(root: Path = ROOT) -> Path:
         install_root.mkdir()
         _copy_project(root, source_copy)
         _build_wheel(source_copy, wheel_dir)
-        wheels = tuple(wheel_dir.glob("agent_artifacts-*-py3-none-any.whl"))
+        wheels = tuple(wheel_dir.glob("aart_cli-*-py3-none-any.whl"))
         if len(wheels) != 1:
             raise ValueError(f"expected one wheel, found {wheels}")
         wheel = wheels[0]

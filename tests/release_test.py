@@ -3,15 +3,19 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 from unittest import mock
 
+from tests.credential_fixtures import assignment
 from tests.versioning_test import ROOT, _load_script
 
 REFERENCE_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry.git"
@@ -38,7 +42,7 @@ def _fixture_root(raw: str, release, *, complete: bool = True) -> Path:
         encoding="utf-8",
     )
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "agent-artifacts"\nversion = "{version}"\ndependencies = []\n',
+        f'[project]\nname = "aart-cli"\nversion = "{version}"\ndependencies = []\n',
         encoding="utf-8",
     )
     state = "complete" if complete else "pending"
@@ -188,9 +192,9 @@ class ReleaseChecklistTest(unittest.TestCase):
                 return _successful_runner(command, cwd, environment, timeout_seconds)
             rendered = " ".join(command)
             if "registry validate" in rendered:
-                return subprocess.CompletedProcess(command, 5, "token=secret", "")
+                return subprocess.CompletedProcess(command, 5, assignment("token", "secret"), "")
             if "registry build" in rendered:
-                return subprocess.CompletedProcess(command, 5, "", "password=secret")
+                return subprocess.CompletedProcess(command, 5, "", assignment("password", "secret"))
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with tempfile.TemporaryDirectory() as raw:
@@ -314,6 +318,106 @@ class ReleaseChecklistTest(unittest.TestCase):
         self.assertFalse(checks["registry-compatibility"])
         self.assertFalse(any("registry validate" in " ".join(command) for command in calls))
 
+    def test_a_fork_reconciles_against_the_registry_the_workflow_cloned(self) -> None:
+        """The approved origin follows `REFERENCE_REGISTRY_URL`, defaulting to this project's.
+
+        The release workflow clones whatever that variable names, because a fork publishes to its
+        own registry and cannot reach this one.  Before this, the checklist compared against a
+        constant, so a fork's release failed as `registry-origin-invalid` no matter what it set --
+        a variable contradicted by a constant, and the exact class of defect this branch exists to
+        remove.  Unset, the default still admits exactly one registry.
+        """
+
+        release = _load_script("release")
+        fork_origin = "https://ghe.example.invalid/platform/aart-registry"
+
+        def fork(command, _cwd, _environment, _timeout_seconds):
+            if command[:4] == ("git", "remote", "get-url", "origin"):
+                stdout = fork_origin + ".git\n"
+            elif command == ("git", "ls-remote", "--symref", "origin", "HEAD"):
+                stdout = f"ref: refs/heads/main\tHEAD\n{REFERENCE_COMMIT}\tHEAD\n"
+            elif command[:2] == ("git", "rev-parse"):
+                stdout = REFERENCE_COMMIT + "\n"
+            else:
+                stdout = ""
+            return subprocess.CompletedProcess(command, 0, stdout, "")
+
+        def codes(**environment: str) -> tuple[str, ...]:
+            with tempfile.TemporaryDirectory() as raw:
+                root = _fixture_root(raw, release)
+                registry = root / "reference-registry"
+                registry.mkdir()
+                with unittest.mock.patch.dict(os.environ, environment, clear=False):
+                    receipt = release.check_release(
+                        root, registry, process_runner=fork, require_clean=False
+                    )
+            return tuple(item["code"] for item in receipt["diagnostics"])
+
+        self.assertIn("registry-origin-invalid", codes(REFERENCE_REGISTRY_URL=""))
+        self.assertNotIn(
+            "registry-origin-invalid", codes(REFERENCE_REGISTRY_URL=fork_origin + ".git")
+        )
+        self.assertEqual(release.approved_registry_origin(), release.REFERENCE_REGISTRY_ORIGIN)
+
+    def test_scrubbed_environment_reads_no_config_yet_trusts_the_directory_it_runs_in(
+        self,
+    ) -> None:
+        """Hermetic and container-safe are both required, and one used to cancel the other.
+
+        System and global git config stay off so release evidence cannot depend on the machine
+        that produced it.  That also silenced the workspace-ownership exception a container job
+        writes with `git config --global`, so on a real Enterprise run two checks failed at once
+        -- `repository-state-unavailable` and `source-not-merged-into-main` -- both of them git
+        refusing a workspace owned by another uid.
+
+        `GIT_CONFIG_COUNT` states the exception without reading a file, and names the directory
+        the command runs in rather than a wildcard.
+        """
+
+        release = _load_script("release")
+        environment = release._environment(pathlib.Path("/__w/aart/aart"))
+
+        self.assertEqual(environment["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(environment["GIT_CONFIG_GLOBAL"], os.devnull)
+        self.assertEqual(environment["GIT_CONFIG_COUNT"], "1")
+        self.assertEqual(environment["GIT_CONFIG_KEY_0"], "safe.directory")
+        self.assertEqual(environment["GIT_CONFIG_VALUE_0"], "/__w/aart/aart")
+        self.assertNotIn("*", environment["GIT_CONFIG_VALUE_0"])
+        # Still scrubbed: nothing ambient leaks in beside the exception.
+        self.assertNotIn("HOME", environment)
+        self.assertNotIn("GITHUB_TOKEN", environment)
+
+    def test_skipping_reconciliation_reports_skipped_and_never_passed(self) -> None:
+        """A fork with no artifact catalogue can still release, and the receipt says what it did.
+
+        The danger of an opt-out is not that it exists but that it flatters: seven checks that did
+        not run must never read as seven checks that passed.  They report `skipped`, the receipt
+        records `registry_reconciliation`, and the printed run warns on stderr.
+        """
+
+        release = _load_script("release")
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = _fixture_root(raw, release)
+            receipt = release.check_release(
+                root, None, process_runner=_successful_runner, require_clean=False
+            )
+
+        self.assertEqual(receipt["registry_reconciliation"], "skipped")
+        self.assertEqual(receipt["status"], "passed")
+        self.assertIsNone(receipt["registry_commit"])
+        registry_checks = {
+            item["name"]: item for item in receipt["checks"] if item["name"].startswith("registry-")
+        }
+        self.assertEqual(len(registry_checks), 7)
+        for name, item in registry_checks.items():
+            with self.subTest(check=name):
+                self.assertTrue(item["skipped"])
+                self.assertFalse(item["passed"])
+        for item in receipt["checks"]:
+            if not item["name"].startswith("registry-"):
+                self.assertFalse(item["skipped"])
+
     def test_dirty_or_noncurrent_registry_is_blocking_before_registry_tools(self) -> None:
         release = _load_script("release")
         for status, head, origin_head, expected in (
@@ -410,7 +514,7 @@ class WheelDigestEvidenceTest(unittest.TestCase):
         first_name, first_digest = release.wheel_digest(ROOT)
         second_name, second_digest = release.wheel_digest(ROOT)
 
-        self.assertEqual(first_name, f"agent_artifacts-{release.EXPECTED_VERSION}-py3-none-any.whl")
+        self.assertEqual(first_name, f"aart_cli-{release.EXPECTED_VERSION}-py3-none-any.whl")
         self.assertEqual(first_digest, second_digest)
         self.assertRegex(first_digest, r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(first_name, second_name)
@@ -490,7 +594,7 @@ class WheelDigestArtifactTest(unittest.TestCase):
 
         def record(root: Path, *, output_dir: Path | None = None) -> tuple[str, str]:
             seen["output_dir"] = output_dir
-            return "agent_artifacts-0.0.0-py3-none-any.whl", "sha256:" + "0" * 64
+            return "aart_cli-0.0.0-py3-none-any.whl", "sha256:" + "0" * 64
 
         with mock.patch.object(release, "wheel_digest", record):
             with contextlib.redirect_stdout(io.StringIO()):

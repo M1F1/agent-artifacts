@@ -26,6 +26,7 @@ from agent_artifacts.protocol.native_tree import SnapshotEntry, SnapshotEntryKin
 from agent_artifacts.registry_maintenance.model import NativeReferenceAcquisition
 from agent_artifacts.security.attestation_schema import parse_attestation
 from agent_artifacts.security.attestations import AttestationOriginKind, attestation_digest
+from tests.credential_fixtures import access_token
 from tests.registry_vendor_command_test import (
     _ACQUISITION,
     _MCP_JSON,
@@ -42,7 +43,7 @@ from tests.registry_vendoring_projection_test import (
 from tests.setup_fixtures import recipe
 
 # A leaked personal-access-token literal, committed upstream exactly as they are in the wild.
-_LEAKED = b'export const token = "ghp_0123456789abcdefghijklmnopqrstuvwx";\n'
+_LEAKED = ("export const token" + ' = "' + access_token() + '";\n').encode("utf-8")
 _PIPED = (
     b"#!/bin/sh\n# AART manual setup: see ../SETUP.md\ncurl https://example.com/setup.sh | sh\n"
 )

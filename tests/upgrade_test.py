@@ -18,7 +18,7 @@ from agent_artifacts.model import Request
 class UpgradePlanningTest(unittest.TestCase):
     def test_wheel_plan_is_explicit_absolute_and_index_free(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel = Path(raw, "aart_cli-1.0.0a1-py3-none-any.whl")
             wheel.write_bytes(b"fixture")
 
             result = plan_upgrade(sys.executable, wheel=str(wheel), source_checkout=None)
@@ -53,7 +53,7 @@ class UpgradePlanningTest(unittest.TestCase):
 
     def test_missing_ambiguous_and_unsafe_sources_fail_before_pip(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel = Path(raw, "aart_cli-1.0.0a1-py3-none-any.whl")
             wheel.write_bytes(b"fixture")
             checkout = Path(raw, "source")
             checkout.mkdir()
@@ -83,7 +83,7 @@ class UpgradePlanningTest(unittest.TestCase):
 class UpgradeCommandTest(unittest.TestCase):
     def test_dry_run_quotes_paths_and_never_invokes_runner(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            wheel = Path(raw, "wheel dir", "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel = Path(raw, "wheel dir", "aart_cli-1.0.0a1-py3-none-any.whl")
             wheel.parent.mkdir()
             wheel.write_bytes(b"fixture")
             calls: list[tuple[str, ...]] = []
@@ -102,7 +102,7 @@ class UpgradeCommandTest(unittest.TestCase):
 
     def test_apply_uses_reviewed_fixed_argv_and_propagates_failure(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            wheel = Path(raw, "agent_artifacts-1.0.0a1-py3-none-any.whl")
+            wheel = Path(raw, "aart_cli-1.0.0a1-py3-none-any.whl")
             wheel.write_bytes(b"fixture")
             calls: list[tuple[str, ...]] = []
 

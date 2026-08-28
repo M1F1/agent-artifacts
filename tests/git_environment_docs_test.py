@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 
 from agent_artifacts.io.git import _ALLOWED_ENVIRONMENT, _safe_environment
+from tests.credential_fixtures import credential_url
 
 _ROOT = Path(__file__).resolve().parent.parent
 _REFERENCE = _ROOT / "docs/configuration/git-environment-v1.md"
@@ -43,7 +44,8 @@ class GitEnvironmentReferenceTest(unittest.TestCase):
         named = _variables("What Git does not receive")
         self.assertIn("https_proxy", named)
 
-        environment = {name: "http://user:pw@proxy.example:3128" for name in named}
+        proxy = credential_url("proxy.example:3128", scheme="http", held="pw")
+        environment = {name: proxy for name in named}
         environment["HOME"] = "/home/operator"
         passed = _safe_environment(environment)
 

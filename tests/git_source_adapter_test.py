@@ -23,6 +23,7 @@ from agent_artifacts.sources.model import (
     SnapshotLimits,
     SourceInstanceId,
 )
+from tests.credential_fixtures import credential_url
 
 
 def _archive(path: str, *, unsafe: bool = False) -> None:
@@ -95,6 +96,13 @@ class GitSourceAdapterTest(unittest.TestCase):
             flattened = tuple(item for call in runner.requests for item in call.argv)
             self.assertIn("init", flattened)
             self.assertIn("fetch", flattened)
+            # Both refspecs are named on purpose, so assert both.  Naming any refspec replaces the
+            # remote's configured one, and the HEAD refspec is what makes a ref of `HEAD` resolve
+            # on a git older than 2.46 -- which no fixture here can detect, because the version
+            # that runs the suite is whatever the image ships.  The command shape can be asserted;
+            # the git version cannot.
+            self.assertIn("+refs/heads/*:refs/remotes/origin/*", flattened)
+            self.assertIn("+HEAD:refs/remotes/origin/HEAD", flattened)
             self.assertIn("rev-parse", flattened)
             self.assertIn("archive", flattened)
             self.assertTrue(
@@ -285,7 +293,7 @@ class GitSourceAdapterTest(unittest.TestCase):
                 timeout_seconds=30,
             )
             secret = GitSnapshotRequest(
-                location="https://user:secret@example.test/repo.git", **base
+                location=credential_url("example.test", "/repo.git"), **base
             )
             local = GitSnapshotRequest(location=f"file://{root}/repo.git", **base)
 
@@ -344,15 +352,22 @@ class GitSourceAdapterTest(unittest.TestCase):
             first = acquire_git_snapshot(request("main"))
             tagged = acquire_git_snapshot(request("v1"))
             full_branch = acquire_git_snapshot(request("refs/heads/main"))
+            # `HEAD` is the ref a caller passes when it means "whatever the source calls default",
+            # and it resolves through `refs/remotes/origin/HEAD` -- a ref this adapter now fetches
+            # by name instead of hoping the local git writes it.
+            head = acquire_git_snapshot(request("HEAD"))
             self.assertIsInstance(first, Ok)
             self.assertIsInstance(tagged, Ok)
             self.assertIsInstance(full_branch, Ok)
+            self.assertIsInstance(head, Ok)
             assert isinstance(first, Ok)
             assert isinstance(tagged, Ok)
             assert isinstance(full_branch, Ok)
+            assert isinstance(head, Ok)
             self.assertEqual(first.value.resolved_revision, first_commit)
             self.assertEqual(tagged.value.resolved_revision, first_commit)
             self.assertEqual(full_branch.value.resolved_revision, first_commit)
+            self.assertEqual(head.value.resolved_revision, first_commit)
             self.assertEqual(first.value.snapshot_digest, tagged.value.snapshot_digest)
             self.assertEqual(git("-C", str(mirror), "rev-parse", "--is-bare-repository"), "true")
             self.assertNotIn(".git", {str(entry.path) for entry in first.value.snapshot.entries})

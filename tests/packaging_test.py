@@ -6,18 +6,23 @@ against a throwaway copy of the project so the repo's real ``dist/`` is never to
 Run: ``python -m unittest discover -s tests -p "packaging_test.py" -v``
 """
 
+import configparser
 import hashlib
 import importlib.util
 import io
+import os
 import pathlib
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 import zipfile
 from unittest import mock
+
+from tests.credential_fixtures import secret_field
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = REPO_ROOT / "scripts"
@@ -94,7 +99,7 @@ class _WheelBuildFixture:
     def _build(self) -> pathlib.Path:
         rc = self.build.main()
         self.assertEqual(rc, 0)
-        wheels = list((self.tmp / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        wheels = list((self.tmp / "dist").glob("aart_cli-*-py3-none-any.whl"))
         self.assertEqual(len(wheels), 1, f"expected exactly one wheel, got {wheels}")
         return wheels[0]
 
@@ -122,9 +127,15 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
             info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             eps = z.read(f"{info}/entry_points.txt").decode("utf-8")
         self.assertIn("[console_scripts]", eps)
-        self.assertIn("agent-artifacts = agent_artifacts.cli:main", eps)
-        self.assertIn("aart = agent_artifacts.cli:main", eps)
-        self.assertNotIn("aa = agent_artifacts.cli:main", eps)
+        # Parsed, not matched as text: builders disagree about the spaces around `=`, and a test
+        # that pins one builder's whitespace fails on a change that installs identical commands.
+        parser = configparser.ConfigParser()
+        parser.read_string(eps)
+        scripts = dict(parser["console_scripts"])
+        self.assertEqual(
+            scripts,
+            {"agent-artifacts": "agent_artifacts.cli:main", "aart": "agent_artifacts.cli:main"},
+        )
 
     def test_wheel_contains_no_operational_registry_or_legacy_catalog(self):
         wheel = self._build()
@@ -144,7 +155,7 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
     def test_builder_rejects_package_data_outside_the_distribution_allowlist(self):
         forbidden = self.tmp / "agent_artifacts" / "artifacts" / "private.json"
         forbidden.parent.mkdir()
-        forbidden.write_text('{"secret":"must-not-ship"}', encoding="utf-8")
+        forbidden.write_text("{" + secret_field("secret", "must-not-ship") + "}", encoding="utf-8")
 
         with self.assertRaisesRegex(ValueError, "wheel resource allowlist"):
             self.build.collect_package_files()
@@ -172,7 +183,7 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
         with zipfile.ZipFile(wheel) as z:
             info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             meta = z.read(f"{info}/METADATA").decode("utf-8")
-        self.assertIn("Name: agent-artifacts", meta)
+        self.assertIn("Name: aart-cli", meta)
         self.assertIn("Version: ", meta)
         self.assertIn("Requires-Python: ", meta)
         # Zero runtime deps: no Requires-Dist lines.
@@ -205,6 +216,10 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _dates_of(self, wheel: bytes) -> set:
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            return {item.date_time for item in archive.infolist()}
+
     def _build_at(self, now: float) -> bytes:
         # Everything zipfile would reach for if a member were dated from the clock, moved between
         # the two builds. A builder that reads either one produces a different archive.
@@ -226,29 +241,65 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
             "the wheel is not byte-reproducible across build times",
         )
 
-    def test_members_are_dated_from_the_stamped_commit(self):
-        epoch = 1_600_000_000
-        self._stamp(epoch)
+    def test_member_dates_are_fixed_and_read_neither_the_clock_nor_the_stamp(self):
+        """Poetry dates every member at one constant, so no input can move the dates at all.
 
-        wheel = self._build_at(1_700_000_000.0)
+        Until 2.8.6 the dates came from `COMMIT_EPOCH`. That was one way to keep the clock out of
+        the archive; a constant is another, and a stricter one -- two commits an hour apart now
+        differ only where their content differs.
+        """
 
-        expected = time.gmtime(epoch)[:6]
-        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
-            dates = {item.date_time for item in archive.infolist()}
-        self.assertEqual(dates, {expected})
+        self._stamp(1_600_000_000)
+        early = self._dates_of(self._build_at(1_700_000_000.0))
 
-    def test_an_unstamped_source_dates_at_the_zip_floor_rather_than_now(self):
-        # An editable checkout, or a copy taken outside git, has no commit date. It still must not
-        # reach for the clock: two dev builds of one tree are the same wheel.
-        self._stamp(0)
+        self._stamp(1_500_000_000)
+        late = self._dates_of(self._build_at(1_700_086_400.0))
 
-        wheel = self._build_at(1_700_000_000.0)
+        self.assertEqual(early, late)
+        self.assertEqual(len(early), 1, early)
+        # Not "now", under any clock this test could run at.
+        self.assertLess(early.pop()[0], 2020)
 
-        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
-            dates = {item.date_time for item in archive.infolist()}
-        self.assertEqual(dates, {(1980, 1, 1, 0, 0, 0)})
+    def test_the_environment_cannot_move_the_digest(self):
+        """`SOURCE_DATE_EPOCH` is the hole Poetry opens, and the builder closes it.
 
-    def test_member_order_compression_and_attributes_are_pinned(self):
+        poetry-core honours the variable. A digest that depends on it is a digest that cannot be
+        checked by anyone who did not happen to have it set the same way -- so the builder removes
+        it before invoking Poetry rather than documenting it as a caveat.
+        """
+
+        self._stamp(1_600_000_000)
+        clean = self._build().read_bytes()
+
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1000000000"}):
+            steered = self._build().read_bytes()
+
+        self.assertEqual(
+            hashlib.sha256(clean).hexdigest(),
+            hashlib.sha256(steered).hexdigest(),
+            "SOURCE_DATE_EPOCH moved the wheel's bytes",
+        )
+
+    def test_a_builder_other_than_the_pinned_one_fails_the_build(self):
+        """The builder stamps its version into the archive, so an upgrade moves the digest.
+
+        Left unchecked, upgrading Poetry would silently invalidate every published digest while
+        every gate stayed green. The pin is checked against what actually built the file.
+        """
+
+        self._stamp(1_600_000_000)
+        wheel = self._build()
+        with zipfile.ZipFile(wheel) as archive:
+            info = next(n.split("/")[0] for n in archive.namelist() if n.endswith("/WHEEL"))
+            metadata = archive.read(f"{info}/WHEEL").decode("utf-8")
+        self.assertIn(f"Generator: poetry-core {self.build.pinned_backend()}", metadata)
+
+        with mock.patch.object(self.build, "pinned_backend", return_value="0.0.0"):
+            with self.assertRaises(SystemExit) as raised:
+                self.build.main()
+        self.assertIn("[build-system] pins 0.0.0", str(raised.exception))
+
+    def test_compression_and_attributes_are_pinned(self):
         self._stamp(1_600_000_000)
 
         wheel = self._build_at(1_700_000_000.0)
@@ -256,13 +307,9 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
             members = archive.infolist()
         names = [item.filename for item in members]
-        record = names[-1]
-        self.assertTrue(record.endswith(".dist-info/RECORD"), names[-3:])
-        self.assertEqual(names[:-1], sorted(names[:-1]))
-        # Create-system would otherwise be 0 on a Windows build host, and the mode would come from
-        # a zipfile default rather than from this builder.
+        self.assertTrue(any(n.endswith(".dist-info/RECORD") for n in names), names[-3:])
+        # Create-system would otherwise be 0 on a Windows build host.
         self.assertEqual({item.create_system for item in members}, {3})
-        self.assertEqual({item.external_attr for item in members}, {0o600 << 16})
         self.assertEqual({item.compress_type for item in members}, {zipfile.ZIP_DEFLATED})
 
 
@@ -298,6 +345,103 @@ class TypedBehaviorProbeTest(unittest.TestCase):
 
     def test_identical_typed_behavior_passes(self):
         self.assertIsNone(self.packaging._compare_typed_behavior("same\n", "same\n"))
+
+
+class FindingPoetryTest(unittest.TestCase):
+    """What a machine without Poetry is told, which is the whole of what it can act on.
+
+    `poetry-core` is the build backend, and the dev group installs it -- so every image that can
+    run the gates has the `poetry` namespace, whether or not it has the Poetry CLI.  A blind
+    `python -m poetry` therefore does not fail as missing: it fails as
+    "'poetry' is a package and cannot be directly executed", which names neither Poetry nor the
+    variable that points at it.  A real Enterprise image is exactly this shape.
+    """
+
+    def setUp(self):
+        self.build = _load_script("build_wheel")
+
+    def test_the_variable_names_the_interpreter_outright(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": "/opt/poetry/bin/poetry"}):
+            self.assertEqual(["/opt/poetry/bin/poetry"], self.build.poetry_command())
+
+    def test_a_poetry_on_path_is_used_as_found(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value="/usr/bin/poetry"):
+                self.assertEqual(["/usr/bin/poetry"], self.build.poetry_command())
+
+    def test_the_module_is_used_only_when_it_is_the_cli(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value=None):
+                with mock.patch.object(self.build, "_poetry_module_runs", return_value=True):
+                    self.assertEqual([sys.executable, "-m", "poetry"], self.build.poetry_command())
+
+    def test_no_poetry_at_all_says_what_to_set(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value=None):
+                with mock.patch.object(self.build, "_poetry_module_runs", return_value=False):
+                    with self.assertRaises(SystemExit) as raised:
+                        self.build.poetry_command()
+
+        message = str(raised.exception)
+        self.assertIn("AART_POETRY", message)
+        self.assertIn("docs/ci/enterprise-fork-v1.md", message)
+        # The message a bare `python -m poetry` would have produced instead.
+        self.assertNotIn("cannot be directly executed", message)
+
+    def test_the_backend_alone_does_not_look_like_the_cli(self):
+        """`poetry-core` is installed here, and it must not satisfy the check."""
+
+        self.assertIsNotNone(importlib.util.find_spec("poetry.core"))
+        if importlib.util.find_spec("poetry.console") is not None:  # pragma: no cover
+            self.skipTest("the Poetry CLI is installed here, so there is nothing to prove")
+        self.assertFalse(self.build._poetry_module_runs())
+
+
+class LentBuildBackendTest(unittest.TestCase):
+    """A new virtual environment cannot be assumed to contain the build backend.
+
+    `ensurepip` bundles neither poetry-core nor, since Python 3.12, setuptools, and
+    `system_site_packages` reaches the base interpreter rather than a virtual environment the
+    developer is working inside -- so a venv made from a venv has none.  The offline editable
+    install then failed with a hundred lines of pip traceback ending in
+    `Cannot import 'poetry.core.masonry.api'`, which never says that the build backend is the
+    missing thing.
+    """
+
+    def test_the_lent_directory_carries_the_backend_and_nothing_else(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            lent = smoke._lend_build_backend(pathlib.Path(raw))
+
+            names = {entry.name for entry in lent.iterdir()}
+            self.assertIn("poetry", names)
+            # Only the backend travels.  Lending the whole environment would put the developer's
+            # own editable agent_artifacts on the path, and the install would look like it worked
+            # when nothing had been installed at all.
+            self.assertNotIn("agent_artifacts", names)
+            self.assertFalse([name for name in names if name.startswith("agent_artifacts")])
+
+    def test_the_lent_backend_is_importable_by_another_interpreter(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            lent = smoke._lend_build_backend(pathlib.Path(raw))
+            environment = {"PYTHONPATH": str(lent), "PATH": "/usr/bin:/bin"}
+
+            probe = subprocess.run(
+                [sys.executable, "-S", "-c", "import poetry.core.masonry.api"],
+                capture_output=True,
+                env=environment,
+            )
+
+            self.assertEqual(probe.returncode, 0, probe.stderr.decode("utf-8", "replace"))
+
+    def test_a_missing_backend_names_the_command_that_installs_one(self) -> None:
+        smoke = _load_script("distribution_smoke")
+        with tempfile.TemporaryDirectory() as raw:
+            with mock.patch.object(smoke.importlib.util, "find_spec", return_value=None):
+                with self.assertRaises(RuntimeError) as caught:
+                    smoke._lend_build_backend(pathlib.Path(raw))
+        self.assertIn("poetry install --with dev", str(caught.exception))
 
 
 if __name__ == "__main__":

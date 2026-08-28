@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
+import importlib.util
 import os
 import subprocess
 import sys
@@ -23,6 +25,7 @@ QUALITY_GATES = (
     "coverage",
     "packaging-check",
     "docs-check",
+    "secret-shape-check",
 )
 
 
@@ -55,14 +58,31 @@ def snapshot_paths(paths: Iterable[Path]) -> tuple[tuple[str, int, str], ...]:
     return tuple(snapshot)
 
 
+def git_listing(command: tuple[str, ...], root: Path) -> bytes:
+    """Run a read-only git command, and say what git said when it refuses.
+
+    ``check=True`` alone raises ``CalledProcessError``, which prints the argv and the exit code
+    and throws away the one thing that explains the failure -- git's own message on stderr.  In a
+    container that message is usually ``detected dubious ownership``, because the checkout belongs
+    to the uid that ran ``actions/checkout`` and the job runs as another one.  Losing it turns a
+    two-line fix into an afternoon.
+    """
+    result = subprocess.run(command, cwd=root, capture_output=True)
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", "replace").strip() or "(git said nothing)"
+        raise SystemExit(
+            f"{' '.join(command)} failed ({result.returncode}) in {root}\n"
+            f"{detail}\n"
+            "The gates read the working tree through git, so this stops them before any gate runs."
+        )
+    return result.stdout
+
+
 def workspace_paths(root: Path) -> tuple[Path, ...]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=root,
-        capture_output=True,
-        check=True,
+    listing = git_listing(
+        ("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"), root
     )
-    return tuple(root / raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
+    return tuple(root / raw.decode("utf-8") for raw in listing.split(b"\0") if raw)
 
 
 def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ...]:
@@ -117,10 +137,81 @@ def build_gates(temp_root: Path, python: str = sys.executable) -> tuple[Gate, ..
         ),
         Gate("packaging-check", ((python, "scripts/packaging_check.py"),)),
         Gate("docs-check", ((python, "scripts/docs_check.py"),)),
+        Gate("secret-shape-check", ((python, "scripts/secret_shape_check.py"),)),
     )
 
 
+# The three the developer extra installs.  Everything else a gate runs is either the standard
+# library or a script in this repository.
+_DEVELOPER_TOOLS = ("ruff", "mypy", "coverage")
+
+
+def missing_tools(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]:
+    """Which developer tools the chosen gates need and this interpreter cannot import.
+
+    Read off the gate commands rather than listed here, so a gate that starts using a tool is
+    covered without anyone remembering to add it.
+    """
+
+    return tuple(
+        tool for tool in _tools_for(selected, temp_root) if importlib.util.find_spec(tool) is None
+    )
+
+
+def _tools_for(selected: tuple[str, ...], temp_root: Path) -> tuple[str, ...]:
+    by_name = {gate.name: gate for gate in build_gates(temp_root)}
+    wanted: list[str] = []
+    for name in selected:
+        for command in by_name[name].commands:
+            for index, argument in enumerate(command[:-1]):
+                if argument == "-m" and command[index + 1] in _DEVELOPER_TOOLS:
+                    wanted.append(command[index + 1])
+    return tuple(dict.fromkeys(wanted))
+
+
+def _report_tool_versions(absent: tuple[str, ...], selected: tuple[str, ...], temp: Path) -> None:
+    """Say which version of each tool is about to run.
+
+    `format-check` compares this machine's formatter against a file another machine's formatter
+    wrote.  When the two differ the failure names a line and no cause, and the line looks fine.
+    The versions are pinned in the developer extra for that reason; printing them makes a
+    mismatch readable in the first four lines of a log instead of not at all.
+    """
+
+    if absent:
+        return
+    for tool in _tools_for(selected, temp):
+        # From the installed distribution, not the module: `ruff` is a binary wrapper and carries
+        # no `__version__`, which is exactly the tool whose version matters most here.
+        try:
+            found = importlib.metadata.version(tool)
+        except importlib.metadata.PackageNotFoundError:  # pragma: no cover - importable, unlisted
+            found = "(not an installed distribution)"
+        print(f"{tool} {found}", flush=True)
+
+
 def _run(selected: tuple[str, ...], temp_root: Path) -> int:
+    absent = missing_tools(selected, temp_root)
+    if absent:
+        # Named before anything runs, with the fix.  Otherwise the first gate exits on
+        # `No module named ruff`, which is true and tells nobody what to do about it.
+        print(
+            f"missing developer tool(s): {', '.join(absent)}\n"
+            f"The installed runtime has no dependencies; these are the gates' own tools.\n"
+            "  poetry install --with dev\n"
+            # The second route is not a fallback for people without Poetry: it is what CI runs.
+            # Poetry takes an install source only from a block inside pyproject.toml, so it cannot
+            # be pointed at a per-fork internal index; pip reads PIP_INDEX_URL and always could.
+            f"  {sys.executable} scripts/dev_tools.py install"
+            "   (the same pinned versions, installed with pip, which reads PIP_INDEX_URL)\n"
+            "Four gates -- unit, integration, validate, docs-check -- need none of them and can "
+            f"be run alone:\n  {sys.executable} scripts/quality.py unit",
+            file=sys.stderr,
+        )
+        return 2
+
+    _report_tool_versions(absent, selected, temp_root)
+
     environment = os.environ.copy()
     environment.update(
         {

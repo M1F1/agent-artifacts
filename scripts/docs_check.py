@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -103,6 +104,8 @@ def validate_markdown(path: Path, text: str, root: Path) -> tuple[Diagnostic, ..
         local = _link_path(match.group(1))
         if not local:
             continue
+        if local in _REPOSITORY_RELATIVE:
+            continue
         if local.startswith("/"):
             candidate = root / local.lstrip("/")
         else:
@@ -117,6 +120,14 @@ def validate_markdown(path: Path, text: str, root: Path) -> tuple[Diagnostic, ..
                 )
             )
     return tuple(sorted(diagnostics))
+
+
+# GitHub resolves a link from a file at the repository root against `host/owner/name/blob/branch/`,
+# so `../../releases` lands on that repository's own releases page -- whichever repository, on
+# whichever instance, the reader is looking at.  There is no file behind it and there is not meant
+# to be: it is the one way a page can point at a release without writing down an address that
+# would be upstream's in every fork, and a merge conflict on every merge from upstream.
+_REPOSITORY_RELATIVE = ("../../releases", "../../issues", "../../pulls", "../../tags")
 
 
 def _repository_markdown(root: Path) -> tuple[Path, ...]:
@@ -317,12 +328,57 @@ def _register_diagnostics(root: Path) -> tuple[Diagnostic, ...]:
     return tuple(diagnostics)
 
 
+def _changelog_diagnostics(root: Path = ROOT) -> tuple[Diagnostic, ...]:
+    """`DOC011` — the changelog's shape, because the version is read out of it.
+
+    `scripts/changelog.py` decides the next version from the headings under `## Unreleased`, so a
+    heading in the wrong shape is not a typo any more: it is a version number that comes out wrong,
+    or a release that cannot be cut at all.  The rules live in that script; this gate is where they
+    are enforced on every run rather than at the release, which is the worst moment to find out.
+    """
+
+    path = root / "CHANGELOG.md"
+    if not path.is_file():
+        return ()
+    changelog = _load_changelog()
+    relative = str(path.relative_to(root))
+    diagnostics: list[Diagnostic] = []
+    for problem in changelog.check(path.read_text(encoding="utf-8")):
+        # Each problem already opens with `CHANGELOG.md:<line>: `; the diagnostic carries those
+        # two as fields, so the prefix is taken off rather than printed twice.
+        line, _separator, message = problem.partition(": ")
+        _file, _colon, number = line.partition(":")
+        diagnostics.append(
+            Diagnostic(
+                relative,
+                int(number) if number.isdigit() else 1,
+                "DOC011",
+                message if message else problem,
+            )
+        )
+    return tuple(diagnostics)
+
+
+def _load_changelog():
+    """`scripts/changelog.py`, loaded by path: scripts/ is not a package."""
+
+    path = ROOT / "scripts" / "changelog.py"
+    spec = importlib.util.spec_from_file_location("_aart_docs_changelog", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - only if the file is gone
+        raise RuntimeError("cannot load scripts/changelog.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def check_repository(root: Path = ROOT) -> tuple[Diagnostic, ...]:
     diagnostics: list[Diagnostic] = []
     for path in _repository_markdown(root):
         diagnostics.extend(validate_markdown(path, path.read_text(encoding="utf-8"), root))
     diagnostics.extend(_structure_diagnostics(root))
     diagnostics.extend(_register_diagnostics(root))
+    diagnostics.extend(_changelog_diagnostics(root))
     return tuple(sorted(diagnostics))
 
 

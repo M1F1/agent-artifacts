@@ -95,6 +95,7 @@ from agent_artifacts.registry_maintenance.vendoring import (
     read_vendor_record,
     verify_vendored_copy,
 )
+from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from agent_artifacts.security.application import verify_security_index
 from agent_artifacts.security.attestation_schema import parse_security_index
 from agent_artifacts.security.model import InstallationRisk
@@ -115,7 +116,12 @@ from .model import (
     WorkspaceChangeKind,
     registry_workspace_review_digest,
 )
-from .templates import REGISTRY_CI_WORKFLOW, REGISTRY_GITIGNORE, REPORTING_TEMPLATES
+from .templates import (
+    REGISTRY_CI_WORKFLOW,
+    REGISTRY_GITIGNORE,
+    REPORTING_TEMPLATES,
+    render_registry_readme,
+)
 
 REGISTRY_COMMAND_INVALID = DiagnosticCode("registry-command-invalid")
 REGISTRY_AUDIT_WARNING = DiagnosticCode("registry-audit-warning")
@@ -498,10 +504,29 @@ def plan_registry_init(
     } & files.value.keys()
     if occupied:
         return _error("registry init refuses an existing registry workspace", _ALREADY_A_REGISTRY)
+    # Every registry gets byte-identical files.  Where CI fetches AART from is a repository
+    # variable, not something written in here at creation time, so these bytes never have to be
+    # regenerated when a company moves the tool.
     templates = (
         (".gitignore", REGISTRY_GITIGNORE),
         (".github/workflows/aart-registry.yml", REGISTRY_CI_WORKFLOW),
         *REPORTING_TEMPLATES,
+    )
+    # The README is the one generated file a maintainer is meant to edit, so it is written when
+    # absent and left alone otherwise -- never compared, never overwritten.  Managing it would
+    # make the file people are supposed to change the file that puts the registry out of step
+    # with the command that manages it, and a repository created on GitHub with "Add a README"
+    # already has one.
+    written_once = tuple(
+        (path, content)
+        for path, content in (
+            ("README.md", render_registry_readme(options.registry_id, options.display_name)),
+            # The pin is the version of the tool creating the registry -- the same number `init`
+            # already writes as `requires_aart.min_inclusive`.  No inference is involved: AART
+            # knows its own version, which is exactly what the deleted origin stamp did not.
+            (".aart-version", f"{EXECUTABLE_VERSION}\n".encode("utf-8")),
+        )
+        if path not in files.value
     )
     for path, expected in templates:
         existing = files.value.get(path)
@@ -555,7 +580,7 @@ def plan_registry_init(
         RegistryOperation.INIT,
         snapshot,
         (
-            *((path, content, False) for path, content in templates),
+            *((path, content, False) for path, content in (*templates, *written_once)),
             (
                 "aart-registry.json",
                 canonical_json_bytes(registry_manifest_to_json(registry)),

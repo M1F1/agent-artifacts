@@ -52,6 +52,7 @@ from agent_artifacts.security import (
     parse_assessment,
 )
 from agent_artifacts.store.model import ObjectCandidate, make_object_candidate
+from tests.credential_fixtures import access_token, assignment
 
 
 def _path(raw: str):
@@ -513,7 +514,7 @@ class SecurityBaselineEvidenceTest(unittest.TestCase):
         self.assertIn("manifest-digest-mismatch", {item.rule_id for item in assessment.findings})
 
     def test_importer_warnings_are_counted_without_echoing_untrusted_text(self) -> None:
-        warning = "credential token=do-not-echo"
+        warning = "credential " + assignment("token", "do-not-echo")
         candidate, indexed, _ = _fixture(provenance=True, importer_warnings=(warning,))
         assessment = _scan(candidate, indexed)
         self.assertIn("importer-warning", {item.rule_id for item in assessment.findings})
@@ -685,7 +686,7 @@ class SecurityBaselineContentTest(unittest.TestCase):
         self.assertIn("python-unsafe-deserialization", rules)
 
     def test_mcp_json_finds_literal_credentials_and_shell_dispatch_without_echo(self) -> None:
-        secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+        secret = access_token("abcdefghijklmnopqrstuvwxyz1234567890")
         payload = json.dumps(
             {
                 "server": {

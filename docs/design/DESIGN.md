@@ -521,20 +521,22 @@ safety property a tool that edits other people's config files needs.
    (committed and/or attached to releases). Because there are no dependencies, installing it
    never reaches an index:
    ```
-   pip install --no-index ./dist/agent_artifacts-<version>-py3-none-any.whl
+   pip install --no-index ./dist/aart_cli-<version>-py3-none-any.whl
    # or, anywhere on the machine:
-   pip install --no-index --find-links /path/to/dist agent-artifacts
+   pip install --no-index --find-links /path/to/dist aart-cli
    ```
 2. **From a checkout (secondary).** Build-isolation off, so pip uses the already-present
-   setuptools instead of fetching a backend:
+   build backend instead of fetching one — `poetry-core`, which the dev group installs at the
+   exact version `[build-system]` pins:
    ```
    pip install --no-index --no-build-isolation .
    ```
 
 `pipx install --no-index …` works the same for an isolated user install. Distribution name
-`agent-artifacts`; import package `agent_artifacts`; two console-script entry points
-(`agent-artifacts`, `aart`) → `agent_artifacts.cli:main`. Target Python ≥ 3.10 (for
-`dataclass(slots=True)`).
+`aart-cli` — `agent-artifacts` on an index is a different project, belonging to someone else, and
+it has been installed by mistake once already. Import package `agent_artifacts`; two console-script
+entry points (`agent-artifacts`, `aart`) → `agent_artifacts.cli:main`, the first kept so an
+existing command keeps working. Target Python ≥ 3.10 (for `dataclass(slots=True)`).
 
 **Build commit injection (`__commit__`).** Release/build writes the source SHA into a
 generated `agent_artifacts/_commit.py` (`COMMIT = "<sha>"`; fallback `"unknown"` for dev

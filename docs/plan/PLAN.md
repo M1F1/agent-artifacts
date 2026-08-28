@@ -82,7 +82,7 @@ agent-artifacts/
 ├── skills/ guidelines/ mcp/ hooks/ bundles/   # WP-10 (seed content + test fixtures)
 ├── scripts/inject_commit.py            # WP-21
 ├── tests/                              # each WP adds tests/<area>_test.py; e2e = WP-24
-└── .github/workflows/                  # WP-22 (validate.yml, release.yml)
+└── .github/workflows/                  # WP-22 (pr-check.yml, release.yml)
 ```
 
 ---

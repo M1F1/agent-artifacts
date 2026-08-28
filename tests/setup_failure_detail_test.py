@@ -7,6 +7,7 @@ shows a consumer the transfer line and never the exit code.
 from __future__ import annotations
 
 from agent_artifacts.setup_runtime import failure_detail
+from tests.credential_fixtures import assignment
 from tests.function_cases import function_test_case
 
 BUILDKIT_HEAD = "#1 [internal] load build definition\n#1 transferring dockerfile: 117B done\n"
@@ -50,7 +51,13 @@ def test_the_result_never_exceeds_the_limit() -> None:
 def test_a_secret_is_redacted_before_truncation_not_after() -> None:
     # Truncating first could cut the assignment in half and leave a tail the pattern no longer
     # matches, which is why failure_detail owns both steps.
-    text = "TOKEN=supersecretvalue\n" + ("filler line\n" * 60) + "TOKEN=anothersecret\n"
+    text = (
+        assignment("TOKEN", "supersecretvalue")
+        + "\n"
+        + ("filler line\n" * 60)
+        + assignment("TOKEN", "anothersecret")
+        + "\n"
+    )
 
     detail = failure_detail(text)
 

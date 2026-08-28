@@ -1,0 +1,95 @@
+name: Provide AART
+description: >
+  Put an `aart` command on PATH without pip, a package index, or a build backend.
+  AART has no runtime dependencies and ships `agent_artifacts/__main__.py`, so a plain source
+  tree plus PYTHONPATH is a working installation. A local action is used on purpose: `./`
+  resolves without reaching a marketplace, which a GitHub Enterprise Server instance may not
+  carry.
+
+inputs:
+  path:
+    description: >
+      An agent-artifacts source tree already on the runner, usually baked into the CI image.
+      Wins when set, and needs neither git nor the network.
+    required: false
+    default: ""
+  url:
+    description: Git URL to clone the tool from when `path` is empty.
+    required: false
+    default: ""
+  ref:
+    description: Tag, branch or commit to check out when cloning. Empty means the default branch.
+    required: false
+    default: ""
+  python:
+    description: The interpreter that runs the tool.
+    required: false
+    default: python3
+
+outputs:
+  path:
+    description: The tree the shim runs from.
+    value: ${{ steps.provide.outputs.path }}
+  version:
+    description: The version that answered, as `aart --version` printed it.
+    value: ${{ steps.provide.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: provide
+      shell: bash
+      env:
+        AART_PATH: ${{ inputs.path }}
+        AART_URL: ${{ inputs.url }}
+        AART_REF: ${{ inputs.ref }}
+        AART_PYTHON: ${{ inputs.python }}
+      run: |
+        set -euo pipefail
+
+        tool="$AART_PATH"
+        if [ -z "$tool" ]; then
+          if [ -z "$AART_URL" ]; then
+            echo "aart: set either the 'path' input or the 'url' input" >&2
+            exit 2
+          fi
+          tool="${RUNNER_TEMP}/aart-tool"
+          rm -rf "$tool"
+          # A tag or branch clones shallow; a commit sha does not, so fall back to a full clone
+          # rather than failing on the one input form an operator is most likely to pin with.
+          if [ -n "$AART_REF" ]; then
+            git clone --quiet --depth 1 --branch "$AART_REF" "$AART_URL" "$tool" 2>/dev/null \
+              || { rm -rf "$tool"
+                   git clone --quiet "$AART_URL" "$tool"
+                   git -C "$tool" -c advice.detachedHead=false checkout --quiet "$AART_REF"; }
+          else
+            git clone --quiet --depth 1 "$AART_URL" "$tool"
+          fi
+        fi
+
+        if [ ! -f "$tool/agent_artifacts/__main__.py" ]; then
+          echo "aart: no agent_artifacts package under '$tool'" >&2
+          echo "      'path' must name the repository root, the directory holding agent_artifacts/" >&2
+          exit 2
+        fi
+
+        bin="${RUNNER_TEMP}/aart-bin"
+        mkdir -p "$bin"
+        cat > "$bin/aart" <<SHIM
+        #!/usr/bin/env bash
+        exec env PYTHONPATH="$tool" "$AART_PYTHON" -m agent_artifacts "\$@"
+        SHIM
+        chmod +x "$bin/aart"
+        echo "$bin" >> "$GITHUB_PATH"
+
+        # Say which copy answered. A pin that silently did not move is a real finding in this
+        # project's history, and a version printed by the thing that will run is the cheapest
+        # protection against repeating it.
+        version="$("$bin/aart" --version)"
+        {
+          echo "path=$tool"
+          echo "version=$version"
+        } >> "$GITHUB_OUTPUT"
+        echo "AART:    $version"
+        echo "from:    $tool"
+        echo "python:  $("$AART_PYTHON" --version 2>&1)"

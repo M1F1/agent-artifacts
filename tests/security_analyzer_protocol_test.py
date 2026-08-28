@@ -25,6 +25,7 @@ from agent_artifacts.security.analyzers import (
 from agent_artifacts.security.application import analyzer_input_from_stored_object
 from agent_artifacts.security.model import AssessmentStatus, FindingSeverity
 from agent_artifacts.store.model import StoredObject, make_object_candidate
+from tests.credential_fixtures import assignment_bytes
 
 RULES = sha256_bytes(b"rules-v1")
 OBJECT = sha256_bytes(b"object-v1")
@@ -361,7 +362,9 @@ class SecurityAnalyzerProtocolTest(unittest.TestCase):
     def test_timeout_crash_and_malformed_output_become_failed_attempts(self) -> None:
         outcomes = (
             AnalyzerProcessOutcome(AnalyzerProcessKind.TIMED_OUT),
-            AnalyzerProcessOutcome(AnalyzerProcessKind.COMPLETED, 9, b"", b"token=secret"),
+            AnalyzerProcessOutcome(
+                AnalyzerProcessKind.COMPLETED, 9, b"", assignment_bytes("token", "secret")
+            ),
             AnalyzerProcessOutcome(AnalyzerProcessKind.COMPLETED, 0, b"not-json", b""),
             AnalyzerProcessOutcome(AnalyzerProcessKind.OUTPUT_LIMIT),
         )

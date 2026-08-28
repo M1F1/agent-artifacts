@@ -11,6 +11,7 @@ from agent_artifacts import cli
 from agent_artifacts.commands import reporting
 from agent_artifacts.model import Request
 from agent_artifacts.reporting.model import UsageReport, UsageResult, reporting_issue_body
+from tests.credential_fixtures import assignment
 
 
 def _report() -> UsageReport:
@@ -92,7 +93,7 @@ class ReportingCliCommandTest(unittest.TestCase):
     def test_invalid_issue_returns_error_without_echoing_untrusted_content(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "bad.md"
-            path.write_text("TOKEN=secret /Users/alice", encoding="utf-8")
+            path.write_text(assignment("TOKEN", "secret") + " /Users/alice", encoding="utf-8")
             error = io.StringIO()
             with contextlib.redirect_stderr(error):
                 code = reporting.run(

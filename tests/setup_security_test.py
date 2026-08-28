@@ -15,6 +15,7 @@ from agent_artifacts.setup_runtime import (
     apply_setup_plan,
     rollback_record,
 )
+from tests.credential_fixtures import assignment
 from tests.setup_fixtures import recipe
 
 
@@ -51,7 +52,7 @@ class RecordingProcess:
             self.image = True
             return ProcessResult(0)
         if args and args[0] == "verify-tool":
-            return ProcessResult(1, "", "token=synthetic-canary")
+            return ProcessResult(1, "", assignment("token", "synthetic-canary"))
         return ProcessResult(0)
 
 

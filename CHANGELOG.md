@@ -3,6 +3,74 @@
 All notable AART changes are documented here. The project follows semantic versioning for the
 executable; protocol, schema, artifact, importer, profile, and registry versions remain independent.
 
+## Unreleased
+
+Standing AART up on a company's GitHub Enterprise Server instance, one failure at a time, with
+every fix made here rather than on their side: a fork must need no hand-edits.
+
+### Breaking
+
+- **The package to install is `aart-cli`.** `agent-artifacts` on a package index is a different
+  project, belonging to someone else, and it was installed here by mistake once. The command is
+  still `aart`, the import package is still `agent_artifacts`, and `agent-artifacts` still works as
+  a command name.
+- **Versions start again at `0.0.1`.** The number now says what this project promises, which after
+  the rename is nothing yet. A registry whose `requires_aart` floor was written while AART was
+  `1.x` or `2.x` will refuse this version until that floor comes down.
+- **`validate.yml` is `pr-check.yml`, and it runs on pull requests only.** A branch pushed without
+  a pull request is now checked by nothing. The one check name to require is `pr-check`.
+
+### Changed
+
+- **Poetry builds the wheel**, wrapped by `scripts/build_wheel.py`, which removes
+  `SOURCE_DATE_EPOCH` from the environment and refuses a build by any poetry-core other than the
+  one `[build-system]` pins — two promises `poetry build` alone does not keep. Building AART now
+  needs Poetry on the machine; `AART_POETRY` names it when it is off `PATH`.
+- **The developer tools are Poetry's dev group**, pinned in `poetry.lock`.
+  `scripts/dev_tools.py install` carries those pins to pip, which is what CI runs: Poetry takes an
+  install source only from a block inside `pyproject.toml`, so it cannot be pointed at a per-fork
+  internal index, and pip reads `PIP_INDEX_URL`.
+- **A setup queue asks one question, not one per step.** `Run setup? [Y/s/n]` — Enter runs it and
+  each step says what it is as it happens; `s` is the old screen, with a question per step; `n`, an
+  unrecognised answer, and no terminal at all stop. Installing three MCP servers used to mean
+  reading every step of every plan and then approving each one (`#113`).
+- **The release run proves only what has the release as its subject.** The ten source gates ran on
+  the pull request that merged the commit, so the tag run no longer repeats them; `packaging-check`
+  stays, because its subject is the wheel.
+
+### Added
+
+- **The changelog decides the version.** Changes accumulate under `## Unreleased`, and
+  `scripts/changelog.py` reads the kind of each one to say which part of the version moves, then
+  cuts the section under a dated heading. Below `1.0.0` each part moves the one below it, because
+  a zero major version promises nothing and `1.0.0` cannot be taken back. `docs-check` holds the
+  file's shape (`DOC011`).
+- `scripts/version.py bump {major,minor,patch}`, so a version is computed rather than typed.
+- **`aart marketplace search WORD…`, and `/` in the TUI.** A catalog of any size is no longer a
+  list to page through: every word must match, so a second word narrows the answer, and matching
+  is case-insensitive substring over name, coordinate, summary and collection membership —
+  `review` finds `code-review`. In the curses list `/` filters live as you type, Enter keeps the
+  filter and Escape drops it; in the text fallback `/review` shows the matching rows and `/` alone
+  lists everything again. A filter only hides rows: what was ticked stays ticked, and every row
+  keeps the number it has in the full list, so a filtered selection cannot install its neighbour.
+  Ranking is one stated table in `agent_artifacts/marketplace/search.py`, and the runtime gains no
+  dependency for any of it.
+
+### Removed
+
+- The `[dev]` extra. The tools live in Poetry's dev group; `pip install -e ".[dev]"` no longer
+  works, and `README.md` no longer tells anyone to run it.
+- Fourteen documents nothing referred to — old release notes, schema freezes, two compatibility
+  records and one acceptance record.
+
+### Fixed
+
+- **A machine with the tools but without Poetry said nothing usable.** `poetry-core` occupies the
+  `poetry` import name, so `python -m poetry` failed with "'poetry' is a package and cannot be
+  directly executed" instead of naming Poetry or `AART_POETRY`. A CI image is exactly this shape.
+- `scripts/quality.py` told you to run `poetry install --with dev` and then to add `--index-url`,
+  which is a pip flag Poetry does not take. It now names both commands.
+
 ## 2.8.5 — 2026-08-21
 
 Install three MCP servers in one selection and `2.8.4` prints one wall of text: the same approval

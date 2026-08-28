@@ -434,7 +434,7 @@ class LocalCurationService:
         planned = prepare_registry_init(options, output=self.workspace)
         if isinstance(planned, Err):
             return planned
-        warnings = (
+        warnings: tuple[str, ...] = (
             ()
             if request.usage_reporting_repository is not None
             else (
@@ -442,6 +442,18 @@ class LocalCurationService:
                 "re-run init with --usage-reporting-repository OWNER/REPOSITORY to enable "
                 "prompt-only registry routing",
             )
+        )
+        # Two questions, two homes, and `init` owes the reader both.  *Which* AART is the
+        # registry's own decision and is now pinned in a file it can review and revert; *where
+        # this deployment gets it from* is a fact about the instance and stays in settings.
+        warnings += (
+            f"registry CI runs AART {EXECUTABLE_VERSION}, pinned in .aart-version -- bump it in a "
+            "pull request and the gates run against the new version before it is merged",
+            "where CI fetches that version from is a repository variable, first one set wins: "
+            "AART_PACKAGE (package index), AART_WHEEL_URL (released wheel), AART_TOOL_PATH "
+            "(already on the runner), then AART_TOOL_URL (git clone). Setting none reaches "
+            "github.com, which an Enterprise instance cannot; set one on the organisation so it "
+            "configures every registry at once",
         )
         return Ok(self._workspace_review(request, planned.value, warnings=warnings))
 

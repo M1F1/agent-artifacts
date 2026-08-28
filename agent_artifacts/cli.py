@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) "
         "into agentic harnesses.",
     )
-    parser.add_argument("--version", action="version", version=f"agent-artifacts {__version__}")
+    parser.add_argument("--version", action="version", version=f"aart-cli {__version__}")
 
     def _add_project(p: argparse.ArgumentParser) -> None:
         p.add_argument(
@@ -317,6 +317,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit all canonical marketplace sources and artifacts",
     )
     _add_json(p_marketplace_list)
+
+    p_marketplace_search = marketplace_sub.add_parser(
+        "search",
+        formatter_class=_HELP_FORMATTER,
+        help="find marketplace artifacts by name, coordinate, or summary",
+        description=(
+            "Match every word given against each artifact's name, coordinate, summary, authors, "
+            "licence, and collection members, and print what matches all of them, best first. "
+            "Matching is plain case-insensitive substring: looking for `code-review` finds it "
+            "from `review`. A second word narrows the answer rather than widening it."
+        ),
+    )
+    p_marketplace_search.add_argument(
+        "query",
+        nargs="+",
+        metavar="WORD",
+        help="word(s) to look for; an artifact must match all of them",
+    )
+    p_marketplace_search.add_argument(
+        "--limit",
+        dest="search_limit",
+        type=int,
+        metavar="N",
+        help="print at most N matches (the best N, not the first N)",
+    )
+    _add_json(p_marketplace_search)
 
     p_marketplace_health = marketplace_sub.add_parser(
         "health",
@@ -1276,6 +1302,8 @@ def _to_request(args: argparse.Namespace) -> Request:
         source_location=getattr(args, "source_location", None),
         source_make_default=getattr(args, "source_make_default", None),
         marketplace_action=getattr(args, "marketplace_action", None),
+        query=tuple(getattr(args, "query", ()) or ()),
+        search_limit=getattr(args, "search_limit", None),
         receipt_action=getattr(args, "receipt_action", None),
         runtime_environment=getattr(args, "runtime_environment", None),
         offline=bool(getattr(args, "offline", False)),

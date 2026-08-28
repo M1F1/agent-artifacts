@@ -1,0 +1,183 @@
+name: AART release checklist
+description: >
+  Reconcile against the reference registry, prove the tag, build the offline wheel and ship it.
+  Lives in an action for the same reason the quality gates do: two jobs differ only in how their
+  container image is pulled, and a release checklist duplicated is a release checklist that drifts.
+
+inputs:
+  python:
+    description: Name of the interpreter to invoke.
+    required: true
+  python-version:
+    description: Interpreter version to install when the job runs without a container image.
+    required: true
+  setup-python:
+    description: '"true" when the job has no container image and so needs an interpreter installed.'
+    required: true
+  tag:
+    description: The release tag under inspection.
+    required: true
+  preconditions:
+    description: >
+      '"false" when the caller has already proven this exact tree in this same run -- the
+      eleven-item release checklist and the packaging gate.  The release button has:
+      `scripts/cut_release.py` runs both before it does anything, because they have to pass
+      *before* the tag exists -- the button either produces a tag and a release or produces
+      neither.  Running them again here proved the same tree a second time.  It is an input
+      rather than a guess, so a path that has not run them cannot skip them by accident.'
+    required: false
+    default: "true"
+  attach:
+    description: >
+      '"true" when the wheel should be attached to the release.  Not read off the event: the
+      release button publishes the release itself and then calls this action directly, because a
+      release created with the repository GITHUB_TOKEN raises no event for anything to react to.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The release steps read history through git, so they need the same trust the quality action
+    # establishes.  See the note there.
+    - name: Trust the checked-out workspace
+      shell: bash
+      # `$PWD`, not `$GITHUB_WORKSPACE`: a composite step starts in the repository root
+      # anyway, and the shell guarantees `$PWD` is set to it.  An unset environment
+      # variable would expand to an empty path, which git accepts and which fixes
+      # nothing -- a silent no-op is the worst outcome for a step like this.
+      run: git config --global --add safe.directory "$PWD"
+
+    - name: Set up Python
+      if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # Unset means this fork keeps no artifact catalogue, so there is nothing to reconcile against
+    # and nothing to clone.  The variable is the switch; there is no second one to remember.
+    - name: Clone approved reference registry
+      if: env.REFERENCE_REGISTRY_URL != ''
+      shell: bash
+      run: git clone --depth 1 "$REFERENCE_REGISTRY_URL" "$RUNNER_TEMP/reference-registry"
+
+    - name: Prove the tagged source was merged into main
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+        TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+        git merge-base --is-ancestor "$TAG_COMMIT" origin/main
+
+    # `--without-registry` is typed out rather than inferred from a missing `--registry`, so a
+    # release that verifies less can only happen on purpose.  The checklist warns on every such
+    # run and marks the seven registry checks `skipped`, never `passed`.
+    #
+    # Skipped only when the caller says it has already run it against this same tree -- see the
+    # `preconditions` input.  Every other step below still runs: they check the tag, the notes and
+    # the artefact, and none of those existed when the button ran its precondition.
+    - name: Run stable release checklist
+      if: inputs.preconditions != 'false'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${REFERENCE_REGISTRY_URL:-}" ]; then
+          ${{ inputs.python }} scripts/release.py check --registry "$RUNNER_TEMP/reference-registry"
+        else
+          ${{ inputs.python }} scripts/release.py check --without-registry
+        fi
+
+    - name: Verify source version and release tag
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: ${{ inputs.python }} scripts/version.py check-tag "$TAG"
+
+    - name: Verify reviewed release notes
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: test -s "docs/release/github-release-${TAG}.md"
+
+    # The one quality gate the release run keeps.  Its subject is the wheel, not the source, so
+    # the pull request that proved the source cannot have proven it: it builds a wheel in a
+    # throwaway copy of the tree and imports the package back out of it.  Everything else the ten
+    # gates check was already proven on the way to `main`.
+    # See docs/ci/pr-check-and-release-split-v1.md.
+    - name: Check the packaged wheel
+      if: inputs.preconditions != 'false'
+      shell: bash
+      run: ${{ inputs.python }} scripts/packaging_check.py
+
+    - name: Inject commit
+      shell: bash
+      run: ${{ inputs.python }} scripts/inject_commit.py
+
+    - name: Build wheel
+      shell: bash
+      run: ${{ inputs.python }} scripts/build_wheel.py
+
+    # Neither the GitHub CLI nor curl is installed in every CI image.  A real Enterprise image had
+    # git, an internal index and a Python interpreter, and nothing else -- this step failed first on
+    # `gh: command not found` and then, rewritten around the REST API, on `curl: command not found`,
+    # both times after the wheel was already built.  So it now asks for nothing the release does not
+    # already need, the same way GNU Make came off the list earlier.
+    #
+    # The script also removes a hazard `gh` brought with it: `gh` talks to github.com unless
+    # `GH_HOST` says otherwise, so an unset `AART_GH_HOST` pointed a fork's upload at the wrong
+    # instance entirely.  See scripts/attach_release_asset.py for what is read rather than guessed.
+    # Asked for by the caller rather than read off `github.event_name`.  The release button
+    # publishes the release with the repository `GITHUB_TOKEN`, and GitHub deliberately raises no
+    # workflow event for anything done with that token -- so the run that publishes a release is
+    # the last run there will be, and it has to finish the job itself.
+    - name: Attach wheel to release
+      if: inputs.attach == 'true'
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: ${{ inputs.python }} scripts/attach_release_asset.py "$TAG"
+
+    # Unset means this fork publishes nowhere, the same switch `REFERENCE_REGISTRY_URL` is: one
+    # variable, set or not set, with no second one to remember.  `attach` guards it too, so the
+    # wheel goes to the index once, when a release is actually published -- a tag push builds the
+    # wheel to prove it builds, and an index that already holds that version refuses the second
+    # upload, which would fail a run that did nothing wrong.
+    #
+    # `twine` is the usual answer and it is one more program the image has to carry.  This walk has
+    # already lost Make, `gh` and `curl` to exactly that, each on an image holding git, an interpreter
+    # and nothing else, so the upload is one HTTP POST written against the standard library.  See
+    # scripts/publish_to_index.py.
+    - name: Publish the wheel to the internal index
+      if: inputs.attach == 'true' && env.INDEX_PUBLISH_URL != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        # GitHub masks the secret it was given, which is the whole string.  Neither half is masked
+        # until it is handed back, so both are re-masked before anything can echo one.
+        # `:-` and not bare expansion: with `set -u` a missing secret would abort here on a shell
+        # error naming a variable, instead of reaching the script, which says which secret is
+        # missing and what it holds.  A step that fails should say what to do about it.
+        held="${AART_INDEX_PUBLISH_CREDENTIALS:-}"
+        if [ -n "$held" ]; then
+          echo "::add-mask::${held%%:*}"
+          echo "::add-mask::${held#*:}"
+        fi
+        ${{ inputs.python }} scripts/publish_to_index.py --url "$INDEX_PUBLISH_URL"
+
+    # There is no workflow-artifact copy of the wheel, and the reason is worth keeping.
+    #
+    # The step used to appear twice, choosing a version with `if:`, because a GitHub Enterprise
+    # Server instance ships `upload-artifact@v4`, downloads it happily and then fails at run time:
+    #
+    #     GHESNotSupportedError: @actions/artifact v2.0.0+, upload-artifact@v4+ and
+    #     download-artifact@v4+ are not currently supported on GHES.
+    #
+    # github.com then closed the other half of that fork. It now refuses `upload-artifact@v3`
+    # outright -- and refuses it while *resolving* the action, before any `if:` is evaluated, so
+    # merely naming v3 in a file failed a run that would never have executed the step. One host
+    # cannot use v4, the other cannot name v3, and a single file cannot satisfy both.
+    #
+    # It did not need to. The wheel is attached to the release above, which is where anyone
+    # installing it looks; the artifact was a second copy of the same bytes with a shorter life.
+    # A run on a tag with no release still builds the wheel and so still proves it builds. This
+    # also retires `AART_ARTIFACT_V4`: one fewer thing a fork has to know about itself.

@@ -329,7 +329,8 @@ root would have had none.
     credential in a URL's userinfo, one in a query string, and one standing alone with no name beside
     it. A `sha256:` digest and a plan hash are returned unchanged, which is the §4.4 limit holding.
 17. **A credentialed source URL never reaches the redactor at all.** `source add --location
-    https://oauth2:…@ghe.example.test/…` is refused with *source URL must be a safe credential-free
+    <a URL with userinfo `oauth2:…` at `ghe.example.test`>` is refused with *source URL must be a
+    safe credential-free
     Git location*, before anything is stored. Worth recording as the belt to the redactor's braces:
     the boundary that should never have to be redacted, isn't.
 18. **`LAF-73`**, found at step 15's neighbour: `receipt show` on the first pass's record still prints

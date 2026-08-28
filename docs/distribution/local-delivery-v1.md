@@ -29,7 +29,7 @@ make wheel
 python -m pip install \
   --no-index \
   --no-deps \
-  dist/agent_artifacts-1.0.0-py3-none-any.whl
+  dist/aart_cli-1.0.0-py3-none-any.whl
 ```
 
 The wheel allowlist contains executable Python modules and package resources only below
@@ -42,8 +42,8 @@ or out-of-bound archive members and unconditional `Requires-Dist` metadata.
 `aart upgrade` is an explicit local replacement boundary, not a release resolver:
 
 ```sh
-aart upgrade --wheel /path/to/agent_artifacts-1.0.0-py3-none-any.whl --dry-run
-aart upgrade --wheel /path/to/agent_artifacts-1.0.0-py3-none-any.whl
+aart upgrade --wheel /path/to/aart_cli-1.0.0-py3-none-any.whl --dry-run
+aart upgrade --wheel /path/to/aart_cli-1.0.0-py3-none-any.whl
 
 aart upgrade --source-checkout /path/to/agent-artifacts --dry-run
 aart upgrade --source-checkout /path/to/agent-artifacts

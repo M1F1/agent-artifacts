@@ -1,12 +1,22 @@
 name: release
 
-# Repeats quality/release gates, builds the offline zero-dependency wheel, and ships it.
+# Proves what has the release as its subject, builds the offline zero-dependency wheel, and
+# ships it.  The ten source gates ran on the pull request; see the note above the job.
 # Triggers:
 #   * a stable vX.Y.Z tag push          -> build + upload as a workflow artifact
 #   * a published GitHub release        -> additionally attach the wheel to the release
 # `scripts/version.py check-tag` is the real gate: it rejects any tag that does not match the
 # source version the release contract governs, so the pattern below stays deliberately broad
 # rather than pinning one release and silently building nothing for the next.
+#
+# Portable to a GitHub Enterprise Server fork by setting repository variables only.  Every default
+# reproduces the public github.com run except one: `AART_REFERENCE_REGISTRY_URL` has no default,
+# because a default naming a github.com repository reproduces nothing on an instance that cannot
+# reach it.  See the note on that variable below.  See docs/ci/enterprise-fork-v1.md.
+#
+# Each job appears twice for the reason pr-check.yml records: a container's `credentials` block
+# cannot be conditional, so the condition moves to the job.  Both shapes share their steps through
+# `.github/actions/*`.
 on:
   push:
     tags:
@@ -17,84 +27,90 @@ on:
 permissions:
   contents: write  # required to attach assets to the release
 
+# Poetry builds the wheel and installs the developer tooling.  An image that keeps Poetry off
+# `PATH` -- `/opt/poetry/bin/poetry` is the common shape -- names it in this variable instead;
+# unset, every step falls back to plain `poetry`.  See docs/ci/enterprise-fork-v1.md.
+env:
+  AART_POETRY: ${{ vars.AART_POETRY }}
+
 jobs:
-  quality:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.10"
-          - python-version: "3.14"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install developer quality tools
-        run: python -m pip install --disable-pip-version-check -e ".[dev]"
-
-      - name: Run canonical quality gates
-        run: make quality
-
+  # No quality jobs here any more.  A release is cut from a commit that reached `main`, and
+  # nothing reaches `main` except through a pull request that passed all ten gates on the full
+  # interpreter matrix.  Re-running them at the tag proved the same tree a second time.  What is
+  # left is everything whose subject is the release itself: the tag matches the source version,
+  # the tagged commit is in `main`, reviewed notes exist, the eleven-item checklist passes, and
+  # `packaging-check` -- the one gate whose subject is the wheel rather than the source.
+  # See docs/ci/pr-check-and-release-split-v1.md.
   release:
-    needs: quality
-    runs-on: ubuntu-latest
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container: ${{ vars.AART_CI_IMAGE }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+      # The release checklist reconciles against a real registry checkout, and this variable is
+      # the switch: set, the reconciliation runs against what it names; unset, it is skipped and
+      # says so.  There is deliberately no default.  A default naming this project's registry
+      # promised a fork parity it cannot have -- an Enterprise instance cannot reach github.com,
+      # so the default guaranteed a failed clone rather than the public behaviour.  Actions cannot
+      # tell an unset variable from an empty one, so a default and an opt-out cannot coexist here.
+      #
+      # This repository therefore sets it explicitly.  Clearing it is a real change: releases keep
+      # passing and verify seven checks fewer, which is why the checklist warns on every run that
+      # skips and records `registry_reconciliation` in its receipt.
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
+      # No `GH_HOST` here any more: the release action attaches the wheel through the REST API at
+      # `GITHUB_API_URL`, which the runner sets to this instance.  `gh` defaulted to github.com,
+      # so a fork that forgot `AART_GH_HOST` uploaded to the wrong instance -- a mistake the
+      # variable could prevent but only if you knew to set it.  Now there is nothing to set.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/release
         with:
-          python-version: "3.11"
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          tag: ${{ github.event.release.tag_name || github.ref_name }}
+          # A tag push builds and keeps the wheel; a published release also attaches it.
+          attach: ${{ github.event_name == 'release' }}
 
-      - name: Clone approved public reference registry
-        run: git clone --depth 1 https://github.com/M1F1/agent-artifacts-registry.git "$RUNNER_TEMP/reference-registry"
-
-      - name: Prove the tagged source was merged into main
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
-          git merge-base --is-ancestor "$TAG_COMMIT" origin/main
-
-      - name: Run stable release checklist
-        run: make release-check REGISTRY="$RUNNER_TEMP/reference-registry"
-
-      - name: Verify source version and release tag
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: python scripts/version.py check-tag "$TAG"
-
-      - name: Verify reviewed release notes
-        env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
-        run: test -s "docs/release/github-release-${TAG}.md"
-
-      - name: Inject commit
-        run: python scripts/inject_commit.py
-
-      - name: Build wheel
-        run: python scripts/build_wheel.py
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+  release-private-image:
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+      REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}
+      # Unset means this fork publishes to no index.  The URL is a variable because it is not a
+      # secret and belongs in plain sight; the credential is named rather than written, so the
+      # value lives only in the secret store.
+      INDEX_PUBLISH_URL: ${{ vars.AART_INDEX_PUBLISH_URL }}
+      AART_INDEX_PUBLISH_CREDENTIALS: ${{ secrets[vars.AART_INDEX_PUBLISH_CREDENTIALS_SECRET] }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: wheel
-          path: dist/*.whl
-          if-no-files-found: error
-
-      - name: Attach wheel to release
-        if: github.event_name == 'release'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" dist/*.whl --clobber
+          fetch-depth: 0
+      - uses: ./.github/actions/release
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ vars.AART_RELEASE_PYTHON_VERSION || '3.11' }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+          tag: ${{ github.event.release.tag_name || github.ref_name }}
+          # A tag push builds and keeps the wheel; a published release also attaches it.
+          attach: ${{ github.event_name == 'release' }}

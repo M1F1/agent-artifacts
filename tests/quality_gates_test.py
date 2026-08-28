@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXPECTED_GATES = (
@@ -20,6 +23,7 @@ EXPECTED_GATES = (
     "coverage",
     "packaging-check",
     "docs-check",
+    "secret-shape-check",
 )
 
 
@@ -42,18 +46,48 @@ class QualitySurfaceTest(unittest.TestCase):
         for target in (*EXPECTED_GATES, "quality"):
             self.assertIn(f"\n{target}:", "\n" + makefile, target)
 
-    def test_ci_delegates_to_quality_on_minimum_and_latest_python(self):
-        workflow = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
-        self.assertIn('python-version: ["3.10", "3.14"]', workflow)
-        self.assertIn("run: make quality", workflow)
-        self.assertNotIn("unittest discover", workflow)
-        self.assertNotIn("ast.walk", workflow)
+    def test_the_pr_check_delegates_to_quality_on_every_supported_python(self):
+        workflow = (ROOT / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8")
+        # The matrix is a repository variable so an Enterprise fork can retarget it without
+        # editing YAML, but the *default* is what this repository runs.  It must cover every
+        # interpreter this project supports, because the PR check is now the only run that
+        # exercises the source at all: 3.10 and 3.14 are the ends of the range, and 3.11 is here
+        # because the release run used to be the one place it was ever tried, and the release run
+        # no longer runs gates.  Asserting the whole expression keeps both halves honest: a fork
+        # that sets nothing gets exactly the run this repository gets.
+        self.assertIn(
+            "python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS"
+            ' || \'["3.10", "3.11", "3.14"]\') }}',
+            workflow,
+        )
+        # The steps live in a composite action now: two jobs differ only in how their container
+        # image is pulled, and what they run must not be a second copy that can drift.
+        self.assertIn("uses: ./.github/actions/quality", workflow)
+        action = (ROOT / ".github" / "actions" / "quality" / "action.yml").read_text(
+            encoding="utf-8"
+        )
+        # And it delegates to the canonical runner directly.  `make quality` was a one-line
+        # wrapper around this very command, so the indirection only added GNU Make to what a CI
+        # image must carry -- a real Enterprise image without it failed before a gate could run.
+        self.assertIn("scripts/quality.py", action)
+        self.assertNotIn("make ", action)
+        for body in (workflow, action):
+            self.assertNotIn("unittest discover", body)
+            self.assertNotIn("ast.walk", body)
 
-    def test_dev_extra_adds_coverage_but_runtime_stays_empty(self):
+    def test_the_dev_group_carries_the_tools_and_the_runtime_stays_empty(self):
+        """The tools moved into Poetry's dev group; what must not move is `dependencies = []`.
+
+        The group is deliberately outside `[project]`: nothing in it reaches installed metadata,
+        so an install of the published wheel still pulls nothing at all.
+        """
+
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        project = pyproject.split("[project]", 1)[1].split("[project.optional-dependencies]", 1)[0]
+        project = pyproject.split("[project]", 1)[1].split("[tool.poetry]", 1)[0]
         self.assertIn("dependencies = []", project)
-        self.assertIn('"coverage>=', pyproject)
+        self.assertNotIn("coverage", project)
+        self.assertIn("[tool.poetry.group.dev.dependencies]", pyproject)
+        self.assertIn("coverage = ", pyproject)
 
 
 class QualityRunnerTest(unittest.TestCase):
@@ -267,6 +301,70 @@ class ResidueRegisterGateTest(unittest.TestCase):
         self.assertEqual(len(rows), len({identifier for identifier, _ in rows}))
         # The stream gathered twenty-eight; implementing the response to it added two more.
         self.assertGreaterEqual(len(rows), 28)
+
+
+class MissingToolTest(unittest.TestCase):
+    """A gate whose tool is absent must name the tool and the command that installs it.
+
+    Three failures in the Enterprise walk were unreadable because a step said only that something
+    exited non-zero.  A developer environment without ``ruff`` produced ``No module named ruff``,
+    which is true and names no fix.
+    """
+
+    def test_the_needed_tools_are_read_off_the_gate_commands(self):
+        quality = _load_script("quality")
+        with tempfile.TemporaryDirectory() as raw:
+            temp_root = pathlib.Path(raw)
+            with unittest.mock.patch.object(quality.importlib.util, "find_spec", return_value=None):
+                self.assertEqual(
+                    quality.missing_tools(("format-check", "lint"), temp_root), ("ruff",)
+                )
+                self.assertEqual(quality.missing_tools(("typecheck",), temp_root), ("mypy",))
+                self.assertEqual(quality.missing_tools(("coverage",), temp_root), ("coverage",))
+                # These four run on a bare interpreter, which is why the message offers them.
+                self.assertEqual(
+                    quality.missing_tools(
+                        ("unit", "integration", "validate", "docs-check"), temp_root
+                    ),
+                    (),
+                )
+
+    def test_a_missing_tool_stops_the_run_and_prints_the_install_command(self):
+        quality = _load_script("quality")
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            with unittest.mock.patch.object(quality, "missing_tools", return_value=("ruff",)):
+                with unittest.mock.patch.object(quality.subprocess, "run") as run:
+                    with contextlib.redirect_stderr(stderr):
+                        code = quality._run(("format-check",), pathlib.Path(raw))
+        self.assertEqual(code, 2)
+        run.assert_not_called()
+        said = stderr.getvalue()
+        self.assertIn("ruff", said)
+        self.assertIn("poetry install --with dev", said)
+
+
+class RepositoryRelativeLinkTest(unittest.TestCase):
+    """`../../releases` has no file behind it, and is the point.
+
+    It resolves against whichever repository the reader is in, which is the one way a page can
+    point at a release without writing down an address that is upstream's in every fork.
+    """
+
+    def test_the_fork_safe_forms_are_allowed_and_a_typo_is_not(self) -> None:
+        docs_check = _load_script("docs_check")
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            good = root / "good.md"
+            good.write_text("See [Releases](../../releases).\n", encoding="utf-8")
+            bad = root / "bad.md"
+            bad.write_text("See [Releases](../../releasez).\n", encoding="utf-8")
+
+            self.assertEqual(
+                docs_check.validate_markdown(good, good.read_text(encoding="utf-8"), root), ()
+            )
+            found = docs_check.validate_markdown(bad, bad.read_text(encoding="utf-8"), root)
+            self.assertEqual([item.code for item in found], ["DOC002"])
 
 
 class PackagingCheckTest(unittest.TestCase):

@@ -22,7 +22,7 @@ PYTHON = sys.executable
 # The release series this checklist governs.  REL01's `1.0.0` evidence is immutable: its
 # schema freeze, checklist, and release notes are never regenerated or edited.  A new release
 # series adds its own contract here and its own versioned documents beside the frozen ones.
-EXPECTED_VERSION = "2.8.5"
+EXPECTED_VERSION = "0.0.1"
 RELEASE_CONTRACT_VERSION = 18
 REFERENCE_REGISTRY_ORIGIN = "https://github.com/M1F1/agent-artifacts-registry"
 SCHEMA_FREEZE_PATH = f"docs/release/schema-freeze-v{RELEASE_CONTRACT_VERSION}.json"
@@ -185,7 +185,7 @@ def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[
             check=True,
             capture_output=True,
         )
-        built = tuple((source_copy / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        built = tuple((source_copy / "dist").glob("aart_cli-*-py3-none-any.whl"))
         if len(built) != 1:
             raise ValueError(f"expected one built wheel, found {built}")
         if output_dir is None:
@@ -198,7 +198,24 @@ def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[
         return destination.name, _sha256(destination.read_bytes())
 
 
-def _environment() -> dict[str, str]:
+def _environment(cwd: Path) -> dict[str, str]:
+    """The scrubbed environment every checklist subprocess runs in.
+
+    System and global git config are switched off on purpose: release evidence must not depend on
+    what happens to be configured on the machine that produced it.
+
+    That also switches off the one setting a container needs.  `actions/checkout` writes the
+    workspace as the runner's uid, a container job usually runs as another, and git then refuses
+    every command in it with `detected dubious ownership` -- so a CI job would mark its own
+    workspace safe with `git config --global`, and this process would not read it.  The result was
+    two diagnostics at once, both saying a git command "could not prove" something, neither saying
+    why.
+
+    So the exception is stated here instead, through `GIT_CONFIG_COUNT` rather than a file: no
+    configuration is read, one directory is trusted, and it is the directory this command runs in
+    rather than a wildcard.
+    """
+
     environment = {
         "PATH": os.environ.get("PATH", os.defpath),
         "LANG": "C",
@@ -207,6 +224,9 @@ def _environment() -> dict[str, str]:
         "PYTHONDONTWRITEBYTECODE": "1",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "safe.directory",
+        "GIT_CONFIG_VALUE_0": str(cwd),
         "GIT_TERMINAL_PROMPT": "0",
         "GCM_INTERACTIVE": "never",
     }
@@ -240,13 +260,28 @@ def _run(
     timeout_seconds: int = 120,
 ) -> subprocess.CompletedProcess[str] | None:
     try:
-        return runner(command, cwd, _environment(), timeout_seconds)
+        return runner(command, cwd, _environment(cwd), timeout_seconds)
     except (OSError, subprocess.SubprocessError):
         return None
 
 
 def _diagnostic(check: str, code: str, message: str) -> ReleaseDiagnostic:
     return ReleaseDiagnostic(check, code, message)
+
+
+def _why(result: subprocess.CompletedProcess[str] | None) -> str:
+    """What the command said, appended to a diagnostic that would otherwise only say it failed.
+
+    "cannot prove the release worktree is clean" is true and useless.  Git had already explained
+    itself on stderr and the explanation was dropped, so the log showed two checks failing for
+    reasons it did not print.  Three separate failures on one Enterprise walk were diagnosed by
+    guessing at a message that had already been produced.
+    """
+
+    if result is None:
+        return "; the command could not be started"
+    detail = (result.stderr or result.stdout or "").strip().splitlines()
+    return f"; git said: {detail[0]}" if detail else ""
 
 
 def _repository_diagnostics(
@@ -325,7 +360,7 @@ def _repository_diagnostics(
                 _diagnostic(
                     "repository",
                     "repository-state-unavailable",
-                    "cannot prove the release worktree is clean",
+                    "cannot prove the release worktree is clean" + _why(status),
                 )
             )
         elif status.stdout:
@@ -348,7 +383,8 @@ def _repository_diagnostics(
                 _diagnostic(
                     "repository",
                     "source-not-merged-into-main",
-                    "release source commit is not proven to be merged into origin/main",
+                    "release source commit is not proven to be merged into origin/main"
+                    + _why(main_membership),
                 )
             )
     return tuple(diagnostics)
@@ -405,6 +441,26 @@ def _normalize_origin(raw: str) -> str:
     return raw.strip().removesuffix(".git").removesuffix("/")
 
 
+def approved_registry_origin() -> str:
+    """The registry origin this checklist will accept, defaulting to this project's own.
+
+    The release workflow already clones whatever `REFERENCE_REGISTRY_URL` names, because a fork
+    publishes to its own registry and cannot reach this one.  Reading the same variable here is
+    what makes that setting mean something: without it the workflow clones the fork's registry and
+    this check rejects it as "not the approved public reference repository", which is a variable
+    contradicted by a constant.
+
+    The guard itself is unchanged.  On this repository the variable is unset, the default applies,
+    and a release still reconciles against exactly one approved registry.  A fork states its own,
+    and the registry it clones is then the registry it is checked against -- one value, not two
+    that can disagree.
+    """
+
+    return _normalize_origin(os.environ.get("REFERENCE_REGISTRY_URL", "")) or (
+        REFERENCE_REGISTRY_ORIGIN
+    )
+
+
 def _remote_head_commit(result: subprocess.CompletedProcess[str] | None) -> str | None:
     if result is None or result.returncode != 0:
         return None
@@ -441,14 +497,17 @@ def _registry_diagnostics(
     if (
         origin is None
         or origin.returncode != 0
-        or _normalize_origin(origin.stdout) != REFERENCE_REGISTRY_ORIGIN
+        or _normalize_origin(origin.stdout) != approved_registry_origin()
     ):
         return RegistryEvidence(
             (
                 _diagnostic(
                     "registry-origin",
                     "registry-origin-invalid",
-                    "release registry is not the approved public reference repository",
+                    "reference registry origin is "
+                    f"{_normalize_origin(origin.stdout) if origin else '(unreadable)'}, "
+                    f"not the approved {approved_registry_origin()}; "
+                    "set REFERENCE_REGISTRY_URL to the registry this release publishes to",
                 ),
             ),
             None,
@@ -466,7 +525,7 @@ def _registry_diagnostics(
                 _diagnostic(
                     "registry-origin",
                     "registry-state-unavailable",
-                    "cannot prove the reference registry worktree is clean",
+                    "cannot prove the reference registry worktree is clean" + _why(status),
                 ),
             ),
             None,
@@ -603,7 +662,7 @@ def _registry_diagnostics(
 
 def check_release(
     root: Path,
-    registry: Path,
+    registry: Path | None,
     *,
     process_runner: ProcessRunner = _run_process,
     require_clean: bool = True,
@@ -615,7 +674,14 @@ def check_release(
         require_clean=require_clean,
         require_main=require_main,
     )
-    registry_evidence = _registry_diagnostics(root, registry, process_runner)
+    # `registry is None` is the deliberate "this fork has no registry" case, not a missing
+    # argument: the caller has to ask for it by name.  Reconciliation is then not performed, and
+    # nothing pretends it was -- the seven registry checks report `skipped`, never `passed`.
+    registry_evidence = (
+        _registry_diagnostics(root, registry, process_runner)
+        if registry is not None
+        else RegistryEvidence((), None, False)
+    )
     after = _repository_diagnostics(
         root,
         process_runner=process_runner,
@@ -636,7 +702,10 @@ def check_release(
         )
     )
     failed_checks = {item.check for item in diagnostics}
-    if not registry_evidence.content_checks_ran:
+    skipped_checks: frozenset[str] = frozenset()
+    if registry is None:
+        skipped_checks = frozenset(("registry-origin", *REGISTRY_CONTENT_CHECKS))
+    elif not registry_evidence.content_checks_ran:
         failed_checks.update(REGISTRY_CONTENT_CHECKS)
     try:
         version = str(_versioning().read_version(root))
@@ -647,7 +716,15 @@ def check_release(
         "status": "passed" if not diagnostics else "failed",
         "version": version,
         "registry_commit": registry_evidence.commit,
-        "checks": [{"name": name, "passed": name not in failed_checks} for name in RELEASE_CHECKS],
+        "registry_reconciliation": "skipped" if registry is None else "performed",
+        "checks": [
+            {
+                "name": name,
+                "passed": name not in failed_checks and name not in skipped_checks,
+                "skipped": name in skipped_checks,
+            }
+            for name in RELEASE_CHECKS
+        ],
         "diagnostics": [item.to_json() for item in diagnostics],
     }
 
@@ -667,7 +744,17 @@ def _parser() -> argparse.ArgumentParser:
         help="directory the wheel is written into (default: dist/)",
     )
     check = commands.add_parser("check", help="run the complete stable-release checklist")
-    check.add_argument("--registry", required=True, type=Path)
+    # Exactly one of the two, and `--without-registry` has to be typed.  A fork that publishes no
+    # artifact catalogue has nothing to reconcile against, but "no registry" must be a statement
+    # rather than an omission -- an optional `--registry` would let the reconciliation disappear
+    # from a release by accident, which is the failure mode worth spending a flag to avoid.
+    source = check.add_mutually_exclusive_group(required=True)
+    source.add_argument("--registry", type=Path)
+    source.add_argument(
+        "--without-registry",
+        action="store_true",
+        help="reconcile against no registry; the seven registry checks report skipped",
+    )
     check.add_argument("--json", action="store_true")
     return parser
 
@@ -698,12 +785,25 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
         print(f"{digest}  {name}")
         print(f"wrote {output_dir / name}")
         return 0
-    receipt = check_release(root, args.registry)
+    receipt = check_release(root, None if args.without_registry else args.registry)
     if args.json:
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
     else:
+        if receipt["registry_reconciliation"] == "skipped":
+            # Loud, on stderr, and every time.  A release that verified less than the last one is
+            # worth one line now rather than a question in six months about why a regression got
+            # through.
+            print(
+                "release warning: no registry was reconciled against, so seven checks did not "
+                "run. This release proves the tool, not its agreement with an artifact catalogue.",
+                file=sys.stderr,
+            )
         for check in receipt["checks"]:
-            print(f"{check['name']}: {'passed' if check['passed'] else 'failed'}")
+            if check["skipped"]:
+                state = "skipped"
+            else:
+                state = "passed" if check["passed"] else "failed"
+            print(f"{check['name']}: {state}")
         for diagnostic in receipt["diagnostics"]:
             print(f"{diagnostic['code']}: {diagnostic['message']}", file=sys.stderr)
         print(f"release checklist {receipt['status']}: {receipt['version']}")

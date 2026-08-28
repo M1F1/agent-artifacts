@@ -26,7 +26,8 @@ no import outside these two files changes.
 
 Four rules, in this order:
 
-1. **URL credentials** — `scheme://user:pass@host` → `scheme://[redacted]@host`. Already exists.
+1. **URL credentials** — a `user:pass` userinfo becomes `scheme://[redacted]@host`. Already
+   exists.
 2. **Query parameters** — `?token=`, `?access_token=`, `?api_key=`, `?key=`, `?secret=`,
    `?password=`. Already exists.
 3. **Assignments** — `NAME=value` where `NAME` *contains* `token`, `password`, `passwd`, `secret`,

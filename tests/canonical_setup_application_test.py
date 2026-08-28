@@ -73,6 +73,7 @@ from agent_artifacts.store.model import (
     make_object_candidate,
     object_store_paths,
 )
+from tests.credential_fixtures import assignment
 from tests.marketplace_fixtures import configured_source, graph, source_state
 
 
@@ -324,7 +325,7 @@ class RecordingProcess:
         args = tuple(argv)
         self.calls.append(args)
         if self.failure and args and args[0] == "verify-tool":
-            return ProcessResult(1, "", "api_key=synthetic-canary")
+            return ProcessResult(1, "", assignment("api_key", "synthetic-canary"))
         return ProcessResult(0)
 
 

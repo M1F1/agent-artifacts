@@ -6,6 +6,7 @@ import unittest
 
 from agent_artifacts.model import SetupState, SetupStateRecord
 from agent_artifacts.setup import dump_setup_state, parse_setup_state, setup_state_path
+from tests.credential_fixtures import assignment
 
 
 class SetupStateTests(unittest.TestCase):
@@ -80,7 +81,9 @@ class SetupStateTests(unittest.TestCase):
         malformed = (
             '{"version":1,"records":[{"artifact_type":"mcp",'
             '"artifact_name":"atlassian","profile":"tabnine","scope":"user",'
-            '"status":"configured","object_digest":"token=synthetic-canary"}]}'
+            '"status":"configured","object_digest":"'
+            + assignment("token", "synthetic-canary")
+            + '"}]}'
         )
         parsed = parse_setup_state(malformed)
         self.assertEqual(parsed.code, 5)

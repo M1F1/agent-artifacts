@@ -19,7 +19,7 @@ from agent_artifacts.model import Request
 
 UPGRADE_INVALID = DiagnosticCode("upgrade-invalid")
 _WHEEL_NAME_RE = re.compile(
-    r"^agent_artifacts-[0-9]+\.[0-9]+\.[0-9]+(?:(?:a|b|rc)[0-9]+)?-py3-none-any\.whl$"
+    r"^aart_cli-[0-9]+\.[0-9]+\.[0-9]+(?:(?:a|b|rc)[0-9]+)?-py3-none-any\.whl$"
 )
 
 
@@ -96,7 +96,7 @@ def plan_upgrade(
         path = os.path.abspath(wheel)
         if not _real_regular_file(path) or _WHEEL_NAME_RE.fullmatch(Path(path).name) is None:
             return _error(
-                "local wheel must be a real agent_artifacts-<version>-py3-none-any.whl file",
+                "local wheel must be a real aart_cli-<version>-py3-none-any.whl file",
                 "build one with make wheel, then pass its exact path",
             )
         argv = (

@@ -6,6 +6,7 @@ import unittest
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.reporting.model import UsageReport, UsageResult, usage_report_bytes
 from agent_artifacts.reporting.schema import parse_issue_body, parse_usage_report
+from tests.credential_fixtures import assignment
 
 
 def _event() -> UsageReport:
@@ -48,7 +49,7 @@ class ReportingSchemaTest(unittest.TestCase):
         unknown["repository"] = "private/project"
         variants.append(unknown)
         secret = json.loads(json.dumps(original))
-        secret["results"][0]["stdout"] = "TOKEN=secret"
+        secret["results"][0]["stdout"] = assignment("TOKEN", "secret")
         variants.append(secret)
         inconsistent = json.loads(json.dumps(original))
         inconsistent["summary"]["selected"] = 99

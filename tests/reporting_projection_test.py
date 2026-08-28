@@ -22,6 +22,7 @@ from agent_artifacts.reporting.projection import (
     usage_report_from_consumer,
     usage_reports_by_registry_from_consumer,
 )
+from tests.credential_fixtures import assignment
 
 
 def _coordinate() -> ArtifactCoordinate:
@@ -71,7 +72,7 @@ class ReportingProjectionTest(unittest.TestCase):
                 ConsumerTerminalItem(
                     review.items[0].key,
                     "failed",
-                    "TOKEN=secret at /Users/alice/private",
+                    assignment("TOKEN", "secret") + " at /Users/alice/private",
                     "pending",
                 ),
             ),

@@ -35,6 +35,7 @@ from agent_artifacts.sources.pointer import (
     current_pointer_bytes,
     parse_current_pointer,
 )
+from tests.credential_fixtures import assignment, secret_object
 
 
 def _candidate(content: bytes = b"content"):
@@ -136,7 +137,7 @@ class SourceStoreAdapterTest(unittest.TestCase):
 
             with patch(
                 "agent_artifacts.io.source_store.os.replace",
-                side_effect=OSError("replace failed token=secret"),
+                side_effect=OSError("replace failed " + assignment("token", "secret")),
             ):
                 failed = publish_source_snapshot(second)
 
@@ -234,7 +235,9 @@ class SourceStoreAdapterTest(unittest.TestCase):
             self.assertEqual(read_current_source(request), Ok(None))
 
             Path(paths.root).mkdir(parents=True)
-            Path(paths.current_file).write_bytes(b'{"token":"secret",broken')
+            Path(paths.current_file).write_bytes(
+                secret_object("token", "secret", trailing=",broken")
+            )
             corrupt = read_current_source(request)
             self.assertIsInstance(corrupt, Err)
             assert isinstance(corrupt, Err)
@@ -272,7 +275,7 @@ class SourceStoreAdapterTest(unittest.TestCase):
 
             with patch(
                 "agent_artifacts.io.source_store.Path.read_bytes",
-                side_effect=PermissionError("token=secret"),
+                side_effect=PermissionError(assignment("token", "secret")),
             ):
                 unreadable = read_current_source(request)
             self.assertIsInstance(unreadable, Err)

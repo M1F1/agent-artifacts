@@ -4,7 +4,7 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.6.0`
+- **Current code version:** `0.0.1`
 - **Execution status:** `2.6.0` gives the persisted setup receipt a reader — `marketplace receipt
   show`, `verify`, `undo` — over state `2.2.0` already wrote, and stops two rendering paths printing
   counts over payloads that held the answer. Still the released `2.0.0` contract, and the first
@@ -75,6 +75,243 @@
 - **Next task:** the overnight residue run continues with `LAF-69` and `LAF-73`; `LAF-75` closed on
   `fix/wheel-digest-emits-what-it-hashes-laf75`. The human-gated passes — the curses front-end and
   the MCP credential run — and `LAF-61` still wait for the maintainer
+
+## Overnight run 2026-08-28 → 29 (branch `docs/ghe-ci-portability`)
+
+A six-task queue, each task one commit, each gated on all ten quality gates before the next starts.
+
+| # | Task | State |
+|---|---|---|
+| 1 | Poetry builds the wheel; version reset to `0.0.1`; semantic versioning | **done** |
+| 2 | CI split for a protected `main`: PR check / release / cut-release | **done** |
+| 3 | Wizard and MCP install: one quick/verbose question (`#113`) | **done** |
+| 4 | Delete stale documents; purge the old distribution name from docs | **done, smaller than asked** |
+| 5 | Generate `CHANGELOG.md` from the semantic version and the commits | **done** |
+| 6 | Search over artifacts, in the CLI and in the TUI | queued |
+
+Tasks 5 and 6 were added mid-run. Task 6's model is `npx skills`; both keep the runtime
+dependency-free, which is the invariant the whole queue runs under.
+
+### Task 1: Poetry builds the wheel (`0.0.1`)
+
+Poetry now builds the wheel and owns the developer tooling's versions. Four things were found
+while doing it that the instruction could not have anticipated, and each changed the shape of the
+result:
+
+- **`poetry build` alone does not hold this project's reproducibility promise.** poetry-core
+  honours `SOURCE_DATE_EPOCH`, so an environment variable could move a published digest, and it
+  stamps its own version into the archive's `WHEEL` file, so a Poetry upgrade moves the digest of
+  an unchanged commit. `scripts/build_wheel.py` survives as a thin wrapper that removes the
+  variable, checks the built file against the version `[build-system]` pins, and re-checks the
+  archive against the resource allowlist. Its eight callers are unchanged.
+- **Poetry cannot install from a per-fork internal index.** It takes an install source only from a
+  `[[tool.poetry.source]]` block inside `pyproject.toml`; `POETRY_PYPI_MIRROR_URL` is not honoured
+  in Poetry 2.x (tested), adding the block at run time changes the file's hash and `poetry install`
+  then refuses the lock (tested), and committing the block would turn the index URL into a
+  hand-edit in every fork. So Poetry decides what the tools are and pip installs them:
+  `scripts/dev_tools.py` carries `poetry.lock`'s pins to pip, which reads `PIP_INDEX_URL` and
+  always could. The gates therefore do **not** require Poetry; only the build does.
+- **`0.0.1` is below every compatibility floor written while AART was 1.x or 2.x.** Sources declare
+  `requires_aart`, and five fixtures declared `min_inclusive: 1.0.0`, so the reset made the tool
+  refuse them outright. The fixtures were widened. `registry init` writes no `requires_aart` at
+  all, so **registries created from now on accept any version** — but see the note below.
+- **An offline editable install needs the build backend already present.** `pip install --no-index
+  --no-build-isolation -e .` has no index to fetch a backend from, so `poetry-core` joined the dev
+  group at the version `[build-system]` pins, and `distribution_smoke.py` lends it instead of
+  setuptools.
+
+**For Michał, one thing needs a decision and one needs an action.** Any registry whose
+`aart-source.json` or `aart-registry.json` declares `min_inclusive: 1.0.0` — which is what the
+Enterprise registry most likely declares — will refuse AART `0.0.1` with
+`AART <version> is outside source compatibility bounds`. That floor has to come down on the
+registry side; nothing in this repository can lower it for them. And the CI image must carry
+Poetry: `AART_POETRY` names it when it lives off `PATH`, as `/opt/poetry/bin/poetry`.
+
+The cost, stated plainly rather than re-argued: building now needs Poetry, which reverses the
+"assume only git and the interpreter" rule the previous 49 commits established. That was decided
+twice and is recorded in `docs/release/wheel-reproducibility-v1.md`.
+
+### Task 2: the CI split, for a protected `main`
+
+`docs/ci/pr-check-and-release-split-v1.md` is built. One commit that becomes a release used to set
+the ten gates going four times; it now sets them going twice — once on the pull request, once
+before the release button does something irreversible.
+
+- `validate.yml` is now `pr-check.yml`, triggered by `pull_request` and nothing else. A branch
+  pushed without a pull request is checked by nothing, which is the intent.
+- 3.11 joined the default matrix. The release run was the only thing that ever exercised it, and
+  the release run no longer runs the source gates.
+- **`pr-check` is the one check name to require.** It is a job that needs both container arms,
+  runs with `if: always()`, and fails when the arm that ran failed *and* when neither arm ran —
+  which is what a mistyped `AART_IMAGE_USERNAME_SECRET` looks like from the outside.
+- `release.yml` keeps only what has the release as its subject. `packaging-check` moved into the
+  release action to stay with it: its subject is the wheel, not the source, so the pull request
+  that proved the source did not prove it.
+- The release action gained one input, `preconditions`. The button already runs the gates and the
+  checklist against the same tree, so it passes `"false"` and the action skips both. The default
+  is `"true"`, so a caller that has not run them cannot skip them by accident.
+
+One thing was found here that the design could not have anticipated. **A machine with the tools
+but without Poetry gave an unusable error.** `poetry-core` is the build backend, the dev group
+installs it, and it occupies the `poetry` import name — so the fallback `python -m poetry` did not
+fail as missing. It failed with "'poetry' is a package and cannot be directly executed", which
+names neither Poetry nor `AART_POETRY`. A CI image is exactly this shape: tools installed, CLI
+absent. `scripts/build_wheel.py` now asks whether the module is really the CLI before running it,
+and otherwise says what to install and which variable to set.
+
+**For Michał, three settings.** They cannot be committed, and they are set per repository, on
+every instance separately: protect `main` and require a pull request; require the check named
+`pr-check`; turn on "require branches to be up to date before merging". The third is not optional
+decoration — with `pr-check.yml` triggering on pull requests only, there is no post-merge run, so
+it is the only thing that catches two green pull requests that break `main` together.
+
+### Task 3: the setup queue asks one question (`#113`)
+
+Installing three MCP servers used to mean reading every step of every plan, answering
+`Finalize this setup queue? [y/N]`, and then answering `Approve this exact effect? [y/N]` once per
+step. The person had already decided — they chose to install the artifact — so every answer after
+the first was to a question that was already settled.
+
+There is now one question, and by default it is the only one:
+
+```
+Setup: 7 steps for 2 artifacts.
+Enter runs them. Type s to see and approve each step, or n to stop.
+Run setup? [Y/s/n]:
+```
+
+- **Enter runs it.** Each step says what it is as it happens. Reporting and asking permission are
+  two different things, and treating them as one is what made this screen frightening.
+- **`s` is the old screen**, unchanged: the full review first, then a question per step. It is
+  kept because the answer can genuinely be no when a step touches something the operator owns.
+- **`n`, an unrecognised answer, or no terminal at all stops.** A queue is repeatable, so a typo
+  that runs nothing is cheaper than a typo that runs everything, and `None` — end of input, nobody
+  there — must never mean yes.
+
+A quiet run still asks for anything a step needs. Those prompts come from the runtime, and nothing
+on this screen can or should answer them.
+
+**One decision worth naming: Enter now means run.** The old default was no. That is the change the
+issue asks for — the quiet path is the default — and the question is still asked, once, in plain
+words. Say so if you would rather it stayed the other way; it is one line.
+
+The command line already worked this way (`consent=lambda _effect: approved`), so the two surfaces
+now agree. `wizard.py`'s own wordiness is untouched: the issue also asks for shorter messages
+across the MCP screens, and that is a separate pass.
+
+### Task 4: the purge, and why it is 14 documents and not 34
+
+The instruction was to delete the 34 documents with no inbound link and keep whatever hangs on an
+unresolved problem. Counting again, more carefully, changed the number: **20 of those 34 are named
+by a document that stays**, in prose rather than in a link, which my first count did not see.
+
+- `docs/testing/residue-register.md` — the authoritative ledger — cites four of them as the
+  evidence for its findings: `github-release-v2.5.0.md`, `github-release-v2.6.0.md`,
+  `PROGRESS-live-acceptance-v12.md`, `PROGRESS-live-acceptance-v13.md`.
+- `tests/quality_gates_test.py` names `github-release-v2.5.0.md` three times. Deleting it fails a
+  gate.
+- Two plans cite `github-release-v2.4.0.md` and `schema-freeze-v12.json`.
+- The rest are cited by other records that stay: a `compatibility-v*.md` names the schema freeze it
+  was compared against, and a reader following that name would find nothing.
+
+So **14 documents were deleted** — the ones nothing at all refers to — and the other 20 stayed. The
+full list of what stayed and why is above; say which of them you want gone anyway and they can go
+in one commit, but each one costs a kept document a reference it can no longer follow.
+
+Deleted: `compatibility-v6.md`, `compatibility-v11.md`, `github-release-v1.1.1.md`,
+`github-release-v1.2.0.md`, `github-release-v1.3.0.md`, `github-release-v1.3.1.md`,
+`github-release-v1.4.0.md`, `github-release-v2.1.0.md`, `github-release-v2.2.0.md`,
+`github-release-v2.3.0.md`, `schema-freeze-v6.json`, `schema-freeze-v16.json`,
+`schema-freeze-v17.json`, `PROGRESS-mcp-secret-join.md`.
+
+**The distribution name was already almost gone**, because task 1 renamed it everywhere it is an
+instruction. What was left was stale rather than merely misnamed, and it was in the two documents
+a newcomer reads first:
+
+- `README.md` told a developer to run `pip install -e ".[dev]"`. That extra no longer exists — the
+  tools moved into Poetry's dev group — so the command a developer was given fails. It now gives
+  both routes and says which one CI uses.
+- The same section still listed `setuptools` and `wheel` as required tools and claimed the wheel
+  builder is stdlib. Neither is true since task 1.
+- `docs/design/DESIGN.md` still declared the distribution name to be `agent-artifacts` and told
+  pip to install that name.
+- The README's title was `agent-artifacts`, which is the repository's name and also the name of a
+  **different project on PyPI** — the one that was installed here by mistake. The title is now
+  `AART`, and the three names are separated in the first paragraph.
+
+Records are not rewritten. A live-acceptance document saying it measured
+`agent_artifacts-2.6.0-py3-none-any.whl` is stating what happened; changing it to `aart_cli` would
+make it say something that never did.
+
+### Task 5: the changelog decides the version
+
+The version used to be typed, and the changelog written under it. That is backwards: semantic
+versioning says which part of a number a change moves, and the changelog is where the kind of
+change is recorded. So the changelog now decides the number.
+
+Changes land under `## Unreleased`, each under a heading naming its kind. `scripts/changelog.py`:
+
+- `check` — the file's shape: headings, order, duplicate versions, real dates, empty sections. Run
+  on every gate run as `DOC011` in `docs-check`, because a heading in the wrong shape is no longer
+  untidy — it is a version that comes out wrong.
+- `next` — the part that moves and the version it moves to, with the headings it read.
+- `release --write` — cuts the section under a dated heading and prints the `version.py set` to run.
+
+`Removed`/`Breaking` move the major, `Added`/`Changed` the minor, `Fixed`/`Security`/`Packaging`/
+`Documentation`/`Testing` the patch. Anything else — `Compatibility`, `Known defects shipped open`,
+`Upgrading from 2.7.1` — is prose about the release and is kept and ignored. A section made only of
+those **refuses** to decide a number instead of guessing one.
+
+**One decision worth naming: below `1.0.0`, every part moves the one below it.** A removal moves
+the minor, everything else the patch. A zero major version promises nothing, and `1.0.0` announces
+a stability that cannot be taken back — so a heading should not be able to trigger it by accident.
+Without this rule, the first `### Removed` on this branch would have released `1.0.0`.
+
+`prepare_release.py` now offers that number and Enter takes it; it is still offered rather than
+imposed, because the person pressing the button answers for it. `release_docs.py` no longer
+scaffolds a `### Fixed` TODO over entries that already exist.
+
+What is **not** generated is the prose. No tool can write the sentence saying why something was
+wrong, and a changelog of generated commit subjects is a changelog nobody reads.
+
+The `## Unreleased` section now holds this branch's six tasks, written as they landed.
+
+### Task 6: finding an artifact without reading the whole list
+
+`list` prints everything, which stops working at the size a company catalog reaches. The model is
+`npx skills`: you type, the list shrinks. It is one matcher, in
+`agent_artifacts/marketplace/search.py`, and three surfaces ask it rather than each inventing an
+answer — the runtime gains no dependency, because none is needed for substring matching.
+
+- **Every word must match.** `review python` finds what matches both. A second word narrowing the
+  answer is what a person typing a second word is trying to do.
+- **The order is a stated table**, not a feeling: a name that *is* the word (100), then a name that
+  starts with it (50), then a name that holds it (30), then the coordinate (20), the summary (10),
+  anything else (5). Summed over the words, ties keep catalog order, so two runs print one order.
+- **`aart marketplace search WORD…`**, beside `list`, with `--limit` and `--json`. The JSON says
+  the score and which fields matched. Fields are searched *after* redaction, so a query cannot
+  confirm one letter at a time a secret the output refuses to print.
+- **The curses list takes `/`** and narrows live as each key is typed; Enter keeps the filter and
+  hands the arrows back, Escape drops it. While the filter is open every printable key is a letter
+  of it — `q` types a q — so the status bar swaps to `enter=keep, esc=clear, bksp=erase` rather
+  than advertising keys that no longer do what they say.
+- **The text fallback takes `/review`** on the selection line, and `/` alone lists everything again.
+
+**The rule that everything here protects: a filter hides rows and does nothing else.** Rows keep
+the number they have in the full list, the cursor and every returned index address the caller's own
+list, and what was ticked stays ticked while it is hidden. A filtered view that renumbered its rows
+would install whichever artifact happened to sit at the number the person read.
+
+Two smaller decisions worth naming. **Typing moves the cursor onto the best match**, so one more
+letter and Enter takes the row the filter was narrowing towards; **dropping the filter leaves the
+cursor where it was**, because clearing a filter is not a reason to lose the row someone is looking
+at. And `tests/tui_layout_test.py` had one test asserting the status bar fits both counters at
+width 120 — one more hint in the canonical table made that false, so it now derives the width from
+the table instead of naming a number.
+
+Two things found and left alone: `_prompt_indices` in `tui.py` has no caller and no test (the live
+text prompt is `_prompt_wizard_indices`), and there is no keyword or tag field on an artifact, so
+search reaches only what a manifest already says.
 
 ## Readable receipt (`2.6.0`, released)
 
@@ -2558,7 +2795,8 @@ brief's queue.
 - **Nothing about the behaviour changed, and nothing should have.** AART runs system Git with an
   allowlisted environment — `HOME`, `PATH`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`, `SYSTEMROOT` — so
   `https_proxy` never reaches it. That is deliberate: a proxy URL is one of the ordinary places a
-  credential hides, and `https://user:token@proxy.example:3128` is a supported form. `LAF-49` was
+  credential hides, and a proxy URL carrying `user:token` in its userinfo —
+  `https://[redacted]@proxy.example:3128` once hidden — is a supported form. `LAF-49` was
   never a request to pass it through. It was that nobody was told.
 - **The cost is specific, so the page names it.** On a network whose only egress is a proxy, every
   command that touches a remote fails with Git's transport error and no mention of a proxy — and

@@ -1,0 +1,62 @@
+name: AART quality gates
+description: >
+  Install the developer tools and run the canonical gates.  Lives in an action rather than in the
+  workflow because the same steps run from two jobs that differ only in how their container image
+  is pulled, and one copy of a gate list is the only copy worth trusting.
+
+inputs:
+  python:
+    description: Name of the interpreter to invoke.
+    required: true
+  python-version:
+    description: Interpreter version to install when the job runs without a container image.
+    required: true
+  setup-python:
+    description: '"true" when the job has no container image and so needs an interpreter installed.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # `actions/checkout` writes the workspace as the runner's uid; a container job usually runs as
+    # a different one, and git then refuses every command in it with `detected dubious ownership`.
+    # It is a container fact, not a repository fault, so the fix belongs here rather than in an
+    # image every fork would have to rebuild.  Marking one known path costs nothing and leaves
+    # git's protection in place everywhere else.
+    - name: Trust the checked-out workspace
+      shell: bash
+      # `$PWD`, not `$GITHUB_WORKSPACE`: a composite step starts in the repository root
+      # anyway, and the shell guarantees `$PWD` is set to it.  An unset environment
+      # variable would expand to an empty path, which git accepts and which fixes
+      # nothing -- a silent no-op is the worst outcome for a step like this.
+      run: git config --global --add safe.directory "$PWD"
+
+    - name: Point pip at the internal index
+      uses: ./.github/actions/pip-index
+
+    - name: Set up Python
+      # Skipped when a container image is in use: it downloads an interpreter from github.com,
+      # which is the first step to fail on a runner with no egress.
+      if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # Poetry decides *what* the tools are -- semantic-version ranges in pyproject.toml, resolved
+    # to exact versions in poetry.lock -- and pip installs them.  The split is forced, not
+    # stylistic: Poetry takes an install source only from a `[[tool.poetry.source]]` block inside
+    # pyproject.toml, adding that block at run time changes the file's hash, and `poetry install`
+    # then refuses the lock outright.  Committing the block would turn the internal index's URL into a
+    # hand-edit in every fork.  pip reads `PIP_INDEX_URL`, which the step above just set.
+    # scripts/dev_tools.py carries the lock's pins across.
+    - name: Install developer quality tools
+      shell: bash
+      run: ${{ inputs.python }} scripts/dev_tools.py install
+
+    # `scripts/quality.py` is the canonical gate runner and the Makefile target is a one-line
+    # wrapper around it, so calling it directly costs nothing and drops GNU Make from the list of
+    # things a CI image has to carry.  The script propagates its own interpreter to every gate
+    # (`python: str = sys.executable`), which is what the `PYTHON=` argument used to do.
+    - name: Run canonical quality gates
+      shell: bash
+      run: ${{ inputs.python }} scripts/quality.py

@@ -1237,7 +1237,7 @@ Supported initial delivery remains explicit and local:
 
 ```text
 pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
-pip install --no-index --no-deps /path/to/agent_artifacts-1.0.0-py3-none-any.whl
+pip install --no-index --no-deps /path/to/aart_cli-1.0.0-py3-none-any.whl
 ```
 
 The hermetic distribution smoke executes both forms in isolated tool environments from outside the
