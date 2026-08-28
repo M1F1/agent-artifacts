@@ -112,19 +112,25 @@ class PipReachesTheRightIndexTest(unittest.TestCase):
 
     def test_every_action_that_installs_with_pip_points_pip_at_the_index_first(self) -> None:
         directory = ROOT / ".github" / "actions"
+        # `dev_tools.py install` is a pip install one indirection further in -- it reads the
+        # lock and hands the pins to pip -- so it is a subject of this test exactly as a literal
+        # `pip install` is.  Matching only the literal would have quietly emptied the test the
+        # day the step moved into a script.
+        markers = ("-m pip install", "dev_tools.py install")
         installers = [
-            path
+            (path, marker)
             for path in sorted(directory.glob("*/action.yml"))
-            if "-m pip install" in _uncommented(_read(path))
+            for marker in markers
+            if marker in _uncommented(_read(path))
         ]
         self.assertTrue(installers, "no action installs with pip; this test has lost its subject")
-        for path in installers:
-            with self.subTest(action=str(path.relative_to(ROOT))):
+        for path, marker in installers:
+            with self.subTest(action=str(path.relative_to(ROOT)), marker=marker):
                 body = _uncommented(_read(path))
                 self.assertIn("uses: ./.github/actions/pip-index", body)
                 self.assertLess(
                     body.index("uses: ./.github/actions/pip-index"),
-                    body.index("-m pip install"),
+                    body.index(marker),
                     "the index has to be chosen before pip is asked to fetch anything",
                 )
 

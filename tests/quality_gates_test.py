@@ -71,11 +71,19 @@ class QualitySurfaceTest(unittest.TestCase):
             self.assertNotIn("unittest discover", body)
             self.assertNotIn("ast.walk", body)
 
-    def test_dev_extra_adds_coverage_but_runtime_stays_empty(self):
+    def test_the_dev_group_carries_the_tools_and_the_runtime_stays_empty(self):
+        """The tools moved into Poetry's dev group; what must not move is `dependencies = []`.
+
+        The group is deliberately outside `[project]`: nothing in it reaches installed metadata,
+        so an install of the published wheel still pulls nothing at all.
+        """
+
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        project = pyproject.split("[project]", 1)[1].split("[project.optional-dependencies]", 1)[0]
+        project = pyproject.split("[project]", 1)[1].split("[tool.poetry]", 1)[0]
         self.assertIn("dependencies = []", project)
-        self.assertIn('"coverage>=', pyproject)
+        self.assertNotIn("coverage", project)
+        self.assertIn("[tool.poetry.group.dev.dependencies]", pyproject)
+        self.assertIn("coverage = ", pyproject)
 
 
 class QualityRunnerTest(unittest.TestCase):
@@ -329,7 +337,7 @@ class MissingToolTest(unittest.TestCase):
         run.assert_not_called()
         said = stderr.getvalue()
         self.assertIn("ruff", said)
-        self.assertIn('pip install -e ".[dev]"', said)
+        self.assertIn("poetry install --with dev", said)
 
 
 class RepositoryRelativeLinkTest(unittest.TestCase):

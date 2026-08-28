@@ -26,6 +26,12 @@ on:
 permissions:
   contents: write  # required to attach assets to the release
 
+# Poetry builds the wheel and installs the developer tooling.  An image that keeps Poetry off
+# `PATH` -- `/opt/poetry/bin/poetry` is the common shape -- names it in this variable instead;
+# unset, every step falls back to plain `poetry`.  See docs/ci/enterprise-fork-v1.md.
+env:
+  AART_POETRY: ${{ vars.AART_POETRY }}
+
 jobs:
   quality:
     if: vars.AART_IMAGE_USERNAME_SECRET == ''

@@ -47,6 +47,7 @@ where you can. Section 2 is the full table; on a private runner with no egress t
 | `AART_PYTHON_VERSIONS` | one entry, e.g. `["3.11"]`, if you also set `AART_CI_IMAGE` |
 | `AART_IMAGE_USERNAME_SECRET`, `AART_IMAGE_PASSWORD_SECRET` | the **names** of your existing image-registry secrets, if the image needs a login |
 | `AART_PIP_INDEX_CREDENTIALS_SECRET` | the **name** of the secret holding `user:pass`, if the index needs a login |
+| `AART_POETRY` | the path to Poetry, if your image keeps it off `PATH` — `/opt/poetry/bin/poetry` is the usual place. Poetry builds the wheel; leave this unset and the build calls plain `poetry` |
 
 ### Step 3 — Decide how registries will fetch AART
 
@@ -175,6 +176,7 @@ Set under **Settings → Secrets and variables → Actions → Variables**. Thes
 | `AART_PYTHON_VERSIONS` | `["3.10", "3.14"]` | JSON array for the quality matrix. **Pin to one entry when `AART_CI_IMAGE` is set** — one image carries one interpreter, and a two-entry matrix would run the same Python twice under two names |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | Internal mirror for `ruff`/`mypy`/`coverage`. This repository's gates only |
 | `AART_RELEASE_PYTHON_VERSION` | `3.11` | Interpreter for the release job when no container is used |
+| `AART_POETRY` | `poetry` | How to invoke Poetry, which builds the wheel. Set it to a full path when the image keeps Poetry off `PATH` — `/opt/poetry/bin/poetry`. Poetry is needed for the build only: the gates install their tools with pip, from the versions `poetry.lock` pins |
 | `AART_REFERENCE_REGISTRY_URL` | **no default** | The registry the release checklist reconciles against, and the switch for whether it reconciles at all. Unset, the clone is skipped and the seven registry checks report `skipped` — never `passed` — with a warning on every run. See below |
 | `AART_GH_HOST` | `github.com` | `gh` talks to github.com unless told the instance hostname |
 | `AART_IMAGE_USERNAME_SECRET` | unset | **Name** of the secret holding the image-registry username. Setting it switches the job to the shape that carries a `credentials` block; leaving it unset keeps the job this project always ran |

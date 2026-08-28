@@ -27,7 +27,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         actions = ROOT / ".github" / "actions"
         quality = (actions / "quality" / "action.yml").read_text(encoding="utf-8")
         release_steps = (actions / "release" / "action.yml").read_text(encoding="utf-8")
-        self.assertIn('pip install --disable-pip-version-check -e ".[dev]"', quality)
+        self.assertIn("scripts/dev_tools.py install", quality)
         # CI calls the canonical runners directly.  The Makefile targets are one-line wrappers
         # around exactly these commands, so going through `make` bought nothing and made GNU Make
         # a thing every CI image had to carry -- which is how a real Enterprise image failed.

@@ -4,7 +4,7 @@
 - **1.0 issue (historical):** [#27](https://github.com/M1F1/agent-artifacts/issues/27)
 - **Post-1.0 issue:** [#61](https://github.com/M1F1/agent-artifacts/issues/61)
 - **Target:** `1.0.0`
-- **Current code version:** `2.6.0`
+- **Current code version:** `0.0.1`
 - **Execution status:** `2.6.0` gives the persisted setup receipt a reader — `marketplace receipt
   show`, `verify`, `undo` — over state `2.2.0` already wrote, and stops two rendering paths printing
   counts over payloads that held the answer. Still the released `2.0.0` contract, and the first
@@ -75,6 +75,61 @@
 - **Next task:** the overnight residue run continues with `LAF-69` and `LAF-73`; `LAF-75` closed on
   `fix/wheel-digest-emits-what-it-hashes-laf75`. The human-gated passes — the curses front-end and
   the MCP credential run — and `LAF-61` still wait for the maintainer
+
+## Overnight run 2026-08-28 → 29 (branch `docs/ghe-ci-portability`)
+
+A six-task queue, each task one commit, each gated on all ten quality gates before the next starts.
+
+| # | Task | State |
+|---|---|---|
+| 1 | Poetry builds the wheel; version reset to `0.0.1`; semantic versioning | **done** |
+| 2 | CI split for a protected `main`: PR check / release / cut-release | queued |
+| 3 | Wizard and MCP install: one quick/verbose question (`#113`) | queued |
+| 4 | Delete stale documents; purge the old distribution name from docs | queued |
+| 5 | Generate `CHANGELOG.md` from the semantic version and the commits | queued |
+| 6 | Search over artifacts, in the CLI and in the TUI | queued |
+
+Tasks 5 and 6 were added mid-run. Task 6's model is `npx skills`; both keep the runtime
+dependency-free, which is the invariant the whole queue runs under.
+
+### Task 1: Poetry builds the wheel (`0.0.1`)
+
+Poetry now builds the wheel and owns the developer tooling's versions. Four things were found
+while doing it that the instruction could not have anticipated, and each changed the shape of the
+result:
+
+- **`poetry build` alone does not hold this project's reproducibility promise.** poetry-core
+  honours `SOURCE_DATE_EPOCH`, so an environment variable could move a published digest, and it
+  stamps its own version into the archive's `WHEEL` file, so a Poetry upgrade moves the digest of
+  an unchanged commit. `scripts/build_wheel.py` survives as a thin wrapper that removes the
+  variable, checks the built file against the version `[build-system]` pins, and re-checks the
+  archive against the resource allowlist. Its eight callers are unchanged.
+- **Poetry cannot install from a per-fork internal index.** It takes an install source only from a
+  `[[tool.poetry.source]]` block inside `pyproject.toml`; `POETRY_PYPI_MIRROR_URL` is not honoured
+  in Poetry 2.x (tested), adding the block at run time changes the file's hash and `poetry install`
+  then refuses the lock (tested), and committing the block would turn the index URL into a
+  hand-edit in every fork. So Poetry decides what the tools are and pip installs them:
+  `scripts/dev_tools.py` carries `poetry.lock`'s pins to pip, which reads `PIP_INDEX_URL` and
+  always could. The gates therefore do **not** require Poetry; only the build does.
+- **`0.0.1` is below every compatibility floor written while AART was 1.x or 2.x.** Sources declare
+  `requires_aart`, and five fixtures declared `min_inclusive: 1.0.0`, so the reset made the tool
+  refuse them outright. The fixtures were widened. `registry init` writes no `requires_aart` at
+  all, so **registries created from now on accept any version** — but see the note below.
+- **An offline editable install needs the build backend already present.** `pip install --no-index
+  --no-build-isolation -e .` has no index to fetch a backend from, so `poetry-core` joined the dev
+  group at the version `[build-system]` pins, and `distribution_smoke.py` lends it instead of
+  setuptools.
+
+**For Michał, one thing needs a decision and one needs an action.** Any registry whose
+`aart-source.json` or `aart-registry.json` declares `min_inclusive: 1.0.0` — which is what the
+Enterprise registry most likely declares — will refuse AART `0.0.1` with
+`AART <version> is outside source compatibility bounds`. That floor has to come down on the
+registry side; nothing in this repository can lower it for them. And the CI image must carry
+Poetry: `AART_POETRY` names it when it lives off `PATH`, as `/opt/poetry/bin/poetry`.
+
+The cost, stated plainly rather than re-argued: building now needs Poetry, which reverses the
+"assume only git and the interpreter" rule the previous 49 commits established. That was decided
+twice and is recorded in `docs/release/wheel-reproducibility-v1.md`.
 
 ## Readable receipt (`2.6.0`, released)
 

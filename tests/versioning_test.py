@@ -88,6 +88,35 @@ class VersionValueTest(unittest.TestCase):
             versioning.finalize_candidate(versioning.parse_version("1.0.0"))
 
 
+class SemanticBumpTest(unittest.TestCase):
+    """`bump` is what makes the versioning semantic: the step is named, not typed as a literal."""
+
+    def test_each_named_step_advances_the_right_field_and_zeroes_the_rest(self):
+        versioning = _load_script("version")
+        current = versioning.parse_version("1.4.2")
+        expected = {"major": "2.0.0", "minor": "1.5.0", "patch": "1.4.3"}
+        for part, result in expected.items():
+            with self.subTest(part=part):
+                self.assertEqual(str(versioning.next_release(current, part)), result)
+
+    def test_a_prerelease_is_sent_to_finalize_rather_than_bumped_past(self):
+        """`1.2.0a3` is already on its way to `1.2.0`; bumping it would skip its own release."""
+
+        versioning = _load_script("version")
+        with self.assertRaises(versioning.VersionError) as caught:
+            versioning.next_release(versioning.parse_version("1.2.0a3"), "patch")
+        self.assertIn("finalize", str(caught.exception))
+
+    def test_an_unknown_step_is_refused_by_name(self):
+        versioning = _load_script("version")
+        with self.assertRaises(versioning.VersionError):
+            versioning.next_release(versioning.parse_version("1.0.0"), "revision")
+
+    def test_the_command_refuses_to_write_without_being_told_to(self):
+        versioning = _load_script("version")
+        self.assertEqual(versioning.main(("bump", "minor")), 1)
+
+
 class VersionFilesTest(unittest.TestCase):
     def test_explicit_write_updates_all_version_files(self):
         versioning = _load_script("version")

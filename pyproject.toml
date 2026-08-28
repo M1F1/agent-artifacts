@@ -1,35 +1,23 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+# Poetry builds the wheel.  The version is pinned exactly, for the reason `ruff` is pinned
+# exactly below: the builder stamps its own version into the archive's WHEEL file, so two
+# poetry-core versions produce two different digests from one commit, and a digest that moves
+# when nobody changed the source is not a digest anyone can verify against.
+# See docs/release/wheel-reproducibility-v1.md.
+requires = ["poetry-core==2.4.0"]
+build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "aart-cli"
-version = "2.8.6"
+version = "0.0.1"
 description = "Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) into multiple agentic harnesses."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Michał Filek" }]
 keywords = ["ai", "skills", "mcp", "hooks", "agents", "opencode", "claude", "tabnine"]
 # Zero runtime dependencies — standard library only (docs/design/DESIGN.md §4/§15).
 dependencies = []
-
-[project.optional-dependencies]
-# Optional developer tooling. NOT required to run the CLI — the runtime stays
-# zero-dependency. Install with:  pip install -e ".[dev]"
-dev = [
-    # Explicit editable-build prerequisite for Python versions whose venv/ensurepip no longer
-    # bundles setuptools. It is visible only to development/CI, never runtime metadata.
-    "setuptools>=61",
-    # Pinned exactly, and it is the formatter that forces it.  `ruff>=0.6` let a developer's
-    # machine hold 0.12 while CI installed 0.16, and the two format the same file differently --
-    # so `format-check` failed in CI on code the developer's own ruff had just formatted, naming
-    # a line and no cause.  A floor is not a version for a tool whose output has to match.
-    "ruff==0.16.4",
-    "mypy>=1.11",
-    "coverage>=7.6",
-    "wheel>=0.44",
-]
 
 [project.scripts]
 agent-artifacts = "agent_artifacts.cli:main"
@@ -39,12 +27,45 @@ aart = "agent_artifacts.cli:main"
 Homepage = "https://github.com/M1F1/agent-artifacts"
 Repository = "https://github.com/M1F1/agent-artifacts"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["agent_artifacts*"]
+# --------------------------------------------------------------------------- #
+# Poetry
+# --------------------------------------------------------------------------- #
+# Runtime metadata lives in `[project]` above, in the standard PEP 621 place, so
+# `dependencies = []` stays where a reader looks for it.  This section holds only what
+# is Poetry's own: what goes into the archive, and the tooling groups.
+[tool.poetry]
+packages = [{ include = "agent_artifacts" }]
+# The wheel carries the package's data files as well as its modules.  `scripts/build_wheel.py`
+# re-checks the built archive against this same allowlist and refuses anything else, so a stray
+# file dropped into the package directory fails the build instead of shipping in it.
+include = [
+    { path = "agent_artifacts/schemas/**/*", format = ["sdist", "wheel"] },
+    { path = "agent_artifacts/profiles/**/*", format = ["sdist", "wheel"] },
+    { path = "agent_artifacts/importers/**/*", format = ["sdist", "wheel"] },
+    { path = "agent_artifacts/templates/**/*", format = ["sdist", "wheel"] },
+]
 
-[tool.setuptools.package-data]
-agent_artifacts = ["profiles/*.json"]
+# Developer tooling.  NOT required to run the CLI — the runtime above stays zero-dependency,
+# and nothing here reaches installed metadata.  Install with:  poetry install --with dev
+#
+# Constraints are semantic-version ranges (`^1.11` accepts 1.x from 1.11, not 2.0), so a
+# compatible fix arrives without a commit and a breaking major never arrives by surprise.
+[tool.poetry.group.dev.dependencies]
+# Pinned exactly, and it is the formatter that forces it.  `ruff>=0.6` let a developer's
+# machine hold 0.12 while CI installed 0.16, and the two format the same file differently --
+# so `format-check` failed in CI on code the developer's own ruff had just formatted, naming
+# a line and no cause.  A floor is not a version for a tool whose output has to match, and
+# neither is a caret.
+ruff = "0.16.4"
+mypy = "^1.11"
+coverage = "^7.6"
+# The build backend, installed rather than merely declared.  Two gates need it present: the
+# offline editable install (`pip install --no-index --no-build-isolation -e .`) has no index to
+# fetch a backend from, and `scripts/build_wheel.py` checks that whatever built the wheel is the
+# version `[build-system]` pins.  Exact, and it must stay equal to the pin up there.
+# The upper bound is Poetry's, not ours: poetry-core declares `<4.0`, and this project declares
+# only `>=3.10`, so the solver refuses the pair until the narrower range is stated here.
+poetry-core = { version = "2.4.0", python = ">=3.10,<4.0" }
 
 # --------------------------------------------------------------------------- #
 # Developer tooling (optional — see the `dev` extra). None of this touches the

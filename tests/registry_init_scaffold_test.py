@@ -4,6 +4,7 @@ import shlex
 import unittest
 
 from agent_artifacts import cli
+from agent_artifacts.curation.model import DEFAULT_MAXIMUM_AART, DEFAULT_MINIMUM_AART
 from agent_artifacts.domain.identifiers import ArtifactIdentity
 from agent_artifacts.domain.result import Err, Ok
 from agent_artifacts.protocol.capabilities import Capability
@@ -33,6 +34,12 @@ from agent_artifacts.registry_commands.planning import (
 from agent_artifacts.registry_commands.templates import REGISTRY_CI_WORKFLOW
 from agent_artifacts.runtime_contract import EXECUTABLE_VERSION
 from tests.registry_maintenance_fixtures import replace_snapshot_file
+
+
+def _semver(text: str) -> SemVer:
+    parsed = parse_semver(text)
+    assert isinstance(parsed, Ok), parsed
+    return parsed.value
 
 
 class RegistryInitScaffoldTest(unittest.TestCase):
@@ -431,7 +438,15 @@ class GeneratedRegistryReadmeTest(unittest.TestCase):
     def _init(self, *entries: SnapshotEntry) -> dict[str, bytes]:
         planned = plan_registry_init(
             SourceSnapshot(SnapshotOrigin.LOCAL, entries),
-            RegistryInitOptions("company", "Company Registry", SemVer(2, 0, 0), SemVer(3, 0, 0)),
+            # Derived, not typed.  A literal window here passes until the executable version
+            # leaves it, and then fails a test about a registry contradicting itself with a
+            # message about a registry that never existed.
+            RegistryInitOptions(
+                "company",
+                "Company Registry",
+                _semver(DEFAULT_MINIMUM_AART),
+                _semver(DEFAULT_MAXIMUM_AART),
+            ),
         )
         self.assertIsInstance(planned, Ok)
         return {str(change.path): change.content for change in planned.value.changes}

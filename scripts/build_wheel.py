@@ -1,93 +1,78 @@
 #!/usr/bin/env python3
-"""Build a pure-Python wheel using only the standard library (WP-21).
+"""Build the pure-Python wheel with Poetry, under a sanitized environment.
 
-A wheel (PEP 427) is just a zip with a ``.dist-info/`` directory. Because agent-artifacts
-has zero dependencies and is pure Python, we don't need setuptools or the `wheel` package to
-produce one — which means the project builds **and** installs with no external index at all
-(docs/design/DESIGN.md §15). The resulting ``dist/aart_cli-<v>-py3-none-any.whl`` installs via:
+Poetry is the builder; this script is the one place that invokes it correctly. It exists because
+`poetry build -f wheel` on its own does not hold the promises this project publishes, and there
+are eight callers who would each have to hold them instead:
+
+  * **`SOURCE_DATE_EPOCH` moves the digest.** poetry-core consults it. A wheel whose digest depends
+    on an environment variable cannot be verified against a published digest by anyone who did not
+    happen to have the same variable set, so the variable is removed before the build rather than
+    documented as a caveat.
+  * **The builder's version is stamped into the archive.** `WHEEL` carries
+    `Generator: poetry-core <version>`, so upgrading Poetry changes the digest of an unchanged
+    commit. The version is pinned in `[build-system]` and checked here, so that upgrade fails a
+    build instead of silently invalidating a published digest.
+  * **Poetry ships whatever is in the package directory.** The allowlist below is a gate: a stray
+    file dropped under `agent_artifacts/` fails the build rather than shipping inside it.
+
+The archive is byte-reproducible (SI-8, design §7.1): see docs/release/wheel-reproducibility-v1.md
+for what that now means and how to verify a published wheel.
+
+Requires Python 3.11+ to build (stdlib ``tomllib``); the built wheel itself runs on Python 3.10+.
+The result installs with no index at all:
 
     pip install --no-index dist/aart_cli-<v>-py3-none-any.whl
-
-Requires Python 3.11+ to build (uses stdlib ``tomllib`` to read pyproject.toml); the built
-wheel itself runs on Python 3.10+.
-
-The archive is byte-reproducible (SI-8, design §7.1): every member is dated from the commit
-stamped into ``agent_artifacts/_commit.py``, and member order, compression, permissions and
-create-system are pinned, so rebuilding the same commit anywhere produces the same digest rather
-than merely the same contents.  Nothing here reads the clock, the environment, or the platform.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
 import re
+import shutil
+import subprocess
 import sys
-import time
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 _RESOURCE_ROOTS = frozenset({"schemas", "profiles", "importers", "templates"})
-_COMMIT_EPOCH_RE = re.compile(r"^COMMIT_EPOCH = (\d+)$", re.MULTILINE)
-# Zip stores DOS timestamps, which begin in 1980.  A source with no commit date — an editable
-# checkout, or a copy taken outside git — builds at that floor rather than at "now".
-_DOS_EPOCH_DATE_TIME = (1980, 1, 1, 0, 0, 0)
-_DOS_EPOCH = 315532800  # 1980-01-01T00:00:00Z, the earliest a zip member can be dated
-# Pinned so the archive cannot drift with a future zipfile default: mode 0o600 is what
-# ``ZipFile.writestr`` has always written, and create-system 3 (Unix) is what a build on Windows
-# would otherwise change.
-_MEMBER_EXTERNAL_ATTR = 0o600 << 16
-_UNIX_CREATE_SYSTEM = 3
-_COMPRESS_LEVEL = 9
+_PINNED_BACKEND_RE = re.compile(r"poetry-core==([0-9][^\"']*)")
+_GENERATOR_RE = re.compile(r"^Generator:\s*poetry-core\s+(\S+)\s*$", re.MULTILINE)
+# Removed rather than trusted.  poetry-core honours this, and a digest an environment can move is
+# a digest no one can check.
+_STEERING_VARIABLES = ("SOURCE_DATE_EPOCH",)
 
 
 def load_project() -> dict:
+    return _load_pyproject()["project"]
+
+
+def _load_pyproject() -> dict:
     try:
         import tomllib
     except ModuleNotFoundError:  # pragma: no cover - build host is 3.11+
         sys.exit("build_wheel.py needs Python 3.11+ (stdlib tomllib).")
     with open(ROOT / "pyproject.toml", "rb") as f:
-        return tomllib.load(f)["project"]
+        return tomllib.load(f)
 
 
 def normalize(name: str) -> str:
     return name.replace("-", "_")
 
 
-def record_line(arcname: str, data: bytes) -> str:
-    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
-    return f"{arcname},sha256={digest},{len(data)}"
+def pinned_backend() -> str:
+    """The exact poetry-core version `[build-system]` pins, which is the digest's other input."""
 
-
-def metadata_text(proj: dict) -> str:
-    lines = ["Metadata-Version: 2.1", f"Name: {proj['name']}", f"Version: {proj['version']}"]
-    if proj.get("description"):
-        lines.append(f"Summary: {proj['description']}")
-    if proj.get("requires-python"):
-        lines.append(f"Requires-Python: {proj['requires-python']}")
-    for author in proj.get("authors", []):
-        if author.get("name"):
-            lines.append(f"Author: {author['name']}")
-    lic = proj.get("license")
-    if isinstance(lic, dict) and lic.get("text"):
-        lines.append(f"License: {lic['text']}")
-    if proj.get("keywords"):
-        lines.append(f"Keywords: {','.join(proj['keywords'])}")
-    body = ""
-    readme = proj.get("readme")
-    if isinstance(readme, str) and (ROOT / readme).exists():
-        lines.append("Description-Content-Type: text/markdown")
-        body = (ROOT / readme).read_text(encoding="utf-8")
-    text = "\n".join(lines) + "\n"
-    return text + ("\n" + body if body else "")
-
-
-def entry_points_text(scripts: dict) -> str:
-    if not scripts:
-        return ""
-    return "[console_scripts]\n" + "".join(f"{k} = {v}\n" for k, v in scripts.items())
+    requires = _load_pyproject().get("build-system", {}).get("requires", [])
+    for entry in requires:
+        match = _PINNED_BACKEND_RE.search(entry)
+        if match:
+            return match.group(1)
+    raise ValueError(
+        "pyproject.toml [build-system] must pin poetry-core exactly, as poetry-core==<version>.\n"
+        "A range there lets two machines build one commit into two different digests."
+    )
 
 
 def _allowed_package_member(arcname: str) -> bool:
@@ -99,39 +84,14 @@ def _allowed_package_member(arcname: str) -> bool:
     return len(parts) >= 3 and parts[1] in _RESOURCE_ROOTS
 
 
-def source_epoch() -> int:
-    """Return the commit date stamped into the source, or ``0`` when none was stamped.
+def collect_package_files() -> dict[str, bytes]:
+    """Every file the wheel is allowed to carry, keyed by archive name.
 
-    The stamp is read rather than imported: the package being packaged must not have to import
-    cleanly for its own build, and no environment variable may steer the result — a wheel that
-    dates differently on two machines is exactly what this build refuses to produce.
+    Raises on anything outside the allowlist. This runs *before* Poetry, so an unexpected file
+    stops the build, and again against the built archive, so an unexpected file Poetry added on
+    its own stops it too.
     """
 
-    try:
-        text = (ROOT / "agent_artifacts" / "_commit.py").read_text(encoding="utf-8")
-    except OSError:
-        return 0
-    match = _COMMIT_EPOCH_RE.search(text)
-    return int(match.group(1)) if match else 0
-
-
-def member_date_time(epoch: int) -> tuple[int, int, int, int, int, int]:
-    """Date a zip member in UTC, never in the build host's local time."""
-
-    if epoch < _DOS_EPOCH:
-        return _DOS_EPOCH_DATE_TIME
-    return time.gmtime(epoch)[:6]
-
-
-def member_info(arcname: str, date_time: tuple[int, int, int, int, int, int]) -> zipfile.ZipInfo:
-    info = zipfile.ZipInfo(arcname, date_time)
-    info.compress_type = zipfile.ZIP_DEFLATED
-    info.create_system = _UNIX_CREATE_SYSTEM
-    info.external_attr = _MEMBER_EXTERNAL_ATTR
-    return info
-
-
-def collect_package_files() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     for path in sorted((ROOT / "agent_artifacts").rglob("*")):
         arc = str(path.relative_to(ROOT)).replace(os.sep, "/")
@@ -145,38 +105,107 @@ def collect_package_files() -> dict[str, bytes]:
     return files
 
 
+def poetry_command() -> list[str]:
+    """How to invoke Poetry here.
+
+    `AART_POETRY` names it outright, for an image that installs Poetry somewhere off `PATH` --
+    a company CI image commonly does, as `/opt/poetry/bin/poetry`.
+    """
+
+    override = os.environ.get("AART_POETRY", "").strip()
+    if override:
+        return [override]
+    found = shutil.which("poetry")
+    if found:
+        return [found]
+    return [sys.executable, "-m", "poetry"]
+
+
+def build_environment() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in _STEERING_VARIABLES:
+        env.pop(name, None)
+    # Building a wheel installs nothing, so it needs no virtual environment.  Left to itself
+    # Poetry creates one per project copy -- and the packaging gates build in a throwaway copy
+    # each time, so a full test run would leave a directory behind in the user's cache for every
+    # build it made, and would need an index reachable to populate them.
+    env["POETRY_VIRTUALENVS_CREATE"] = "false"
+    return env
+
+
+def run_poetry(dist_dir: Path) -> Path:
+    command = poetry_command()
+    try:
+        subprocess.run(
+            [*command, "build", "--format", "wheel", "--no-interaction"],
+            cwd=ROOT,
+            env=build_environment(),
+            check=True,
+        )
+    except FileNotFoundError:
+        raise SystemExit(
+            f"Poetry is not installed, or is not on PATH as {command[0]!r}.\n"
+            "Install it (https://python-poetry.org/docs/#installation), or name it:\n"
+            "  AART_POETRY=/opt/poetry/bin/poetry python scripts/build_wheel.py"
+        ) from None
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(f"poetry build failed with exit status {error.returncode}") from None
+
+    built = sorted(dist_dir.glob("*-py3-none-any.whl"))
+    if len(built) != 1:
+        raise SystemExit(f"expected exactly one wheel in {dist_dir}, found {len(built)}")
+    return built[0]
+
+
+def verify(wheel_path: Path, expected: dict[str, bytes], info: str) -> None:
+    """Check the built archive against the allowlist and against the pinned builder."""
+
+    with zipfile.ZipFile(wheel_path) as archive:
+        names = set(archive.namelist())
+        wheel_metadata = archive.read(f"{info}/WHEEL").decode("utf-8")
+
+    carried = {name for name in names if not name.startswith(f"{info}/")}
+    unexpected = sorted(carried - set(expected))
+    if unexpected:
+        raise SystemExit(
+            "the built wheel carries files the allowlist rejects:\n  "
+            + "\n  ".join(unexpected)
+            + "\nRemove them, or widen the allowlist in scripts/build_wheel.py deliberately."
+        )
+    missing = sorted(set(expected) - carried)
+    if missing:
+        raise SystemExit(
+            "the built wheel is missing files the source has:\n  "
+            + "\n  ".join(missing)
+            + "\nCheck the `include` entries under [tool.poetry] in pyproject.toml."
+        )
+
+    match = _GENERATOR_RE.search(wheel_metadata)
+    generator = match.group(1) if match else "(none)"
+    pin = pinned_backend()
+    if generator != pin:
+        raise SystemExit(
+            f"built by poetry-core {generator}, but [build-system] pins {pin}.\n"
+            "These build one commit into two different digests, so the published digest would\n"
+            "stop describing a rebuild.  Install the pinned Poetry, or change the pin and say so\n"
+            "in docs/release/wheel-reproducibility-v1.md."
+        )
+
+
 def main() -> int:
-    proj = load_project()
-    name, version = proj["name"], proj["version"]
-    dist_name = normalize(name)
-    info = f"{dist_name}-{version}.dist-info"
+    project = load_project()
+    name, version = project["name"], project["version"]
+    info = f"{normalize(name)}-{version}.dist-info"
 
-    files = collect_package_files()
-    files[f"{info}/METADATA"] = metadata_text(proj).encode("utf-8")
-    files[f"{info}/WHEEL"] = (
-        "Wheel-Version: 1.0\n"
-        "Generator: agent-artifacts build_wheel.py\n"
-        "Root-Is-Purelib: true\n"
-        "Tag: py3-none-any\n"
-    ).encode("utf-8")
-    eps = entry_points_text(proj.get("scripts", {}))
-    if eps:
-        files[f"{info}/entry_points.txt"] = eps.encode("utf-8")
+    expected = collect_package_files()
 
-    # Sorted, so the archive's member order comes from the names rather than from the order a
-    # directory walk happened to return them in.
-    ordered = tuple(sorted(files.items()))
-    record = "".join(record_line(arc, data) + "\n" for arc, data in ordered)
-    record += f"{info}/RECORD,,\n"
-
-    date_time = member_date_time(source_epoch())
     dist_dir = ROOT / "dist"
     dist_dir.mkdir(exist_ok=True)
-    wheel_path = dist_dir / f"{dist_name}-{version}-py3-none-any.whl"
-    with zipfile.ZipFile(wheel_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for arc, data in ordered:
-            z.writestr(member_info(arc, date_time), data, compresslevel=_COMPRESS_LEVEL)
-        z.writestr(member_info(f"{info}/RECORD", date_time), record, compresslevel=_COMPRESS_LEVEL)
+    for stale in dist_dir.glob("*-py3-none-any.whl"):
+        stale.unlink()
+
+    wheel_path = run_poetry(dist_dir)
+    verify(wheel_path, expected, info)
 
     print(f"built {wheel_path.relative_to(ROOT)}  ({wheel_path.stat().st_size} bytes)")
     return 0

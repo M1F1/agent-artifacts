@@ -41,8 +41,8 @@ repository you are reading this in; the command above prints it filled in.
 
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|
-| Tagged Git repository, no clone | `python -m pip install --no-deps "git+<repository>.git@v2.8.6"` | `pipx install "git+<repository>.git@v2.8.6"` | `uv tool install "git+<repository>.git@v2.8.6"` |
-| Downloaded wheel | `python -m pip install --no-deps ./aart_cli-2.8.6-py3-none-any.whl` | `pipx install ./aart_cli-2.8.6-py3-none-any.whl` | `uv tool install ./aart_cli-2.8.6-py3-none-any.whl` |
+| Tagged Git repository, no clone | `python -m pip install --no-deps "git+<repository>.git@v0.0.1"` | `pipx install "git+<repository>.git@v0.0.1"` | `uv tool install "git+<repository>.git@v0.0.1"` |
+| Downloaded wheel | `python -m pip install --no-deps ./aart_cli-0.0.1-py3-none-any.whl` | `pipx install ./aart_cli-0.0.1-py3-none-any.whl` | `uv tool install ./aart_cli-0.0.1-py3-none-any.whl` |
 | Release wheel by URL | `python -m pip install --no-deps <the wheel's address on the release>` | `pipx install <the wheel's address on the release>` | `uv tool install <the wheel's address on the release>` |
 
 The Git row leads because it is the only one that needs nothing arranged first: `git+https://` goes
@@ -60,7 +60,7 @@ sources work at all.
 |---|---|
 | Tagged Git repository, no clone | **Yes.** git authenticates, so this row needs nothing set up |
 | Downloaded wheel | Yes, once the file is on disk -- see below for getting it there |
-| Internal index, once the wheel is published to it | Yes. Add `--index-url <your index>` (`--default-index` for `uv`) and ask for `"aart-cli==2.8.6"` |
+| Internal index, once the wheel is published to it | Yes. Add `--index-url <your index>` (`--default-index` for `uv`) and ask for `"aart-cli==0.0.1"` |
 | Release wheel by URL | **No.** See below |
 
 The last row is the one that surprises people. `pip`, `pipx` and `uv` send no token when they fetch
@@ -314,7 +314,7 @@ unreachable.
 
 Set none of them and CI reaches `github.com`. Inside a GitHub Enterprise instance that fails on the
 first run, loudly, rather than silently pointing at the wrong tool. Which arm answered is printed by
-the run: `AART: aart-cli 2.8.6  via wheel https://…`.
+the run: `AART: aart-cli 0.0.1  via wheel https://…`.
 
 The registry also reads `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON`, `AART_PIP_INDEX_URL`,
 `AART_REPOSITORY`, `AART_GH_HOST`, and `AART_PAGES` — set the last to `false` where the instance

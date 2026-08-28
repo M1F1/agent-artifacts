@@ -198,7 +198,7 @@ def _run(selected: tuple[str, ...], temp_root: Path) -> int:
         print(
             f"missing developer tool(s): {', '.join(absent)}\n"
             f"The installed runtime has no dependencies; these are the gates' own tools.\n"
-            f'  {sys.executable} -m pip install -e ".[dev]"\n'
+            "  poetry install --with dev\n"
             "Behind an internal index, add --index-url. Four gates -- unit, integration, "
             "validate,\ndocs-check -- need none of them and can be run alone: "
             f"{sys.executable} scripts/quality.py unit",

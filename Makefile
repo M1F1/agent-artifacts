@@ -1,7 +1,8 @@
 # agent-artifacts — build & validation tasks (WP-21).
 #
-# Zero runtime deps; build tooling is stdlib-only (no setuptools / wheel / build needed
-# for the offline path). The wheel produced by `make wheel` installs with:
+# Zero runtime deps. Poetry builds the wheel and installs the developer tooling; nothing it
+# installs reaches the runtime, which stays standard-library only. The wheel produced by
+# `make wheel` still installs with no index at all:
 #     pip install --no-index dist/aart_cli-<v>-py3-none-any.whl
 
 PYTHON ?= python
@@ -29,7 +30,7 @@ release-check:
 	@test -n "$(REGISTRY)" || (echo "REGISTRY=/path/to/agent-artifacts-registry is required" >&2; exit 2)
 	$(PYTHON) scripts/release.py check --registry "$(REGISTRY)"
 
-# Stamp the git commit, then build the stdlib wheel into dist/.
+# Stamp the git commit, then build the wheel into dist/ with Poetry.
 wheel:
 	$(PYTHON) scripts/inject_commit.py
 	$(PYTHON) scripts/build_wheel.py
@@ -38,7 +39,7 @@ validate:
 	$(QUALITY) validate
 
 # --------------------------------------------------------------------------- #
-# Optional developer tooling. Requires the dev extra:  pip install -e ".[dev]"
+# Optional developer tooling. Requires Poetry's dev group:  poetry install --with dev
 # These are developer/CI dependencies only; the installed runtime stays stdlib-only.
 # --------------------------------------------------------------------------- #
 lint:

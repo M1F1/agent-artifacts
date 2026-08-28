@@ -37,9 +37,16 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    # Poetry decides *what* the tools are -- semantic-version ranges in pyproject.toml, resolved
+    # to exact versions in poetry.lock -- and pip installs them.  The split is forced, not
+    # stylistic: Poetry takes an install source only from a `[[tool.poetry.source]]` block inside
+    # pyproject.toml, adding that block at run time changes the file's hash, and `poetry install`
+    # then refuses the lock outright.  Committing the block would turn the internal index's URL into a
+    # hand-edit in every fork.  pip reads `PIP_INDEX_URL`, which the step above just set.
+    # scripts/dev_tools.py carries the lock's pins across.
     - name: Install developer quality tools
       shell: bash
-      run: ${{ inputs.python }} -m pip install --disable-pip-version-check -e ".[dev]"
+      run: ${{ inputs.python }} scripts/dev_tools.py install
 
     # The gates run here rather than inside the script so this job installs its tools once and the
     # script stays runnable on a laptop with no arguments about who installs what.

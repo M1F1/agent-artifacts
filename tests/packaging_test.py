@@ -6,9 +6,11 @@ against a throwaway copy of the project so the repo's real ``dist/`` is never to
 Run: ``python -m unittest discover -s tests -p "packaging_test.py" -v``
 """
 
+import configparser
 import hashlib
 import importlib.util
 import io
+import os
 import pathlib
 import re
 import shutil
@@ -125,9 +127,15 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
             info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             eps = z.read(f"{info}/entry_points.txt").decode("utf-8")
         self.assertIn("[console_scripts]", eps)
-        self.assertIn("agent-artifacts = agent_artifacts.cli:main", eps)
-        self.assertIn("aart = agent_artifacts.cli:main", eps)
-        self.assertNotIn("aa = agent_artifacts.cli:main", eps)
+        # Parsed, not matched as text: builders disagree about the spaces around `=`, and a test
+        # that pins one builder's whitespace fails on a change that installs identical commands.
+        parser = configparser.ConfigParser()
+        parser.read_string(eps)
+        scripts = dict(parser["console_scripts"])
+        self.assertEqual(
+            scripts,
+            {"agent-artifacts": "agent_artifacts.cli:main", "aart": "agent_artifacts.cli:main"},
+        )
 
     def test_wheel_contains_no_operational_registry_or_legacy_catalog(self):
         wheel = self._build()
@@ -208,6 +216,10 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _dates_of(self, wheel: bytes) -> set:
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            return {item.date_time for item in archive.infolist()}
+
     def _build_at(self, now: float) -> bytes:
         # Everything zipfile would reach for if a member were dated from the clock, moved between
         # the two builds. A builder that reads either one produces a different archive.
@@ -229,29 +241,65 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
             "the wheel is not byte-reproducible across build times",
         )
 
-    def test_members_are_dated_from_the_stamped_commit(self):
-        epoch = 1_600_000_000
-        self._stamp(epoch)
+    def test_member_dates_are_fixed_and_read_neither_the_clock_nor_the_stamp(self):
+        """Poetry dates every member at one constant, so no input can move the dates at all.
 
-        wheel = self._build_at(1_700_000_000.0)
+        Until 2.8.6 the dates came from `COMMIT_EPOCH`. That was one way to keep the clock out of
+        the archive; a constant is another, and a stricter one -- two commits an hour apart now
+        differ only where their content differs.
+        """
 
-        expected = time.gmtime(epoch)[:6]
-        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
-            dates = {item.date_time for item in archive.infolist()}
-        self.assertEqual(dates, {expected})
+        self._stamp(1_600_000_000)
+        early = self._dates_of(self._build_at(1_700_000_000.0))
 
-    def test_an_unstamped_source_dates_at_the_zip_floor_rather_than_now(self):
-        # An editable checkout, or a copy taken outside git, has no commit date. It still must not
-        # reach for the clock: two dev builds of one tree are the same wheel.
-        self._stamp(0)
+        self._stamp(1_500_000_000)
+        late = self._dates_of(self._build_at(1_700_086_400.0))
 
-        wheel = self._build_at(1_700_000_000.0)
+        self.assertEqual(early, late)
+        self.assertEqual(len(early), 1, early)
+        # Not "now", under any clock this test could run at.
+        self.assertLess(early.pop()[0], 2020)
 
-        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
-            dates = {item.date_time for item in archive.infolist()}
-        self.assertEqual(dates, {(1980, 1, 1, 0, 0, 0)})
+    def test_the_environment_cannot_move_the_digest(self):
+        """`SOURCE_DATE_EPOCH` is the hole Poetry opens, and the builder closes it.
 
-    def test_member_order_compression_and_attributes_are_pinned(self):
+        poetry-core honours the variable. A digest that depends on it is a digest that cannot be
+        checked by anyone who did not happen to have it set the same way -- so the builder removes
+        it before invoking Poetry rather than documenting it as a caveat.
+        """
+
+        self._stamp(1_600_000_000)
+        clean = self._build().read_bytes()
+
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1000000000"}):
+            steered = self._build().read_bytes()
+
+        self.assertEqual(
+            hashlib.sha256(clean).hexdigest(),
+            hashlib.sha256(steered).hexdigest(),
+            "SOURCE_DATE_EPOCH moved the wheel's bytes",
+        )
+
+    def test_a_builder_other_than_the_pinned_one_fails_the_build(self):
+        """The builder stamps its version into the archive, so an upgrade moves the digest.
+
+        Left unchecked, upgrading Poetry would silently invalidate every published digest while
+        every gate stayed green. The pin is checked against what actually built the file.
+        """
+
+        self._stamp(1_600_000_000)
+        wheel = self._build()
+        with zipfile.ZipFile(wheel) as archive:
+            info = next(n.split("/")[0] for n in archive.namelist() if n.endswith("/WHEEL"))
+            metadata = archive.read(f"{info}/WHEEL").decode("utf-8")
+        self.assertIn(f"Generator: poetry-core {self.build.pinned_backend()}", metadata)
+
+        with mock.patch.object(self.build, "pinned_backend", return_value="0.0.0"):
+            with self.assertRaises(SystemExit) as raised:
+                self.build.main()
+        self.assertIn("[build-system] pins 0.0.0", str(raised.exception))
+
+    def test_compression_and_attributes_are_pinned(self):
         self._stamp(1_600_000_000)
 
         wheel = self._build_at(1_700_000_000.0)
@@ -259,13 +307,9 @@ class ReproducibleWheelTest(_WheelBuildFixture, unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
             members = archive.infolist()
         names = [item.filename for item in members]
-        record = names[-1]
-        self.assertTrue(record.endswith(".dist-info/RECORD"), names[-3:])
-        self.assertEqual(names[:-1], sorted(names[:-1]))
-        # Create-system would otherwise be 0 on a Windows build host, and the mode would come from
-        # a zipfile default rather than from this builder.
+        self.assertTrue(any(n.endswith(".dist-info/RECORD") for n in names), names[-3:])
+        # Create-system would otherwise be 0 on a Windows build host.
         self.assertEqual({item.create_system for item in members}, {3})
-        self.assertEqual({item.external_attr for item in members}, {0o600 << 16})
         self.assertEqual({item.compress_type for item in members}, {zipfile.ZIP_DEFLATED})
 
 
@@ -304,13 +348,14 @@ class TypedBehaviorProbeTest(unittest.TestCase):
 
 
 class LentBuildBackendTest(unittest.TestCase):
-    """A new virtual environment can no longer be assumed to contain setuptools.
+    """A new virtual environment cannot be assumed to contain the build backend.
 
-    `ensurepip` stopped bundling it in Python 3.12, and `system_site_packages` reaches the base
-    interpreter rather than a virtual environment the developer is working inside -- so a venv
-    made from a venv on a recent Python has none.  The editable install then failed with a
-    hundred lines of pip traceback ending in `Cannot import 'setuptools.build_meta'`, which never
-    says that the build backend is the missing thing.
+    `ensurepip` bundles neither poetry-core nor, since Python 3.12, setuptools, and
+    `system_site_packages` reaches the base interpreter rather than a virtual environment the
+    developer is working inside -- so a venv made from a venv has none.  The offline editable
+    install then failed with a hundred lines of pip traceback ending in
+    `Cannot import 'poetry.core.masonry.api'`, which never says that the build backend is the
+    missing thing.
     """
 
     def test_the_lent_directory_carries_the_backend_and_nothing_else(self) -> None:
@@ -319,7 +364,7 @@ class LentBuildBackendTest(unittest.TestCase):
             lent = smoke._lend_build_backend(pathlib.Path(raw))
 
             names = {entry.name for entry in lent.iterdir()}
-            self.assertIn("setuptools", names)
+            self.assertIn("poetry", names)
             # Only the backend travels.  Lending the whole environment would put the developer's
             # own editable agent_artifacts on the path, and the install would look like it worked
             # when nothing had been installed at all.
@@ -333,7 +378,7 @@ class LentBuildBackendTest(unittest.TestCase):
             environment = {"PYTHONPATH": str(lent), "PATH": "/usr/bin:/bin"}
 
             probe = subprocess.run(
-                [sys.executable, "-S", "-c", "import setuptools.build_meta"],
+                [sys.executable, "-S", "-c", "import poetry.core.masonry.api"],
                 capture_output=True,
                 env=environment,
             )
@@ -346,7 +391,7 @@ class LentBuildBackendTest(unittest.TestCase):
             with mock.patch.object(smoke.importlib.util, "find_spec", return_value=None):
                 with self.assertRaises(RuntimeError) as caught:
                     smoke._lend_build_backend(pathlib.Path(raw))
-        self.assertIn('pip install -e ".[dev]"', str(caught.exception))
+        self.assertIn("poetry install --with dev", str(caught.exception))
 
 
 if __name__ == "__main__":

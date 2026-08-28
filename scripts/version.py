@@ -82,6 +82,34 @@ def finalize_candidate(version: Version) -> Version:
     return Version(version.major, version.minor, version.patch)
 
 
+_RELEASE_PARTS = ("major", "minor", "patch")
+
+
+def next_release(version: Version, part: str) -> Version:
+    """The next release version, one semantic step from this one.
+
+    Semantic versioning is a promise about what a number change means, so the step has to be
+    named -- `major` for a break, `minor` for an addition, `patch` for a fix -- rather than
+    typed as a literal that nobody can check against the diff.
+
+    A prerelease is refused rather than quietly finalized: `1.2.0a3` is already on its way to
+    `1.2.0`, and `finalize` is the command that takes it there. Doing both here would give two
+    commands one meaning and let a release skip its own prereleases by accident.
+    """
+
+    if part not in _RELEASE_PARTS:
+        raise VersionError(f"unknown release part {part!r}; expected one of {_RELEASE_PARTS}")
+    if not version.stable:
+        raise VersionError(
+            f"{version} is a prerelease; finalize it first:  version.py finalize --write"
+        )
+    if part == "major":
+        return Version(version.major + 1, 0, 0)
+    if part == "minor":
+        return Version(version.major, version.minor + 1, 0)
+    return Version(version.major, version.minor, version.patch + 1)
+
+
 def _extract(pattern: re.Pattern[str], text: str, label: str) -> str:
     matches = pattern.findall(text)
     if len(matches) != 1:
@@ -323,6 +351,9 @@ def _parser() -> argparse.ArgumentParser:
     bump.add_argument("--write", action="store_true", help="required acknowledgement to write")
     finalize = commands.add_parser("finalize", help="finalize the current prerelease core version")
     finalize.add_argument("--write", action="store_true", help="required acknowledgement to write")
+    release = commands.add_parser("bump", help="advance one semantic step: major, minor, or patch")
+    release.add_argument("part", choices=_RELEASE_PARTS)
+    release.add_argument("--write", action="store_true", help="required acknowledgement to write")
     set_command = commands.add_parser("set", help="explicitly set a validated version")
     set_command.add_argument("version")
     set_command.add_argument("--write", action="store_true", help="required acknowledgement")
@@ -353,6 +384,11 @@ def main(argv: tuple[str, ...] | None = None, root: Path = ROOT) -> int:
             if not args.write:
                 raise VersionError(f"refusing to write {candidate} without --write")
             _report(write_version(root, candidate), f"version finalized: {candidate}")
+        elif args.command == "bump":
+            candidate = next_release(read_version(root), args.part)
+            if not args.write:
+                raise VersionError(f"refusing to write {candidate} without --write")
+            _report(write_version(root, candidate), f"version set: {candidate}")
         elif args.command == "set":
             candidate = parse_version(args.version)
             if not args.write:
