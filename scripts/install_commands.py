@@ -38,7 +38,7 @@ def lines(url: str, version: str) -> str:
     """The install block for `url` at `version`, as markdown."""
 
     tag = f"v{version}"
-    wheel = f"agent_artifacts-{version}-py3-none-any.whl"
+    wheel = f"aart_cli-{version}-py3-none-any.whl"
     return "\n".join(
         (
             "### Install this version",

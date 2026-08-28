@@ -521,7 +521,7 @@ safety property a tool that edits other people's config files needs.
    (committed and/or attached to releases). Because there are no dependencies, installing it
    never reaches an index:
    ```
-   pip install --no-index ./dist/agent_artifacts-<version>-py3-none-any.whl
+   pip install --no-index ./dist/aart_cli-<version>-py3-none-any.whl
    # or, anywhere on the machine:
    pip install --no-index --find-links /path/to/dist agent-artifacts
    ```

@@ -3,7 +3,7 @@
 This path uses no registry, reporting destination, optional analyzer, real Keychain credential, or
 package index.
 
-1. Install AART from a reviewed local checkout or `agent_artifacts-1.0.0-py3-none-any.whl`.
+1. Install AART from a reviewed local checkout or `aart_cli-1.0.0-py3-none-any.whl`.
 2. In your project, run `aart` and read the controls screen.
 3. Choose **User**, then **Sources** and add a compatible local or Git repository. A native source
    contains `aart-source.json` and canonical packages.

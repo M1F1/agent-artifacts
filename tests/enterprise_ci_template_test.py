@@ -361,7 +361,7 @@ class EveryFetchArmIsReachableTest(unittest.TestCase):
         """A variable is not in the file, so the run is the only place the truth can appear."""
 
         for label, body in EMITTED.items():
-            self.assertIn('echo "AART: agent-artifacts $got  via $how', body, label)
+            self.assertIn('echo "AART: aart-cli $got  via $how', body, label)
 
     def test_every_arm_ends_at_the_same_check(self) -> None:
         for label, body in EMITTED.items():

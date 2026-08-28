@@ -24,7 +24,7 @@ class LinesTest(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIn(command, block)
-        self.assertIn("agent_artifacts-2.9.0-py3-none-any.whl", block)
+        self.assertIn("aart_cli-2.9.0-py3-none-any.whl", block)
         # github.com must not leak into a block asked for about somewhere else.
         self.assertNotIn("github.com", block)
 

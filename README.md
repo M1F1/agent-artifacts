@@ -42,7 +42,7 @@ repository you are reading this in; the command above prints it filled in.
 | Source | `pip` (inside your environment) | `pipx` | `uv` |
 |---|---|---|---|
 | Tagged Git repository, no clone | `python -m pip install --no-deps "git+<repository>.git@v2.8.5"` | `pipx install "git+<repository>.git@v2.8.5"` | `uv tool install "git+<repository>.git@v2.8.5"` |
-| Downloaded wheel | `python -m pip install --no-deps ./agent_artifacts-2.8.5-py3-none-any.whl` | `pipx install ./agent_artifacts-2.8.5-py3-none-any.whl` | `uv tool install ./agent_artifacts-2.8.5-py3-none-any.whl` |
+| Downloaded wheel | `python -m pip install --no-deps ./aart_cli-2.8.5-py3-none-any.whl` | `pipx install ./aart_cli-2.8.5-py3-none-any.whl` | `uv tool install ./aart_cli-2.8.5-py3-none-any.whl` |
 | Release wheel by URL | `python -m pip install --no-deps <the wheel's address on the release>` | `pipx install <the wheel's address on the release>` | `uv tool install <the wheel's address on the release>` |
 
 The Git row leads because it is the only one that needs nothing arranged first: `git+https://` goes
@@ -60,7 +60,7 @@ sources work at all.
 |---|---|
 | Tagged Git repository, no clone | **Yes.** git authenticates, so this row needs nothing set up |
 | Downloaded wheel | Yes, once the file is on disk -- see below for getting it there |
-| Internal index, once the wheel is published to it | Yes. Add `--index-url <your index>` (`--default-index` for `uv`) and ask for `"agent-artifacts==2.8.5"` |
+| Internal index, once the wheel is published to it | Yes. Add `--index-url <your index>` (`--default-index` for `uv`) and ask for `"aart-cli==2.8.5"` |
 | Release wheel by URL | **No.** See below |
 
 The last row is the one that surprises people. `pip`, `pipx` and `uv` send no token when they fetch
@@ -298,8 +298,8 @@ ways in; the first variable that is set wins, and they are never combined:
 
 | Order | Variable | Example | How it fetches |
 |---|---|---|---|
-| 1 | `AART_PACKAGE` | `agent-artifacts=={version}` | `pip` from `AART_PIP_INDEX_URL` |
-| 2 | `AART_WHEEL_URL` | `https://host/…/v{version}/agent_artifacts-{version}-py3-none-any.whl` | `curl`, then unzip |
+| 1 | `AART_PACKAGE` | `aart-cli=={version}` | `pip` from `AART_PIP_INDEX_URL` |
+| 2 | `AART_WHEEL_URL` | `https://host/…/v{version}/aart_cli-{version}-py3-none-any.whl` | `curl`, then unzip |
 | 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
 | 4 | `AART_TOOL_URL` | `https://ghe.corp/platform/agent-artifacts.git` | `git clone` at `v` + the pin |
 
@@ -314,7 +314,7 @@ unreachable.
 
 Set none of them and CI reaches `github.com`. Inside a GitHub Enterprise instance that fails on the
 first run, loudly, rather than silently pointing at the wrong tool. Which arm answered is printed by
-the run: `AART: agent-artifacts 2.8.5  via wheel https://…`.
+the run: `AART: aart-cli 2.8.5  via wheel https://…`.
 
 The registry also reads `AART_RUNNER`, `AART_CI_IMAGE`, `AART_PYTHON`, `AART_PIP_INDEX_URL`,
 `AART_REPOSITORY`, `AART_GH_HOST`, and `AART_PAGES` — set the last to `false` where the instance

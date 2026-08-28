@@ -235,7 +235,7 @@ class _Mirror:
 
 _MIRRORS = (
     _Mirror("scripts/release.py", re.compile(r'^EXPECTED_VERSION = "([^"]+)"', re.MULTILINE)),
-    _Mirror("README.md", re.compile(r"agent_artifacts-([0-9][^\s-]*)-py3-none-any\.whl")),
+    _Mirror("README.md", re.compile(r"aart_cli-([0-9][^\s-]*)-py3-none-any\.whl")),
     _Mirror(
         "docs/release/schema-freeze-v18.json",
         re.compile(r'"release_version"\s*:\s*"([^"]+)"'),

@@ -97,7 +97,7 @@ class _WheelBuildFixture:
     def _build(self) -> pathlib.Path:
         rc = self.build.main()
         self.assertEqual(rc, 0)
-        wheels = list((self.tmp / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        wheels = list((self.tmp / "dist").glob("aart_cli-*-py3-none-any.whl"))
         self.assertEqual(len(wheels), 1, f"expected exactly one wheel, got {wheels}")
         return wheels[0]
 
@@ -175,7 +175,7 @@ class BuildWheelTest(_WheelBuildFixture, unittest.TestCase):
         with zipfile.ZipFile(wheel) as z:
             info = next(n.split("/")[0] for n in z.namelist() if n.endswith(".dist-info/RECORD"))
             meta = z.read(f"{info}/METADATA").decode("utf-8")
-        self.assertIn("Name: agent-artifacts", meta)
+        self.assertIn("Name: aart-cli", meta)
         self.assertIn("Version: ", meta)
         self.assertIn("Requires-Python: ", meta)
         # Zero runtime deps: no Requires-Dist lines.

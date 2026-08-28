@@ -43,9 +43,7 @@ class ReadmeAdoptionTest(unittest.TestCase):
         # Taken from the executable, not written here: a literal passes while the README goes
         # stale, which is exactly how 2.8.0 nearly shipped a matrix still naming 2.7.1.  A wheel
         # filename is not an address, so it stays whole.
-        self.assertGreaterEqual(
-            section.count(f"./agent_artifacts-{__version__}-py3-none-any.whl"), 3
-        )
+        self.assertGreaterEqual(section.count(f"./aart_cli-{__version__}-py3-none-any.whl"), 3)
         self.assertIn("The editable install is for working on AART itself", _README)
 
     def test_the_enterprise_section_still_says_which_sources_stop_working(self) -> None:
@@ -59,7 +57,7 @@ class ReadmeAdoptionTest(unittest.TestCase):
 
         start = _README.index("### On a private Enterprise instance")
         section = _README[start : _README.index("The editable install is", start)]
-        self.assertIn(f'"agent-artifacts=={__version__}"', section)
+        self.assertIn(f'"aart-cli=={__version__}"', section)
         self.assertIn("Release wheel by URL", section)
         self.assertIn("**No.**", section)
 

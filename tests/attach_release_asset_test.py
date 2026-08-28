@@ -23,7 +23,7 @@ import attach_release_asset  # noqa: E402
 
 API = "https://ghe.example/api/v3"
 UPLOAD = "https://uploads.ghe.example/repos/org/aart/releases/7/assets"
-WHEEL = "agent_artifacts-2.8.5-py3-none-any.whl"
+WHEEL = "aart_cli-2.8.5-py3-none-any.whl"
 
 ENVIRONMENT = {
     "GITHUB_API_URL": API,

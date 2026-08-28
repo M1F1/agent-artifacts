@@ -56,8 +56,8 @@ has.
 
 | You have | Do this once | Registries then set |
 |---|---|---|
-| An internal package index | Publish the wheel to it | `AART_PACKAGE` = `agent-artifacts=={version}` |
-| Releases with attached files | Tag `v2.8.5`; `release.yml` builds the wheel and attaches it | `AART_WHEEL_URL` = `https://ghe.corp/platform/agent-artifacts/releases/download/v{version}/agent_artifacts-{version}-py3-none-any.whl` |
+| An internal package index | Publish the wheel to it | `AART_PACKAGE` = `aart-cli=={version}` |
+| Releases with attached files | Tag `v2.8.5`; `release.yml` builds the wheel and attaches it | `AART_WHEEL_URL` = `https://ghe.corp/platform/agent-artifacts/releases/download/v{version}/aart_cli-{version}-py3-none-any.whl` |
 | A custom runner image | Bake a checkout into it | `AART_TOOL_PATH` = `/opt/aart` |
 | Only the mirrored repository | Nothing — Step 1 is the whole setup | `AART_TOOL_URL` = `https://ghe.corp/platform/agent-artifacts.git` |
 
@@ -128,7 +128,7 @@ Commit, open a pull request, and let CI run it.
 The `Provide AART` step ends with the whole answer:
 
 ```text
-AART: agent-artifacts 2.8.5  via wheel https://ghe.corp/…  pinned by .aart-version
+AART: aart-cli 2.8.5  via wheel https://ghe.corp/…  pinned by .aart-version
 ```
 
 Which version ran, which arm answered, and whether the pin was honoured. If it says something else,
@@ -204,7 +204,7 @@ clone is the one worth losing.
 ### Publishing the wheel to an internal index
 
 A release attaches the wheel to the release page, and on github.com that is where it stops. Inside
-a company the wheel usually also belongs on the internal index, so that `pip install agent-artifacts`
+a company the wheel usually also belongs on the internal index, so that `pip install aart-cli`
 works the way every other internal package does.
 
 Set `AART_INDEX_PUBLISH_URL` to the upload endpoint of a **hosted** repository — a proxy or a group
@@ -277,7 +277,7 @@ first one set wins, never combined. §3.1 explains why that order and not anothe
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AART_PACKAGE` | unset | A requirement for an index, normally `agent-artifacts=={version}` — `{version}` is replaced with the pin. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
+| `AART_PACKAGE` | unset | A requirement for an index, normally `aart-cli=={version}` — `{version}` is replaced with the pin. Installed with `pip --no-deps --target`. The most governed route, and the one to use once the company mirrors AART in Nexus or Artifactory |
 | `AART_PIP_INDEX_URL` | `https://pypi.org/simple` | The index `AART_PACKAGE` is fetched from |
 | `AART_WHEEL_URL` | unset | URL of a released wheel, downloaded with `curl` and unzipped. Use `{version}` where the version appears and the pin fills it in. **The address has to answer without a login** — the fetch sends no token, so a release asset on a private repository returns HTML and the unzip fails. Use `AART_PACKAGE` or `AART_TOOL_URL` there |
 | `AART_TOOL_PATH` | unset | An agent-artifacts tree already on the runner, usually baked into the CI image. Needs neither git nor the network |
@@ -363,7 +363,7 @@ purpose.
 **Which arm answered is printed by the run:**
 
 ```
-AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-artifacts==2.8.5)  pinned by .aart-version
+AART: aart-cli 2.8.5  via index https://nexus.corp/pypi/simple (aart-cli==2.8.5)  pinned by .aart-version
 ```
 
 **Generated files, and files you own.** The workflows and the two JSON markers are managed —
@@ -518,7 +518,7 @@ Walked locally on 2026-08-21, against the real reference registry, with a source
   template behaves as it did before. Then a registry created from scratch, locked, built, and all
   seven gates run through the shim the pinned step puts on PATH.
 - Walked earlier the same day, before the pin existed. Each arm reached
-  `agent-artifacts 2.8.5` from a different place — a PEP 503 index on disk, a wheel over HTTP, a
+  `aart-cli 2.8.5` from a different place — a PEP 503 index on disk, a wheel over HTTP, a
   path, and a clone at `v2.8.5`. Then the cascade, which is the part that can actually fail: all
   four variables set resolves to the index, and dropping them one at a time walks down to the
   wheel, the path, and the clone, in that order. All three failure modes exit non-zero and name

@@ -47,7 +47,7 @@ def _fixture_root(raw: str, *, version: str = "0.1.48", complete: bool = False) 
         encoding="utf-8",
     )
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "agent-artifacts"\nversion = "{version}"\ndependencies = []\n',
+        f'[project]\nname = "aart-cli"\nversion = "{version}"\ndependencies = []\n',
         encoding="utf-8",
     )
     state = "complete" if complete else "pending"
@@ -225,7 +225,7 @@ class MirroredVersionTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "README.md").write_text(
-                "pipx install ./agent_artifacts-2.8.5-py3-none-any.whl\n",
+                "pipx install ./aart_cli-2.8.5-py3-none-any.whl\n",
                 encoding="utf-8",
             )
 
@@ -237,7 +237,7 @@ class MirroredVersionTest(unittest.TestCase):
                 (root / "scripts" / "release.py").read_text(encoding="utf-8"),
             )
             self.assertIn(
-                "agent_artifacts-2.8.6-py3-none-any.whl",
+                "aart_cli-2.8.6-py3-none-any.whl",
                 (root / "README.md").read_text(encoding="utf-8"),
             )
 
@@ -273,7 +273,7 @@ class MirroredVersionTest(unittest.TestCase):
                 'EXPECTED_VERSION = "2.8.5"\nDOC = "github-release-v2.8.5.md"\n', encoding="utf-8"
             )
             (root / "README.md").write_text(
-                "pipx install ./agent_artifacts-2.8.5-py3-none-any.whl\n", encoding="utf-8"
+                "pipx install ./aart_cli-2.8.5-py3-none-any.whl\n", encoding="utf-8"
             )
 
             said = versioning.check_version(root)
@@ -354,7 +354,7 @@ class RepositoryReleaseContractTest(unittest.TestCase):
             build.ROOT = target
             self.assertEqual(build.main(), 0)
             version = str(versioning.read_version(ROOT))
-            wheel = target / "dist" / f"agent_artifacts-{version}-py3-none-any.whl"
+            wheel = target / "dist" / f"aart_cli-{version}-py3-none-any.whl"
             self.assertTrue(wheel.is_file(), wheel)
             with zipfile.ZipFile(wheel) as archive:
                 metadata_name = next(

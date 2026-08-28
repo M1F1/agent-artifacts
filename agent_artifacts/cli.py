@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) "
         "into agentic harnesses.",
     )
-    parser.add_argument("--version", action="version", version=f"agent-artifacts {__version__}")
+    parser.add_argument("--version", action="version", version=f"aart-cli {__version__}")
 
     def _add_project(p: argparse.ArgumentParser) -> None:
         p.add_argument(

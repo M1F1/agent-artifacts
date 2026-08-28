@@ -113,7 +113,7 @@ git clone https://ghe.corp/platform/agent-artifacts.git
 PYTHONPATH=$PWD/agent-artifacts python3 -m agent_artifacts --version
 ```
 
-Either way it should say `agent-artifacts 2.8.5`. That number returns in step 8.
+Either way it should say `aart-cli 2.8.5`. That number returns in step 8.
 
 ## Part B — the registry
 
@@ -150,7 +150,7 @@ combined — the first one set wins.
 
 | # | Variable | Choose it when |
 |---|---|---|
-| 1 | `AART_PACKAGE` | the company mirrors AART in Nexus or Artifactory. Value: `agent-artifacts=={version}` |
+| 1 | `AART_PACKAGE` | the company mirrors AART in Nexus or Artifactory. Value: `aart-cli=={version}` |
 | 2 | `AART_WHEEL_URL` | releases carry attached files. Put `{version}` where the number goes |
 | 3 | `AART_TOOL_PATH` | a tree is baked into the CI image, e.g. `/opt/aart`. Needs neither git nor the network |
 | 4 | `AART_TOOL_URL` | **start here.** Step 1 is the whole setup: `https://ghe.corp/platform/agent-artifacts.git` |
@@ -190,7 +190,7 @@ The `Provide AART` step ends with the whole answer: which version, which arm, an
 was honoured.
 
 ```text
-AART: agent-artifacts 2.8.5  via git https://ghe.corp/… (pin 2.8.5 overridden by AART_REF)
+AART: aart-cli 2.8.5  via git https://ghe.corp/… (pin 2.8.5 overridden by AART_REF)
 ```
 
 If it says something else, these are the three ways it fails, all non-zero and named:
@@ -235,7 +235,7 @@ An instance served on a path or a non-default port needs `AART_GH_HOST` set expl
 
 Four things make a failure diagnosable:
 
-- The `AART: agent-artifacts …` line from the `Provide AART` step.
+- The `AART: aart-cli …` line from the `Provide AART` step.
 - The job name that ran, which says which branch of every `if:` the variables selected.
 - The log of the step that failed, and its exit code.
 - The variables you set — names and non-sensitive values.

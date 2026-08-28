@@ -185,7 +185,7 @@ def wheel_digest(root: Path = ROOT, *, output_dir: Path | None = None) -> tuple[
             check=True,
             capture_output=True,
         )
-        built = tuple((source_copy / "dist").glob("agent_artifacts-*-py3-none-any.whl"))
+        built = tuple((source_copy / "dist").glob("aart_cli-*-py3-none-any.whl"))
         if len(built) != 1:
             raise ValueError(f"expected one built wheel, found {built}")
         if output_dir is None:

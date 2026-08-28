@@ -23,7 +23,7 @@ Use a reviewed checkout or wheel. No package index is required:
 ```shell
 python -m pip install --no-index --no-deps --no-build-isolation -e /path/to/agent-artifacts
 # or
-python -m pip install --no-index --no-deps /path/to/agent_artifacts-1.0.0-py3-none-any.whl
+python -m pip install --no-index --no-deps /path/to/aart_cli-1.0.0-py3-none-any.whl
 ```
 
 Removing the old Python environment does not remove managed source snapshots or content-addressed

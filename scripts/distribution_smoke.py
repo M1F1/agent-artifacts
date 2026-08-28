@@ -64,7 +64,7 @@ def _assert_installed_origin(
         source_root
     ):
         raise RuntimeError(f"wheel phase imported unexpected package: {package_file}")
-    requirements = importlib.metadata.requires("agent-artifacts") or []
+    requirements = importlib.metadata.requires("aart-cli") or []
     runtime = tuple(item for item in requirements if "extra ==" not in item)
     if runtime:
         raise RuntimeError(f"installed distribution has runtime dependencies: {runtime}")
@@ -391,7 +391,7 @@ def _build_local_wheel(source_root: Path, workspace: Path) -> Path:
     wheel_dir.mkdir()
     packaging._copy_project(source_root, source_copy)
     packaging._build_wheel(source_copy, wheel_dir)
-    wheels = tuple(wheel_dir.glob("agent_artifacts-*-py3-none-any.whl"))
+    wheels = tuple(wheel_dir.glob("aart_cli-*-py3-none-any.whl"))
     if len(wheels) != 1:
         raise RuntimeError(f"expected one local wheel, found {wheels}")
     packaging._validate_wheel(wheels[0], workspace / "wheel-inspection")

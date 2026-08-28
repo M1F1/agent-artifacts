@@ -1,6 +1,6 @@
 # Wheel reproducibility
 
-From `2.2.0`, `agent_artifacts-<version>-py3-none-any.whl` is **byte-reproducible**: rebuilding the
+From `2.2.0`, `aart_cli-<version>-py3-none-any.whl` is **byte-reproducible**: rebuilding the
 tagged commit anywhere produces an archive with the same sha256 digest, not merely the same
 contents. Live acceptance `LAF-30` probed this by hand and it failed — two builds of one source
 differed, because every archive member was dated from the build clock.
@@ -29,7 +29,7 @@ date, so no environment can quietly move it.
 ```sh
 git checkout v<version>
 make wheel
-shasum -a 256 dist/agent_artifacts-<version>-py3-none-any.whl
+shasum -a 256 dist/aart_cli-<version>-py3-none-any.whl
 ```
 
 Compare that digest with the one published beside the release artifact. `make wheel` runs
@@ -50,8 +50,8 @@ The command builds the wheel this commit publishes in a throwaway copy — stamp
 `make wheel` would — writes it into `dist/`, and prints two lines:
 
 ```
-sha256:<hex>  agent_artifacts-<version>-py3-none-any.whl
-wrote dist/agent_artifacts-<version>-py3-none-any.whl
+sha256:<hex>  aart_cli-<version>-py3-none-any.whl
+wrote dist/aart_cli-<version>-py3-none-any.whl
 ```
 
 **Attach the file it names.** The digest is read back from that file after it is written, so the

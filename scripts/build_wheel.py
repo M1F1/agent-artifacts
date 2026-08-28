@@ -4,9 +4,9 @@
 A wheel (PEP 427) is just a zip with a ``.dist-info/`` directory. Because agent-artifacts
 has zero dependencies and is pure Python, we don't need setuptools or the `wheel` package to
 produce one — which means the project builds **and** installs with no external index at all
-(docs/design/DESIGN.md §15). The resulting ``dist/agent_artifacts-<v>-py3-none-any.whl`` installs via:
+(docs/design/DESIGN.md §15). The resulting ``dist/aart_cli-<v>-py3-none-any.whl`` installs via:
 
-    pip install --no-index dist/agent_artifacts-<v>-py3-none-any.whl
+    pip install --no-index dist/aart_cli-<v>-py3-none-any.whl
 
 Requires Python 3.11+ to build (uses stdlib ``tomllib`` to read pyproject.toml); the built
 wheel itself runs on Python 3.10+.

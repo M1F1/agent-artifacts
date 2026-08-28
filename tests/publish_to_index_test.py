@@ -24,20 +24,20 @@ from tests.versioning_test import _load_script
 publish_to_index = _load_script("publish_to_index")
 
 _METADATA = """Metadata-Version: 2.1
-Name: agent-artifacts
+Name: aart-cli
 Version: 9.9.9
 Summary: A summary only the wheel knows.
 
 """
 
 
-def _wheel(directory: Path, name: str = "agent_artifacts-9.9.9-py3-none-any.whl") -> Path:
+def _wheel(directory: Path, name: str = "aart_cli-9.9.9-py3-none-any.whl") -> Path:
     """A wheel is a zip with a `.dist-info/`, and that is all this needs to be one."""
 
     path = directory / name
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("agent_artifacts/__init__.py", "# nothing\n")
-        archive.writestr("agent_artifacts-9.9.9.dist-info/METADATA", _METADATA)
+        archive.writestr("aart_cli-9.9.9.dist-info/METADATA", _METADATA)
     return path
 
 
@@ -61,7 +61,7 @@ class FieldsComeFromTheWheelTest(unittest.TestCase):
         with TemporaryDirectory() as held:
             fields = dict(publish_to_index.form(_wheel(Path(held))))
 
-        self.assertEqual(fields["name"], "agent-artifacts")
+        self.assertEqual(fields["name"], "aart-cli")
         self.assertEqual(fields["version"], "9.9.9")
         self.assertEqual(fields["summary"], "A summary only the wheel knows.")
         self.assertEqual(fields["metadata_version"], "2.1")
@@ -74,7 +74,7 @@ class FieldsComeFromTheWheelTest(unittest.TestCase):
     def test_a_wheel_missing_its_metadata_is_refused_by_name(self) -> None:
         with TemporaryDirectory() as held:
             directory = Path(held)
-            path = directory / "agent_artifacts-9.9.9-py3-none-any.whl"
+            path = directory / "aart_cli-9.9.9-py3-none-any.whl"
             with zipfile.ZipFile(path, "w") as archive:
                 archive.writestr("agent_artifacts/__init__.py", "")
             with self.assertRaises(publish_to_index.PublishError) as refusal:
@@ -88,7 +88,7 @@ class FieldsComeFromTheWheelTest(unittest.TestCase):
             directory = Path(held)
             (directory / "dist").mkdir()
             _wheel(directory / "dist")
-            _wheel(directory / "dist", "agent_artifacts-9.9.8-py3-none-any.whl")
+            _wheel(directory / "dist", "aart_cli-9.9.8-py3-none-any.whl")
             with self.assertRaises(publish_to_index.PublishError) as refusal:
                 publish_to_index.wheel(directory)
         message = str(refusal.exception)
@@ -105,7 +105,7 @@ class TheBodyDescribesTheBytesSentTest(unittest.TestCase):
 
         parts = _parts(payload, "aboundary")
         filename, content = parts["content"]
-        self.assertEqual(filename, "agent_artifacts-9.9.9-py3-none-any.whl")
+        self.assertEqual(filename, "aart_cli-9.9.9-py3-none-any.whl")
         # The file that travelled is the file on disk, byte for byte -- not merely one of its size.
         self.assertEqual(content, on_disk)
         self.assertEqual(parts["sha256_digest"][1].decode(), hashlib.sha256(content).hexdigest())

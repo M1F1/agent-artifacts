@@ -128,7 +128,7 @@ _PROVIDE_AART = b"""      - name: Provide AART
           # `gh` defaults to github.com, which on an Enterprise instance is the wrong server and a
           # silent one.  Derive the host from the instance the job is already running on.
           echo "GH_HOST=${GH_HOST_OVERRIDE:-${GITHUB_SERVER_URL#https://}}" >> "$GITHUB_ENV"
-          echo "AART: agent-artifacts $got  via $how${PIN:+  pinned by .aart-version}$override"
+          echo "AART: aart-cli $got  via $how${PIN:+  pinned by .aart-version}$override"
 """
 
 _RUNS_ON = b"""    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
@@ -423,8 +423,8 @@ wins**, and they are never combined:
 
 | Order | Variable | Example | How it fetches |
 |---|---|---|---|
-| 1 | `AART_PACKAGE` | `agent-artifacts=={version}` | `pip` from `AART_PIP_INDEX_URL` |
-| 2 | `AART_WHEEL_URL` | `https://host/.../v{version}/agent_artifacts-{version}-py3-none-any.whl` | fetch, then unzip |
+| 1 | `AART_PACKAGE` | `aart-cli=={version}` | `pip` from `AART_PIP_INDEX_URL` |
+| 2 | `AART_WHEEL_URL` | `https://host/.../v{version}/aart_cli-{version}-py3-none-any.whl` | fetch, then unzip |
 | 3 | `AART_TOOL_PATH` | `/opt/aart` | Already on the runner |
 | 4 | `AART_TOOL_URL` | `https://ghe.corp/platform/agent-artifacts.git` | `git clone` at `v` + the pin |
 
@@ -447,7 +447,7 @@ single registry can still override it.
 Which arm actually answered is printed by the run:
 
 ```
-AART: agent-artifacts 2.8.5  via index https://nexus.corp/pypi/simple (agent-artifacts==2.8.5)
+AART: aart-cli 2.8.5  via index https://nexus.corp/pypi/simple (aart-cli==2.8.5)
 ```
 
 ### The other variables

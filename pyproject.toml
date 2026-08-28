@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-artifacts"
+name = "aart-cli"
 version = "2.8.5"
 description = "Install a team's AI artifacts (skills, guidelines, MCP configs, hooks) into multiple agentic harnesses."
 readme = "README.md"

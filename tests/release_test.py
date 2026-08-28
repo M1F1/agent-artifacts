@@ -42,7 +42,7 @@ def _fixture_root(raw: str, release, *, complete: bool = True) -> Path:
         encoding="utf-8",
     )
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "agent-artifacts"\nversion = "{version}"\ndependencies = []\n',
+        f'[project]\nname = "aart-cli"\nversion = "{version}"\ndependencies = []\n',
         encoding="utf-8",
     )
     state = "complete" if complete else "pending"
@@ -514,7 +514,7 @@ class WheelDigestEvidenceTest(unittest.TestCase):
         first_name, first_digest = release.wheel_digest(ROOT)
         second_name, second_digest = release.wheel_digest(ROOT)
 
-        self.assertEqual(first_name, f"agent_artifacts-{release.EXPECTED_VERSION}-py3-none-any.whl")
+        self.assertEqual(first_name, f"aart_cli-{release.EXPECTED_VERSION}-py3-none-any.whl")
         self.assertEqual(first_digest, second_digest)
         self.assertRegex(first_digest, r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(first_name, second_name)
@@ -594,7 +594,7 @@ class WheelDigestArtifactTest(unittest.TestCase):
 
         def record(root: Path, *, output_dir: Path | None = None) -> tuple[str, str]:
             seen["output_dir"] = output_dir
-            return "agent_artifacts-0.0.0-py3-none-any.whl", "sha256:" + "0" * 64
+            return "aart_cli-0.0.0-py3-none-any.whl", "sha256:" + "0" * 64
 
         with mock.patch.object(release, "wheel_digest", record):
             with contextlib.redirect_stdout(io.StringIO()):

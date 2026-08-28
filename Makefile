@@ -2,7 +2,7 @@
 #
 # Zero runtime deps; build tooling is stdlib-only (no setuptools / wheel / build needed
 # for the offline path). The wheel produced by `make wheel` installs with:
-#     pip install --no-index dist/agent_artifacts-<v>-py3-none-any.whl
+#     pip install --no-index dist/aart_cli-<v>-py3-none-any.whl
 
 PYTHON ?= python
 REGISTRY ?=
