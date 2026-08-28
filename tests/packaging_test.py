@@ -347,6 +347,56 @@ class TypedBehaviorProbeTest(unittest.TestCase):
         self.assertIsNone(self.packaging._compare_typed_behavior("same\n", "same\n"))
 
 
+class FindingPoetryTest(unittest.TestCase):
+    """What a machine without Poetry is told, which is the whole of what it can act on.
+
+    `poetry-core` is the build backend, and the dev group installs it -- so every image that can
+    run the gates has the `poetry` namespace, whether or not it has the Poetry CLI.  A blind
+    `python -m poetry` therefore does not fail as missing: it fails as
+    "'poetry' is a package and cannot be directly executed", which names neither Poetry nor the
+    variable that points at it.  A real Enterprise image is exactly this shape.
+    """
+
+    def setUp(self):
+        self.build = _load_script("build_wheel")
+
+    def test_the_variable_names_the_interpreter_outright(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": "/opt/poetry/bin/poetry"}):
+            self.assertEqual(["/opt/poetry/bin/poetry"], self.build.poetry_command())
+
+    def test_a_poetry_on_path_is_used_as_found(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value="/usr/bin/poetry"):
+                self.assertEqual(["/usr/bin/poetry"], self.build.poetry_command())
+
+    def test_the_module_is_used_only_when_it_is_the_cli(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value=None):
+                with mock.patch.object(self.build, "_poetry_module_runs", return_value=True):
+                    self.assertEqual([sys.executable, "-m", "poetry"], self.build.poetry_command())
+
+    def test_no_poetry_at_all_says_what_to_set(self):
+        with mock.patch.dict(os.environ, {"AART_POETRY": ""}):
+            with mock.patch.object(shutil, "which", return_value=None):
+                with mock.patch.object(self.build, "_poetry_module_runs", return_value=False):
+                    with self.assertRaises(SystemExit) as raised:
+                        self.build.poetry_command()
+
+        message = str(raised.exception)
+        self.assertIn("AART_POETRY", message)
+        self.assertIn("docs/ci/enterprise-fork-v1.md", message)
+        # The message a bare `python -m poetry` would have produced instead.
+        self.assertNotIn("cannot be directly executed", message)
+
+    def test_the_backend_alone_does_not_look_like_the_cli(self):
+        """`poetry-core` is installed here, and it must not satisfy the check."""
+
+        self.assertIsNotNone(importlib.util.find_spec("poetry.core"))
+        if importlib.util.find_spec("poetry.console") is not None:  # pragma: no cover
+            self.skipTest("the Poetry CLI is installed here, so there is nothing to prove")
+        self.assertFalse(self.build._poetry_module_runs())
+
+
 class LentBuildBackendTest(unittest.TestCase):
     """A new virtual environment cannot be assumed to contain the build backend.
 

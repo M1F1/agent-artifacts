@@ -98,4 +98,9 @@ runs:
         python-version: ${{ inputs.python-version }}
         setup-python: ${{ inputs.setup-python }}
         tag: v${{ inputs.version }}
+        # This job has already proven this exact tree: the ten gates ran above, and
+        # `cut_release.py` ran the eleven-item checklist as a precondition, because it has to pass
+        # before the tag exists.  Running either again here proved the same tree twice and roughly
+        # doubled the button's running time.
+        preconditions: "false"
         attach: "true"

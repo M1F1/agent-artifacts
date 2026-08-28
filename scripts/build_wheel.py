@@ -27,6 +27,7 @@ The result installs with no index at all:
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shutil
@@ -105,6 +106,33 @@ def collect_package_files() -> dict[str, bytes]:
     return files
 
 
+def missing_poetry(name: str) -> str:
+    return (
+        f"Poetry is not installed, or is not on PATH as {name!r}.\n"
+        "It builds the wheel, so a build without it cannot happen.\n"
+        "Install it (https://python-poetry.org/docs/#installation), or name it:\n"
+        "  AART_POETRY=/opt/poetry/bin/poetry python scripts/build_wheel.py\n"
+        "In CI, set the AART_POETRY repository variable -- see docs/ci/enterprise-fork-v1.md."
+    )
+
+
+def _poetry_module_runs() -> bool:
+    """Whether `python -m poetry` would start the Poetry CLI.
+
+    Asked rather than assumed, because `import poetry` succeeds without it. `poetry-core` -- the
+    build backend, which the dev group installs and which is therefore present wherever the gates
+    run -- occupies the same `poetry` namespace and ships no `__main__`. Running the module
+    blindly would fail with "'poetry' is a package and cannot be directly executed", which names
+    nothing a reader can act on, in place of the message below, which names the variable that
+    fixes it. A real Enterprise image is exactly this shape: the tools installed, the CLI absent.
+    """
+
+    try:
+        return importlib.util.find_spec("poetry.__main__") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def poetry_command() -> list[str]:
     """How to invoke Poetry here.
 
@@ -118,7 +146,9 @@ def poetry_command() -> list[str]:
     found = shutil.which("poetry")
     if found:
         return [found]
-    return [sys.executable, "-m", "poetry"]
+    if _poetry_module_runs():
+        return [sys.executable, "-m", "poetry"]
+    raise SystemExit(missing_poetry("poetry"))
 
 
 def build_environment() -> dict[str, str]:
@@ -143,11 +173,7 @@ def run_poetry(dist_dir: Path) -> Path:
             check=True,
         )
     except FileNotFoundError:
-        raise SystemExit(
-            f"Poetry is not installed, or is not on PATH as {command[0]!r}.\n"
-            "Install it (https://python-poetry.org/docs/#installation), or name it:\n"
-            "  AART_POETRY=/opt/poetry/bin/poetry python scripts/build_wheel.py"
-        ) from None
+        raise SystemExit(missing_poetry(command[0])) from None
     except subprocess.CalledProcessError as error:
         raise SystemExit(f"poetry build failed with exit status {error.returncode}") from None
 

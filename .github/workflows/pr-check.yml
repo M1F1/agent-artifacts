@@ -1,0 +1,132 @@
+name: pr-check
+
+# Every quality gate, on every pull request, and nowhere else.
+#
+# `main` is protected: nothing reaches it except through a pull request.  A pull-request run is
+# checked against the *merge* of the branch and its base, so with "require branches to be up to
+# date before merging" turned on, the commit this run proves is the commit that lands.  A second
+# run after the merge would prove the same tree again, so there is none -- and that is also why
+# `on: push` is gone.  A branch pushed without a pull request is now checked by nothing, which is
+# the intent rather than an oversight.  See docs/ci/pr-check-and-release-split-v1.md.
+#
+# Portable to a GitHub Enterprise Server fork by setting repository variables only.  Every default
+# below reproduces the public github.com run exactly, so an unconfigured fork behaves the way this
+# repository always has.  See docs/ci/enterprise-fork-v1.md for the variable list and for the two
+# things a variable cannot express.
+#
+# The gate job appears twice because a `container.credentials` block cannot be made conditional: an
+# empty one and a `null` one are both rejected before the job starts, and a placeholder credential
+# makes an anonymous pull fail a `docker login` it never needed.  So the choice is made where a
+# choice survives -- `if:` at job level -- and the two jobs share every step through
+# `.github/actions/quality`.  Name no credential secrets and the first job is the only one that
+# runs, exactly as before.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Poetry builds the wheel.  An image that keeps Poetry off `PATH` -- `/opt/poetry/bin/poetry` is
+# the common shape -- names it in this variable instead; unset, every step falls back to plain
+# `poetry`.  See docs/ci/enterprise-fork-v1.md.
+env:
+  AART_POETRY: ${{ vars.AART_POETRY }}
+
+jobs:
+  gates:
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
+    name: gates (Python ${{ matrix.python-version }})
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    # A company image already carries an interpreter.  Leave AART_CI_IMAGE unset and this line
+    # is inert; set it and pin AART_PYTHON_VERSIONS to one entry, because one image is one Python.
+    container: ${{ vars.AART_CI_IMAGE }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is here because the release run no longer runs the gates, and the release run was
+        # the only thing that ever exercised 3.11.  Dropping the gates from the release without
+        # adding it here would have retired an interpreter silently.
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.11", "3.14"]') }}
+    env:
+      # The tool's own gates need ruff, mypy and coverage.  That is the one place this repository
+      # needs a package index; the registry gates need none.  The variable holds the bare host and
+      # names the secret holding `user:pass`, because a variable cannot hold a credential.
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: ./.github/actions/quality
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+
+  gates-private-image:
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
+    name: gates (Python ${{ matrix.python-version }}, private image)
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    container:
+      image: ${{ vars.AART_CI_IMAGE }}
+      credentials:
+        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
+        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.11", "3.14"]') }}
+    env:
+      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
+      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: ./.github/actions/quality
+        with:
+          python: ${{ vars.AART_PYTHON || 'python' }}
+          python-version: ${{ matrix.python-version }}
+          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
+
+  # The one name branch protection can require.
+  #
+  # It cannot require either job above.  Each is a matrix, so its name carries an interpreter
+  # version and changes whenever `AART_PYTHON_VERSIONS` does; and only one of the two arms ever
+  # runs, so a rule naming the arm this fork does not use would wait forever.  This job's name is
+  # the same on every instance and in every configuration.
+  #
+  # `if: always()` is what makes it a gate rather than a formality: without it, a skipped or
+  # failed dependency would skip this job too, and GitHub counts a skipped required check as
+  # satisfied -- so the rule would pass precisely when the gates did not run.
+  pr-check:
+    if: always()
+    name: pr-check
+    needs: [gates, gates-private-image]
+    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
+    steps:
+      - name: Report the gate results
+        shell: bash
+        env:
+          PLAIN: ${{ needs.gates.result }}
+          PRIVATE: ${{ needs.gates-private-image.result }}
+        run: |
+          set -euo pipefail
+          echo "gates:               $PLAIN"
+          echo "gates-private-image: $PRIVATE"
+
+          # Exactly one arm is meant to run; the other is skipped by its own `if:`.  Both skipped
+          # means the gates never ran at all -- a broken condition, an image variable set to
+          # something unexpected -- and that must fail rather than look like a pass.
+          if [ "$PLAIN" = "skipped" ] && [ "$PRIVATE" = "skipped" ]; then
+            echo "::error::neither gate job ran; check AART_IMAGE_USERNAME_SECRET" >&2
+            exit 1
+          fi
+          for result in "$PLAIN" "$PRIVATE"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::a gate job reported '$result'" >&2; exit 1 ;;
+            esac
+          done
+          echo "all gates passed"

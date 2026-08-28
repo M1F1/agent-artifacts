@@ -83,7 +83,7 @@ A six-task queue, each task one commit, each gated on all ten quality gates befo
 | # | Task | State |
 |---|---|---|
 | 1 | Poetry builds the wheel; version reset to `0.0.1`; semantic versioning | **done** |
-| 2 | CI split for a protected `main`: PR check / release / cut-release | queued |
+| 2 | CI split for a protected `main`: PR check / release / cut-release | **done** |
 | 3 | Wizard and MCP install: one quick/verbose question (`#113`) | queued |
 | 4 | Delete stale documents; purge the old distribution name from docs | queued |
 | 5 | Generate `CHANGELOG.md` from the semantic version and the commits | queued |
@@ -130,6 +130,40 @@ Poetry: `AART_POETRY` names it when it lives off `PATH`, as `/opt/poetry/bin/poe
 The cost, stated plainly rather than re-argued: building now needs Poetry, which reverses the
 "assume only git and the interpreter" rule the previous 49 commits established. That was decided
 twice and is recorded in `docs/release/wheel-reproducibility-v1.md`.
+
+### Task 2: the CI split, for a protected `main`
+
+`docs/ci/pr-check-and-release-split-v1.md` is built. One commit that becomes a release used to set
+the ten gates going four times; it now sets them going twice — once on the pull request, once
+before the release button does something irreversible.
+
+- `validate.yml` is now `pr-check.yml`, triggered by `pull_request` and nothing else. A branch
+  pushed without a pull request is checked by nothing, which is the intent.
+- 3.11 joined the default matrix. The release run was the only thing that ever exercised it, and
+  the release run no longer runs the source gates.
+- **`pr-check` is the one check name to require.** It is a job that needs both container arms,
+  runs with `if: always()`, and fails when the arm that ran failed *and* when neither arm ran —
+  which is what a mistyped `AART_IMAGE_USERNAME_SECRET` looks like from the outside.
+- `release.yml` keeps only what has the release as its subject. `packaging-check` moved into the
+  release action to stay with it: its subject is the wheel, not the source, so the pull request
+  that proved the source did not prove it.
+- The release action gained one input, `preconditions`. The button already runs the gates and the
+  checklist against the same tree, so it passes `"false"` and the action skips both. The default
+  is `"true"`, so a caller that has not run them cannot skip them by accident.
+
+One thing was found here that the design could not have anticipated. **A machine with the tools
+but without Poetry gave an unusable error.** `poetry-core` is the build backend, the dev group
+installs it, and it occupies the `poetry` import name — so the fallback `python -m poetry` did not
+fail as missing. It failed with "'poetry' is a package and cannot be directly executed", which
+names neither Poetry nor `AART_POETRY`. A CI image is exactly this shape: tools installed, CLI
+absent. `scripts/build_wheel.py` now asks whether the module is really the CLI before running it,
+and otherwise says what to install and which variable to set.
+
+**For Michał, three settings.** They cannot be committed, and they are set per repository, on
+every instance separately: protect `main` and require a pull request; require the check named
+`pr-check`; turn on "require branches to be up to date before merging". The third is not optional
+decoration — with `pr-check.yml` triggering on pull requests only, there is no post-merge run, so
+it is the only thing that catches two green pull requests that break `main` together.
 
 ## Readable receipt (`2.6.0`, released)
 

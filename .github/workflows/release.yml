@@ -1,6 +1,7 @@
 name: release
 
-# Repeats quality/release gates, builds the offline zero-dependency wheel, and ships it.
+# Proves what has the release as its subject, builds the offline zero-dependency wheel, and
+# ships it.  The ten source gates ran on the pull request; see the note above the job.
 # Triggers:
 #   * a stable vX.Y.Z tag push          -> build + upload as a workflow artifact
 #   * a published GitHub release        -> additionally attach the wheel to the release
@@ -13,7 +14,7 @@ name: release
 # because a default naming a github.com repository reproduces nothing on an instance that cannot
 # reach it.  See the note on that variable below.  See docs/ci/enterprise-fork-v1.md.
 #
-# Each job appears twice for the reason validate.yml records: a container's `credentials` block
+# Each job appears twice for the reason pr-check.yml records: a container's `credentials` block
 # cannot be conditional, so the condition moves to the job.  Both shapes share their steps through
 # `.github/actions/*`.
 on:
@@ -33,53 +34,15 @@ env:
   AART_POETRY: ${{ vars.AART_POETRY }}
 
 jobs:
-  quality:
-    if: vars.AART_IMAGE_USERNAME_SECRET == ''
-    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
-    container: ${{ vars.AART_CI_IMAGE }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
-    env:
-      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
-      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - uses: ./.github/actions/quality
-        with:
-          python: ${{ vars.AART_PYTHON || 'python' }}
-          python-version: ${{ matrix.python-version }}
-          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
-
-  quality-private-image:
-    if: vars.AART_IMAGE_USERNAME_SECRET != ''
-    runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
-    container:
-      image: ${{ vars.AART_CI_IMAGE }}
-      credentials:
-        username: ${{ secrets[vars.AART_IMAGE_USERNAME_SECRET] }}
-        password: ${{ secrets[vars.AART_IMAGE_PASSWORD_SECRET] }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || '["3.10", "3.14"]') }}
-    env:
-      AART_INDEX_URL: ${{ vars.AART_PIP_INDEX_URL || 'https://pypi.org/simple' }}
-      AART_INDEX_CREDENTIALS: ${{ secrets[vars.AART_PIP_INDEX_CREDENTIALS_SECRET] }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - uses: ./.github/actions/quality
-        with:
-          python: ${{ vars.AART_PYTHON || 'python' }}
-          python-version: ${{ matrix.python-version }}
-          setup-python: ${{ vars.AART_CI_IMAGE == '' }}
-
+  # No quality jobs here any more.  A release is cut from a commit that reached `main`, and
+  # nothing reaches `main` except through a pull request that passed all ten gates on the full
+  # interpreter matrix.  Re-running them at the tag proved the same tree a second time.  What is
+  # left is everything whose subject is the release itself: the tag matches the source version,
+  # the tagged commit is in `main`, reviewed notes exist, the eleven-item checklist passes, and
+  # `packaging-check` -- the one gate whose subject is the wheel rather than the source.
+  # See docs/ci/pr-check-and-release-split-v1.md.
   release:
-    needs: [quality, quality-private-image]
-    if: ${{ !cancelled() && !failure() && vars.AART_IMAGE_USERNAME_SECRET == '' }}
+    if: vars.AART_IMAGE_USERNAME_SECRET == ''
     runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
     container: ${{ vars.AART_CI_IMAGE }}
     env:
@@ -121,8 +84,7 @@ jobs:
           attach: ${{ github.event_name == 'release' }}
 
   release-private-image:
-    needs: [quality, quality-private-image]
-    if: ${{ !cancelled() && !failure() && vars.AART_IMAGE_USERNAME_SECRET != '' }}
+    if: vars.AART_IMAGE_USERNAME_SECRET != ''
     runs-on: ${{ fromJSON(vars.AART_RUNNER || '["ubuntu-latest"]') }}
     container:
       image: ${{ vars.AART_CI_IMAGE }}

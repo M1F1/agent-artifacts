@@ -57,10 +57,11 @@ A branch name the remote does not hold yet is a new ref, so this cannot fast-for
 cannot overwrite anything. Add `git push ghe v2.8.5` if the existing copy has no tags and you also
 want to walk the git arm without `AART_REF`.
 
-**The default branch is not part of this.** `validate.yml` triggers on `push` with no branch
-filter, so the push above starts a `quality` run on its own, and the registry reaches this code
-through `AART_REF` rather than through whatever `main` says. Changing the default branch is
-optional — worth avoiding on a repository other people are already using.
+**The default branch is not part of this.** `pr-check.yml` triggers on `pull_request` only, so
+the push above starts no run at all — open a pull request if you want the gates to run against
+this branch. The registry reaches this code through `AART_REF` rather than through whatever `main`
+says. Changing the default branch is optional — worth avoiding on a repository other people are
+already using.
 
 ### 2. Set the fork's variables
 

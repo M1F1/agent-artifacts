@@ -166,7 +166,7 @@ repository never installs them.
 ## 2. Variables a fork of this repository sets
 
 Set under **Settings → Secrets and variables → Actions → Variables**. These drive
-`.github/workflows/validate.yml` and `release.yml`.
+`.github/workflows/pr-check.yml` and `release.yml`.
 
 | Variable | Default | What it does |
 |---|---|---|

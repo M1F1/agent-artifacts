@@ -12,7 +12,7 @@ name: cut release
 # attaches it -- one builder of release artifacts, not two that can disagree.
 #
 # Portable to a GitHub Enterprise Server fork by setting repository variables only, like the other
-# two workflows. The job appears twice for the reason validate.yml records: a container's
+# two workflows. The job appears twice for the reason pr-check.yml records: a container's
 # `credentials` block cannot be conditional, so the condition moves to the job.
 on:
   workflow_dispatch:

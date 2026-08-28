@@ -23,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "docs" / "ci" / "enterprise-fork-v1.md"
 ACTION = ROOT / ".github" / "actions" / "aart" / "action.yml"
 WORKFLOWS = (
-    ROOT / ".github" / "workflows" / "validate.yml",
+    ROOT / ".github" / "workflows" / "pr-check.yml",
     ROOT / ".github" / "workflows" / "release.yml",
     ROOT / ".github" / "workflows" / "cut-release.yml",
 )
@@ -438,13 +438,33 @@ def _job_bodies(workflow: str) -> dict[str, str]:
         match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
         if match:
             if name is not None:
-                bodies[name] = "".join(lines)
-            name, lines = match.group(1), []
+                # A comment block sitting between two jobs explains the one it precedes, so it
+                # is handed forward rather than left at the end of the previous job.  Left there
+                # it becomes part of that job's "steps", and the drift test between the two
+                # container shapes fails on prose -- a trap that costs an afternoon and says
+                # nothing true about the workflow.
+                bodies[name] = "".join(lines[: len(lines) - _trailing_prose(lines)])
+                lines = lines[len(lines) - _trailing_prose(lines) :]
+            else:
+                lines = []
+            name = match.group(1)
         elif name is not None:
             lines.append(line)
     if name is not None:
         bodies[name] = "".join(lines)
     return bodies
+
+
+def _trailing_prose(lines: list[str]) -> int:
+    """How many lines at the end are blank or comment -- that is, belong to what comes next."""
+
+    count = 0
+    for line in reversed(lines):
+        if line.strip() == "" or line.lstrip().startswith("#"):
+            count += 1
+            continue
+        break
+    return count
 
 
 def _fetching_jobs(workflow: str) -> dict[str, str]:

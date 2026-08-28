@@ -46,14 +46,18 @@ class QualitySurfaceTest(unittest.TestCase):
         for target in (*EXPECTED_GATES, "quality"):
             self.assertIn(f"\n{target}:", "\n" + makefile, target)
 
-    def test_ci_delegates_to_quality_on_minimum_and_latest_python(self):
-        workflow = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    def test_the_pr_check_delegates_to_quality_on_every_supported_python(self):
+        workflow = (ROOT / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8")
         # The matrix is a repository variable so an Enterprise fork can retarget it without
-        # editing YAML, but the *default* is what this repository runs, and it must stay the
-        # minimum and the latest supported Python.  Asserting the whole expression keeps both
-        # halves honest: a fork that sets nothing gets exactly the run this file always had.
+        # editing YAML, but the *default* is what this repository runs.  It must cover every
+        # interpreter this project supports, because the PR check is now the only run that
+        # exercises the source at all: 3.10 and 3.14 are the ends of the range, and 3.11 is here
+        # because the release run used to be the one place it was ever tried, and the release run
+        # no longer runs gates.  Asserting the whole expression keeps both halves honest: a fork
+        # that sets nothing gets exactly the run this repository gets.
         self.assertIn(
-            'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
+            "python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS"
+            ' || \'["3.10", "3.11", "3.14"]\') }}',
             workflow,
         )
         # The steps live in a composite action now: two jobs differ only in how their container

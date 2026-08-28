@@ -6,39 +6,46 @@ from tests.versioning_test import ROOT, _load_script
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
-    def test_tag_workflow_repeats_quality_and_reference_registry_release_check(self) -> None:
+    def test_the_release_run_proves_only_what_has_the_release_as_its_subject(self) -> None:
+        """The ten source gates ran on the pull request; the tag run does not repeat them.
+
+        Nothing reaches `main` except through a pull request that passed all ten gates on the full
+        interpreter matrix, so re-running them at the tag proved the same tree a second time.  What
+        stays is everything the pull request could not have proven: the tag matches the source
+        version, the tagged commit is in `main`, reviewed notes exist, the eleven-item checklist
+        passes, and the wheel itself is sound.
+        See docs/ci/pr-check-and-release-split-v1.md.
+        """
+
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-        # The matrix and the reference registry are repository variables so an Enterprise fork
-        # retargets them without editing YAML.  The defaults are what this repository releases
-        # with, so they are what this test pins.
-        self.assertIn(
-            'python-version: ${{ fromJSON(vars.AART_PYTHON_VERSIONS || \'["3.10", "3.14"]\') }}',
-            workflow,
-        )
+        # No source-gate matrix here any more, on either spelling.  These two are what a
+        # reinstated quality job would bring back with it, so their absence is the contract.
+        self.assertNotIn("AART_PYTHON_VERSIONS", workflow)
+        self.assertNotIn("uses: ./.github/actions/quality", workflow)
         # No default here on purpose: the variable's presence is what decides whether the
         # reconciliation runs.  `enterprise_ci_template_test` holds that contract.
         self.assertIn("REFERENCE_REGISTRY_URL: ${{ vars.AART_REFERENCE_REGISTRY_URL }}", workflow)
+        # The run reads history: it proves the tagged commit is an ancestor of `main`.
         self.assertIn("fetch-depth: 0", workflow)
 
         # Each job appears once per container shape, so its steps live in a composite action
         # rather than in two copies that can drift apart.  The checklist is what matters, and
         # this is where it now is.
         actions = ROOT / ".github" / "actions"
-        quality = (actions / "quality" / "action.yml").read_text(encoding="utf-8")
         release_steps = (actions / "release" / "action.yml").read_text(encoding="utf-8")
-        self.assertIn("scripts/dev_tools.py install", quality)
-        # CI calls the canonical runners directly.  The Makefile targets are one-line wrappers
-        # around exactly these commands, so going through `make` bought nothing and made GNU Make
-        # a thing every CI image had to carry -- which is how a real Enterprise image failed.
-        self.assertIn("scripts/quality.py", quality)
-        self.assertNotIn("make ", quality)
         # Both invocations, because the reconciliation is now a choice the variable makes and a
         # test that saw only one branch would not notice the other disappearing.
         self.assertIn("scripts/release.py check --registry", release_steps)
         self.assertIn("scripts/release.py check --without-registry", release_steps)
-        self.assertNotIn("make ", release_steps)
         self.assertIn("scripts/version.py check-tag", release_steps)
+        # The one gate that stays.  Its subject is the wheel, not the source, so the pull request
+        # that proved the source did not prove it.
+        self.assertIn("scripts/packaging_check.py", release_steps)
+        # CI calls the canonical runners directly.  The Makefile targets are one-line wrappers
+        # around exactly these commands, so going through `make` bought nothing and made GNU Make
+        # a thing every CI image had to carry -- which is how a real Enterprise image failed.
+        self.assertNotIn("make ", release_steps)
         # No workflow-artifact copy of the wheel, on either spelling.  An Enterprise instance
         # cannot run `upload-artifact@v4` -- `GHESNotSupportedError` at run time -- and github.com
         # refuses `@v3` while *resolving* the action, before any `if:` is evaluated, so naming it
@@ -52,6 +59,28 @@ class ReleaseWorkflowTest(unittest.TestCase):
             release_steps,
         )
         self.assertIn('git merge-base --is-ancestor "$TAG_COMMIT" origin/main', release_steps)
+
+    def test_the_button_does_not_prove_the_same_tree_twice(self) -> None:
+        """One input, read by both steps a second run would repeat.
+
+        `cut-release` runs the ten gates and then the checklist as a precondition -- it has to
+        pass before the tag exists, because the run either produces a tag and a release or
+        produces neither.  It then calls the release action, which would otherwise run both again
+        against the identical tree.  A single input says so, and it is an input rather than a
+        guess so that a path which has *not* run them cannot skip them by accident.
+        """
+
+        actions = ROOT / ".github" / "actions"
+        release_steps = (actions / "release" / "action.yml").read_text(encoding="utf-8")
+        cut = (actions / "cut-release" / "action.yml").read_text(encoding="utf-8")
+
+        # Default "true": every caller that says nothing runs both.
+        self.assertIn("  preconditions:\n", release_steps)
+        self.assertIn('    default: "true"', release_steps)
+        self.assertEqual(2, release_steps.count("if: inputs.preconditions != 'false'"))
+        # And the button is the one caller that says otherwise -- after running them itself.
+        self.assertIn('preconditions: "false"', cut)
+        self.assertIn("scripts/quality.py", cut)
 
     def test_workflow_follows_the_tag_instead_of_pinning_one_release(self) -> None:
         """A pinned trigger silently builds nothing for the next release.
